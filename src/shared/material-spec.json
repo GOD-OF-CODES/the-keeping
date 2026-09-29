@@ -1,0 +1,1630 @@
+{
+ "version": 1,
+ "materials": [
+  {
+   "id": "floor_varnished",
+   "family": "wood_floor",
+   "params": {
+    "boardWidth": 0.11,
+    "boardLengthMin": 0.9,
+    "boardLengthMax": 2.6,
+    "species": "oak",
+    "baseColor": [
+     0.1,
+     0.056,
+     0.028
+    ],
+    "grainContrast": 0.35,
+    "varnish": 0.7,
+    "varnishWear": 0.45,
+    "wearPath": true,
+    "gapDepth": 0.004,
+    "dirtInGaps": 0.6,
+    "scratchDensity": 0.4,
+    "seed": 11
+   },
+   "avgAlbedo": [
+    0.085,
+    0.048,
+    0.024
+   ],
+   "roughness": 0.42,
+   "metalness": 0,
+   "tileMetres": 2.4,
+   "hero": true,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Hall G1 and parlor G2. Wear path down the middle of the hall; dull traffic lanes."
+  },
+  {
+   "id": "floor_bare",
+   "family": "wood_bare",
+   "params": {
+    "boardWidth": 0.14,
+    "boardLengthMin": 1.2,
+    "boardLengthMax": 3.6,
+    "species": "pine",
+    "baseColor": [
+     0.23,
+     0.18,
+     0.12
+    ],
+    "greyed": 0.35,
+    "grainContrast": 0.5,
+    "nailHeads": true,
+    "gapDepth": 0.006,
+    "dirtInGaps": 0.8,
+    "seed": 12
+   },
+   "avgAlbedo": [
+    0.2,
+    0.155,
+    0.105
+   ],
+   "roughness": 0.78,
+   "metalness": 0,
+   "tileMetres": 2.4,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Upper floor margins, back passage, closet, servants' landing."
+  },
+  {
+   "id": "floor_scrubbed",
+   "family": "wood_bare",
+   "params": {
+    "boardWidth": 0.16,
+    "boardLengthMin": 1.5,
+    "boardLengthMax": 4,
+    "species": "pine",
+    "baseColor": [
+     0.3,
+     0.245,
+     0.18
+    ],
+    "greyed": 0.5,
+    "grainContrast": 0.3,
+    "waterStains": 0.55,
+    "gapDepth": 0.008,
+    "dirtInGaps": 0.7,
+    "seed": 13
+   },
+   "avgAlbedo": [
+    0.27,
+    0.22,
+    0.16
+   ],
+   "roughness": 0.82,
+   "metalness": 0,
+   "tileMetres": 2.4,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Kitchen G3: lye-scrubbed boards, dark water stains radiating from the cistern hatch."
+  },
+  {
+   "id": "stair_treads",
+   "family": "wood_floor",
+   "params": {
+    "boardWidth": 0.28,
+    "species": "oak",
+    "baseColor": [
+     0.09,
+     0.05,
+     0.025
+    ],
+    "varnish": 0.6,
+    "varnishWear": 0.75,
+    "nosingWear": 0.9,
+    "grainContrast": 0.4,
+    "seed": 14
+   },
+   "avgAlbedo": [
+    0.075,
+    0.042,
+    0.021
+   ],
+   "roughness": 0.5,
+   "metalness": 0,
+   "tileMetres": 1.2,
+   "hero": true,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Main stair treads/risers/handrail. Varnish worn through at every nosing centre."
+  },
+  {
+   "id": "stair_rough",
+   "family": "wood_bare",
+   "params": {
+    "boardWidth": 0.25,
+    "species": "pine",
+    "baseColor": [
+     0.18,
+     0.14,
+     0.095
+    ],
+    "greyed": 0.2,
+    "grainContrast": 0.55,
+    "cobwebDust": 0.8,
+    "seed": 15
+   },
+   "avgAlbedo": [
+    0.16,
+    0.125,
+    0.085
+   ],
+   "roughness": 0.85,
+   "metalness": 0,
+   "tileMetres": 1.2,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Servants' stair treads and its board enclosure."
+  },
+  {
+   "id": "wood_furniture_dark",
+   "family": "wood_bare",
+   "params": {
+    "species": "walnut",
+    "baseColor": [
+     0.07,
+     0.04,
+     0.02
+    ],
+    "varnish": 0.5,
+    "varnishWear": 0.3,
+    "grainContrast": 0.45,
+    "edgeWear": 0.5,
+    "dust": 0.5,
+    "seed": 16
+   },
+   "avgAlbedo": [
+    0.06,
+    0.035,
+    0.018
+   ],
+   "roughness": 0.5,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Armoire, wardrobes, hall table, nightstand, washstand, mantel, rocking chair."
+  },
+  {
+   "id": "wood_raw_plank",
+   "family": "wood_bare",
+   "params": {
+    "species": "pine",
+    "baseColor": [
+     0.27,
+     0.21,
+     0.14
+    ],
+    "greyed": 0.1,
+    "saw": "rough",
+    "grainContrast": 0.6,
+    "seed": 17
+   },
+   "avgAlbedo": [
+    0.24,
+    0.185,
+    0.12
+   ],
+   "roughness": 0.88,
+   "metalness": 0,
+   "tileMetres": 1.5,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Sawbuck table, the 3 nailed planks on Ada's door, jerry-can shelf, closet boards."
+  },
+  {
+   "id": "wallpaper_damask_green",
+   "family": "wallpaper",
+   "params": {
+    "ground": [
+     0.09,
+     0.12,
+     0.075
+    ],
+    "figure": [
+     0.06,
+     0.08,
+     0.05
+    ],
+    "figureGloss": 0.2,
+    "motif": "damask_a",
+    "repeatDrop": 0.5,
+    "damp": 0.45,
+    "peel": 0.3,
+    "seamSpacing": 0.53,
+    "waterStainFromCeiling": 0.35,
+    "seed": 21
+   },
+   "avgAlbedo": [
+    0.085,
+    0.11,
+    0.07
+   ],
+   "roughness": 0.8,
+   "metalness": 0,
+   "tileMetres": 0.53,
+   "hero": true,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Hall G1 and upper hall U1."
+  },
+  {
+   "id": "wallpaper_damask_rose",
+   "family": "wallpaper",
+   "params": {
+    "ground": [
+     0.32,
+     0.17,
+     0.15
+    ],
+    "figure": [
+     0.22,
+     0.1,
+     0.09
+    ],
+    "figureGloss": 0.15,
+    "motif": "damask_b",
+    "repeatDrop": 0.5,
+    "damp": 0.25,
+    "peel": 0.15,
+    "fade": 0.4,
+    "seamSpacing": 0.53,
+    "seed": 22
+   },
+   "avgAlbedo": [
+    0.3,
+    0.16,
+    0.14
+   ],
+   "roughness": 0.8,
+   "metalness": 0,
+   "tileMetres": 0.53,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Ada's sewing room U3: faded, sun-bleached above the dado, sealed since 1976."
+  },
+  {
+   "id": "wallpaper_damask_ochre",
+   "family": "wallpaper",
+   "params": {
+    "ground": [
+     0.35,
+     0.27,
+     0.13
+    ],
+    "figure": [
+     0.24,
+     0.17,
+     0.07
+    ],
+    "figureGloss": 0.2,
+    "motif": "damask_c",
+    "repeatDrop": 0.5,
+    "damp": 0.35,
+    "peel": 0.25,
+    "smokeStain": 0.5,
+    "seamSpacing": 0.53,
+    "seed": 23
+   },
+   "avgAlbedo": [
+    0.33,
+    0.25,
+    0.12
+   ],
+   "roughness": 0.82,
+   "metalness": 0,
+   "tileMetres": 0.53,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Parlor G2 (candle smoke above the mantel) and Harlan's bedroom U2."
+  },
+  {
+   "id": "wall_tally",
+   "family": "wallpaper",
+   "params": {
+    "base": "wallpaper_damask_ochre",
+    "tallyCount": 6000,
+    "tallyGroups": 5,
+    "strokeColor": [
+     0.035,
+     0.035,
+     0.04
+    ],
+    "strokeWidth": 0.003,
+    "strokeLength": 0.045,
+    "topLimit": 2.3,
+    "graphiteGloss": 0.35,
+    "freshColumn": false,
+    "seed": 24
+   },
+   "avgAlbedo": [
+    0.25,
+    0.19,
+    0.095
+   ],
+   "roughness": 0.8,
+   "metalness": 0,
+   "tileMetres": 5,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Parlor north wall (shared with the kitchen): ~6,000 pencil tallies to the picture rail. freshColumn=true for the C7 sting."
+  },
+  {
+   "id": "plaster_damp",
+   "family": "plaster",
+   "params": {
+    "base": [
+     0.46,
+     0.43,
+     0.36
+    ],
+    "mould": 0.45,
+    "efflorescence": 0.3,
+    "cracks": 0.5,
+    "riseDampHeight": 0.8,
+    "seed": 31
+   },
+   "avgAlbedo": [
+    0.42,
+    0.39,
+    0.33
+   ],
+   "roughness": 0.9,
+   "metalness": 0,
+   "tileMetres": 2,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Kitchen, back passage, void faces. Rising damp line ~0.8 m."
+  },
+  {
+   "id": "ceiling_plaster",
+   "family": "ceiling_plaster",
+   "params": {
+    "base": [
+     0.55,
+     0.52,
+     0.44
+    ],
+    "waterStains": 0.45,
+    "cracks": 0.4,
+    "sagging": 0.1,
+    "smokeAboveLights": 0.35,
+    "seed": 32
+   },
+   "avgAlbedo": [
+    0.5,
+    0.47,
+    0.4
+   ],
+   "roughness": 0.92,
+   "metalness": 0,
+   "tileMetres": 2.5,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated"
+  },
+  {
+   "id": "trim_chipped",
+   "family": "trim_paint",
+   "params": {
+    "paint": [
+     0.5,
+     0.48,
+     0.42
+    ],
+    "underlayer": [
+     0.1,
+     0.075,
+     0.05
+    ],
+    "chip": 0.35,
+    "grimeInCorners": 0.6,
+    "gloss": 0.4,
+    "seed": 33
+   },
+   "avgAlbedo": [
+    0.46,
+    0.44,
+    0.38
+   ],
+   "roughness": 0.55,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Skirting, picture rail, architraves, window casings, balusters."
+  },
+  {
+   "id": "wainscot_beadboard",
+   "family": "wood_painted",
+   "params": {
+    "paint": [
+     0.24,
+     0.26,
+     0.21
+    ],
+    "beadSpacing": 0.1,
+    "chip": 0.4,
+    "scuff": 0.5,
+    "underlayer": [
+     0.12,
+     0.09,
+     0.06
+    ],
+    "seed": 34
+   },
+   "avgAlbedo": [
+    0.22,
+    0.24,
+    0.2
+   ],
+   "roughness": 0.6,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Tongue-and-groove dado in the hall, back passage and kitchen."
+  },
+  {
+   "id": "door_painted",
+   "family": "wood_painted",
+   "params": {
+    "paint": [
+     0.33,
+     0.32,
+     0.27
+    ],
+    "chip": 0.35,
+    "handGrime": 0.6,
+    "panelShadow": 0.5,
+    "seed": 35
+   },
+   "avgAlbedo": [
+    0.3,
+    0.29,
+    0.25
+   ],
+   "roughness": 0.5,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "All panel doors (front door uses door_front)."
+  },
+  {
+   "id": "door_front",
+   "family": "wood_painted",
+   "params": {
+    "paint": [
+     0.055,
+     0.04,
+     0.035
+    ],
+    "chip": 0.45,
+    "blister": 0.4,
+    "underlayer": [
+     0.16,
+     0.12,
+     0.08
+    ],
+    "seed": 36
+   },
+   "avgAlbedo": [
+    0.05,
+    0.035,
+    0.03
+   ],
+   "roughness": 0.45,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": true,
+   "wetness": 0.35,
+   "source": "generated",
+   "notes": "Front door, oxblood-black, rain-wet on the outside face."
+  },
+  {
+   "id": "clapboard_peeling",
+   "family": "clapboard",
+   "params": {
+    "boardExposure": 0.11,
+    "paint": [
+     0.42,
+     0.41,
+     0.37
+    ],
+    "bareWood": [
+     0.12,
+     0.1,
+     0.08
+    ],
+    "peel": 0.55,
+    "mildew": 0.35,
+    "rainStreaks": 0.6,
+    "seed": 41
+   },
+   "avgAlbedo": [
+    0.36,
+    0.35,
+    0.32
+   ],
+   "roughness": 0.7,
+   "metalness": 0,
+   "tileMetres": 3,
+   "hero": true,
+   "wetness": 0.6,
+   "source": "generated"
+  },
+  {
+   "id": "porch_boards_wet",
+   "family": "porch_boards",
+   "params": {
+    "boardWidth": 0.09,
+    "paintRemnant": [
+     0.2,
+     0.2,
+     0.19
+    ],
+    "paintRemaining": 0.25,
+    "rot": 0.3,
+    "puddles": 0.4,
+    "seed": 42
+   },
+   "avgAlbedo": [
+    0.1,
+    0.088,
+    0.072
+   ],
+   "roughness": 0.35,
+   "metalness": 0,
+   "tileMetres": 2,
+   "hero": true,
+   "wetness": 0.8,
+   "source": "generated"
+  },
+  {
+   "id": "shingles_wet",
+   "family": "shingles",
+   "params": {
+    "shingleWidth": 0.3,
+    "exposure": 0.14,
+    "material": "asphalt",
+    "missing": 0.05,
+    "moss": 0.3,
+    "curl": 0.35,
+    "seed": 43
+   },
+   "avgAlbedo": [
+    0.055,
+    0.055,
+    0.052
+   ],
+   "roughness": 0.55,
+   "metalness": 0,
+   "tileMetres": 2,
+   "hero": false,
+   "wetness": 0.9,
+   "source": "generated"
+  },
+  {
+   "id": "brick_old",
+   "family": "brick",
+   "params": {
+    "brickSize": [
+     0.2,
+     0.09
+    ],
+    "bond": "common",
+    "mortar": [
+     0.35,
+     0.33,
+     0.28
+    ],
+    "mortarRecess": 0.008,
+    "spalling": 0.3,
+    "soot": 0.5,
+    "seed": 44
+   },
+   "avgAlbedo": [
+    0.2,
+    0.075,
+    0.048
+   ],
+   "roughness": 0.85,
+   "metalness": 0,
+   "tileMetres": 1.2,
+   "hero": false,
+   "wetness": 0.5,
+   "source": "generated",
+   "notes": "Chimney stack and foundation piers."
+  },
+  {
+   "id": "brick_infill",
+   "family": "brick",
+   "params": {
+    "brickSize": [
+     0.2,
+     0.09
+    ],
+    "bond": "stretcher",
+    "mortar": [
+     0.4,
+     0.38,
+     0.32
+    ],
+    "mortarSquish": 0.8,
+    "sloppy": 0.9,
+    "seed": 45
+   },
+   "avgAlbedo": [
+    0.24,
+    0.1,
+    0.065
+   ],
+   "roughness": 0.88,
+   "metalness": 0,
+   "tileMetres": 1.2,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "The bricked kitchen back door: hurried, mortar squeezed out of the joints."
+  },
+  {
+   "id": "stone_foundation",
+   "family": "stone",
+   "params": {
+    "stoneSize": 0.35,
+    "mortar": [
+     0.3,
+     0.29,
+     0.26
+    ],
+    "moss": 0.4,
+    "seed": 46
+   },
+   "avgAlbedo": [
+    0.17,
+    0.16,
+    0.145
+   ],
+   "roughness": 0.9,
+   "metalness": 0,
+   "tileMetres": 1.5,
+   "hero": false,
+   "wetness": 0.6,
+   "source": "generated"
+  },
+  {
+   "id": "gravel_wet",
+   "family": "gravel",
+   "params": {
+    "stoneSize": 0.025,
+    "sizeVariance": 0.6,
+    "mudFill": 0.4,
+    "puddles": 0.35,
+    "ruts": true,
+    "seed": 51
+   },
+   "avgAlbedo": [
+    0.17,
+    0.16,
+    0.145
+   ],
+   "roughness": 0.6,
+   "metalness": 0,
+   "tileMetres": 2.5,
+   "hero": false,
+   "wetness": 0.7,
+   "source": "generated"
+  },
+  {
+   "id": "asphalt_wet",
+   "family": "asphalt",
+   "params": {
+    "aggregate": 0.5,
+    "cracks": 0.4,
+    "patches": 0.3,
+    "centreLine_srgb": [
+     0.75,
+     0.6,
+     0.15
+    ],
+    "centreLineWear": 0.7,
+    "puddles": 0.5,
+    "seed": 52
+   },
+   "avgAlbedo": [
+    0.04,
+    0.04,
+    0.04
+   ],
+   "roughness": 0.25,
+   "metalness": 0,
+   "tileMetres": 4,
+   "hero": false,
+   "wetness": 1,
+   "source": "generated"
+  },
+  {
+   "id": "mud_wet",
+   "family": "mud",
+   "params": {
+    "base": [
+     0.075,
+     0.055,
+     0.038
+    ],
+    "tyreTracks": 0.4,
+    "puddles": 0.6,
+    "debris": 0.3,
+    "seed": 53
+   },
+   "avgAlbedo": [
+    0.065,
+    0.048,
+    0.033
+   ],
+   "roughness": 0.3,
+   "metalness": 0,
+   "tileMetres": 2,
+   "hero": false,
+   "wetness": 0.95,
+   "source": "generated"
+  },
+  {
+   "id": "grass_wet",
+   "family": "grass",
+   "params": {
+    "dead": 0.55,
+    "weeds": 0.5,
+    "bladeDensity": 0.7,
+    "seed": 54
+   },
+   "avgAlbedo": [
+    0.045,
+    0.06,
+    0.03
+   ],
+   "roughness": 0.6,
+   "metalness": 0,
+   "tileMetres": 3,
+   "hero": false,
+   "wetness": 0.7,
+   "source": "generated"
+  },
+  {
+   "id": "bark_wet",
+   "family": "bark",
+   "params": {
+    "furrowDepth": 0.02,
+    "lichen": 0.3,
+    "seed": 55
+   },
+   "avgAlbedo": [
+    0.06,
+    0.05,
+    0.04
+   ],
+   "roughness": 0.7,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 0.8,
+   "source": "generated"
+  },
+  {
+   "id": "rust",
+   "family": "rust",
+   "params": {
+    "base": [
+     0.22,
+     0.08,
+     0.03
+    ],
+    "flake": 0.5,
+    "bareMetalPatches": 0.15,
+    "paintRemnant_srgb": [
+     0.55,
+     0.12,
+     0.1
+    ],
+    "seed": 61
+   },
+   "avgAlbedo": [
+    0.2,
+    0.075,
+    0.03
+   ],
+   "roughness": 0.85,
+   "metalness": 0.25,
+   "tileMetres": 0.8,
+   "hero": false,
+   "wetness": 0.3,
+   "source": "generated",
+   "notes": "Gas pump, wrecks, jerry cans, sign post brackets, nail can."
+  },
+  {
+   "id": "cast_iron",
+   "family": "cast_iron",
+   "params": {
+    "base": [
+     0.06,
+     0.06,
+     0.06
+    ],
+    "rust": 0.25,
+    "polishOnEdges": 0.2,
+    "seed": 62
+   },
+   "avgAlbedo": [
+    0.05,
+    0.05,
+    0.05
+   ],
+   "roughness": 0.65,
+   "metalness": 0.8,
+   "tileMetres": 0.6,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Stove, floor register, iron bed, hatch hasp, drop-bolt, pulleys."
+  },
+  {
+   "id": "enamel_chipped",
+   "family": "enamel",
+   "params": {
+    "base": [
+     0.6,
+     0.6,
+     0.55
+    ],
+    "chips": 0.4,
+    "chipColor": [
+     0.03,
+     0.03,
+     0.03
+    ],
+    "rustRings": 0.3,
+    "seed": 63
+   },
+   "avgAlbedo": [
+    0.55,
+    0.55,
+    0.5
+   ],
+   "roughness": 0.2,
+   "metalness": 0,
+   "tileMetres": 0.6,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Pump sink basin, washstand bowl and jug, stove door."
+  },
+  {
+   "id": "tile_kitchen",
+   "family": "tile",
+   "params": {
+    "tileSize": 0.15,
+    "groutWidth": 0.004,
+    "grout": [
+     0.2,
+     0.19,
+     0.16
+    ],
+    "crazing": 0.5,
+    "grime": 0.5,
+    "seed": 64
+   },
+   "avgAlbedo": [
+    0.5,
+    0.5,
+    0.45
+   ],
+   "roughness": 0.25,
+   "metalness": 0,
+   "tileMetres": 0.6,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Splashback behind the pump sink."
+  },
+  {
+   "id": "chrome_pitted",
+   "family": "chrome",
+   "params": {
+    "pitting": 0.5,
+    "rustSpots": 0.3,
+    "seed": 65
+   },
+   "avgAlbedo": [
+    0.55,
+    0.55,
+    0.55
+   ],
+   "roughness": 0.3,
+   "metalness": 1,
+   "tileMetres": 0.5,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Sedan bumpers, trim, pump nozzle."
+  },
+  {
+   "id": "zinc_galvanized",
+   "family": "zinc",
+   "params": {
+    "spangle": 0.6,
+    "whiteRust": 0.35,
+    "dents": 0.3,
+    "seed": 66
+   },
+   "avgAlbedo": [
+    0.45,
+    0.46,
+    0.47
+   ],
+   "roughness": 0.5,
+   "metalness": 1,
+   "tileMetres": 0.5,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Parlor bucket, VACANCY plate, nail can, lantern box."
+  },
+  {
+   "id": "brass_tarnished",
+   "family": "metal_brass",
+   "params": {
+    "tarnish": 0.6,
+    "verdigris": 0.25,
+    "polishedWhereTouched": 0.7,
+    "seed": 67
+   },
+   "avgAlbedo": [
+    0.42,
+    0.3,
+    0.12
+   ],
+   "roughness": 0.4,
+   "metalness": 1,
+   "tileMetres": 0.3,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Bell-pull knob, spring bell, door knocker, locket, bolt-box plate, lamp burner."
+  },
+  {
+   "id": "glass_grimy",
+   "family": "glass",
+   "params": {
+    "ior": 1.52,
+    "transmission": 0.85,
+    "grime": 0.6,
+    "fly_specks": 0.3,
+    "waviness": 0.4,
+    "seed": 71
+   },
+   "avgAlbedo": [
+    0.04,
+    0.04,
+    0.04
+   ],
+   "roughness": 0.15,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated"
+  },
+  {
+   "id": "glass_rain",
+   "family": "glass",
+   "params": {
+    "ior": 1.52,
+    "transmission": 0.9,
+    "rainStreaks": 1,
+    "droplets": 0.8,
+    "grime": 0.3,
+    "seed": 72
+   },
+   "avgAlbedo": [
+    0.04,
+    0.04,
+    0.04
+   ],
+   "roughness": 0.05,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 1,
+   "source": "generated",
+   "notes": "Exterior window faces and the car windscreen."
+  },
+  {
+   "id": "runner_rug",
+   "family": "rug",
+   "params": {
+    "field": [
+     0.11,
+     0.03,
+     0.025
+    ],
+    "border": [
+     0.05,
+     0.04,
+     0.02
+    ],
+    "pattern": "turkey_runner",
+    "wornPath": 0.6,
+    "fringe": true,
+    "pile": 0.6,
+    "seed": 81
+   },
+   "avgAlbedo": [
+    0.1,
+    0.03,
+    0.025
+   ],
+   "roughness": 0.95,
+   "metalness": 0,
+   "tileMetres": 0.9,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated"
+  },
+  {
+   "id": "rag_rug",
+   "family": "rug",
+   "params": {
+    "pattern": "braided_oval",
+    "colours": 5,
+    "dirt": 0.6,
+    "seed": 82
+   },
+   "avgAlbedo": [
+    0.16,
+    0.13,
+    0.1
+   ],
+   "roughness": 0.95,
+   "metalness": 0,
+   "tileMetres": 0.6,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated"
+  },
+  {
+   "id": "dust_sheet",
+   "family": "fabric",
+   "params": {
+    "weave": "plain_cotton",
+    "dust": 0.8,
+    "yellowing": 0.5,
+    "foldCreases": 0.6,
+    "seed": 83
+   },
+   "avgAlbedo": [
+    0.46,
+    0.44,
+    0.38
+   ],
+   "roughness": 0.95,
+   "metalness": 0,
+   "tileMetres": 0.8,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated"
+  },
+  {
+   "id": "crepe_black",
+   "family": "crepe",
+   "params": {
+    "crinkle": 0.8,
+    "dustOnTop": 0.4,
+    "fade": 0.2,
+    "seed": 84
+   },
+   "avgAlbedo": [
+    0.015,
+    0.014,
+    0.014
+   ],
+   "roughness": 0.9,
+   "metalness": 0,
+   "tileMetres": 0.2,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Mourning crepe over every mirror."
+  },
+  {
+   "id": "burlap_sack",
+   "family": "burlap",
+   "params": {
+    "weave": 0.004,
+    "stencil": "STROUD FEED & SEED",
+    "stencilColor_srgb": [
+     0.15,
+     0.2,
+     0.3
+    ],
+    "stains": 0.6,
+    "fraying": 0.5,
+    "seed": 85
+   },
+   "avgAlbedo": [
+    0.33,
+    0.25,
+    0.15
+   ],
+   "roughness": 0.95,
+   "metalness": 0,
+   "tileMetres": 0.25,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Harlan's mask is baked_unique on the character; this tiling version is for spare sacks and the mask-making chair."
+  },
+  {
+   "id": "flannel_red",
+   "family": "flannel",
+   "params": {
+    "check": "buffalo",
+    "checkSize": 0.05,
+    "secondary": [
+     0.02,
+     0.02,
+     0.02
+    ],
+    "pilling": 0.6,
+    "stains": 0.4,
+    "seed": 86
+   },
+   "avgAlbedo": [
+    0.22,
+    0.035,
+    0.03
+   ],
+   "roughness": 0.9,
+   "metalness": 0,
+   "tileMetres": 0.15,
+   "hero": false,
+   "wetness": 0,
+   "source": "baked_unique"
+  },
+  {
+   "id": "nightgown_silt",
+   "family": "nightgown",
+   "params": {
+    "base": [
+     0.55,
+     0.52,
+     0.44
+    ],
+    "silt": [
+     0.12,
+     0.13,
+     0.08
+    ],
+    "siltAmount": 0.6,
+    "translucencyWet": 0.4,
+    "lace": true,
+    "seed": 87
+   },
+   "avgAlbedo": [
+    0.4,
+    0.39,
+    0.33
+   ],
+   "roughness": 0.7,
+   "metalness": 0,
+   "tileMetres": 0.4,
+   "hero": false,
+   "wetness": 0.9,
+   "source": "baked_unique"
+  },
+  {
+   "id": "wedding_satin",
+   "family": "fabric",
+   "params": {
+    "weave": "satin",
+    "yellowing": 0.55,
+    "dust": 0.5,
+    "foxing": 0.3,
+    "lace": true,
+    "seed": 88
+   },
+   "avgAlbedo": [
+    0.55,
+    0.52,
+    0.44
+   ],
+   "roughness": 0.45,
+   "metalness": 0,
+   "tileMetres": 0.4,
+   "hero": true,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "The wedding dress on the dummy (two mesh states: intact hem / cut hem)."
+  },
+  {
+   "id": "ticking_mattress",
+   "family": "fabric",
+   "params": {
+    "weave": "ticking_stripe",
+    "stripe": [
+     0.05,
+     0.06,
+     0.1
+    ],
+    "stains": 0.7,
+    "seed": 89
+   },
+   "avgAlbedo": [
+    0.35,
+    0.33,
+    0.3
+   ],
+   "roughness": 0.9,
+   "metalness": 0,
+   "tileMetres": 0.3,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated"
+  },
+  {
+   "id": "wool_coats",
+   "family": "fabric",
+   "params": {
+    "weave": "twill",
+    "variants": 4,
+    "dust": 0.3,
+    "seed": 90
+   },
+   "avgAlbedo": [
+    0.07,
+    0.065,
+    0.06
+   ],
+   "roughness": 0.95,
+   "metalness": 0,
+   "tileMetres": 0.3,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Strangers' coats in Harlan's wardrobe."
+  },
+  {
+   "id": "rubber_black",
+   "family": "rubber",
+   "params": {
+    "sheen": 0.5,
+    "cracks": 0.35,
+    "scuffs": 0.4,
+    "seed": 91
+   },
+   "avgAlbedo": [
+    0.018,
+    0.018,
+    0.018
+   ],
+   "roughness": 0.4,
+   "metalness": 0,
+   "tileMetres": 0.5,
+   "hero": false,
+   "wetness": 0.5,
+   "source": "generated",
+   "notes": "Rubber sheet on the sawbuck table, apron, boots, tyres."
+  },
+  {
+   "id": "leather_worn",
+   "family": "leather",
+   "params": {
+    "grain": 0.5,
+    "creases": 0.6,
+    "wear": 0.5,
+    "seed": 92
+   },
+   "avgAlbedo": [
+    0.035,
+    0.022,
+    0.015
+   ],
+   "roughness": 0.55,
+   "metalness": 0,
+   "tileMetres": 0.2,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Driving gloves, handbag, bell-pull backing, ledger binding."
+  },
+  {
+   "id": "skin_ada",
+   "family": "skin",
+   "params": {
+    "tone": [
+     0.33,
+     0.35,
+     0.37
+    ],
+    "veins": 0.55,
+    "wrinklingFromWater": 0.6,
+    "sss": 0.3,
+    "lividity": 0.4,
+    "seed": 101
+   },
+   "avgAlbedo": [
+    0.3,
+    0.32,
+    0.34
+   ],
+   "roughness": 0.45,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 0.8,
+   "source": "baked_unique"
+  },
+  {
+   "id": "skin_harlan",
+   "family": "skin",
+   "params": {
+    "tone": [
+     0.45,
+     0.3,
+     0.23
+    ],
+    "weathering": 0.7,
+    "liverSpots": 0.4,
+    "sss": 0.4,
+    "seed": 102
+   },
+   "avgAlbedo": [
+    0.42,
+    0.28,
+    0.22
+   ],
+   "roughness": 0.5,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 0,
+   "source": "baked_unique",
+   "notes": "Only his forearms/neck; the face is never rendered."
+  },
+  {
+   "id": "hair_wet_black",
+   "family": "hair",
+   "params": {
+    "strandWidth": 0,
+    "clumping": 0.85,
+    "specShift": 0.05,
+    "alphaThreshold": 0.35,
+    "seed": 103
+   },
+   "avgAlbedo": [
+    0.012,
+    0.011,
+    0.011
+   ],
+   "roughness": 0.25,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 1,
+   "source": "baked_unique"
+  },
+  {
+   "id": "car_paint_sedan",
+   "family": "car_paint",
+   "params": {
+    "base_srgb": [
+     0.28,
+     0.35,
+     0.45
+    ],
+    "metallicFlake": 0.3,
+    "clearcoat": 0.6,
+    "oxidation": 0.4,
+    "dirtLower": 0.6,
+    "seed": 111
+   },
+   "avgAlbedo": [
+    0.05,
+    0.075,
+    0.11
+   ],
+   "roughness": 0.35,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": true,
+   "wetness": 0.9,
+   "source": "generated",
+   "notes": "Player sedan RVX-318: faded late-80s steel blue."
+  },
+  {
+   "id": "car_paint_wreck",
+   "family": "car_paint",
+   "params": {
+    "baseVariants_srgb": [
+     0.5,
+     0.45,
+     0.35
+    ],
+    "variants": 5,
+    "oxidation": 0.9,
+    "rustThrough": 0.5,
+    "moss": 0.3,
+    "seed": 112
+   },
+   "avgAlbedo": [
+    0.1,
+    0.075,
+    0.055
+   ],
+   "roughness": 0.75,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 0.7,
+   "source": "generated"
+  },
+  {
+   "id": "car_interior_tan",
+   "family": "car_interior",
+   "params": {
+    "vinyl": [
+     0.3,
+     0.22,
+     0.14
+    ],
+    "velour": 0.5,
+    "dashCrack": 0.4,
+    "seed": 113
+   },
+   "avgAlbedo": [
+    0.28,
+    0.2,
+    0.13
+   ],
+   "roughness": 0.7,
+   "metalness": 0,
+   "tileMetres": 0.5,
+   "hero": true,
+   "wetness": 0,
+   "source": "baked_unique"
+  },
+  {
+   "id": "car_interior_maroon",
+   "family": "car_interior",
+   "params": {
+    "vinyl": [
+     0.12,
+     0.028,
+     0.032
+    ],
+    "velour": 0.6,
+    "dashCrack": 0.2,
+    "seed": 114
+   },
+   "avgAlbedo": [
+    0.11,
+    0.025,
+    0.03
+   ],
+   "roughness": 0.7,
+   "metalness": 0,
+   "tileMetres": 0.5,
+   "hero": false,
+   "wetness": 0,
+   "source": "baked_unique",
+   "notes": "C7 sting re-trim of the same sedan interior."
+  },
+  {
+   "id": "wax_candle",
+   "family": "wax",
+   "params": {
+    "sss": 0.6,
+    "drips": 0.8,
+    "soot": 0.3,
+    "seed": 121
+   },
+   "avgAlbedo": [
+    0.62,
+    0.57,
+    0.44
+   ],
+   "roughness": 0.4,
+   "metalness": 0,
+   "tileMetres": 0.2,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated"
+  },
+  {
+   "id": "paper_aged",
+   "family": "paper",
+   "params": {
+    "foxing": 0.5,
+    "waterDamage": 0.3,
+    "ruled": true,
+    "ink": [
+     0.02,
+     0.02,
+     0.04
+    ],
+    "seed": 122
+   },
+   "avgAlbedo": [
+    0.55,
+    0.48,
+    0.35
+   ],
+   "roughness": 0.9,
+   "metalness": 0,
+   "tileMetres": 0.3,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Guest book, ledger, letter, bus ticket. Text drawn at runtime by src/materials/handwriting.ts."
+  },
+  {
+   "id": "rope_hemp",
+   "family": "rope",
+   "params": {
+    "strands": 3,
+    "twist": 0.8,
+    "fuzz": 0.5,
+    "grime": 0.5,
+    "seed": 123
+   },
+   "avgAlbedo": [
+    0.28,
+    0.22,
+    0.14
+   ],
+   "roughness": 0.9,
+   "metalness": 0,
+   "tileMetres": 0.15,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "The door rope, the bell wire uses cast_iron."
+  },
+  {
+   "id": "photo_print",
+   "family": "paper",
+   "params": {
+    "sepia": 0.7,
+    "faceKnifedOut": true,
+    "foxing": 0.4,
+    "seed": 124
+   },
+   "avgAlbedo": [
+    0.25,
+    0.23,
+    0.2
+   ],
+   "roughness": 0.35,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 0,
+   "source": "baked_unique",
+   "notes": "Wedding portrait and 1970 pump photo (faces knifed out); locket photo is water-bloomed."
+  }
+ ]
+}
