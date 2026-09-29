@@ -9,3 +9,5 @@ blender/.cache/
 .cache/
 scratch/
 .DS_Store
+__pycache__/
+*.pyc

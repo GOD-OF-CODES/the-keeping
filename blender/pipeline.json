@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "blender": "/Applications/Blender.app/Contents/MacOS/Blender",
+  "libInputs": ["blender/lib/*.py"],
+  "sharedAssetDirs": ["public/assets/voice"],
+  "budgetsMB": { "low": 25, "medium": 60, "max": 120 },
+  "jobs": [
+    {
+      "id": "smoke-s1",
+      "group": "smoke",
+      "description": "S1 GLB export: UV2, extras, 2 NLA clips, shape key, meshopt; parsed by three r186 in Node",
+      "script": "blender/tests/smoke_s1.py",
+      "inputs": ["blender/tests/check_glb.mjs"],
+      "outputs": [{ "path": ".cache/smoke/s1/result.json" }, { "path": ".cache/smoke/s1/s1_meshopt.glb" }],
+      "post": [["node", "blender/tests/check_glb.mjs", ".cache/smoke/s1"]]
+    },
+    {
+      "id": "smoke-s3",
+      "group": "smoke",
+      "description": "S3 photometric calibration: DIFFUSE bake vs analytic point-light irradiance",
+      "script": "blender/tests/smoke_s3.py",
+      "outputs": [{ "path": ".cache/smoke/s3/result.json" }]
+    },
+    {
+      "id": "smoke-s4-1024-64",
+      "group": "smoke",
+      "description": "S4 bake budget: 5x6x3 m room, 1024^2 @ 64 spp Metal + OIDN",
+      "script": "blender/tests/smoke_s4.py",
+      "args": ["--size", "1024", "--samples", "64"],
+      "cyclesLog": true,
+      "outputs": [{ "path": ".cache/smoke/s4/room_1024_64.json" }, { "path": ".cache/smoke/s4/room_1024_64.npz" }]
+    },
+    {
+      "id": "smoke-s4-1024-128",
+      "group": "smoke",
+      "description": "S4 bake budget: 1024^2 @ 128 spp Metal + OIDN",
+      "script": "blender/tests/smoke_s4.py",
+      "args": ["--size", "1024", "--samples", "128"],
+      "cyclesLog": true,
+      "outputs": [{ "path": ".cache/smoke/s4/room_1024_128.json" }, { "path": ".cache/smoke/s4/room_1024_128.npz" }]
+    },
+    {
+      "id": "smoke-s4-2048-32",
+      "group": "smoke",
+      "manual": true,
+      "description": "S4 optional 2048^2 @ 32 spp (only with plenty of free RAM, no browser open)",
+      "script": "blender/tests/smoke_s4.py",
+      "args": ["--size", "2048", "--samples", "32", "--min-avail-gb", "2.5"],
+      "cyclesLog": true,
+      "outputs": [{ "path": ".cache/smoke/s4/room_2048_32.json" }]
+    },
+    {
+      "id": "smoke-s2",
+      "group": "smoke",
+      "description": "S2 lightmap container: F-pattern orientation, EXR codecs x RGB/RGBA, f16gz fallback, real atlas sizes",
+      "script": "blender/tests/smoke_s2.py",
+      "inputs": [".cache/smoke/s4/*.npz", "blender/tests/check_exr.mjs"],
+      "outputs": [{ "path": ".cache/smoke/s2/result.json" }],
+      "post": [["node", "blender/tests/check_exr.mjs", ".cache/smoke/s2"]]
+    },
+    {
+      "id": "house",
+      "group": "content",
+      "placeholder": true,
+      "description": "House kit from src/shared/level-layout.json -> public/assets/<tier>/house_*.glb (+ collision)",
+      "script": "blender/house/build_house.py",
+      "inputs": ["src/shared/level-layout.json", "src/shared/material-spec.json", "blender/house/**"],
+      "outputs": []
+    },
+    {
+      "id": "props",
+      "group": "content",
+      "placeholder": true,
+      "description": "Prop generators (facing -y at yaw 0) -> public/assets/<tier>/prop_*.glb",
+      "script": "blender/props/build_props.py",
+      "inputs": ["src/shared/level-layout.json", "src/shared/material-spec.json", "blender/props/**"],
+      "outputs": []
+    },
+    {
+      "id": "characters",
+      "group": "content",
+      "placeholder": true,
+      "description": "Ada / Harlan / arms meshes, rigs, hair, cloth, baked textures",
+      "script": "blender/characters/build_characters.py",
+      "inputs": ["blender/characters/**"],
+      "outputs": []
+    },
+    {
+      "id": "anims",
+      "group": "content",
+      "placeholder": true,
+      "description": "Clips via the layered Action API, one per NLA track -> ada.glb / harlan.glb / arms.glb",
+      "script": "blender/anim/build_anims.py",
+      "inputs": ["blender/anim/**", "blender/characters/**"],
+      "outputs": []
+    },
+    {
+      "id": "bake",
+      "group": "content",
+      "placeholder": true,
+      "description": "Lightmap atlases (one atlas per Blender process) -> .cache/bake/*.npz",
+      "script": "blender/bake/bake_atlases.py",
+      "inputs": ["src/shared/level-layout.json", "src/shared/material-spec.json", "blender/bake/**", "blender/house/**"],
+      "outputs": []
+    },
+    {
+      "id": "encode",
+      "group": "content",
+      "placeholder": true,
+      "description": "Per-tier lightmap encode (lib/encode.py TIER_POLICY) -> public/assets/<tier>/lm_*.exr + .json",
+      "script": "blender/bake/encode_atlases.py",
+      "inputs": [".cache/bake/*.npz", "blender/bake/**"],
+      "outputs": []
+    }
+  ]
+}
