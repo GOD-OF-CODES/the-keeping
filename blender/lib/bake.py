@@ -42,7 +42,7 @@ def bake_atlas(objs, size, uv_layer=LIGHTMAP, name='LM', pass_filter=('DIRECT', 
             grey = grey or materials.make('__bake_grey', (0.5, 0.5, 0.5))
             ob.data.materials.append(grey)
         for mat in ob.data.materials:
-            if mat is not None:
+            if mat is not None and all(m is not mat for m, _ in nodes):  # materials shared across objects: once
                 nodes.append((mat, _target_node(mat, img)))
     select(objs)
     t0 = time.perf_counter()
