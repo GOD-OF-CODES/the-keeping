@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>THE KEEPING — audio lab</title>
+    <style>
+      body { margin: 0; background: #111013; }
+    </style>
+  </head>
+  <body>
+    <!-- Dev-only audition page (vite dev: /src/audio/lab.html). Not part of the production build inputs. -->
+    <script type="module">
+      import { startAudioLab } from './lab.ts';
+      startAudioLab(document.body);
+    </script>
+  </body>
+</html>
