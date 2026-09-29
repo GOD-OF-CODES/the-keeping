@@ -1,7 +1,12 @@
 // Game entry — reached ONLY via `import('../game/main.ts')` from the boot page after Start.
-// Builds the GameContext, renderer (backend chosen before construction), pipeline, loop, FPS overlay, input,
-// pause menu and — until the real level ships — the RENDER TEST ROOM (also forced with ?scene=test).
-// Debug: ?debug exposes window.__game. ?backend=webgl forces the WebGL2 backend.
+// Builds the GameContext, renderer (backend chosen before construction), pipeline, loop, FPS overlay, input and
+// pause menu, then the scene:
+//   default        → THE LEVEL (src/world/level.ts) at spawn CP1 (outside at the gate); ?spawn=<id> picks another
+//                    layout spawn. Falls back to the render test room if the tier's assets are missing.
+//   ?scene=test    → the render test room (src/game/test-room.ts)
+//   ?scene=matlab  → material lab (src/materials)          ?scene=audiolab → audio lab (src/audio/lab.ts)
+// Debug: ?debug exposes window.__game (teleport, rooms, flags, doors, culling, noclip …). ?backend=webgl forces
+// the WebGL2 backend. Update order: input → player/hides → world → audio → render.
 
 import * as THREE from 'three/webgpu';
 import type { BootHandoff } from '../boot/handoff.ts';
@@ -10,21 +15,32 @@ import { EventBus } from '../core/events.ts';
 import { FpsOverlay } from '../core/fps-overlay.ts';
 import { Input } from '../core/input.ts';
 import { Loop } from '../core/loop.ts';
-import { PRESETS } from '../render/presets.ts';
+import { PRESETS, type PresetConfig } from '../render/presets.ts';
 import { createRenderer, effectivePixelRatio } from '../render/renderer.ts';
-import { createPipeline } from '../render/pipeline.ts';
+import { createPipeline, type Pipeline } from '../render/pipeline.ts';
 import { DynamicResolution } from '../render/dynres.ts';
 import { createFlashlight } from '../render/flashlight.ts';
 import { uLightning } from '../render/lightmap-material.ts';
 import { bakeProbeGrid, excludeGridFromLightmapped } from '../render/probes.ts';
 import type { GameContext } from './context.ts';
 import type { LevelLayout } from '../shared/layout-types.ts';
+import layoutJson from '../shared/level-layout.json';
 import { buildTestRoom, ROOM } from './test-room.ts';
 import { TestController } from './test-controller.ts';
 import { PauseMenu, clickToBegin } from './pause-menu.ts';
 
 /** String literal that survives minification; scripts/verify-boot.mjs asserts it never reaches the boot chunk. */
 export const GAME_CHUNK_MARKER = 'the-keeping:game-runtime';
+
+/** What a scene (level or test room) plugs into the shared loop. */
+interface SceneRuntime {
+  beginText: [string, string];
+  /** Game logic for one frame (dt = 0 while paused is NOT passed: `paused` tells). */
+  update(dt: number, now: number, paused: boolean, lightning: number): void;
+  /** Same without input (automation: gpuFrameMs). */
+  step(dt: number, t: number, lightning: number): void;
+  expose: Record<string, unknown>;
+}
 
 export async function startGame(h: BootHandoff): Promise<void> {
   console.info(`[game] ${GAME_CHUNK_MARKER} three r${THREE.REVISION}`);
@@ -34,6 +50,12 @@ export async function startGame(h: BootHandoff): Promise<void> {
   const presetId = settings.preset;
   const preset = PRESETS[presetId];
   const forceWebGL = settings.forceWebGL || params.get('backend') === 'webgl';
+  const sceneParam = params.get('scene');
+  if (sceneParam === 'matlab') return (await import('./matlab.ts')).startMatlab(h); // material lab (src/materials)
+  if (sceneParam === 'audiolab') {
+    if (h.bootRoot) h.bootRoot.style.display = 'none';
+    return (await import('../audio/lab.ts')).startAudioLab(document.body, { context: h.audioContext, settings });
+  }
 
   const gameRoot = document.getElementById('game') ?? document.body;
   gameRoot.style.display = 'block';
@@ -44,8 +66,8 @@ export async function startGame(h: BootHandoff): Promise<void> {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  const camera = new THREE.PerspectiveCamera(settings.fovDeg, window.innerWidth / window.innerHeight, 0.03, 60);
-  scene.add(camera); // the flashlight is parented to the camera: it must be in the scene graph
+  const camera = new THREE.PerspectiveCamera(settings.fovDeg, window.innerWidth / window.innerHeight, 0.03, 90);
+  scene.add(camera); // flashlight rigs hang off the camera or follow it: keep it in the graph
 
   const ctx: GameContext = {
     settings,
@@ -57,66 +79,56 @@ export async function startGame(h: BootHandoff): Promise<void> {
     backend,
     events: new EventBus(),
     time: { now: 0, dt: 0, frame: 0 },
-    layout: { version: 1 } as unknown as LevelLayout, // real layout arrives with src/shared/level-layout.json
+    layout: layoutJson as unknown as LevelLayout,
     debug,
     systems: new Map(),
     flags: new Map(),
   };
+  const input = new Input(canvas);
 
-  // ---- Scene: render test room (default until the real level exists; ?scene=test forces it) ----
-  h.status('Building the test room…');
-  await nextFrame();
-  const room = buildTestRoom(scene, preset);
-  const flashlight = createFlashlight(camera, preset);
-
-  // Lightmapped surfaces: realtime lights only (never the probe grid → no double indirect).
-  const lmLights = [flashlight.light, ...room.candleLights];
-  if (!preset.lightmaps.lightningFlashMaps) lmLights.push(room.lightningLight);
-  excludeGridFromLightmapped(room.lightmappedMaterials, lmLights);
-
-  // ---- Light probes (dynamic objects) ----
-  h.status('Baking light probes…');
-  await nextFrame();
-  const pc = preset.probes.cubemapSize;
-  const probe = await bakeProbeGrid(renderer, scene, {
-    size: [ROOM.maxX - ROOM.minX - 0.3, ROOM.height - 0.3, ROOM.maxZ - ROOM.minZ - 0.3],
-    center: [0, ROOM.height / 2, 0],
-    counts: [5, 3, 6],
-    cubemapSize: pc,
-    near: 0.05,
-    far: 12,
-    hide: [flashlight.light, flashlight.beam, room.dynamicGroup],
-  });
-  if (probe.grid) {
-    scene.add(probe.grid);
-    const total = probe.fenced ? `total (GPU-complete) ${probe.totalMs.toFixed(1)} ms` : 'GPU completion not measured (fence timed out)';
-    console.info(`[probes] LightProbeGrid ${probe.probes} probes @ cubemap ${pc}: submit ${probe.submitMs.toFixed(1)} ms, ${total} [${backend}]`);
-  } else {
-    console.warn(`[probes] bake failed on ${backend}: ${probe.error}. Dynamic objects fall back to realtime lights only.`);
-    scene.add(new THREE.HemisphereLight(0x303848, 0x120c08, 0.35)); // minimal fill; not added to lightmapped lightsNode
+  // ---- Scene
+  let runtime: SceneRuntime | null = null;
+  let lightningHooks: LightningHooks = { exposureScale: 1 };
+  if (sceneParam !== 'test') {
+    try {
+      const r = await startLevel(h, ctx, input, params);
+      runtime = r.runtime;
+      lightningHooks = r.lightning;
+    } catch (e) {
+      console.warn('[game] level failed to load — falling back to the render test room:', e);
+      document.querySelectorAll('.tk-loading-overlay').forEach((n) => n.remove());
+    }
   }
+  if (!runtime) {
+    const r = await startTestRoom(h, ctx, input, preset, backend);
+    runtime = r.runtime;
+    lightningHooks = r.lightning;
+  }
+  const rt = runtime;
 
-  // ---- Pipeline ----
+  // ---- Pipeline
   h.status('Compiling shaders…');
   const pipeline = createPipeline(renderer, scene, camera, preset);
   const dynres = new DynamicResolution(preset.dynamicResolution, preset.sceneScale);
-  const input = new Input(canvas);
-  const controller = new TestController(camera, input, room.spawn, { x0: ROOM.minX, x1: ROOM.maxX, z0: ROOM.minZ, z1: ROOM.maxZ }, room.obstacles);
   camera.updateMatrixWorld(true);
   const tc = performance.now();
   try {
     // WebGL2 polls KHR_parallel_shader_compile with requestAnimationFrame, which stalls in a hidden tab: cap the
     // wait; anything not compiled yet compiles synchronously on the first frames.
-    const done = await Promise.race([renderer.compileAsync(scene, camera).then(() => true), delay(15000).then(() => false)]);
-    if (!done) console.warn('[game] compileAsync still pending after 15 s (hidden tab?) — continuing');
+    const done = await Promise.race([renderer.compileAsync(scene, camera).then(() => true), delay(20000).then(() => false)]);
+    if (!done) console.warn('[game] compileAsync still pending after 20 s (hidden tab?) — continuing');
   } catch (e) {
     console.warn('[game] compileAsync failed (continuing):', e);
   }
   pipeline.render(); // warm-up frames compile the post chain behind the loading screen
+  await (rt.expose.afterCompile as ((render: () => void) => Promise<void>) | undefined)?.(() => {
+    renderer._nodes?.nodeFrame?.update(); // new node frame, or FRAME-updated passes (scene pass …) are skipped
+    pipeline.render();
+  });
   pipeline.render();
   console.info(`[game] shader compile + warm-up ${(performance.now() - tc).toFixed(0)} ms`);
 
-  // ---- FPS overlay ----
+  // ---- FPS overlay
   const overlay = new FpsOverlay(document.body);
   const extraLine = () => {
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
@@ -124,15 +136,15 @@ export async function startGame(h: BootHandoff): Promise<void> {
     const internal = pipeline.kind === 'post' ? ` · scene ${Math.round(size.x * sc)}×${Math.round(size.y * sc)}` : '';
     const eff = loop.cap.effectiveCap(settings.fpsCap, settings.fpsCapDivisorMode);
     const capText = settings.fpsCap === 0 ? 'uncapped' : `cap ${eff > 0 ? eff.toFixed(eff % 1 ? 1 : 0) : settings.fpsCap}`;
-    return `${preset.label} · ${backend} · ${size.x}×${size.y}${internal}\n${capText} · ${loop.cap.refreshHz.toFixed(0)} Hz`;
+    const where = (rt.expose.whereText as (() => string) | undefined)?.() ?? '';
+    return `${preset.label} · ${backend} · ${size.x}×${size.y}${internal}\n${capText} · ${loop.cap.refreshHz.toFixed(0)} Hz${where ? `\n${where}` : ''}`;
   };
   overlay.setExtra(extraLine);
-  overlay.setVisible(settings.showFps);
 
-  // ---- Lightning (L, and occasionally on its own) ----
-  const lightning = createLightning(ctx, pipeline.uniforms.exposure, room.lightningLight);
+  // ---- Lightning (L, and occasionally on its own)
+  const lightning = createLightning(ctx, pipeline, lightningHooks);
 
-  // ---- Loop ----
+  // ---- Loop
   let paused = true;
   let lastRenderT = -1;
   const loop: Loop = new Loop(
@@ -141,14 +153,9 @@ export async function startGame(h: BootHandoff): Promise<void> {
         ctx.time.dt = dt;
         ctx.time.now = nowSec;
         ctx.time.frame = loop.frame;
-        if (!paused) {
-          controller.update(dt, settings);
-          if (input.wasPressed('KeyL')) lightning.strike();
-          if (input.wasPressed('KeyF')) flashlight.setOn(!flashlight.light.visible);
-        }
-        room.update(dt, nowSec);
-        flashlight.update(dt, nowSec);
+        if (!paused && input.wasPressed('KeyL')) lightning.strike();
         lightning.update(dt, paused);
+        rt.update(dt, nowSec, paused, lightning.level);
         input.endFrame();
       },
       render() {
@@ -176,6 +183,8 @@ export async function startGame(h: BootHandoff): Promise<void> {
     },
   );
 
+  overlay.setVisible(settings.showFps); // after `loop` exists: extraLine reads it
+
   const onResize = () => {
     renderer.setPixelRatio(effectivePixelRatio(preset));
     renderer.setSize(window.innerWidth, window.innerHeight, false);
@@ -184,8 +193,8 @@ export async function startGame(h: BootHandoff): Promise<void> {
   };
   window.addEventListener('resize', onResize);
 
-  // ---- Pause / pointer lock ----
-  const begin = clickToBegin('Click to begin', 'WASD move · Shift walk faster · mouse look · F flashlight · L lightning · Esc pause');
+  // ---- Pause / pointer lock
+  const begin = clickToBegin(rt.beginText[0], rt.beginText[1]);
   begin.hide();
   const menu = new PauseMenu(settings, presetId, {
     onResume: () => void resume(),
@@ -243,8 +252,9 @@ export async function startGame(h: BootHandoff): Promise<void> {
   input.onLockLost = () => setPaused(true);
   begin.el.addEventListener('click', () => void input.requestLock());
 
-  // ---- Start ----
+  // ---- Start
   h.status('Ready.');
+  (rt.expose.onReady as (() => void) | undefined)?.();
   if (h.bootRoot) h.bootRoot.style.display = 'none';
   gameRoot.style.visibility = 'visible';
   loop.start();
@@ -258,13 +268,11 @@ export async function startGame(h: BootHandoff): Promise<void> {
     pipeline,
     loop,
     overlay,
-    probe,
-    room,
-    flashlight,
     dynres,
     lightning,
     input,
     backendReason,
+    ...rt.expose,
     stats: () => overlay.last,
     setCap: (cap: 0 | 30 | 60, divisor = settings.fpsCapDivisorMode) => {
       settings.fpsCap = cap;
@@ -283,6 +291,30 @@ export async function startGame(h: BootHandoff): Promise<void> {
       setPaused(false);
     },
     memory: () => renderer.info.memory,
+    /**
+     * Advances the game n frames WITHOUT rAF (hidden tabs / automation): full update (as if unpaused) + render.
+     * Optional `keys` are held down during the frames (KeyboardEvent.code, e.g. ['KeyW', 'ShiftLeft']).
+     */
+    advance: async (n = 1, dt = 1 / 60, keys: string[] = []) => {
+      for (const k of keys) input.down.add(k);
+      try {
+        for (let i = 0; i < n; i++) {
+          renderer._nodes?.nodeFrame?.update();
+          const now = ctx.time.now + dt;
+          ctx.time.dt = dt;
+          ctx.time.now = now;
+          lightning.update(dt, false);
+          rt.update(dt, now, false, lightning.level);
+          input.endFrame();
+          pipeline.render();
+          if (i % 20 === 19) await new Promise((r) => setTimeout(r, 0));
+        }
+      } finally {
+        for (const k of keys) input.down.delete(k);
+      }
+      return rt.expose.whereText ? (rt.expose.whereText as () => string)() : '';
+    },
+    /** Measures `n` fenced frames of pure rendering at the current view: mean ms. */
     /**
      * Renders n frames back-to-back WITHOUT rAF, fenced every 10 frames (1×1 readback), and returns the
      * mean GPU-complete frame time (throughput). Works in hidden tabs (automation) and gives a vsync-free cost estimate.
@@ -306,8 +338,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
         // Without rAF the renderer's Animation loop doesn't advance the node frame, so FRAME-updated passes
         // (scene pass, TAAU, bloom …) would run once and then be skipped. Advance it like Animation does.
         renderer._nodes?.nodeFrame?.update();
-        room.update(1 / 60, i / 60);
-        flashlight.update(1 / 60, i / 60);
+        rt.step(1 / 60, i / 60, 0);
         pipeline.render();
         if (i % 10 === 9) await gpuFence(renderer); // bound the queue depth
       }
@@ -317,7 +348,375 @@ export async function startGame(h: BootHandoff): Promise<void> {
   };
   if (debug) (window as unknown as { __game: unknown }).__game = expose;
   ctx.systems.set('debug', { id: 'debug' });
-  console.info(`[game] ready: preset=${presetId}, backend=${backend}, pixelRatio=${renderer.getPixelRatio()}, probes=${probe.grid ? 'ok' : 'failed'}`);
+  console.info(`[game] ready: preset=${presetId}, backend=${backend}, pixelRatio=${renderer.getPixelRatio()}`);
+}
+
+// ================================================================================================ the level
+
+async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params: URLSearchParams): Promise<{ runtime: SceneRuntime; lightning: LightningHooks }> {
+  const { renderer, scene, camera, preset } = ctx;
+  const [{ loadLevel, SKY_COLOR }, { LoadingOverlay }, { FlashlightRig }, { PlayerController }, { HideSystem }, { Interactables, bindDefaultInteractions }, { Inventory, Journal }, coords] =
+    await Promise.all([
+      import('../world/level.ts'),
+      import('../world/loading-overlay.ts'),
+      import('../player/flashlight-rig.ts'),
+      import('../player/controller.ts'),
+      import('../world/hides.ts'),
+      import('../world/interactables.ts'),
+      import('../player/inventory.ts'),
+      import('../shared/coords.ts'),
+    ]);
+  const overlay = new LoadingOverlay(
+    [
+      { id: 'download', label: 'Downloading the house', weight: 40 },
+      { id: 'parse', label: 'Unpacking', weight: 6 },
+      { id: 'materials', label: 'Generating materials', weight: 20 },
+      { id: 'collision', label: 'Building collision', weight: 3 },
+      { id: 'probes', label: 'Baking light probes', weight: 14 },
+      { id: 'audio', label: 'Synthesizing sound', weight: 10 },
+      { id: 'compile', label: 'Compiling shaders', weight: 7 },
+    ],
+    (t) => h.status(t),
+  );
+  overlay.el.classList.add('tk-loading-overlay');
+  if (h.bootRoot) h.bootRoot.style.display = 'none';
+
+  const rig = new FlashlightRig(scene, camera, preset);
+
+  // Audio prerender runs while the house downloads (it needs ctx.layout, already the real layout).
+  const audioP = (async () => {
+    try {
+      const { createAudioSystem } = await import('../audio/engine.ts');
+      return await createAudioSystem(ctx, { context: h.audioContext, onProgress: (f: number, l: string) => overlay.set('audio', f, l) });
+    } catch (e) {
+      console.warn('[game] audio unavailable:', e);
+      return null;
+    } finally {
+      overlay.set('audio', 1);
+    }
+  })();
+
+  let level: Awaited<ReturnType<typeof loadLevel>>;
+  try {
+    level = await loadLevel({ ctx, renderer, scene, preset, presetId: ctx.presetId, overlay, flashlight: rig.flashlight });
+  } catch (e) {
+    overlay.remove();
+    scene.remove(rig.rig);
+    throw e;
+  }
+  const audio: any = await audioP;
+
+  // ---- player, hides, interaction
+  const player = new PlayerController(camera, input, ctx, { collision: level.collision, index: level.index, room: () => level.room });
+  const hides = new HideSystem(ctx, camera, player, input, audio);
+  const inventory = new Inventory(ctx);
+  const journal = new Journal();
+  const interact = new Interactables(camera, input, level);
+  const toastEl = makeToast();
+  // Hiding: the torch goes off inside (a lit wardrobe gives you away); it comes back on as you step out.
+  let torchBeforeHide = true;
+  ctx.events.on('player:hide', ({ inside }) => {
+    if (inside) {
+      torchBeforeHide = rig.on;
+      rig.setOn(false);
+    } else rig.setOn(torchBeforeHide);
+  });
+  bindDefaultInteractions(interact, { ctx, level, doors: level.doors, hides, inventory, journal, sound: audio, toast: toastEl.show });
+  if (audio) {
+    level.doors.setSound(audio);
+    player.setAudio(audio);
+    audio.setDoorStateProvider(level.doors.isOpenFn);
+    audio.setLayout?.(ctx.layout);
+  }
+
+  const spawnId = params.get('spawn') ?? 'CP1';
+  const teleport = (id: string): boolean => {
+    const s = level.spawn(id);
+    if (!s) return false;
+    if (hides.active) hides.exit();
+    player.teleport(s.eye, s.yaw, s.pitch);
+    rig.snap();
+    const pf = player.planFeet();
+    level.setViewer(pf[0], pf[1], pf[2]);
+    return true;
+  };
+  if (!teleport(spawnId)) {
+    console.warn(`[game] unknown spawn '${spawnId}' — using CP1`);
+    teleport('CP1');
+  }
+
+  // ---- per-frame state
+  let lastRoom: string | null = null;
+  let weatherKey = '';
+  const insideTriggers = new Set<string>();
+  const sky = new THREE.Color(...SKY_COLOR);
+  const fog = new THREE.FogExp2(new THREE.Color(0.012, 0.014, 0.019), 0.0);
+  scene.fog = fog;
+
+  const world = (dt: number, t: number, lightning: number) => {
+    // culling + room from the camera (hides move the camera, not the body)
+    const cp = coords.worldToPlan([camera.position.x, camera.position.y, camera.position.z]);
+    const feetZ = hides.active ? hides.active.entry[2] : player.planFeet()[2];
+    const changed = level.setViewer(cp[0], cp[1], feetZ);
+    const outside = level.isOutside();
+    if (changed || lastRoom === null) {
+      lastRoom = level.room;
+      if (audio && level.room) audio.setListenerRoom(level.room);
+    }
+    // weather bed follows where you are (porch roof overhead = rain on the porch roof)
+    if (audio) {
+      const surf = outside ? (player.surface === 'porch_wood' ? 'porch' : 'gravel') : 'roof';
+      const key = `${outside}|${surf}`;
+      if (key !== weatherKey) {
+        weatherKey = key;
+        audio.layers.setWeather({ rain: 1, wind: outside ? 0.8 : 0.5, inside: outside ? 0 : 1, surface: surf });
+      }
+    }
+    fog.density = outside ? 0.028 : 0.0;
+    level.update(dt, t, lightning);
+    rig.update(dt, t);
+    // sky flash
+    (scene.background as any).setRGB(sky.r + lightning * 0.35, sky.g + lightning * 0.38, sky.b + lightning * 0.46);
+    // the rain haze is lit by the same sky: fog colour follows the background (flashes included)
+    fog.color.setRGB(sky.r * 1.05 + lightning * 0.3, sky.g * 1.05 + lightning * 0.33, sky.b * 1.05 + lightning * 0.4);
+  };
+
+  const runtime: SceneRuntime = {
+    beginText: ['Click to begin', 'WASD move · Shift run · C crouch · mouse look · E interact · F flashlight · Space hold breath · Tab journal · Esc pause'],
+    update(dt, now, paused, lightning) {
+      if (!paused) {
+        hides.update(dt);
+        player.update(dt, now);
+        if (input.wasPressed('KeyF')) {
+          rig.toggle();
+          audio?.play('flashlight_click', { gain: 0.6 });
+        }
+        if (input.wasPressed('Tab')) journal.toggle();
+        // story triggers (enter only): forwarded as `interact { id: trigger id, action: trigger event }`
+        const [px, py, pz] = player.planFeet();
+        const now2 = new Set(level.index.triggersAt(px, py, pz).map((t) => t.id));
+        for (const id of now2)
+          if (!insideTriggers.has(id)) {
+            const tv = ctx.layout.triggers.find((x) => x.id === id)!;
+            ctx.events.emit('interact', { id, action: tv.event });
+            if (ctx.debug) console.info(`[trigger] ${id} → ${tv.event}`);
+          }
+        insideTriggers.clear();
+        for (const id of now2) insideTriggers.add(id);
+      }
+      world(paused ? 0 : dt, now, lightning);
+      interact.update(dt, !paused && !hides.active);
+      audio?.update(paused ? 0 : dt, ctx);
+    },
+    step(dt, t, lightning) {
+      world(dt, t, lightning);
+    },
+    expose: {
+      level,
+      player,
+      hides,
+      inventory,
+      journal,
+      interact,
+      audio,
+      flashlight: rig.flashlight,
+      rig,
+      doors: level.doors,
+      /**
+       * Shadow/depth pipelines compile lazily the first time an object enters the flashlight frustum (a visible
+       * hitch). Walk the camera through every playable room's centre, 4 headings each, rendering with culling on,
+       * so those pipelines exist before the player gets there.
+       */
+      afterCompile: async (render: () => void) => {
+        const t0 = performance.now();
+        level.setCulling(true);
+        const saved = player.eye();
+        const yaw = player.yaw;
+        const pitch = player.pitch;
+        overlay.set('compile', 0.3, 'warming rooms');
+        const rooms = ctx.layout.rooms.filter((r) => r.kind !== 'set');
+        let k = 0;
+        for (const r of rooms) {
+          const e = level.index.elevationOf(r.id);
+          const cx = (r.rect[0] + r.rect[2]) / 2;
+          const cy = r.kind === 'exterior' ? Math.min(r.rect[3], -3) - 6 : (r.rect[1] + r.rect[3]) / 2;
+          const eye = coords.planToWorld([cx, cy, e + 1.6]);
+          for (let d = 0; d < 4; d++) {
+            camera.position.set(eye[0], eye[1], eye[2]);
+            camera.rotation.set(-0.2, (d * Math.PI) / 2, 0);
+            camera.updateMatrixWorld(true);
+            level.setViewer(cx, cy, e);
+            rig.snap();
+            rig.update(0.016, 0);
+            render();
+          }
+          overlay.set('compile', 0.3 + (0.7 * ++k) / rooms.length, r.id);
+          await nextFrame();
+        }
+        player.teleport(saved, yaw, pitch);
+        const pf = player.planFeet();
+        level.setViewer(pf[0], pf[1], pf[2]);
+        rig.snap();
+        rig.update(0.016, 0);
+        console.info(`[game] room warm-up ${(performance.now() - t0).toFixed(0)} ms`);
+      },
+      onReady: () => overlay.remove(),
+      whereText: () => {
+        const f = player.planFeet();
+        return `${level.room ?? '?'} · ${f.map((v) => v.toFixed(2)).join(', ')} · ${level.visible.size} rooms`;
+      },
+      teleport,
+      spawns: () => ctx.layout.spawns.map((s) => s.id),
+      rooms: () => ctx.layout.rooms.map((r) => r.id),
+      room: () => level.room,
+      /** Plan-space feet position. */
+      pos: () => player.planFeet(),
+      /** Teleport to a PLAN position (feet) with a heading (CCW from east, like the layout). */
+      goto: (x: number, y: number, z: number, heading = Math.PI / 2, pitch = 0) => {
+        player.teleport(coords.planToWorld([x, y, z + 1.65]), heading - Math.PI / 2, pitch);
+      },
+      look: (heading: number, pitch = 0) => {
+        player.yaw = heading - Math.PI / 2;
+        player.pitch = pitch;
+      },
+      setFlag: (name: string, value = true) => {
+        ctx.flags.set(name, value);
+        ctx.events.emit('flag', { name, value });
+      },
+      flags: () => Object.fromEntries(ctx.flags),
+      openDoor: (id: string, fast = false) => level.doors.open(id, fast, true),
+      closeDoor: (id: string, fast = false) => level.doors.close(id, fast),
+      ropeOpen: () => level.doors.ropeOpen(),
+      culling: (on: boolean) => level.setCulling(on),
+      noclip: (on = true) => {
+        player.noclip = on;
+      },
+      showCollision: (on = true) => {
+        const g = level.collision.debugGroup;
+        if (on && !g.parent) {
+          g.traverse((m: any) => {
+            if (m.isMesh) m.material = new THREE.MeshBasicNodeMaterial({ color: 0x00ff66, wireframe: true });
+          });
+          scene.add(g);
+        }
+        g.visible = on;
+      },
+      give: (id: string) => inventory.add({ id, label: id }),
+      /** Move a camera to a layout fixed camera (debug view; the player stays put). */
+      fixedCamera: (id: string) => {
+        const c = level.camera(id);
+        if (!c) return false;
+        player.enabled = false;
+        player.lookEnabled = false;
+        camera.position.set(...c.pos);
+        camera.lookAt(new THREE.Vector3(...c.target));
+        camera.fov = c.fovDeg;
+        camera.updateProjectionMatrix();
+        return true;
+      },
+      freeCamera: () => {
+        player.enabled = true;
+        player.lookEnabled = true;
+        camera.fov = ctx.settings.fovDeg;
+        camera.updateProjectionMatrix();
+      },
+    },
+  };
+  return {
+    runtime,
+    lightning: { exposureScale: 1 },
+  };
+}
+
+function makeToast(): { show(text: string): void } {
+  const el = document.createElement('div');
+  Object.assign(el.style, {
+    position: 'fixed',
+    left: '50%',
+    bottom: '14%',
+    transform: 'translateX(-50%)',
+    maxWidth: 'min(640px, calc(100% - 32px))',
+    zIndex: '21',
+    color: '#e6dfcf',
+    font: 'italic 16px/1.45 ui-serif, Georgia, serif',
+    textAlign: 'center',
+    textShadow: '0 1px 4px #000',
+    pointerEvents: 'none',
+    opacity: '0',
+    transition: 'opacity .35s',
+  } as Partial<CSSStyleDeclaration>);
+  document.body.appendChild(el);
+  let timer = 0;
+  return {
+    show(text: string) {
+      el.textContent = text;
+      el.style.opacity = '1';
+      clearTimeout(timer);
+      timer = window.setTimeout(() => (el.style.opacity = '0'), 2600 + text.length * 35);
+    },
+  };
+}
+
+// ================================================================================================ test room
+
+async function startTestRoom(h: BootHandoff, ctx: GameContext, input: Input, preset: PresetConfig, backend: string): Promise<{ runtime: SceneRuntime; lightning: LightningHooks }> {
+  const { renderer, scene, camera, settings } = ctx;
+  h.status('Building the test room…');
+  await nextFrame();
+  const room = buildTestRoom(scene, preset);
+  const flashlight = createFlashlight(camera, preset);
+
+  // Lightmapped surfaces: realtime lights only (never the probe grid → no double indirect).
+  const lmLights = [flashlight.light, ...room.candleLights];
+  if (!preset.lightmaps.lightningFlashMaps) lmLights.push(room.lightningLight);
+  excludeGridFromLightmapped(room.lightmappedMaterials, lmLights);
+
+  h.status('Baking light probes…');
+  await nextFrame();
+  const pc = preset.probes.cubemapSize;
+  const probe = await bakeProbeGrid(renderer, scene, {
+    size: [ROOM.maxX - ROOM.minX - 0.3, ROOM.height - 0.3, ROOM.maxZ - ROOM.minZ - 0.3],
+    center: [0, ROOM.height / 2, 0],
+    counts: [5, 3, 6],
+    cubemapSize: pc,
+    near: 0.05,
+    far: 12,
+    hide: [flashlight.light, flashlight.beam, room.dynamicGroup],
+  });
+  if (probe.grid) {
+    scene.add(probe.grid);
+    const total = probe.fenced ? `total (GPU-complete) ${probe.totalMs.toFixed(1)} ms` : 'GPU completion not measured (fence timed out)';
+    console.info(`[probes] LightProbeGrid ${probe.probes} probes @ cubemap ${pc}: submit ${probe.submitMs.toFixed(1)} ms, ${total} [${backend}]`);
+  } else {
+    console.warn(`[probes] bake failed on ${backend}: ${probe.error}. Dynamic objects fall back to realtime lights only.`);
+    scene.add(new THREE.HemisphereLight(0x303848, 0x120c08, 0.35)); // minimal fill; not added to lightmapped lightsNode
+  }
+  const controller = new TestController(camera, input, room.spawn, { x0: ROOM.minX, x1: ROOM.maxX, z0: ROOM.minZ, z1: ROOM.maxZ }, room.obstacles);
+  const SPOT_PEAK = 90; // candela
+  const runtime: SceneRuntime = {
+    beginText: ['Click to begin', 'WASD move · Shift walk faster · mouse look · F flashlight · L lightning · Esc pause'],
+    update(dt, now, paused, lightning) {
+      if (!paused) {
+        controller.update(dt, settings);
+        if (input.wasPressed('KeyF')) flashlight.setOn(!flashlight.light.visible);
+      }
+      room.update(dt, now);
+      flashlight.update(dt, now);
+      room.lightningLight.intensity = SPOT_PEAK * lightning;
+    },
+    step(dt, t) {
+      room.update(dt, t);
+      flashlight.update(dt, t);
+    },
+    expose: { probe, room, flashlight },
+  };
+  return { runtime, lightning: { exposureScale: 1 } };
+}
+
+// ================================================================================================ shared
+
+interface LightningHooks {
+  exposureScale: number;
 }
 
 function delay(ms: number): Promise<void> {
@@ -326,6 +725,15 @@ function delay(ms: number): Promise<void> {
 
 /** Lets the loading status paint. Falls back to a timeout: rAF never fires in hidden/occluded tabs. */
 function nextFrame(): Promise<void> {
+  // Visible: one animation frame (lets the loading bar paint). Hidden/occluded tabs never fire rAF and throttle
+  // chained timers to once a minute, so yield through a MessageChannel instead (never throttled).
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    return new Promise((r) => {
+      const ch = new MessageChannel();
+      ch.port1.onmessage = () => r();
+      ch.port2.postMessage(0);
+    });
+  }
   return new Promise((r) => {
     let done = false;
     const go = () => {
@@ -335,17 +743,17 @@ function nextFrame(): Promise<void> {
       }
     };
     requestAnimationFrame(go);
-    setTimeout(go, 50);
+    setTimeout(go, 100);
   });
 }
 
-/** Lightning pulses: uLightning (flash lightmaps, window), realtime spot, exposure kick. Reduced flash softens it. */
-function createLightning(ctx: GameContext, exposure: any, spot: any) {
+/** Lightning pulses: uLightning (flash lightmaps, window), `level` for runtime lights, exposure kick. Reduced flash softens it. */
+function createLightning(ctx: GameContext, pipeline: Pipeline, hooks: LightningHooks) {
   let t = -1; // time since strike (s); <0 = idle
   let pulses: Array<{ at: number; peak: number; len: number }> = [];
   let auto = 18 + Math.random() * 20;
-  const SPOT_PEAK = 90; // candela
-  return {
+  const api = {
+    level: 0,
     strike() {
       const r = ctx.settings.reducedFlash;
       const peak = r ? 0.3 : 1;
@@ -357,14 +765,14 @@ function createLightning(ctx: GameContext, exposure: any, spot: any) {
       if (r) pulses = pulses.map((p) => ({ ...p, len: p.len * 2.5 }));
       t = 0;
       ctx.events.emit('lightning', { strength: peak, durationMs: 800 });
-      ctx.events.emit('thunder', { delayMs: 1500 + Math.random() * 2500, durationMs: 4000, distance: 1 });
+      ctx.events.emit('thunder', { delayMs: 1500 + Math.random() * 2500, durationMs: 4000, distance: Math.random() });
     },
     update(dt: number, paused: boolean) {
       if (!paused) {
         auto -= dt;
         if (auto <= 0) {
           auto = 25 + Math.random() * 25;
-          this.strike();
+          api.strike();
         }
       }
       let level = 0;
@@ -376,9 +784,10 @@ function createLightning(ctx: GameContext, exposure: any, spot: any) {
         }
         if (t > 1.2) t = -1;
       }
+      api.level = level;
       uLightning.value = level;
-      spot.intensity = SPOT_PEAK * level;
-      exposure.value = 1 + 0.18 * level;
+      pipeline.uniforms.exposure.value = 1 + 0.18 * level * hooks.exposureScale;
     },
   };
+  return api;
 }

@@ -15,4 +15,10 @@ export default defineConfig({
     },
   },
   assetsInclude: ['**/*.glb', '**/*.exr'],
+  resolve: {
+    // three/addons (GLTFLoader, Octree, Capsule …) import the bare 'three' specifier. Map it onto the WebGPU build
+    // so the game ships ONE copy of three (three.webgpu.js re-exports every core class those addons use).
+    // Anchored: 'three/tsl', 'three/webgpu' and 'three/addons/*' are untouched.
+    alias: [{ find: /^three$/, replacement: 'three/webgpu' }],
+  },
 });
