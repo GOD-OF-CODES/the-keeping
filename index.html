@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>The Keeping</title>
+    <!--
+      Boot page. It must stay tiny and must not load three.js or any game asset: the player picks a
+      graphics preset here first. Only src/boot/main.ts is loaded; it dynamic-imports the game after "Start".
+    -->
+    <style>
+      html, body { margin: 0; height: 100%; background: #050505; color: #d8d2c4; }
+      body { font: 15px/1.5 ui-serif, Georgia, "Times New Roman", serif; overflow: hidden; }
+      #boot { position: fixed; inset: 0; display: grid; place-items: center; }
+      #boot noscript, #boot .loading { opacity: .7; letter-spacing: .2em; text-transform: uppercase; font-size: 12px; }
+      #game { position: fixed; inset: 0; display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="boot"><div class="loading">The Keeping</div><noscript>This game needs JavaScript.</noscript></div>
+    <div id="game"></div>
+    <script type="module" src="/src/boot/main.ts"></script>
+  </body>
+</html>

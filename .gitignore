@@ -1,0 +1,11 @@
+node_modules/
+dist/
+public/assets/
+voices/
+.env.local
+.env*.local
+*.blend1
+blender/.cache/
+.cache/
+scratch/
+.DS_Store

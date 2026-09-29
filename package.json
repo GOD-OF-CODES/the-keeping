@@ -1,0 +1,23 @@
+{
+  "name": "the-keeping",
+  "private": true,
+  "version": "0.1.0",
+  "description": "THE KEEPING — a first-person horror game for desktop browsers. All content generated from scratch.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/verify-boot.mjs",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --experimental-strip-types --no-warnings --test \"tests/**/*.test.ts\"",
+    "assets": "node scripts/assets.mjs",
+    "voices": "node scripts/voices.mjs"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.3.1"
+  }
+}
