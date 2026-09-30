@@ -50,3 +50,19 @@ test('every AdaAnim maps to a built clip (or hidden)', () => {
   assert.equal(adaClipFor('stairs', -0.2), 'ada_stairs_down');
   assert.equal(adaClipFor('stairs', 0.2), 'ada_stairs_up');
 });
+
+test('M2 clips are picked up when the GLB has them (search, dress, door push, finale)', () => {
+  const m2 = new Set(['ada_search', 'ada_dress', 'ada_door_push', 'ada_finale_approach', 'ada_finale_take', 'ada_finale_carry', 'ada_look', 'ada_patrol', 'ada_vigil']);
+  const has = (c: string) => m2.has(c);
+  assert.equal(adaClipFor('search_plaster', 0, has), 'ada_search');
+  assert.equal(adaClipFor('dress_hem', 0, has), 'ada_dress');
+  assert.equal(adaClipFor('door_push', 0, has), 'ada_door_push');
+  assert.equal(adaClipFor('finale_approach', 0, has), 'ada_finale_approach');
+  assert.equal(adaClipFor('finale_take', 0, has), 'ada_finale_take');
+  assert.equal(adaClipFor('finale_carry', 0, has), 'ada_finale_carry');
+  assert.equal(adaClipFor('finale_look', 0, has), 'ada_look');
+  assert.equal(adaClipFor('lured_scrape', 0, has), 'ada_vigil');
+  // without them: the M1 stand-ins
+  assert.equal(adaClipFor('search_plaster', 0, () => false), 'ada_vigil');
+  assert.equal(adaClipFor('finale_take', 0), 'ada_look');
+});

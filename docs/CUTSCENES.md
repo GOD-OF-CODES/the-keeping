@@ -115,7 +115,28 @@ The characters lane's `CharacterBank` already matches `CharacterDirector`. Five 
 | C7 | 34 s | full | C1's interior + ROOMS POV shots re-timed, `dressing 'sting'`, "Oh, thank God. Rooms.", knock + "Hello?…", bell off right, door opens, guest book (`c7_guest_book`), the exact threshold lens, Ada in the rocker (`ada_sting`, fallback `ada_look`), gasp, black, final bell, THE KEEPING. |
 | death | 3 s | full | Lunge from Ada's actual position to 0.45 m, handheld jolt + roll, wet-hand lens vignette, drowning rush, black by 2.15 s. Never skippable. |
 
-### fx ids (world/render lane hooks; `bindings.ts` implements `mirror_view` and `lens_wet_hand` itself)
+### fx ids — implemented in `src/world/cutscene-fx.ts` (`bindings.ts` does `mirror_view` / `lens_wet_hand`)
+
+| fx | Implementation |
+|---|---|
+| `windshield_rain` | CPU droplet sim (impacts, heavy drops run and leave streaks, a wet film) drawn to a CanvasTexture on a mesh cut from the `glass_rain` triangles at the nose (CAR set + both sedans), 4 mm inside the pane, unlit, transparent. |
+| `wipers` | `-wiper_d/_p` swing about the windshield normal by `sweep_deg`, `period`; blades clear their sector of drops and film. |
+| `dash` / `fuel` | cluster decal = CanvasTexture: speedo + fuel dial, orange needle (below E = negative), amber lamp (`'blink'` 0.9 s), backlight gain; engine vibration camera tremor while on and a shot holds the camera. |
+| `taillights` | sedan tail lamps emissive; head lamps follow `L_HEADLIGHT_L`'s intensity. |
+| `rope_run` | the three `-sheave` parts spin; a splice runs along P_DOOR_ROPE's `path_local` at 3.2 m/s (`open`: bolt → cleat). |
+| `silhouette` | shadow-play: the table candle's shadow-casting light (the variant compiled at load) moves to the south window, goes cold and follows the lightning level; Ada/Harlan play `ada_finale_shadow` / `harlan_finale_shadow` (unmask from 0.35 s: sack off; cleaver from 3.1 s: cleaver to Ada's `prop_r`) between it and the tally wall. |
+| `blue_hour` | eased: sky + fog paler, exterior mist density, pipeline grade (`tint`, `saturation` uniforms). |
+| `car_trim` | maroon clone of the tan interior material (sting). |
+| `can_in_hand` | off: the can leaves `prop_r` (C6 puts P_JERRY_10 there when `arms_pour_can` exists, else at the filler). |
+| `wardrobe_back_give` | D_WARDROBE_BACK bows open a few degrees. |
+| dressing `sting` | guest book HARLAN + a fresh column of clumsy tallies (quad on the tally wall) + `attach sting_sack`. |
+
+Unverified visually (browser testing stopped): rain/wiper orientation on the exterior sedans, blade-sweep direction,
+the silhouette light's framing from `parlor_wide`, the locket's photo side on the `locket` socket, the sack's pose in
+`ada_sting`, the maroon trim clone. All fx meshes are created at load (visible during compile, hidden in `start`); the room warm-up also renders one view
+from the CAR set and one of P_CAR_ROW so the car materials don't compile at C1 / C3's flash.
+
+### fx ids (original contract)
 
 `windshield_rain {on, intensity}` · `wipers {on, period}` · `dash {on, fuelNeedle, fuelLamp: bool|'blink'}` ·
 `taillights {on, intensity}` · `rope_run {dir}` · `silhouette {id: 'unmask'|'cleaver', on}` · `blue_hour {mist, rain}` ·
@@ -137,21 +158,14 @@ The characters lane's `CharacterBank` already matches `CharacterDirector`. Five 
 
 ## Open issues / asks
 
-- **World lane**: pre-create `L_HEADLIGHT_L/R` and `L_DASH` at load (the light set is fixed; expose `level.runtimeLight(id)`)
-  and make them follow the sedan (`P_CAR_GATE`) when `vehicle` moves it; the `fx` table above (windshield rain,
-  wipers, dash needle/lamp, taillights, rope run, blue-hour mist, car trim, silhouette gobo for C5 per DESIGN "pre-rendered
-  shadow"); `dressing('sting')` (guest book HARLAN via the handwriting decals, fresh tallies, the sack prop, maroon trim);
-  NEXT SERVICES / ROOMS sign text decals (WORLD.md: decals not drawn yet).
+- **World lane**: done — runtime lights exist and follow the sedan; every fx + `dressing('sting')` is implemented
+  (`src/world/cutscene-fx.ts`, table above).
 - **Baked candles can't go out**: `light gutter/set` scales only the runtime flicker share + hides the flame; C5 masks
   the dark with the fade. A per-atlas lightmap-intensity uniform per candle would make it real.
-- **Candle shadows** (`cast_shadow` on `L_CANDLE_TABLE` in C2): enabling `castShadow` on a point light at runtime
-  compiles new pipelines (hitch) — prewarm it during the room warm-up, or provide the DESIGN's silhouette gobo.
-- **Render lane**: `setCutscene` rebuilds the output node; DOF is only changed at discrete cues. Exposing the DOF
-  uniforms would allow animated focus pulls.
-- **main.ts lightning** auto-strikes with `Math.random`; `hooks.stormAuto` needs a pause/resume on the storm cadence.
-- **Characters lane (M2 clips)**: `ada_dress`, `ada_finale`, `ada_sting`, `harlan_finale`, `arms_pour_can` are cued with
-  built fallbacks (`ada_listen`/`ada_vigil`/`ada_look`, `harlan_pose_stairs_foot`/`harlan_opening`, `arms_idle`);
-  `attach('sting_sack', 'hand_r')` needs a sack prop.
+- **Candle shadows**: prewarmed in the room warm-up with Ada, Harlan, their hand props and the arms in view.
+- **Render lane**: `setCutscene` now caches one output per chain shape; DOF values are uniforms (focus pulls possible).
+- **Characters lane (M2 clips)**: exported and mapped (KNOWN_CLIPS; PENDING_CLIPS is empty). `sting_sack` is a
+  procedural sack (`src/characters/sack-prop.ts`).
 - **AI lane**: C2 ends with Ada at (3.35, 1.55) in the hall; the story then force-places her at `G_PARLOR_LURE`
   (3.2, 1.5) — a 0.15 m seam (fine). After C5 the story hides her (`scripted hidden`).
 - `bindings.ts`, `stub-characters.ts`, `preview.ts` are only type-checked: nothing imports them yet, so Vite has not

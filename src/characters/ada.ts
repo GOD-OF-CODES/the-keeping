@@ -15,46 +15,41 @@ import { planToWorld } from '../shared/coords.ts';
 import { PoseCache, type LoadedCharacter } from './loader.ts';
 import { AngularSpring, StopMotion, VerletChain, type Capsule3 } from './secondary.ts';
 
+/**
+ * Clip preferences per AdaAnim: M2 clips first (picked up automatically once the GLB has them), then the M1 clip
+ * that stands in for them. `has` = does the loaded GLB contain the clip (omitted → the M1 fallback).
+ */
+const CLIP_PREFS: Partial<Record<AdaAnim, readonly string[]>> = {
+  walk: ['ada_patrol'],
+  door_push: ['ada_door_push', 'ada_patrol'],
+  finale_approach: ['ada_finale_approach', 'ada_patrol'],
+  finale_carry: ['ada_finale_carry', 'ada_patrol'],
+  chase_run: ['ada_chase'],
+  look_windup: ['ada_look'],
+  look_hold: ['ada_look'],
+  look_lower: ['ada_look'],
+  finale_look: ['ada_look'],
+  finale_take: ['ada_finale_take', 'ada_look'],
+  vigil_scrape: ['ada_vigil'],
+  lured_scrape: ['ada_vigil'],
+  search_plaster: ['ada_search', 'ada_vigil'],
+  dress_hem: ['ada_dress', 'ada_vigil'],
+  hide_check: ['ada_hide_check'],
+  hide_tear_open: ['ada_hide_tear'],
+  catch_grab: ['ada_catch'],
+};
+
 /** Clip for an AdaAnim (vertical velocity picks the stair direction). */
-export function adaClipFor(anim: AdaAnim, velZ = 0): string | null {
-  switch (anim) {
-    case 'hidden':
-      return null;
-    case 'walk':
-    case 'door_push':
-    case 'finale_approach':
-    case 'finale_carry':
-      return 'ada_patrol';
-    case 'stairs':
-      return velZ < 0 ? 'ada_stairs_down' : 'ada_stairs_up';
-    case 'chase_run':
-      return 'ada_chase';
-    case 'look_windup':
-    case 'look_hold':
-    case 'look_lower':
-    case 'finale_look':
-    case 'finale_take':
-      return 'ada_look';
-    case 'vigil_scrape':
-    case 'lured_scrape':
-    case 'search_plaster':
-    case 'dress_hem':
-      return 'ada_vigil';
-    case 'hide_check':
-      return 'ada_hide_check';
-    case 'hide_tear_open':
-      return 'ada_hide_tear';
-    case 'catch_grab':
-      return 'ada_catch';
-    case 'listen':
-    case 'idle':
-    default:
-      return 'ada_listen';
-  }
+export function adaClipFor(anim: AdaAnim, velZ = 0, has?: (clip: string) => boolean): string | null {
+  if (anim === 'hidden') return null;
+  if (anim === 'stairs') return velZ < 0 ? 'ada_stairs_down' : 'ada_stairs_up';
+  const prefs = CLIP_PREFS[anim] ?? ['ada_listen'];
+  if (has) for (const c of prefs) if (has(c)) return c;
+  return prefs[prefs.length - 1];
 }
 
-const ONCE = new Set(['ada_listen', 'ada_look', 'ada_hide_check', 'ada_hide_tear', 'ada_catch', 'ada_rise', 'ada_opening']);
-const CLIP_SPEED: Record<string, number> = { ada_patrol: 0.9, ada_chase: 3.2, ada_stairs_up: 0.35, ada_stairs_down: 0.35 };
+const ONCE = new Set(['ada_listen', 'ada_look', 'ada_hide_check', 'ada_hide_tear', 'ada_catch', 'ada_rise', 'ada_opening', 'ada_finale_take', 'ada_finale', 'ada_sting', 'ada_dress']);
+const CLIP_SPEED: Record<string, number> = { ada_patrol: 0.9, ada_chase: 3.2, ada_stairs_up: 0.35, ada_stairs_down: 0.35, ada_finale_approach: 0.8, ada_finale_carry: 0.9, ada_door_push: 0.9 };
 const LOOK = { windupEnd: 1.2, holdEnd: 4.1, lowerStart: 4.2 } as const;
 
 export interface AdaOverride {
@@ -93,6 +88,8 @@ export class AdaCharacter {
   private lastAnim: AdaAnim | null = null;
   private readonly lastPos = new THREE.Vector3();
   private readonly lastVel = new THREE.Vector3();
+  private readonly _vel = new THREE.Vector3();
+  private readonly _acc = new THREE.Vector3();
   private primed = false;
   private yaw = 0;
   private gurgle = 0;
@@ -189,6 +186,21 @@ export class AdaCharacter {
     return !!this.ov;
   }
 
+  /** The clip a cutscene override is playing (null = AI-driven). */
+  get overrideClip(): string | null {
+    return this.ov?.clip ?? null;
+  }
+
+  /** Bone by name (sockets prop_l / prop_r, hand_*, head …). */
+  bone(name: string): any | null {
+    return this.bones.get(name) ?? null;
+  }
+
+  /** The clip currently sampled (AI or override). */
+  get clipName(): string | null {
+    return this.currentClip;
+  }
+
   /** World position of her head (for camera framing / tests). */
   headWorld(target = new THREE.Vector3()): any {
     const h = this.bones.get('head');
@@ -259,14 +271,18 @@ export class AdaCharacter {
     }
     // ---- root acceleration → neck spring impulse (local frame)
     const pos = this.group.position;
-    if (!this.primed || dt <= 0) {
+    if (!this.primed) {
       this.lastPos.copy(pos);
       this.lastVel.set(0, 0, 0);
     }
-    const vel = new THREE.Vector3().subVectors(pos, this.lastPos).divideScalar(Math.max(dt, 1e-3));
-    const acc = new THREE.Vector3().subVectors(vel, this.lastVel).divideScalar(Math.max(dt, 1e-3));
-    this.lastPos.copy(pos);
-    this.lastVel.copy(vel);
+    const vel = this._vel;
+    const acc = this._acc.set(0, 0, 0);
+    if (dt > 0) {
+      vel.subVectors(pos, this.lastPos).divideScalar(Math.max(dt, 1e-3));
+      acc.subVectors(vel, this.lastVel).divideScalar(Math.max(dt, 1e-3));
+      this.lastPos.copy(pos);
+      this.lastVel.copy(vel);
+    }
     acc.clampLength(0, 30);
     const cy = Math.cos(this.yaw);
     const sy = Math.sin(this.yaw);
@@ -329,7 +345,7 @@ export class AdaCharacter {
 
   private selectAnim(out: AdaOutput): void {
     const anim = out.anim;
-    const clip = adaClipFor(anim, out.vel[2]);
+    const clip = adaClipFor(anim, out.vel[2], (c) => this.c.clips.has(c));
     if (!clip) return;
     const loop = !ONCE.has(clip);
     const changed = anim !== this.lastAnim;
@@ -338,6 +354,7 @@ export class AdaCharacter {
     // travel clips follow her speed
     const nominal = CLIP_SPEED[clip];
     if (nominal) a.timeScale = Math.max(0.35, Math.min(2.2, out.speed / nominal || 1));
+    else if (clip === 'ada_finale_take') a.timeScale = 1.25; // the brain's take lasts 0.8 s; the clip 1.0 s
     else if (clip !== 'ada_look') a.timeScale = 1;
     if (clip === 'ada_look') {
       if (anim === 'look_windup') {

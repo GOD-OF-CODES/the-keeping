@@ -23,12 +23,16 @@ import { HarlanCharacter } from '../characters/harlan.ts';
 import { FpArms } from '../characters/arms.ts';
 import { loadCharacter } from '../characters/loader.ts';
 import { CharacterBank } from '../characters/bank.ts';
-import { PENS, drawGuestBook, drawPage } from '../render/handwriting.ts';
+import { drawDocumentPage } from '../player/inventory.ts';
+import { createM2World, ITEM_PROPS } from './m2-world.ts';
+import { createCutsceneFx } from '../world/cutscene-fx.ts';
 
 /** What main.ts's lightning controller offers the story (strike + storm cadence). */
 export interface LightningControl {
   strike(): void;
   setStorm(intervalSec: number, rumbleScale: number): void;
+  /** Current flash level 0..1 (C5's shadow-play light follows it). */
+  readonly level?: number;
 }
 
 export interface StoryDeps {
@@ -46,6 +50,12 @@ export interface StoryDeps {
   params: URLSearchParams;
 }
 
+/** Story sfx the beats emit without a position: where they happen. */
+const SFX_AT: Record<string, { prop: string; room: string }> = {
+  bell_pull: { prop: 'P_BELL_PULL', room: 'U2' },
+  fabric_tear: { prop: 'P_DRESS', room: 'U3' },
+};
+
 const BEATS: BeatId[] = ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B10', 'B11', 'B12', 'B13'];
 const beatIdx = (b: string | null | undefined) => (b ? BEATS.indexOf(b as BeatId) : -1);
 
@@ -55,7 +65,12 @@ export async function createStoryRuntime(d: StoryDeps) {
   const P = (v: any): P3 => worldToPlan([v.x, v.y, v.z]) as P3;
 
   // ---------------------------------------------------------------- characters (tolerate missing assets)
-  const lopt = { presetId: ctx.presetId, preset: ctx.preset, lightsNode: level.probeLightsNode };
+  // Characters see the probe lights AND the candles' / lamp's runtime flicker lights: the tableau (C2, C5, C7) and
+  // the kitchen / bedroom encounters get a flickering warm key instead of reading as flat silhouettes.
+  const { lights: lightsOf } = await import('three/tsl');
+  const flickerLights = level.lights.flickers.map((f) => f.light);
+  const charLights = lightsOf([...level.probeLights, ...flickerLights]);
+  const lopt = { presetId: ctx.presetId, preset: ctx.preset, lightsNode: charLights };
   const [adaC, harlanC, armsC] = await Promise.all(
     (['ada', 'harlan', 'arms'] as const).map((id) =>
       loadCharacter(id, lopt).catch((e) => {
@@ -70,8 +85,7 @@ export async function createStoryRuntime(d: StoryDeps) {
   if (armsC) {
     // The SpotLight sits INSIDE the torch head: the arms must not see it (the bezel lit up like a ring from
     // behind). They keep the probes, lightning and runtime lights.
-    const { lights } = await import('three/tsl');
-    const armLights = lights(level.probeLights.filter((l) => l !== rig.flashlight.light));
+    const armLights = lightsOf([...level.probeLights.filter((l) => l !== rig.flashlight.light), ...flickerLights]);
     for (const m of armsC.materials) m.lightsNode = armLights;
   }
   if (ada) {
@@ -81,26 +95,68 @@ export async function createStoryRuntime(d: StoryDeps) {
   if (harlan) (level.roomGroups.get('G2') ?? scene).add(harlan.group);
   /** The cutscene lane's CharacterDirector (structural match of src/cutscenes/host.ts). */
   const characters = new CharacterBank(ada, harlan, arms);
+  characters.propSource = (id) => level.prop(id);
+  characters.lightsNode = charLights;
   /** The cutscene lane plugs its CutscenePlayer.playCutscene in here (setCutscenePlayer); null = director fallback. */
   let cutscenePlayer: ((id: string, done: (skipped: boolean) => void) => boolean) | null = null;
   let stormNow = { interval: 35, rumble: 1 };
   let stormAutoOn = true;
   const fxWarned = new Set<string>();
-  /** Cutscene fx the world/render lanes provide (docs/CUTSCENES.md fx table); unknown ones are logged once. */
+  let pipelineRef: any = null;
+  let lightning: LightningControl | null = null;
+  let camHeldByCutscene = false;
+  const fxw = createCutsceneFx({
+    level,
+    camera,
+    characters,
+    pipeline: () => pipelineRef,
+    lightningLevel: () => lightning?.level ?? 0,
+    cameraHeld: () => camHeldByCutscene,
+  });
+  /** Cutscene fx (docs/CUTSCENES.md fx table): src/world/cutscene-fx.ts; unknown ones are logged once. */
   const cutsceneFx = (id: string, p: Record<string, number | string | boolean>) => {
-    if (id === 'blue_hour') {
-      // C6: the storm is over — pale the sky toward dawn and thin the rain haze
-      const mist = Number(p.mist ?? 0.5);
-      skyTint = Math.max(0, Math.min(1, mist));
+    if (id === 'can_in_hand') {
+      if (!p.on) {
+        m2?.canAtFiller(false);
+        armsProp(null);
+      }
       return;
     }
+    if (fxw.fx(id, p)) return;
     if (!fxWarned.has(id)) {
       fxWarned.add(id);
       console.info(`[story] cutscene fx '${id}' has no world implementation yet (${JSON.stringify(p)})`);
     }
   };
-  let skyTint = 0;
   let tableauOn = false;
+
+  // ---------------------------------------------------------------- M2 world (props from flags, hem, bell pull, wardrobe back, locket)
+  let locketForced = false;
+  const locketUp = () => inventory.has('locket') && (input.isDown('Mouse2') || locketForced);
+  const m2 = createM2World({ ctx, input, level, player, hides, rig, inventory, audio, arms, locketRaised: locketUp });
+  /** A prop in the first-person right hand (arms `prop_r` socket): the hammer while prying, the shears, the can. */
+  const heldProps = new Map<string, any>();
+  const armsProp = (propId: string | null) => {
+    for (const [id, o] of heldProps) o.visible = id === propId;
+    if (!propId || heldProps.has(propId) || !arms) return;
+    const sock = arms.c.bones.get('prop_r');
+    const src = level.prop(propId);
+    if (!sock || !src) return;
+    const c = src.clone(true);
+    c.position.set(0, 0, 0);
+    c.quaternion.identity();
+    c.traverse((n: any) => {
+      n.visible = true;
+      n.matrixAutoUpdate = true;
+      n.frustumCulled = false;
+      if (n.isMesh) {
+        n.castShadow = false;
+        n.renderOrder = 5;
+      }
+    });
+    sock.add(c);
+    heldProps.set(propId, c);
+  };
 
   // ---------------------------------------------------------------- voices + subtitles
   let voice: any = null;
@@ -127,9 +183,9 @@ export async function createStoryRuntime(d: StoryDeps) {
 
   // ---------------------------------------------------------------- UI: fade, prompt, reading overlay, end card
   const ui = makeUi();
-  let lightning: LightningControl | null = null;
 
   // ---------------------------------------------------------------- per-frame player sampling
+  void ITEM_PROPS;
   const lensW = new THREE.Vector3();
   const tgtW = new THREE.Vector3();
   const dirW = new THREE.Vector3();
@@ -147,7 +203,6 @@ export async function createStoryRuntime(d: StoryDeps) {
   ] as const;
   const frustum = new THREE.Frustum();
   const projView = new THREE.Matrix4();
-  let locketForced = false;
   let lastOut: AdaOutput | null = null;
 
   const los = (a: P3, b: P3): boolean => {
@@ -197,7 +252,7 @@ export async function createStoryRuntime(d: StoryDeps) {
     camera.getWorldPosition(eyeW);
     const rmb = input.isDown('Mouse2');
     if (rmb) locketForced = false;
-    const hasLocket = inventory.has('locket');
+    const hasLocket = inventory.has('locket') && !hides.active;
     return {
       pos: player.planFeet() as P3,
       eye: P(eyeW),
@@ -323,6 +378,15 @@ export async function createStoryRuntime(d: StoryDeps) {
           nonstopBell = audio.play(id, bp ? { pos: [bp.x, bp.y, bp.z], room: 'G2', loop: true } : { loop: true });
           return;
         }
+        if (id === 'bolt_slide') return; // the passage door's own bolt plays it, positionally (doors.ts)
+        if (!pos && SFX_AT[id]) {
+          const o = level.prop(SFX_AT[id].prop);
+          if (o) {
+            const c = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
+            audio.play(id, { pos: [c.x, c.y, c.z], room: SFX_AT[id].room });
+            return;
+          }
+        }
         audio.play(id, pos ? { pos: planToWorld(pos), room } : {});
       },
       lightning: () => lightning?.strike(),
@@ -342,7 +406,7 @@ export async function createStoryRuntime(d: StoryDeps) {
       toast: (t) => d.toast(t),
       prompt: (t) => ui.prompt(t),
       document: (doc) => {
-        journal.add({ id: doc.id, title: doc.title, text: doc.text });
+        journal.add({ id: doc.id === 'guest_book_sting' ? 'guest_book' : doc.id, title: doc.title, text: doc.text, lines: doc.lines });
         ui.read(doc);
         interact.enabled = false;
       },
@@ -376,7 +440,6 @@ export async function createStoryRuntime(d: StoryDeps) {
   let nonstopBell: any = null;
 
   // ---------------------------------------------------------------- cutscenes (src/cutscenes, docs/CUTSCENES.md)
-  let pipelineRef: any = null;
   let cs: any = null;
   try {
     const [{ createCutsceneSystem }, { setGuestBookState }] = await Promise.all([import('../cutscenes/bindings.ts'), import('../world/decals.ts')]);
@@ -403,7 +466,10 @@ export async function createStoryRuntime(d: StoryDeps) {
         runtimeLight: (id: string) => level.runtimeLight(id),
         fx: (id: string, p: Record<string, number | string | boolean>) => cutsceneFx(id, p),
         dressing: (set: string, on: boolean) => {
-          if (set === 'sting') setGuestBookState(level.root, on ? 'sting' : 'tonight_blank');
+          if (set === 'sting') {
+            setGuestBookState(level.root, on ? 'sting' : 'tonight_blank');
+            fxw.setSting(on);
+          }
         },
       },
     });
@@ -416,6 +482,12 @@ export async function createStoryRuntime(d: StoryDeps) {
   let cutscene: string | null = null;
   ctx.events.on('cutscene:start', ({ id }) => {
     cutscene = id;
+    if (id === 'C6') {
+      // you drive YOUR car away: the vehicle track moves the gate sedan to the row — the row copy steps aside
+      level.prop('P_CAR_ROW') && (level.prop('P_CAR_ROW').visible = false);
+      if (arms?.has('arms_pour_can')) armsProp('P_JERRY_10');
+      else m2.canAtFiller(true);
+    }
     if (id === 'death') return;
     interact.enabled = false;
     if (cutscenePlayer) return; // the cutscene bindings own the input lock
@@ -430,6 +502,14 @@ export async function createStoryRuntime(d: StoryDeps) {
   });
   ctx.events.on('cutscene:end', ({ id }) => {
     if (cutscene === id) cutscene = null;
+    if (id === 'C5') {
+      fxw.resetSilhouette();
+      characters.attach('ada', 'locket', null);
+    }
+    if (id === 'C6') {
+      m2.canAtFiller(false);
+      armsProp(null);
+    }
     if (id === 'death') return;
     if (!hides.active && !cutscenePlayer) {
       player.enabled = true;
@@ -453,19 +533,58 @@ export async function createStoryRuntime(d: StoryDeps) {
     player.lookEnabled = true;
     ui.fade(0, 1.4);
   });
+  let restoring = false;
   ctx.events.on('flag', ({ name, value }) => {
     if (name === 'bell_nonstop' && !value) {
       nonstopBell?.stop(1);
       nonstopBell = null;
     }
+    if (name === 'bell_nonstop' && value && !nonstopBell && audio) {
+      // a debug start / restore at B10–B11 has the flag but never heard the story's sfx: ring it here
+      const bell = level.prop('P_SPRING_BELL');
+      const bp = bell ? bell.getWorldPosition(new THREE.Vector3()) : null;
+      nonstopBell = audio.play('spring_bell_loop', bp ? { pos: [bp.x, bp.y, bp.z], room: 'G2', loop: true } : { loop: true });
+    }
     if (name === 'rang_front_bell' && value) whetstone?.stop(0.6);
+    if (name === 'harlan_taken' && value) fxw.fx('blue_hour', { mist: 1, rain: 0 }); // B12: the storm is over
+    if (name === 'locket_given' && value && !restoring) {
+      // FINALE take: her left fist closes on it (ada_finale_take: prop_l reaches the lens at 0.45 s of the clip ×1.25)
+      setTimeout(() => characters.attach('ada', 'locket', 'prop_l'), 360);
+    }
+    m2.syncFlag(name, value);
   });
-  ctx.events.on('interact', ({ action }) => {
+  const inKitchenSide = () => level.room === 'G3P' || level.room === 'G3';
+  ctx.events.on('interact', ({ id, action }) => {
+    m2.onInteract(id, action);
     if (!arms) return;
     if (action === 'knock') arms.play('arms_knock');
     else if (action === 'ring_bell' || action === 'pull_bell') arms.play('arms_bell_pull');
+    else if (id === 'D_PASSAGE' && action.startsWith('rattle_') && inKitchenSide()) arms.play(arms.has('arms_slide_bolt') ? 'arms_slide_bolt' : 'arms_door_rattle');
     else if (action === 'rattle_front_door' || action.startsWith('rattle_')) arms.play('arms_door_rattle');
+    else if (action.startsWith('take_') || action.startsWith('read_') || action.startsWith('examine_')) arms.play('arms_pickup_read');
   });
+  // hold interactions: the hands work while E is held (pry with the hammer, cut with the shears)
+  interact.onHold = (it, phase) => {
+    const act = it.action ?? '';
+    if (phase === 'start') {
+      if (act === 'pry') {
+        armsProp('P_HAMMER');
+        arms?.play('arms_pry_board', 0.12);
+        const b = new THREE.Box3().setFromObject(it.object).getCenter(new THREE.Vector3());
+        audio?.play('pry_bite', { pos: [b.x, b.y, b.z], room: 'U1', gain: 0.8 });
+      } else if (act === 'cut_hem') {
+        armsProp('P_SHEARS');
+        arms?.loop('arms_cut_hem', 0.12);
+        const b = new THREE.Box3().setFromObject(it.object).getCenter(new THREE.Vector3());
+        audio?.play('shears', { pos: [b.x, b.y - 0.5, b.z], room: 'U3', gain: 0.8 });
+      }
+      return;
+    }
+    // done / cancel: hands back to the torch
+    armsProp(null);
+    if (act === 'cut_hem') arms?.loop('arms_idle', 0.25);
+    else if (phase === 'cancel') arms?.cancelOneShot();
+  };
   ctx.events.on('player:hide', ({ inside }) => {
     // the hide camera sits at the slats: the hands would fill the view (and clip the doors) — lower them
     if (arms) arms.visible = !inside;
@@ -481,21 +600,12 @@ export async function createStoryRuntime(d: StoryDeps) {
   const startBeat = (d.params.get('beat') ?? '').toUpperCase();
   const start = () => {
     started = true;
-    if (BEATS.includes(startBeat as BeatId) && startBeat !== 'B01') {
-      const b = startBeat === 'B05' ? 'B04' : (startBeat as BeatId);
-      director.startAt(b);
-      if (startBeat === 'B05') {
-        // straight into the first hide: the story moves to B05 and she comes to the slats (hide_demo)
-        const h = layout.hides.find((x) => x.id === 'H_ARMOIRE') ?? layout.hides[0];
-        if (h) {
-          player.teleport(planToWorld([h.entry[0], h.entry[1], h.entry[2] + 1.65]), headingToCameraYaw(h.eyeYaw + Math.PI), 0);
-          rig.snap();
-          hides.enter(h.id);
-        }
-      }
-    } else director.start();
-    // B02–B03: the parlor door "stands ajar and candlelit" — the layout's 20° ajar leaf hid the whole tableau (and
-    // blocked C2's threshold lens); open it far enough to read the candlelit room. C2 shuts it.
+    fxw.setWarm(false); // the fx meshes were visible only for the load-time shader compile
+    restoring = true;
+    m2.restore(() => startDirector());
+    m2.syncAll();
+    restoring = false;
+    // B02–B03: the parlor door "stands ajar and candlelit" (doors.glb ships it at 70°). C2 shuts it.
     const parlor = level.doors.doors.get('D_PARLOR');
     if (parlor && !parlor.lock && Math.abs(parlor.angle) < 30 && beatIdx(director.story.beat) <= 2) {
       parlor.target = 70;
@@ -511,6 +621,21 @@ export async function createStoryRuntime(d: StoryDeps) {
       whetstone = audio.play('whetstone', { pos: [p[0], p[1] + 1.1, p[2]], room: 'G2', loop: true, gain: 0.9 });
     }
   };
+  const startDirector = () => {
+    if (BEATS.includes(startBeat as BeatId) && startBeat !== 'B01') {
+      const b = startBeat === 'B05' ? 'B04' : (startBeat as BeatId);
+      director.startAt(b);
+      if (startBeat === 'B05') {
+        // straight into the first hide: the story moves to B05 and she comes to the slats (hide_demo)
+        const h = layout.hides.find((x) => x.id === 'H_ARMOIRE') ?? layout.hides[0];
+        if (h) {
+          player.teleport(planToWorld([h.entry[0], h.entry[1], h.entry[2] + 1.65]), headingToCameraYaw(h.eyeYaw + Math.PI), 0);
+          rig.snap();
+          hides.enter(h.id);
+        }
+      }
+    } else director.start();
+  };
 
   // ---------------------------------------------------------------- per frame
   const update = (dt: number, paused: boolean) => {
@@ -518,6 +643,9 @@ export async function createStoryRuntime(d: StoryDeps) {
     ui.update(dt);
     if (ui.reading && (input.wasPressed('KeyE') || input.wasPressed('Escape') || input.wasPressed('Mouse0') || player.speed > 0.8)) {
       ui.closeReading();
+      // the E that closed the page must not read it again this frame (the ledger would turn a page and re-voice)
+      input.consume('KeyE');
+      input.consume('Mouse0');
       interact.enabled = true;
     }
     if (!paused && dt > 0) director.update(dt);
@@ -531,7 +659,14 @@ export async function createStoryRuntime(d: StoryDeps) {
       cs.hem.update(lastOut, hides.active?.id ?? null);
       if (cs.lock !== 'none') interact.enabled = false;
       else if (!ui.reading && !cutscene) interact.enabled = true;
+      camHeldByCutscene = !!cs.cameraHeld;
     }
+    // Space is skip AND breath: breath only when gameplay has the body (or in a hide), never under a cutscene lock
+    const locked = (cs && cs.lock !== 'none') || (!!cutscene && cutscene !== 'death');
+    hides.inputEnabled = !locked;
+    player.breathAllowed = !locked && (!!hides.active || player.enabled);
+    m2.update(paused ? 0 : dt);
+    fxw.update(paused ? 0 : dt);
     const beat = director.story.beat;
     // pre-C2 tableau (the cutscene lane replaces this with C2 proper)
     if (tableau && !cutscene && beatIdx(beat) <= 2 && !characters.acquired.has('ada')) {
@@ -548,6 +683,7 @@ export async function createStoryRuntime(d: StoryDeps) {
     ada?.update(cdt);
     if (ada && tableauOn && ada.overridden) ada.group.visible = !level.cullingEnabled || level.visible.has('G2');
     harlan?.update(cdt);
+    characters.update();
     if (arms) arms.update(cdt, rig.flashlight.light, rig.flashlight.beam, rig.on, rig.on ? rig.flashlight.light.intensity / 30 : 0);
     for (let i = hintMarkers.length - 1; i >= 0; i--) {
       const h = hintMarkers[i];
@@ -578,7 +714,36 @@ export async function createStoryRuntime(d: StoryDeps) {
       pipelineRef = p;
     },
     /** C6 blue hour: 0 storm night … 1 pale dawn (main.ts tints sky + fog). */
-    skyTint: () => skyTint,
+    skyTint: () => fxw.blueHour(),
+    /** Blue-hour mist (0 … 1.5): main.ts thickens the exterior fog. */
+    mist: () => fxw.mist(),
+    /** Rain on the weather bed: the storm is over after C5 (B12) until the sting brings it back. */
+    rain: () => (fxw.blueHour() > 0.5 ? 0 : 1),
+    /** After the level's light update (overrides that must win over the flicker loop). */
+    lateUpdate: () => fxw.lateUpdate(),
+    fx: fxw,
+    m2,
+    /** Load warm-up (C2/C5 candle shadow on the characters): show Ada + Harlan at the tableau, or hide them again. */
+    warmTableau: (on: boolean) => {
+      if (!tableau) return;
+      if (on) {
+        ada?.override({ clip: 'ada_table', pos: tableau.ada.pos, yaw: tableau.ada.yaw, loop: true });
+        if (ada) ada.forceVisible = true;
+        harlan?.play({ clip: 'harlan_opening', pos: tableau.harlan.pos, yaw: tableau.harlan.yaw, time: 0.5, timeScale: 0 });
+        ada?.update(0);
+        harlan?.update(0);
+        // the props her hands will carry compile with her (C5 cleaver + locket, C7 sack)
+        characters.attach('ada', 'cleaver', 'prop_r');
+        characters.attach('ada', 'locket', 'prop_l');
+        characters.attach('ada', 'sting_sack', 'prop_r');
+        characters.update();
+      } else {
+        for (const pr of ['cleaver', 'locket', 'sting_sack']) characters.attach('ada', pr, null);
+        if (ada) ada.forceVisible = null;
+        ada?.release();
+        if (harlan) harlan.visible = false;
+      }
+    },
     playerView,
     ada,
     harlan,
@@ -687,6 +852,7 @@ function makeUi() {
   let fadeT = 1;
   let fadeLen = 1;
   let promptT = 0;
+  let snapIn = 0;
   const api = {
     black: false,
     reading: false,
@@ -699,13 +865,7 @@ function makeUi() {
     },
     /** After the death cutaway's own fade: hold black (our overlay) until the respawn fade-in. */
     snapBlackAfter(sec: number) {
-      setTimeout(() => {
-        fadeEl.style.opacity = '1';
-        fadeFrom = 1;
-        fadeTo = 1;
-        fadeT = 1;
-        api.black = true;
-      }, sec * 1000);
+      snapIn = sec; // counted down in update() on game time (a paused game doesn't go black behind the menu)
     },
     prompt(text: string) {
       promptEl.textContent = text;
@@ -717,12 +877,7 @@ function makeUi() {
       const H = 960;
       readCanvas.width = W;
       readCanvas.height = H;
-      const g = readCanvas.getContext('2d')!;
-      if (doc.lines && doc.lines.length) drawGuestBook(g, W, H, doc.lines, { seed: 1977 });
-      else {
-        const pen = doc.id === 'ticket' || doc.id === 'can_plate' || doc.id === 'portrait' || doc.id === 'pump_photo' ? PENS.pencil : doc.id.startsWith('ledger') ? PENS.pencil : PENS.ink;
-        drawPage(g, W, H, `${doc.title}\n\n${doc.text}`, { pen, em: 30, lineGap: 1.8, ruled: doc.id.startsWith('ledger'), seed: doc.id.length * 977 });
-      }
+      drawDocumentPage(readCanvas.getContext('2d')!, W, H, doc);
       readEl.style.display = 'block';
       api.reading = true;
     },
@@ -730,16 +885,34 @@ function makeUi() {
       readEl.style.display = 'none';
       api.reading = false;
     },
+    /** The end: C7 already cut to black on its own title — hold black and keep the title up (no fade, no flicker). */
     end() {
-      api.fade(1, 3);
-      setTimeout(() => {
-        const el = document.createElement('div');
-        Object.assign(el.style, { position: 'fixed', inset: '0', display: 'grid', placeItems: 'center', zIndex: '40', color: '#d8d2c4', font: '28px/1.4 ui-serif, Georgia, serif', letterSpacing: '.4em' } as Partial<CSSStyleDeclaration>);
-        el.textContent = 'THE KEEPING';
-        document.body.appendChild(el);
-      }, 3200);
+      fadeEl.style.opacity = '1';
+      fadeFrom = fadeTo = 1;
+      fadeT = 1;
+      api.black = true;
+      const el = document.createElement('div');
+      Object.assign(el.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: '40', color: '#d9d2c3', font: '400 clamp(28px,5vw,64px)/1.1 ui-serif, Georgia, "Times New Roman", serif', letterSpacing: '.32em', textAlign: 'center', padding: '0 16px', background: '#000' } as Partial<CSSStyleDeclaration>);
+      const t = document.createElement('div');
+      t.textContent = 'THE KEEPING';
+      const sub = document.createElement('div');
+      sub.textContent = 'Esc  menu';
+      Object.assign(sub.style, { marginTop: '28px', font: '12px system-ui, sans-serif', letterSpacing: '.2em', color: 'rgba(217,210,195,.45)', opacity: '0', transition: 'opacity 2s 3s' } as Partial<CSSStyleDeclaration>);
+      el.append(t, sub);
+      document.body.appendChild(el);
+      requestAnimationFrame(() => (sub.style.opacity = '1'));
     },
     update(dt: number) {
+      if (snapIn > 0) {
+        snapIn -= dt;
+        if (snapIn <= 0) {
+          fadeEl.style.opacity = '1';
+          fadeFrom = 1;
+          fadeTo = 1;
+          fadeT = 1;
+          api.black = true;
+        }
+      }
       if (fadeT < 1) {
         fadeT = Math.min(1, fadeT + dt / fadeLen);
         const v = fadeFrom + (fadeTo - fadeFrom) * fadeT;

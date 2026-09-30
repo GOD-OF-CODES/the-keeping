@@ -225,7 +225,7 @@ export class RuntimeLights {
       // The baked light is the mean: the runtime light only adds the positive half of the swing (never negative
       // light) plus a small constant so the flicker reads on nearby surfaces.
       f.light.intensity = f.base * FLICKER_SHARE * Math.max(0, 0.35 + k * 0.65) * f.fade;
-      if (f.flame) f.flame.visible = f.fade > 0.01;
+      if (f.flame) f.flame.visible = f.fade > 0.01 && f.base > 1e-3; // a guttered candle (base 0) stays out
     }
     // Overcast moonlight: a faint constant through the storm clouds so the ground, the house and her silhouette
     // read outdoors (the lightning shares the same light; inside, only the windows let a little through).

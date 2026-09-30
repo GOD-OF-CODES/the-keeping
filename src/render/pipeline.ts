@@ -34,6 +34,7 @@ import {
   uniform,
   unpackRGBToNormal,
   vec2,
+  vec3,
   vec4,
   velocity,
 } from 'three/tsl';
@@ -64,6 +65,10 @@ export interface Pipeline {
     vignette: any;
     chromaticAberration: any;
     bloomStrength: any;
+    /** Scene grade (HDR, before tone mapping): colour multiplier (C6/B12 blue hour, dawn) … */
+    tint: any;
+    /** … and saturation (1 = unchanged). */
+    saturation: any;
   };
   render(): void;
   /** Scene-pass resolution scale (post pipeline only; no-op on Low). */
@@ -96,13 +101,22 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
     vignette: uniform(preset.post.vignette),
     chromaticAberration: uniform(preset.post.chromaticAberration),
     bloomStrength: uniform(0.22),
+    tint: uniform(new THREE.Color(1, 1, 1)),
+    saturation: uniform(1),
   };
   const finish = makeFinish(uniforms.vignette, uniforms.grain);
+  /** rgb → graded rgb. */
+  const grade = (c: any) => {
+    const l = luminance(c);
+    return mix(vec3(l, l, l), c, uniforms.saturation).mul(uniforms.tint);
+  };
+  /** rgba → graded rgba. */
+  const grade4 = (c: any) => vec4(grade(c.rgb), c.a);
 
   if (preset.pipeline === 'direct') {
     const rp = new THREE.DirectRenderPipeline(renderer);
     rp.outputColorTransform = false;
-    rp.outputNode = finish(renderOutput(vec4(output.rgb.mul(uniforms.exposure), output.a), THREE.AgXToneMapping, THREE.SRGBColorSpace));
+    rp.outputNode = finish(renderOutput(vec4(grade(output.rgb.mul(uniforms.exposure)), output.a), THREE.AgXToneMapping, THREE.SRGBColorSpace));
     return {
       kind: 'direct',
       uniforms,
@@ -157,27 +171,43 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   const mbAmount = uniform(1);
   let dofNode: any = null;
 
+  // One output node per chain shape (gameplay / DOF / motion blur / both), built once and cached: a DOF cue only
+  // updates the uniforms, and the node graph (bloom's render targets, the compiled output) is never rebuilt.
+  const chains = new Map<string, any>();
+  let current = '';
   function build(fx: CutsceneFx | null) {
-    let aa: any = sharpened;
-    if (fx?.dof && preset.post.cutsceneDof) {
-      dofU.focus.value = fx.dof.focusDistance;
-      dofU.focal.value = fx.dof.focalLength;
-      dofU.bokeh.value = fx.dof.bokehScale;
-      dofNode ??= dof(sharpened, scenePass.getViewZNode(), dofU.focus, dofU.focal, dofU.bokeh);
-      aa = dofNode;
+    const useDof = !!fx?.dof && preset.post.cutsceneDof;
+    const useMb = !!fx?.motionBlur && preset.post.cutsceneMotionBlur;
+    if (useDof) {
+      dofU.focus.value = fx!.dof!.focusDistance;
+      dofU.focal.value = fx!.dof!.focalLength;
+      dofU.bokeh.value = fx!.dof!.bokehScale;
     }
-    if (fx?.motionBlur && preset.post.cutsceneMotionBlur) {
-      mbAmount.value = fx.motionBlur;
-      const src = aa === sharpened ? sharpened.getTextureNode() : aa.getTextureNode();
-      aa = motionBlur(src, vel.mul(mbAmount));
+    if (useMb) mbAmount.value = fx!.motionBlur!;
+    const key = `${useDof ? 'dof' : ''}|${useMb ? 'mb' : ''}`;
+    let out = chains.get(key);
+    if (!out) {
+      let aa: any = sharpened;
+      if (useDof) {
+        dofNode ??= dof(sharpened, scenePass.getViewZNode(), dofU.focus, dofU.focal, dofU.bokeh);
+        aa = dofNode;
+      }
+      if (useMb) {
+        const src = aa === sharpened ? sharpened.getTextureNode() : aa.getTextureNode();
+        aa = motionBlur(src, vel.mul(mbAmount));
+      }
+      let hdr: any = aa;
+      if (preset.post.bloom) hdr = hdr.add(bloom(aa, uniforms.bloomStrength, 0.35, 0.9));
+      hdr = grade4(hdr.mul(uniforms.exposure));
+      let ldr: any = renderOutput(hdr);
+      if (preset.post.chromaticAberration > 0) ldr = chromaticAberration(ldr, uniforms.chromaticAberration, vec2(0.5, 0.5), 1.1); // r186: a null centre crashes the build (JSDoc says it defaults)
+      out = finish(ldr);
+      chains.set(key, out);
     }
-    let hdr: any = aa;
-    if (preset.post.bloom) hdr = hdr.add(bloom(aa, uniforms.bloomStrength, 0.35, 0.9));
-    hdr = hdr.mul(uniforms.exposure);
-    let ldr: any = renderOutput(hdr);
-    if (preset.post.chromaticAberration > 0) ldr = chromaticAberration(ldr, uniforms.chromaticAberration, vec2(0.5, 0.5), 1.1) // r186: a null centre crashes the build (JSDoc says it defaults);
+    if (key === current) return;
+    current = key;
     rp.outputColorTransform = false;
-    rp.outputNode = finish(ldr);
+    rp.outputNode = out;
     rp.needsUpdate = true;
   }
   build(null);

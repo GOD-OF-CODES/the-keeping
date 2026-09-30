@@ -141,6 +141,8 @@ export interface CutsceneSystem {
   update(dt: number, input?: CutsceneInput): void;
   /** Current input lock (gate interact/hide input on it: only 'none' allows interaction). */
   readonly lock: LockMode;
+  /** A cutscene shot owns the camera right now. */
+  readonly cameraHeld: boolean;
   dispose(): void;
 }
 
@@ -252,6 +254,9 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
       castShadow: (id, on) => {
         const f = flicker(id);
         if (!f?.light) return;
+        // the shot's key: the candle throws the tableau across the tally wall — raise its runtime share while the
+        // shadow is on (still one candle: dark, cinematic), back to normal with the shadow
+        scaleLight(f, on ? 4.5 : 1);
         f.light.castShadow = on;
         if (on && f.light.shadow?.mapSize) {
           f.light.shadow.mapSize.set(512, 512);
@@ -372,6 +377,9 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
     deps,
     get lock() {
       return player.active ? lockMode : 'none';
+    },
+    get cameraHeld() {
+      return camHeld;
     },
     update(dt, input = {}) {
       // interactive gates

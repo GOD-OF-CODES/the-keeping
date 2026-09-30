@@ -7,7 +7,7 @@
 import * as THREE from 'three/webgpu';
 import type { LoadedCharacter } from './loader.ts';
 
-const ONE_SHOTS = new Set(['arms_flashlight_toggle', 'arms_knock', 'arms_bell_pull', 'arms_door_rattle', 'arms_freeze', 'arms_hide_push', 'arms_key']);
+const ONE_SHOTS = new Set(['arms_flashlight_toggle', 'arms_knock', 'arms_bell_pull', 'arms_door_rattle', 'arms_freeze', 'arms_hide_push', 'arms_key', 'arms_pickup_read', 'arms_pry_board', 'arms_cut_hem', 'arms_raise_locket', 'arms_slide_bolt', 'arms_pour_can']);
 
 export class FpArms {
   readonly c: LoadedCharacter;
@@ -107,6 +107,16 @@ export class FpArms {
     if (from && from !== a) from.crossFadeTo(a, fade, false);
     this.oneShot = a;
     void ONE_SHOTS;
+  }
+
+  /** Does the GLB have this clip (M2 clips arrive with the character lane's rebuild)? */
+  has(clip: string): boolean {
+    return this.c.clips.has(clip);
+  }
+
+  /** Abort the current one-shot (a hold interaction released early) and blend back to the base loop. */
+  cancelOneShot(): void {
+    if (this.oneShot) this.endOneShot();
   }
 
   private endOneShot(): void {

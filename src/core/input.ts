@@ -11,6 +11,8 @@ export class Input {
   /** Called when pointer lock is lost (Esc, alt-tab, …). */
   onLockLost: (() => void) | null = null;
   onLockGained: (() => void) | null = null;
+  /** The browser refused pointer lock after a request (e.g. the post-Esc cooldown, or a 'pointerlockerror'). */
+  onLockError: (() => void) | null = null;
   private readonly target: HTMLElement;
   private readonly offs: Array<() => void> = [];
 
@@ -58,6 +60,7 @@ export class Input {
         this.onLockGained?.();
       }
     });
+    on('pointerlockerror', () => this.onLockError?.());
     const blur = () => this.down.clear();
     window.addEventListener('blur', blur);
     this.offs.push(() => window.removeEventListener('blur', blur));
@@ -93,6 +96,11 @@ export class Input {
     const r = { dx: this.dx, dy: this.dy };
     this.dx = this.dy = 0;
     return r;
+  }
+
+  /** Swallow this frame's press (a key that closed an overlay must not also interact). */
+  consume(code: string): void {
+    this.pressed.delete(code);
   }
 
   endFrame(): void {

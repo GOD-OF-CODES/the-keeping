@@ -29,13 +29,20 @@ export const DIRECTOR_CUTSCENES = ['C1', 'C2', 'C2_replay', 'C3', 'C5', 'C6', 'C
 
 /** Clip names that exist in public/assets/<tier>/{ada,harlan,arms}.glb (docs/CHARACTERS.md). */
 export const KNOWN_CLIPS: Record<'ada' | 'harlan' | 'arms', readonly string[]> = {
-  ada: ['ada_table', 'ada_opening', 'ada_rise', 'ada_patrol', 'ada_listen', 'ada_look', 'ada_chase', 'ada_stairs_up', 'ada_stairs_down', 'ada_hide_check', 'ada_hide_tear', 'ada_vigil', 'ada_catch'],
-  harlan: ['harlan_opening', 'harlan_pose_car_push', 'harlan_pose_look_up', 'harlan_pose_stairs_foot', 'harlan_seated', 'harlan_seated_look_up'],
-  arms: ['arms_idle', 'arms_flashlight_toggle', 'arms_knock', 'arms_bell_pull', 'arms_door_rattle', 'arms_breath_hold', 'arms_freeze', 'arms_wheel', 'arms_key', 'arms_hide_push'],
+  ada: [
+    'ada_table', 'ada_opening', 'ada_rise', 'ada_patrol', 'ada_listen', 'ada_look', 'ada_chase', 'ada_stairs_up', 'ada_stairs_down', 'ada_hide_check', 'ada_hide_tear', 'ada_vigil', 'ada_catch',
+    // M2 (2026-09-30)
+    'ada_search', 'ada_search_bed', 'ada_door_push', 'ada_dress', 'ada_finale_approach', 'ada_finale_take', 'ada_finale_carry', 'ada_finale', 'ada_finale_shadow', 'ada_sting',
+  ],
+  harlan: ['harlan_opening', 'harlan_pose_car_push', 'harlan_pose_look_up', 'harlan_pose_stairs_foot', 'harlan_seated', 'harlan_seated_look_up', 'harlan_finale', 'harlan_finale_shadow'],
+  arms: [
+    'arms_idle', 'arms_flashlight_toggle', 'arms_knock', 'arms_bell_pull', 'arms_door_rattle', 'arms_breath_hold', 'arms_freeze', 'arms_wheel', 'arms_key', 'arms_hide_push',
+    'arms_pickup_read', 'arms_pry_board', 'arms_cut_hem', 'arms_raise_locket', 'arms_locket_hold', 'arms_slide_bolt', 'arms_pour_can',
+  ],
 };
 
-/** M2 clips referenced by the timelines that the character lane has not built yet (each cue carries a fallback). */
-export const PENDING_CLIPS = ['ada_dress', 'ada_finale', 'ada_sting', 'harlan_finale', 'arms_pour_can'] as const;
+/** Clips referenced by the timelines that the character lane has not built yet (each cue carries a fallback). */
+export const PENDING_CLIPS: readonly string[] = [];
 
 export { CutscenePlayer, localSeenStore, memorySeenStore } from './host.ts';
 export type { CharacterDirector, CutsceneDeps, SeenStore } from './host.ts';

@@ -1,4 +1,4 @@
-# Integration — the playable M1 slice (B01–B05)
+# Integration — the playable game (M1 B01–B05 verified in Chrome; M2 B06–B13 wired, see the M2 section)
 
 How the lanes are wired into one game. Entry: `src/game/main.ts` → `startLevel()` → `src/game/story-runtime.ts`.
 
@@ -151,4 +151,64 @@ cutaway → respawn at CP3 with grace works.
   are probe-lit only, so the double look is a pair of silhouettes. The cutscene lane could raise the table candle's
   runtime share while its shadow is on (cast_shadow cue) or add a warm key for the tableau.
 - Real rAF FPS still needs a visible Chrome window.
-- Cutscene fx hooks listed above are not implemented; CCDIK banister hand not done; M2 clips pending.
+- Cutscene fx: done (src/world/cutscene-fx.ts). CCDIK banister hand not done (the stairs clips key the hand). M2 clips: mapped.
+
+
+## M2 (B06–B13) — runtime wiring (2026-09-30)
+
+New modules: `src/game/m2-world.ts` (props from flags, hem, bell pull, kitchen, wardrobe back, locket in hand),
+`src/world/cutscene-fx.ts` (every cutscene `fx` hook), `src/characters/sack-prop.ts` + `cleaver-prop.ts`.
+
+**Flags → world (`m2.syncFlag`, also `syncAll()` after `director.start/startAt`)** — debug starts, respawns and
+restores rebuild the same world: `has_hammer/shears/locket/can` → inventory item + source prop hidden (`has_locket`
+false → removed); `has_ticket` → ticket pocketed; `hem_cut` → dress `intact`↔`cut_hem` parts, locket + ticket shown
+(live: they drop from the hem); `c3_done` → P_CAR_GATE hidden, P_CAR_ROW shown; `bell_nonstop` → the parlor bell loop
+(also on a B10/B11 debug start); `harlan_taken` → blue hour. Load defaults hide P_LOCKET, P_TICKET, the cut-hem part,
+P_AIR_FRESHENER (sting only) and P_CAR_ROW.
+
+**Gameplay**
+- Journal (Tab): every read document as its handwritten page (`drawDocumentPage`, shared with the reading overlay);
+  ← / → / wheel / 1–9 turn pages, Tab/Esc close. The guest book keeps its ruled rows (`lines`).
+- Hold interactions: `Interactables.onHold(it, 'start'|'cancel'|'done')` — the hands work while E is held: pry
+  (2.0 s, DESIGN) = `arms_pry_board` + hammer on `prop_r` + `pry_bite`; hem (1.6 s, only with the shears) =
+  `arms_cut_hem` loop + shears on `prop_r`. Takes/reads play `arms_pickup_read`; the kitchen-side passage bolt
+  ("Slide the bolt") `arms_slide_bolt`.
+- Boards: a live pry sets `doors.livePry = k` before its flag, so that plank swings on its far nail, drops and lies on
+  the landing (`board_drop`); flag restores snap planks straight to the floor pose. Pried planks stay visible.
+- Bell pull: the embroidered pull moves 8 cm, the parlor bell rings far below (positional); story sfx without a
+  position (`bell_pull`, `hatch_thump`, `fabric_tear`, `rope_pulleys`) are placed at their prop (`SFX_AT`).
+- Wardrobe back: inside H_ADA_WARDROBE after `dress_visit_done`, **hold S** (0.7 s) → out through the loose back onto
+  the servants' stair top (U4T), D_WARDROBE_BACK swung open. C4's `wardrobe_back_give` bows the boards a few degrees.
+- Kitchen: entering (`b10:kitchen_enter`) → one thump under the hatch 1.4 s later (the lid jolts); Listen repeats it;
+  taking the can grates (`can_scrape` + 6 m player noise).
+- Locket: RMB (with the locket, not hidden) → `arms_raise_locket` then `arms_locket_hold`, the open locket on the arms'
+  `locket` socket (photo side to the eye; rig-mounted fallback without the clips). After FINALE's take it sits in Ada's
+  left fist (`prop_l`) through C5.
+- End: C7's black + title stays up (no fade/flicker), "Esc menu" fades in.
+
+**Clips**: `adaClipFor(anim, velZ, has)` prefers the M2 clips (search, door_push, dress, finale_approach/take ×1.25/
+carry) and falls back to the M1 stand-ins. Re-cueing the clip that already plays continues it (C5 `harlan_finale` at
+6.4 s and 10 s; C7 `ada_sting` held then run). `CharacterBank.attach` implements sockets: `sting_sack` (plumb, eyeholes
+along `prop_r` +X), `locket` (`prop_l`), `cleaver` (`prop_r`). `ada_search_bed` is exported but no brain state uses it.
+
+**Lighting**: characters' LightsNode = probe lights + every candle/lamp flicker light (the tableau and the kitchen read
+with a warm flickering key). C2's `cast_shadow` also raises the table candle's runtime share ×4.5 for the shot. The
+room warm-up renders the candle-shadow variant WITH Ada, Harlan and their hand props (cleaver, locket, sack) in view.
+
+**Review fixes**: E that closes a page is consumed (no re-read / page turn / re-voice); L lightning is debug-only;
+resume can't soft-lock (menu hides on lock gained, `pointerlockerror` → click-to-begin); the pipeline caches one output
+per chain shape (no bloom rebuild per DOF cue); guttered flames stay out; Space holds the breath only in gameplay or a
+hide (never under a cutscene lock) and E can't leave a hide during one; no per-frame allocations in `setViewer`, the
+controller's step/snap/headroom (headroom only while crouched), Ada's root velocity, the prompt DOM; the death black is
+timed on game time; Ada's velocity isn't reset on dt = 0.
+
+**Prop/asset follow-ups applied**: rubber-sheet floor re-placement removed; P_KNOCKER registered from doors.glb (child
+of the front leaf); the parlor door's 70° comes from doors.glb; clapboard normal-map lap depth reduced (0.012 → 0.003 m,
+lap darkening 0.6 → 0.18) now that the facade has real lap geometry. H_CLOSET's eye was checked headlessly (raycasts
+against collision.glb + the closet interior: 0.5 m to the side walls, 1.5 m above the floor, nothing inside).
+
+**Verification**: typecheck, `npm test` (159), `npm run build` pass. In Chrome (hidden tab, `advance`/`capture`):
+B06 → ledger → hammer → C3 → B08 (cars swapped, fx rigs found on all three cars: glass, 2 wipers each, cluster, lamps;
+rope path + 3 sheaves). Browser testing was then stopped at the user's request (the machine lags), so **B08 pry →
+B13 and the C1/C5/C6/C7 fx are verified only by typecheck/tests/headless GLB checks, not visually** — see the list in
+docs/CUTSCENES.md.

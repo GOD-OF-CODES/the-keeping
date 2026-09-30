@@ -63,6 +63,18 @@ export class HarlanCharacter {
     if (!v) this.primed = false;
   }
 
+  /** The clip playing (null before the first play). */
+  get clipName(): string | null {
+    return this.currentClip;
+  }
+
+  /** Show/hide the feed sack (+ its twine): C5's shadow-play pulls it off. */
+  setSack(v: boolean): void {
+    this.c.root.traverse((n: any) => {
+      if (n.isMesh && /sack|twine/i.test(n.name)) n.visible = v;
+    });
+  }
+
   /** Show/hide the hog cleaver (weighted 100 % to the `cleaver` bone). */
   setCleaver(v: boolean): void {
     const b = this.c.bones.get('cleaver');

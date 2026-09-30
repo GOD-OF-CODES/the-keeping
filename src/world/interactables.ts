@@ -20,6 +20,8 @@ export interface Interactable {
   label(): string | null;
   /** Seconds E must be held (0/undefined = press). */
   hold?: number;
+  /** Action name for hold hooks (arms clips while E is held). */
+  action?: string;
   /** fast = the run key is held (fast door push). */
   use(fast: boolean): void;
   reach?: number;
@@ -31,6 +33,11 @@ export class Interactables {
   readonly items: Interactable[] = [];
   focus: Interactable | null = null;
   enabled = true;
+  /** Hold interactions: 'start' when E goes down on one, 'cancel' when released early, 'done' on completion. */
+  onHold: ((it: Interactable, phase: 'start' | 'cancel' | 'done') => void) | null = null;
+  private holding: Interactable | null = null;
+  private shownLabel: string | null = null;
+  private barVis = '';
   private readonly ray = new THREE.Raycaster();
   private readonly camera: any;
   private readonly input: Input;
@@ -92,25 +99,55 @@ export class Interactables {
     const label = this.focus?.label() ?? null;
     if (!this.focus || !label) {
       this.focus = null;
-      this.prompt.style.display = 'none';
+      if (this.shownLabel !== null) {
+        this.shownLabel = null;
+        this.prompt.style.display = 'none';
+      }
       this.holdT = 0;
+      this.endHold('cancel');
       return;
     }
-    this.prompt.style.display = 'block';
-    this.promptText.textContent = label;
+    if (this.shownLabel !== label) {
+      this.shownLabel = label;
+      this.prompt.style.display = 'block';
+      this.promptText.textContent = label;
+    }
     const hold = this.focus.hold ?? 0;
-    (this.bar.parentElement as HTMLElement).style.visibility = hold > 0 ? 'visible' : 'hidden';
+    const barVis = hold > 0 ? 'visible' : 'hidden';
+    if (this.barVis !== barVis) {
+      this.barVis = barVis;
+      (this.bar.parentElement as HTMLElement).style.visibility = barVis;
+    }
     const fast = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight');
+    if (this.holding && this.holding !== this.focus) this.endHold('cancel');
     if (hold > 0) {
       if (this.input.isDown('KeyE')) {
+        if (!this.holding) {
+          this.holding = this.focus;
+          this.onHold?.(this.focus, 'start');
+        }
         this.holdT += dt;
         if (this.holdT >= hold) {
           this.holdT = 0;
-          this.focus.use(fast);
+          const it = this.focus;
+          this.holding = null;
+          it.use(fast);
+          this.onHold?.(it, 'done');
         }
-      } else this.holdT = 0;
-      this.bar.style.width = `${Math.min(100, (this.holdT / hold) * 100)}%`;
+      } else {
+        this.holdT = 0;
+        this.endHold('cancel');
+      }
+      const wpc = `${Math.min(100, (this.holdT / hold) * 100).toFixed(1)}%`;
+      if (this.bar.style.width !== wpc) this.bar.style.width = wpc;
     } else if (this.input.wasPressed('KeyE')) this.focus.use(fast);
+  }
+
+  private endHold(phase: 'cancel'): void {
+    if (!this.holding) return;
+    const it = this.holding;
+    this.holding = null;
+    this.onHold?.(it, phase);
   }
 
   private pick(): Interactable | null {
@@ -195,7 +232,11 @@ export function bindDefaultInteractions(ix: Interactables, d: BindDeps): void {
       object: door.group,
       label: () => {
         if (door.lock === 'boarded') return null; // the boards are the interaction
-        if (door.lock) return door.id === 'D_FRONT' ? 'Try the door' : 'Try the door';
+        if (door.lock) {
+          // the passage bolt is on the kitchen side: from there you slide it
+          if (door.id === 'D_PASSAGE' && door.lock === 'bolted' && (level.room === 'G3P' || level.room === 'G3')) return 'Slide the bolt';
+          return 'Try the door';
+        }
         return door.target > 10 ? 'Close' : 'Open';
       },
       use: (fast) => {
@@ -211,8 +252,11 @@ export function bindDefaultInteractions(ix: Interactables, d: BindDeps): void {
     ix.add({
       id: `board_${k}`,
       object: b,
-      hold: 2.6,
-      label: () => (!b.visible ? null : inventory.has('hammer') ? 'Pry the board' : 'Nailed shut'),
+      get hold() {
+        return inventory.has('hammer') ? 2.0 : 0; // DESIGN: each pry is a 2 s hold (a press without the hammer explains)
+      },
+      action: 'pry',
+      label: () => (!b.visible || b.userData.removed || ctx.flags.get(`ada_board_${k}`) ? null : inventory.has('hammer') ? 'Pry the board' : 'Nailed shut'),
       use: () => {
         if (!inventory.has('hammer')) {
           d.toast('The boards are nailed fast. I need something to pry them with.');
@@ -221,9 +265,11 @@ export function bindDefaultInteractions(ix: Interactables, d: BindDeps): void {
         // The 14 m screech noise is emitted by the story (src/story/beats.ts onPry) so a pry inside a thunder roll
         // stays silent to her; the world only plays the sound.
         d.sound?.play('nail_screech', { pos: posOf(b), room: 'U1' });
+        doors.livePry = k; // this plank falls (animated); flag restores snap it to the floor
         const flag = `ada_board_${k}`;
         ctx.flags.set(flag, true);
         ctx.events.emit('flag', { name: flag, value: true });
+        doors.livePry = 0;
         emit(`board_${k}`, 'pry');
         if ([1, 2, 3].every((i) => ctx.flags.get(`ada_board_${i}`))) {
           ctx.flags.set('ada_boards_pried', true);
@@ -247,6 +293,7 @@ export function bindDefaultInteractions(ix: Interactables, d: BindDeps): void {
       it = {
         id: p.id,
         object: obj,
+        action: act,
         label: () => (act.startsWith('read') ? 'Read' : 'Examine'),
         use: () => {
           d.sound?.play('paper', { gain: 0.7 });
@@ -258,6 +305,7 @@ export function bindDefaultInteractions(ix: Interactables, d: BindDeps): void {
       it = {
         id: p.id,
         object: obj,
+        action: act,
         label: () => (inventory.has(itemId) ? null : `Take the ${TAKE_LABEL[act].toLowerCase()}`),
         use: () => {
           inventory.add({ id: itemId, label: TAKE_LABEL[act], propId: p.id });
@@ -303,9 +351,21 @@ export function bindDefaultInteractions(ix: Interactables, d: BindDeps): void {
           emit(p.id, act);
         },
       };
+    } else if (act === 'cut_hem') {
+      // B09: hold with the shears; without them, a press explains (the story toasts)
+      it = {
+        id: p.id,
+        object: obj,
+        action: act,
+        get hold() {
+          return inventory.has('shears') ? 1.6 : 0;
+        },
+        label: () => (ctx.flags.get('hem_cut') ? null : inventory.has('shears') ? 'Cut the hem' : 'The hem'),
+        use: () => emit(p.id, act),
+      };
     } else {
-      const labels: Record<string, string> = { car: 'The car', peek_grate: 'Look through the grate', listen_hatch: 'Listen', pull_bell: 'Pull the bell', cut_hem: 'Cut the hem' };
-      it = { id: p.id, object: obj, label: () => labels[act] ?? 'Use', use: () => emit(p.id, act) };
+      const labels: Record<string, string> = { car: 'The car', peek_grate: 'Look through the grate', listen_hatch: 'Listen', pull_bell: 'Pull the bell' };
+      it = { id: p.id, object: obj, action: act, label: () => labels[act] ?? 'Use', use: () => emit(p.id, act) };
     }
     if (it) ix.add(it);
   }

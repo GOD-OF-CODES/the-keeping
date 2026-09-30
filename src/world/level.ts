@@ -85,7 +85,7 @@ export class Level {
   room: string | null = null;
   visible: Set<string> = new Set();
   cullingEnabled = true;
-  private lastKey = '';
+  private dirtyVis = true;
   private readonly scene: any;
 
   constructor(o: {
@@ -129,9 +129,10 @@ export class Level {
     const changed = r !== null && r !== this.room;
     if (r !== null) this.room = r;
     const vis = this.index.visibleFrom(this.room, px, py, feetZ);
-    const key = [...vis].sort().join(',');
-    if (key !== this.lastKey) {
-      this.lastKey = key;
+    let same = !this.dirtyVis && vis.size === this.visible.size;
+    if (same) for (const r of vis) if (!this.visible.has(r)) same = false;
+    if (!same) {
+      this.dirtyVis = false;
       this.visible = vis;
       this.applyVisibility();
     }
@@ -140,7 +141,7 @@ export class Level {
 
   setCulling(on: boolean): void {
     this.cullingEnabled = on;
-    this.lastKey = '';
+    this.dirtyVis = true;
     this.applyVisibility();
   }
 
@@ -271,9 +272,6 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
         continue;
       }
       const w = planToWorld(p.pos);
-      // The rubber sheet is generated draped from the FLOOR (its mesh already spans 0.28–0.81 m) but the layout
-      // gives it the table-top height: put it back on the floor so it drapes over the sawbuck, not above it.
-      if (p.type === 'rubber_sheet') w[1] = planToWorld([p.pos[0], p.pos[1], new RoomIndex(layout).elevationOf(p.room)])[1];
       n.position.set(w[0], w[1], w[2]);
       n.rotation.set(0, p.yaw, 0);
       n.userData.static = p.lighting === 'static';
@@ -383,17 +381,18 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
     }
   });
   root.add(doors.group);
-  // Door-mounted props ride their leaf (the knocker hung in mid-air once the front door swung open).
-  for (const [propId, doorId] of [['P_KNOCKER', 'D_FRONT']] as const) {
-    const obj = props.get(propId);
-    const leaf = doors.doors.get(doorId)?.group;
-    if (!obj || !leaf) continue;
-    leaf.updateWorldMatrix(true, false);
-    leaf.attach(obj);
-    obj.traverse((n: any) => {
-      n.matrixAutoUpdate = true;
+  // Door-mounted props ship inside doors.glb as children of their leaf (P_KNOCKER under door_D_FRONT): register them
+  // as props so interactions / hints find them, and they swing with the door.
+  doors.group.traverse((n: any) => {
+    const p = placements.get(n.name);
+    if (!p || props.has(p.id)) return;
+    n.traverse((c: any) => {
+      c.matrixAutoUpdate = true;
     });
-  }
+    props.set(p.id, n);
+    const i = unplaced.indexOf(`${p.id}(missing)`);
+    if (i >= 0) unplaced.splice(i, 1);
+  });
 
   overlay.set('collision', 0.2);
   const colGltf = gltfs.get('collision');

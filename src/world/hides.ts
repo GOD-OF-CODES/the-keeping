@@ -17,6 +17,8 @@ const PEEK = 0.07;
 
 export class HideSystem {
   active: HideDef | null = null;
+  /** Leaving with E is only allowed while gameplay owns the input (cutscene locks turn it off). */
+  inputEnabled = true;
   private readonly ctx: GameContext;
   private readonly camera: any;
   private readonly player: PlayerController;
@@ -83,7 +85,7 @@ export class HideSystem {
     this.dpitch = clamp(this.dpitch - dy * k * (s.invertY ? -1 : 1), -LOOK_PITCH, LOOK_PITCH);
     const wantPeek = this.input.isDown('KeyW') ? 1 : 0;
     this.peek += (wantPeek - this.peek) * Math.min(1, dt * 6);
-    if (!this.justEntered && this.input.wasPressed('KeyE')) {
+    if (!this.justEntered && this.inputEnabled && this.input.wasPressed('KeyE')) {
       this.exit();
       return;
     }

@@ -243,10 +243,12 @@ const clapboard: Generator = (c) => {
   alb = alb.mul(float(1).sub(streak.mul(0.35)));
   // The lap shadow (the underside of the board above is not lit: bake a thin dark line).
   const lapShadow = float(1).sub(smoothstep(0.0, 0.06, t));
-  alb = alb.mul(float(1).sub(lapShadow.mul(0.6)));
+  // The facade now has real lap geometry (each course is a board with its own shadow line in the bake): keep only a
+  // faint painted-edge darkening and a shallow profile so the laps are not doubled by the normal map.
+  alb = alb.mul(float(1).sub(lapShadow.mul(0.18)));
   rough = mix(rough, float(0.9), mildew);
-  const height = profile.mul(0.8).add(p.height.mul(0.12)).add(curl.mul(0.06));
-  return { albedo: alb, roughness: rough, height, heightDepthM: 0.012, cavity: 0.4, normalStrength: 1 };
+  const height = profile.mul(0.25).add(p.height.mul(0.5)).add(curl.mul(0.25));
+  return { albedo: alb, roughness: rough, height, heightDepthM: 0.003, cavity: 0.4, normalStrength: 1 };
 };
 
 // ---------------------------------------------------------------- porch boards (wet) ------------------------

@@ -63,6 +63,9 @@ export interface PlayerWorld {
 }
 
 const _v = new THREE.Vector3();
+const _start = new THREE.Vector3();
+const _t = new THREE.Vector3();
+const _zero = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
 const _right = new THREE.Vector3();
 
@@ -104,6 +107,11 @@ export class PlayerController {
   private runLocked = false;
   private readonly lastSafe = new THREE.Vector3();
   private safeT = 0;
+  /** Scratch capsules (step-up / snap-down / headroom): no per-frame allocation. */
+  private readonly trial = new Capsule(new THREE.Vector3(), new THREE.Vector3(0, 1, 0), RADIUS);
+  private readonly trial2 = new Capsule(new THREE.Vector3(), new THREE.Vector3(0, 1, 0), RADIUS);
+  /** Space holds the breath only when gameplay allows it (hidden, or free and not in a cutscene): the story sets it. */
+  breathAllowed = true;
 
   constructor(camera: any, input: Input, ctx: GameContext, world: PlayerWorld) {
     this.camera = camera;
@@ -186,7 +194,8 @@ export class PlayerController {
     const shift = i.isDown('ShiftLeft') || i.isDown('ShiftRight');
     const moving = f !== 0 || r !== 0;
     // crouch: only stand up when there's headroom
-    const crouchTarget = wantCrouch ? 1 : this.headroomFor(HEIGHT) ? 0 : this.crouch;
+    // headroom is only tested while (partly) crouched: standing up under the stair
+    const crouchTarget = wantCrouch ? 1 : this.crouch < 1e-3 || this.headroomFor(HEIGHT) ? 0 : this.crouch;
     this.crouch += (crouchTarget - this.crouch) * Math.min(1, dt * 8);
     if (this.stamina <= 0.02) this.runLocked = true;
     if (this.stamina > 0.3) this.runLocked = false;
@@ -257,7 +266,7 @@ export class PlayerController {
     }
     if (!this.onFloor) this.velocity.y -= GRAVITY * h;
     else this.velocity.y = Math.max(this.velocity.y - GRAVITY * h, -1);
-    const start = c.start.clone();
+    const start = _start.copy(c.start);
     const move = _v.copy(this.velocity).multiplyScalar(h);
     c.translate(move);
     const vel = this.velocity;
@@ -268,10 +277,10 @@ export class PlayerController {
       const wantH = Math.hypot(move.x, move.z);
       const got = Math.hypot(c.start.x - start.x, c.start.z - start.z);
       if (wantH > 1e-5 && got < wantH * 0.6) {
-        const trial = c.clone();
-        trial.translate(new THREE.Vector3(start.x - c.start.x, start.y + STEP_UP - c.start.y, start.z - c.start.z));
+        const trial = this.trial.copy(c);
+        trial.translate(_t.set(start.x - c.start.x, start.y + STEP_UP - c.start.y, start.z - c.start.z));
         if (!this.world.collision.octree.capsuleIntersect(trial)) {
-          trial.translate(new THREE.Vector3(move.x, 0, move.z));
+          trial.translate(_t.set(move.x, 0, move.z));
           if (!this.world.collision.octree.capsuleIntersect(trial)) {
             c.copy(trial);
             onFloor = this.snapDown(STEP_UP + 0.05) || onFloor;
@@ -284,7 +293,7 @@ export class PlayerController {
     this.onFloor = onFloor;
     // world bounds (the drive, yard and road; the fog hides the edge): slide back horizontally
     if (!this.world.index.inBounds(c.start.x, -c.start.z, c.start.y - RADIUS)) {
-      c.translate(new THREE.Vector3(start.x - c.start.x, 0, start.z - c.start.z));
+      c.translate(_t.set(start.x - c.start.x, 0, start.z - c.start.z));
       this.velocity.x = 0;
       this.velocity.z = 0;
     }
@@ -307,10 +316,9 @@ export class PlayerController {
 
   private snapDown(dist: number): boolean {
     const c = this.capsule;
-    const trial = c.clone();
-    trial.translate(new THREE.Vector3(0, -dist, 0));
-    const v = new THREE.Vector3();
-    const hit = this.world.collision.resolve(trial, v);
+    const trial = this.trial2.copy(c);
+    trial.translate(_t.set(0, -dist, 0));
+    const hit = this.world.collision.resolve(trial, _zero.set(0, 0, 0));
     if (hit.onFloor && trial.start.y < c.start.y + 1e-4) {
       c.copy(trial);
       return true;
@@ -320,7 +328,11 @@ export class PlayerController {
 
   private headroomFor(height: number): boolean {
     if (this.noclip) return true;
-    const trial = new Capsule(this.capsule.start.clone(), this.capsule.start.clone().add(new THREE.Vector3(0, height - 2 * RADIUS, 0)), RADIUS * 0.9);
+    const trial = this.trial;
+    trial.start.copy(this.capsule.start);
+    trial.end.copy(this.capsule.start);
+    trial.end.y += height - 2 * RADIUS;
+    trial.radius = RADIUS * 0.9;
     const r = this.world.collision.octree.capsuleIntersect(trial);
     return !r || r.normal.y > 0.5;
   }
@@ -355,7 +367,7 @@ export class PlayerController {
   }
 
   private updateBreath(dt: number, running: boolean): void {
-    const space = this.input.isDown('Space');
+    const space = this.breathAllowed && this.input.isDown('Space');
     if (space && !this.holdingBreath && this.breathHeld === 0) {
       this.holdingBreath = true;
       this.ctx.events.emit('player:breath', { holding: true });

@@ -156,7 +156,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
         ctx.time.dt = dt;
         ctx.time.now = nowSec;
         ctx.time.frame = loop.frame;
-        if (!paused && input.wasPressed('KeyL')) lightning.strike();
+        if (!paused && ctx.debug && input.wasPressed('KeyL')) lightning.strike(); // debug only: thunder masks every noise
         lightning.update(dt, paused);
         rt.update(dt, nowSec, paused, lightning.level);
         input.endFrame();
@@ -240,17 +240,30 @@ export async function startGame(h: BootHandoff): Promise<void> {
     } else menu.hide();
   }
   async function resume() {
-    menu.hide();
+    if (input.locked) {
+      // already locked (the lock came back before the menu click): just continue
+      menu.hide();
+      setPaused(false);
+      return;
+    }
     const ok = await input.requestLock();
     if (!ok) {
-      // Browser refused (cooldown right after Esc): ask for one more click.
+      // Browser refused (cooldown right after Esc): ask for one more click. The menu stays until the lock is gained.
+      menu.hide();
       begin.show();
-      return;
     }
   }
   input.onLockGained = () => {
     begin.hide();
+    menu.hide();
     setPaused(false);
+  };
+  input.onLockError = () => {
+    // never leave the player paused with no UI
+    if (paused) {
+      menu.hide();
+      begin.show();
+    }
   };
   input.onLockLost = () => setPaused(true);
   begin.el.addEventListener('click', () => void input.requestLock());
@@ -512,18 +525,20 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
     // weather bed follows where you are (porch roof overhead = rain on the porch roof)
     if (audio) {
       const surf = outside ? (player.surface === 'porch_wood' ? 'porch' : 'gravel') : 'roof';
-      const key = `${outside}|${surf}`;
+      const key = `${outside}|${surf}|${story.rain()}`;
       if (key !== weatherKey) {
         weatherKey = key;
-        audio.layers.setWeather({ rain: 1, wind: outside ? 0.8 : 0.5, inside: outside ? 0 : 1, surface: surf });
+        audio.layers.setWeather({ rain: story.rain(), wind: (outside ? 0.8 : 0.5) * (story.rain() > 0 ? 1 : 0.35), inside: outside ? 0 : 1, surface: surf });
       }
     }
-    fog.density = outside ? 0.028 : 0.0;
+    // blue hour (B12/C6): the mist lies in the field — thicker exterior fog, paler
+    fog.density = outside ? 0.028 + story.mist() * 0.022 : 0.0;
     level.update(dt, t, lightning);
+    story.lateUpdate();
     rig.update(dt, t);
     // sky flash (+ C6's blue hour: the sky pales toward dawn)
     const bh = story.skyTint();
-    if (bh > 0) sky.setRGB(SKY_COLOR[0] + bh * 0.05, SKY_COLOR[1] + bh * 0.07, SKY_COLOR[2] + bh * 0.11);
+    sky.setRGB(SKY_COLOR[0] + bh * 0.05, SKY_COLOR[1] + bh * 0.07, SKY_COLOR[2] + bh * 0.11);
     (scene.background as any).setRGB(sky.r + lightning * 0.35, sky.g + lightning * 0.38, sky.b + lightning * 0.46);
     // the rain haze is lit by the same sky: fog colour follows the background (flashes included)
     fog.color.setRGB(sky.r * 1.05 + lightning * 0.3, sky.g * 1.05 + lightning * 0.33, sky.b * 1.05 + lightning * 0.4);
@@ -624,6 +639,9 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
         // C2 turns on the table candle's shadow: compile that variant now (a pipeline hitch mid-cutscene otherwise)
         const candle = level.lights.flickers.find((f) => f.def.id === 'L_CANDLE_TABLE');
         if (candle) {
+          // with Ada + Harlan in the tableau (their shadow-casting / receiving variants compile too: C2, C5's
+          // shadow-play and C7 reuse this light)
+          story.warmTableau(true);
           candle.light.castShadow = true;
           candle.light.shadow.mapSize.set(512, 512);
           candle.light.shadow.bias = -0.002;
@@ -635,10 +653,35 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
             camera.rotation.set(-0.15, -Math.PI / 2 + 0.3, 0);
             camera.updateMatrixWorld(true);
             level.setViewer(3.3, 1.5, e);
+            rig.snap(); // the first-person arms (their LightsNode has the candles too) compile the shadow variant as well
+            rig.update(0.016, 0);
             render();
             await nextFrame();
           }
           candle.light.castShadow = false;
+          story.warmTableau(false);
+        }
+        // the CAR set (C1/C7 interior: rain overlay, cluster, lamps) and your car in the row (shown at C3's flash)
+        {
+          const row = level.prop('P_CAR_ROW');
+          const rowWas = row?.visible;
+          if (row) row.visible = true;
+          const setEye = coords.planToWorld([100.45, 1.35, 1.1]);
+          camera.position.set(setEye[0], setEye[1], setEye[2]);
+          camera.rotation.set(-0.05, 0, 0);
+          camera.updateMatrixWorld(true);
+          level.setCulling(false);
+          rig.snap();
+          rig.update(0.016, 0);
+          render();
+          const rowEye = coords.planToWorld([9.5, -5.5, 1.7]);
+          camera.position.set(rowEye[0], rowEye[1], rowEye[2]);
+          camera.lookAt(new THREE.Vector3(...coords.planToWorld([13.4, -1.6, 0.6])));
+          camera.updateMatrixWorld(true);
+          render();
+          await nextFrame();
+          if (row) row.visible = !!rowWas;
+          level.setCulling(true);
         }
         player.teleport(saved, yaw, pitch);
         const pf = player.planFeet();
