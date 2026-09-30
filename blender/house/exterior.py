@@ -15,7 +15,25 @@ from .plan import dot, sub
 UP = Vector((0, 0, 1))
 SIDING_T = 0.02          # clapboard butt thickness (proud of the sheathing plane)
 CASING_T = 0.03          # exterior casings stand proud of the siding
-EXPOSURE = 0.115
+EXPOSURE = 0.10          # board exposure == material-spec clapboard_peeling boardExposure (tile 3 m -> 30 rows)
+SIDING_Z0 = 0.83         # bottom of the first course (top of the water table); every course starts at Z0 + k*EXPOSURE
+
+
+def clapboard_v(z):
+    """Blender UV v for clapboard at height z. The glTF exporter writes 1 - v, and the runtime generators see that
+    value (baker.ts: generator uv == sampling uv), so runtime uv.y = z - SIDING_Z0: it increases UPWARD and every
+    course bottom (drip edge, t = 0 in the clapboard generator) lands exactly on a row boundary."""
+    return 1.0 - (z - SIDING_Z0)
+
+
+def clapboard_uvs(M, mid='clapboard_peeling'):
+    """Re-map the box UVs (u along the facade, v = z) of every clapboard face of M to the clapboard convention."""
+    if mid not in M.mats:
+        return
+    k = M.mats.index(mid)
+    for i, fm in enumerate(M.FM):
+        if fm == k:
+            M.LUV[i] = [(u, clapboard_v(v)) for (u, v) in M.LUV[i]]
 
 
 class Roof:
@@ -145,7 +163,7 @@ def facade_region(fp, roof, zmin):
 def hero_siding(P, fp, M, roof, rng):
     """Real lap siding: each course a tilted board face + butt; boards 3-4.8 m with staggered joints, slight
     warps and sags. Returns nothing; the Mesh gets a planar lightmap projection in the facade plane."""
-    zw = 0.83
+    zw = SIDING_Z0
     region, gable = facade_region(fp, roof, zw)
     zmax = max(p[1] for p in region)
     cuts = [casing_rect(o, s, z0, z1) for o, s, z0, z1, w in openings_on_plane(P, fp)]
@@ -215,7 +233,7 @@ def hero_siding(P, fp, M, roof, rng):
                     for (s_, z_) in qq:
                         verts.append(V_(s_, z_at(s_, z_), out_at(s_, z_)))
                     faces.append(list(range(base, base + len(qq))))
-                    luv.append([(s_, z_) for (s_, z_) in qq])
+                    luv.append([(s_, clapboard_v(z_)) for (s_, z_) in qq])
                     # butt faces along edges lying on z = zc
                     for i in range(len(qq)):
                         p1, p2 = qq[i], qq[(i + 1) % len(qq)]
@@ -231,7 +249,9 @@ def hero_siding(P, fp, M, roof, rng):
                             if newell([verts[j] for j in f]).dot(Vector((0, 0, -1))) < 0:
                                 f = list(reversed(f))
                             faces.append(f)
-                            luv.append([(p1[0], zc), (p2[0], zc), (p2[0], zc - 0.01), (p1[0], zc - 0.01)])
+                            # the butt shows the board's bottom edge (t 0..0.08: drip edge, lap shadow)
+                            luv.append([(p1[0], clapboard_v(zc)), (p2[0], clapboard_v(zc)),
+                                        (p2[0], clapboard_v(zc + 0.008)), (p1[0], clapboard_v(zc + 0.008))])
         zc = z_top
         c += 1
     # orient the board faces outward
@@ -320,34 +340,41 @@ def shingle_side(M, roof, side, rng, holes=(), exp=0.185):
             if y1 - yb < 0.08:
                 yb = y1
             y = yb
-            cy = (ya + yb) / 2
-            # skip shingles over the chimney
-            cxp = roof.xr + side * cp * (d_k - exp / 2)
-            if any(h[0] - 0.02 < cxp < h[2] + 0.02 and h[1] - 0.02 < cy < h[3] + 0.02 for h in holes):
+            # clip shingles against the chimney stack (course x-span overlapping the hole): keep the parts beside it
+            xa_c = roof.xr + side * cp * max(d_k - exp, 0.0)
+            xb_c = roof.xr + side * cp * d_k
+            lo_x, hi_x = min(xa_c, xb_c), max(xa_c, xb_c)
+            pieces = [(ya, yb)]
+            for h in holes:
+                if hi_x > h[0] - 0.005 and lo_x < h[2] + 0.005:
+                    pieces = [q for pc in pieces for q in subtract_intervals(pc[0], pc[1], [(h[1] - 0.003, h[3] + 0.003)])]
+            pieces = [q for q in pieces if q[1] - q[0] > 0.015]
+            if not pieces:
                 continue
-            bj = rng.uniform(-0.006, 0.006) if k > 0 else 0.0
-            tb = rng.uniform(0.009, 0.016) if k > 0 else 0.018
-            dB = d_k + bj
-            ht = 0.003
-            lift = rng.uniform(0.0, 0.004) if rng.random() < 0.12 else 0.0   # the odd curled shingle
-            g = 0.0
-            a_, b_ = ya, yb
-            # top face (up-slope edge first), butt, two side triangles, under-butt strip
-            add([W(a_, top_line, ht), W(a_, dB, tb + lift), W(b_, dB, tb), W(b_, top_line, ht)],
-                [(a_, -top_line), (a_, -dB), (b_, -dB), (b_, -top_line)])
-            add([W(a_, dB, tb + lift), W(a_, dB, 0.0015), W(b_, dB, 0.0015), W(b_, dB, tb)],
-                [(a_, -dB), (a_, -dB), (b_, -dB), (b_, -dB)])
-            add([W(a_, top_line, ht), W(a_, dB, 0.0015), W(a_, dB, tb + lift)],
-                [(a_, -top_line), (a_, -dB), (a_, -dB)])
-            add([W(b_, top_line, ht), W(b_, dB, tb), W(b_, dB, 0.0015)],
-                [(b_, -top_line), (b_, -dB), (b_, -dB)])
-            low = d_k + 0.007 if k > 0 else d_k
-            if low > dB + 1e-5:
-                add([W(ya, dB, 0.0015), W(ya, low, 0.0015), W(yb, low, 0.0015), W(yb, dB, 0.0015)],
-                    [(ya, -dB), (ya, -low), (yb, -low), (yb, -dB)])
-            if g > 0:   # keyway floor between shingles
-                add([W(b_, top_line, 0.0015), W(b_, low, 0.0015), W(yb + g, low, 0.0015), W(yb + g, top_line, 0.0015)],
-                    [(b_, -top_line), (b_, -low), (yb + g, -low), (yb + g, -top_line)])
+            for ya, yb in pieces:
+                bj = rng.uniform(-0.006, 0.006) if k > 0 else 0.0
+                tb = rng.uniform(0.009, 0.016) if k > 0 else 0.018
+                dB = d_k + bj
+                ht = 0.003
+                lift = rng.uniform(0.0, 0.004) if rng.random() < 0.12 else 0.0   # the odd curled shingle
+                g = 0.0
+                a_, b_ = ya, yb
+                # top face (up-slope edge first), butt, two side triangles, under-butt strip
+                add([W(a_, top_line, ht), W(a_, dB, tb + lift), W(b_, dB, tb), W(b_, top_line, ht)],
+                    [(a_, -top_line), (a_, -dB), (b_, -dB), (b_, -top_line)])
+                add([W(a_, dB, tb + lift), W(a_, dB, 0.0015), W(b_, dB, 0.0015), W(b_, dB, tb)],
+                    [(a_, -dB), (a_, -dB), (b_, -dB), (b_, -dB)])
+                add([W(a_, top_line, ht), W(a_, dB, 0.0015), W(a_, dB, tb + lift)],
+                    [(a_, -top_line), (a_, -dB), (a_, -dB)])
+                add([W(b_, top_line, ht), W(b_, dB, tb), W(b_, dB, 0.0015)],
+                    [(b_, -top_line), (b_, -dB), (b_, -dB)])
+                low = d_k + 0.007 if k > 0 else d_k
+                if low > dB + 1e-5:
+                    add([W(ya, dB, 0.0015), W(ya, low, 0.0015), W(yb, low, 0.0015), W(yb, dB, 0.0015)],
+                        [(ya, -dB), (ya, -low), (yb, -low), (yb, -dB)])
+                if g > 0:   # keyway floor between shingles
+                    add([W(b_, top_line, 0.0015), W(b_, low, 0.0015), W(yb + g, low, 0.0015), W(yb + g, top_line, 0.0015)],
+                        [(b_, -top_line), (b_, -low), (yb + g, -low), (yb + g, -top_line)])
         d_k = d_up
         k += 1
     from .geom import newell
@@ -400,9 +427,7 @@ def build_roof(P, roof, meshes_ext, rng):
     chim = P.L['roof'].get('chimney')
     holes = []
     if chim:
-        cx, cy = chim['pos']
-        sx, sy = chim['size']
-        holes.append((cx - sx / 2, cy - sy / 2, cx + sx / 2, cy + sy / 2))
+        holes.append(chimney_stack(chim))   # only the STACK passes the eave/roof (the shoulders end below it)
     for side, key in ((-1, 'roof_w'), (1, 'roof_e')):
         shingle_side(meshes_ext[key], roof, side, rng, holes=holes)
     ridge_cap(meshes_ext['roof_trim'].d, roof, rng)
@@ -417,7 +442,7 @@ def eaves(P, roof, M, holes):
         xw = roof.fx0 if side < 0 else roof.fx1
         xf = xw + side * over                  # fascia outer line
         zf_top = roof.z_surface(xf) - 0.01
-        y_segs = subtract_intervals(roof.y0, roof.y1, [(h[1] - 0.04, h[3] + 0.04) for h in holes
+        y_segs = subtract_intervals(roof.y0, roof.y1, [(h[1] - 0.004, h[3] + 0.004) for h in holes
                                                         if (h[0] < xf < h[2] + 1.0) or (h[0] - 1 < xw < h[2])]
                                     if side > 0 else [])
         for ya, yb in y_segs:
@@ -449,6 +474,12 @@ def eaves(P, roof, M, holes):
             # half-round gutter on hangers, slight fall toward the downspout end
             gutter(M, Vector((xf + side * 0.1, ya, zf_top - 0.07)), Vector((xf + side * 0.1, yb, zf_top - 0.09)),
                    side)
+        # soffit + bed between the wall and a stack standing proud of the wall (no open slot up into the roof)
+        for h in holes:
+            if side > 0 and h[0] > xw + 0.01 and h[0] < xf:
+                box(M, (xw, h[1] - 0.006, zs - 0.02), (h[0] + 0.004, h[3] + 0.006, zs), 'trim_chipped', bevel=0.002)
+                box(M, (xw, h[1] - 0.006, zs), (h[0] + 0.004, h[3] + 0.006, roof.z_surface(h[0]) - 0.01),
+                    'trim_chipped', bevel=0.002)
     # rakes on both gables
     for yg, sgn in ((roof.fy0, -1), (roof.fy1, 1)):
         y_out = yg + sgn * rake
@@ -501,6 +532,18 @@ def gutter(M, a, b, side):
     sweep(M, [a, b], prof, 'zinc_galvanized', up=UP, side_sign=1.0, closed_profile=True)
     d = b - a
     L = d.length
+    # soldered end caps (half discs, a 2 mm plate: one face outward, one into the trough)
+    t_ = d.normalized()
+    X_ = UP.cross(t_)
+    half = [(r * math.cos(t), -r * math.sin(t)) for t in [math.pi * i / 12 for i in range(13)]]
+    from .geom import newell
+    for end, outward in ((a, -t_), (b, t_)):
+        for off, facing_ in ((0.0, outward), (-0.002, -outward)):
+            c = end + outward * off
+            pts = [c + X_ * px + UP * py for px, py in half]
+            if newell(pts).dot(facing_) < 0:
+                pts = list(reversed(pts))
+            M.poly(pts, 'zinc_galvanized')
     nh = max(2, int(L / 0.8))
     for i in range(nh + 1):
         p = a + d * (i / nh)
@@ -527,6 +570,15 @@ def downspout(M, top, x_wall, side, z_bottom, name_kick=True):
 
 
 # ------------------------------------------------------------------------------------------------ chimney
+def chimney_stack(ch):
+    """(x0, y0, x1, y1) of the chimney STACK above the shoulders (what passes through the eave and roof)."""
+    cx, cy = ch['pos']
+    sx, sy = ch['size']
+    x0, x1 = cx - sx / 2, cx + sx / 2
+    y0, y1 = cy - sy / 2, cy + sy / 2
+    return (x0 + 0.1, y0 + 0.22, x1 - 0.15, y1 - 0.22)
+
+
 def chimney(P, roof, M, rng):
     ch = P.L['roof']['chimney']
     cx, cy = ch['pos']
@@ -539,8 +591,7 @@ def chimney(P, roof, M, rng):
     zs = 3.6
     box(M, (x0, y0, -0.1), (x1, y1, zs), mat, bevel=0.01, segs=1)
     # stepped shoulders (weathered brick slopes)
-    bx0, bx1 = x0 + 0.1, x1 - 0.15
-    by0, by1 = y0 + 0.22, y1 - 0.22
+    bx0, by0, bx1, by1 = chimney_stack(ch)
     poly = [(y0, zs), (y1, zs), (by1, zs + 0.45), (by0, zs + 0.45)]
     prism(M, poly, Vector((x0, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1)), x1 - x0, mat, bevel=0.006)
     # stack
@@ -555,6 +606,23 @@ def chimney(P, roof, M, rng):
         c = Vector(((bx0 + bx1) / 2, fy, top + 0.03))
         lathe(M, [(0.075, 0.0), (0.08, 0.02), (0.07, 0.06), (0.068, 0.24), (0.075, 0.26), (0.075, 0.28),
                   (0.06, 0.28), (0.058, 0.1)], c, 'brick_old', segs=14, cap=False)
+    # zinc apron lying on the shingles around the stack (covers the cut shingle ends): two side strips running
+    # down-slope past the fascia line and a back apron on the up-slope face
+    xe = roof.fx1 + roof.over + 0.03
+    for y_a, y_b in ((by0 - 0.11, by0 + 0.004), (by1 - 0.004, by1 + 0.11)):
+        pts = [Vector((bx0 - 0.1, y_a, roof.z_surface(bx0 - 0.1) + 0.022)),
+               Vector((xe, y_a, roof.z_surface(xe) + 0.022)),
+               Vector((xe, y_b, roof.z_surface(xe) + 0.022)),
+               Vector((bx0 - 0.1, y_b, roof.z_surface(bx0 - 0.1) + 0.022))]
+        M.poly(pts, 'zinc_galvanized')
+    pts = [Vector((bx0 - 0.1, by0 - 0.11, roof.z_surface(bx0 - 0.1) + 0.024)),
+           Vector((bx0 + 0.004, by0 - 0.11, roof.z_surface(bx0 + 0.004) + 0.024)),
+           Vector((bx0 + 0.004, by1 + 0.11, roof.z_surface(bx0 + 0.004) + 0.024)),
+           Vector((bx0 - 0.1, by1 + 0.11, roof.z_surface(bx0 - 0.1) + 0.024))]
+    M.poly(pts, 'zinc_galvanized')
+    # upturned leg of the back apron against the stack
+    box(M, (bx0 - 0.006, by0 - 0.11, roof.z_surface(bx0) + 0.01), (bx0, by1 + 0.11, roof.z_surface(bx0) + 0.14),
+        'zinc_galvanized', bevel=0.001)
     # zinc flashing where the stack meets the roof overhang / wall
     zr = roof.z_surface(bx0)
     for y_a, y_b in ((by0 - 0.012, by0), (by1, by1 + 0.012)):
@@ -665,8 +733,13 @@ def porch(P, meshes_ext, roof, rng):
         box(M, (sx - sw / 2 + 0.02, ya, zt - rh), (sx + sw / 2 - 0.02, ya + 0.022, zt - 0.03), tmat, bevel=0.002)
     box(M, (sx - sw / 2 + 0.02, y_edge - 0.02, dz - rh), (sx + sw / 2 - 0.02, y_edge, dz - 0.03), tmat, bevel=0.002)
     slope = dz / (nsteps * td)
+    # closed (housed) stringers: top edge 3 cm above the nosing line, plumb-cut at the bottom tread's nosing (no
+    # wedge running out past the steps onto the ground), level cut on the ground, 0.3 m deep
+    y_front = y_edge - (nsteps - 1) * td - 0.035
+    z_front = dz + 0.03 - (y_edge - y_front) * slope
+    y_heel = y_edge - (dz - 0.3) / slope
     for xs in (sx - sw / 2 - 0.04, sx + sw / 2):
-        poly = [(y_edge, dz - 0.03), (y_edge - (dz - 0.03) / slope, 0.0), (y_edge - (dz - 0.3) / slope, 0.0),
+        poly = [(y_edge, dz + 0.03), (y_front, z_front), (y_front, 0.0), (max(y_heel, y_front + 0.05), 0.0),
                 (y_edge, dz - 0.3)]
         prism(M, poly, Vector((xs, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1)), 0.04, tmat, bevel=0.004)
     # --- posts
@@ -900,6 +973,7 @@ def build_exterior(P, factory):
             facade_flat_region(P, fp, ext['walls'], roof, region)
             reveals(ext['walls'], fp, ops)
         facade_trim(P, fp, ext['trim'], roof, fp['detail'] == 'hero')
+    clapboard_uvs(ext['walls'])          # flat (fog) facades + gables: same v convention as the hero lap siding
         # sheathing plane behind the hero siding strip under the water table cap is covered by the trim
     build_roof(P, roof, ext, rng)
     chimney(P, roof, ext['chimney'], rng)

@@ -139,7 +139,7 @@ def build_ada():
     mats = {
         'body': material('ada_skin', 'skin_ada', 'ada', extras={'sss': 0.3}),
         'gown': material('ada_gown', 'nightgown_silt', 'ada', double_sided=True),
-        'eye': material('ada_eye', 'skin_ada', 'ada', extras={'eye': 1, 'clearcoat': 1.0}),
+        'eye': material('ada_eye', 'eye_ada', 'ada', extras={'eye': 1, 'clearcoat': 1.0}),
         'hair': material('ada_hair', 'hair_wet_black', 'ada_hair', alpha='hash', double_sided=True),
     }
     for k, m in mats.items():

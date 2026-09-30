@@ -540,7 +540,7 @@
    "id": "clapboard_peeling",
    "family": "clapboard",
    "params": {
-    "boardExposure": 0.11,
+    "boardExposure": 0.1,
     "paint": [
      0.42,
      0.41,
@@ -1428,6 +1428,165 @@
    "source": "baked_unique"
   },
   {
+   "id": "trousers_wool",
+   "family": "fabric",
+   "params": {
+    "weave": "twill",
+    "dust": 0.4,
+    "kneeWear": 0.6,
+    "mud": 0.5,
+    "seed": 104
+   },
+   "avgAlbedo": [
+    0.055,
+    0.05,
+    0.042
+   ],
+   "roughness": 0.92,
+   "metalness": 0,
+   "tileMetres": 0.3,
+   "hero": false,
+   "wetness": 0,
+   "source": "baked_unique",
+   "notes": "Harlan's work trousers (brown-black wool twill, muddy hems)."
+  },
+  {
+   "id": "twine_jute",
+   "family": "rope",
+   "params": {
+    "strands": 2,
+    "twist": 0.9,
+    "fuzz": 0.7,
+    "grime": 0.5,
+    "seed": 105
+   },
+   "avgAlbedo": [
+    0.3,
+    0.23,
+    0.13
+   ],
+   "roughness": 0.95,
+   "metalness": 0,
+   "tileMetres": 0.1,
+   "hero": false,
+   "wetness": 0,
+   "source": "baked_unique",
+   "notes": "Twine tying Harlan's sack at the neck; spare twine on the mask-making chair."
+  },
+  {
+   "id": "steel_cleaver",
+   "family": "chrome",
+   "params": {
+    "pitting": 0.7,
+    "rustSpots": 0.55,
+    "honedEdge": 0.8,
+    "seed": 106
+   },
+   "avgAlbedo": [
+    0.3,
+    0.3,
+    0.29
+   ],
+   "roughness": 0.45,
+   "metalness": 1,
+   "tileMetres": 0.3,
+   "hero": false,
+   "wetness": 0,
+   "source": "baked_unique",
+   "notes": "Hog-cleaver blade: carbon steel, pitted, rust blooms, bright honed edge."
+  },
+  {
+   "id": "coat_rain_dark",
+   "family": "fabric",
+   "params": {
+    "weave": "twill",
+    "dust": 0.1,
+    "seed": 107
+   },
+   "avgAlbedo": [
+    0.04,
+    0.04,
+    0.045
+   ],
+   "roughness": 0.8,
+   "metalness": 0,
+   "tileMetres": 0.3,
+   "hero": false,
+   "wetness": 0.7,
+   "source": "baked_unique",
+   "notes": "Player's rain-dark coat sleeves (first-person arms)."
+  },
+  {
+   "id": "steel_flashlight",
+   "family": "chrome",
+   "params": {
+    "pitting": 0.2,
+    "rustSpots": 0.05,
+    "knurl": 0.8,
+    "seed": 108
+   },
+   "avgAlbedo": [
+    0.45,
+    0.45,
+    0.44
+   ],
+   "roughness": 0.35,
+   "metalness": 1,
+   "tileMetres": 0.2,
+   "hero": false,
+   "wetness": 0,
+   "source": "baked_unique",
+   "notes": "Steel two-cell flashlight body (first-person arms)."
+  },
+  {
+   "id": "lens_flashlight",
+   "family": "glass",
+   "params": {
+    "ior": 1.5,
+    "transmission": 0.9,
+    "grime": 0.2,
+    "emissive_srgb": [
+     1,
+     0.86,
+     0.62
+    ],
+    "seed": 109
+   },
+   "avgAlbedo": [
+    0.04,
+    0.04,
+    0.04
+   ],
+   "roughness": 0.05,
+   "metalness": 0,
+   "tileMetres": 0.1,
+   "hero": false,
+   "wetness": 0,
+   "source": "constant",
+   "notes": "Flashlight lens + reflector/bulb (separate mesh arms_flashlight_lens): emissive warm white when the light is on."
+  },
+  {
+   "id": "eye_ada",
+   "family": "skin",
+   "params": {
+    "clouded": 0.8,
+    "bloodshot": 0.5,
+    "seed": 110
+   },
+   "avgAlbedo": [
+    0.36,
+    0.35,
+    0.31
+   ],
+   "roughness": 0.05,
+   "metalness": 0,
+   "tileMetres": 1,
+   "hero": false,
+   "wetness": 1,
+   "source": "baked_unique",
+   "notes": "Ada's single visible eye: milky, clouded cornea under a wet clearcoat."
+  },
+  {
    "id": "car_paint_sedan",
    "family": "car_paint",
    "params": {
@@ -1580,6 +1739,30 @@
    "wetness": 0,
    "source": "generated",
    "notes": "Guest book, ledger, letter, bus ticket. Text drawn at runtime by src/materials/handwriting.ts."
+  },
+  {
+   "id": "wick_cotton",
+   "family": "rope",
+   "params": {
+    "strands": 12,
+    "twist": 0.2,
+    "fuzz": 0.8,
+    "grime": 0.4,
+    "charredTip": 0.9,
+    "seed": 125
+   },
+   "avgAlbedo": [
+    0.3,
+    0.27,
+    0.22
+   ],
+   "roughness": 0.95,
+   "metalness": 0,
+   "tileMetres": 0.05,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Flat woven kerosene-lamp wick (charred at the tip) and candle wicks."
   },
   {
    "id": "rope_hemp",

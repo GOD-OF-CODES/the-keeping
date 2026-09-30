@@ -62,6 +62,26 @@ def extract(src, vmask, name, coll=None):
     return new_object(name, P[used], [[remap[v] for v in f] for f in keep_faces], coll)
 
 
+def split_faces(ob, face_mask, name):
+    """Separate the faces where face_mask (bool per polygon) into a new object `name` (keeps UVs, weights,
+    modifiers, custom props). Works on meshes without shape keys. Returns the new object."""
+    from lib.scene import select
+    me = ob.data
+    select([ob], ob)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_mode(type='FACE')
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+    me.polygons.foreach_set('select', [bool(x) for x in face_mask])
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.separate(type='SELECTED')
+    bpy.ops.object.mode_set(mode='OBJECT')
+    new = next(o for o in bpy.context.selected_objects if o is not ob)
+    new.name = name
+    new.data.name = name
+    return new
+
+
 def delete_verts(ob, vmask):
     bm = bmesh.new()
     bm.from_mesh(ob.data)

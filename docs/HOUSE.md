@@ -8,21 +8,22 @@ Generated entirely from `src/shared/level-layout.json` by Blender Python (no Boo
 |---|---|
 | Build the shell + GLBs + `.cache/house/house.blend` (shell only, no bakes) | `npm run assets -- --only house` |
 | Everything (shell, then the six bakes, in pipeline order) | `npm run assets` |
-| Dev bakes (1024², 32 spp, one atlas per process) | `npm run assets -- --only bake-house` (or `--only bake-house-ground`, …) |
-| **Full-quality bake (release)** — browser closed, ~2.4 GB per process | edit the six `bake-house-*` jobs in `blender/pipeline.json` to `--size 2048 --samples 128`, then `npm run assets -- --only bake-house --force` |
-| Review renders → `scratch/house/*.png` | `npm run assets -- --only house-review` |
+| Dev bakes (1024², 32 spp, one atlas per process; 7 atlases incl. LM_CAR) | `npm run assets -- --only bake` (or `--only bake-house-ground`, …) |
+| **Full-quality bake (release)** — NO browser/WebGPU session open, ~2.4 GB per process | `npm run assets -- --only bake-release --force` (manual jobs `bake-release-*`: 2048², 128 spp; LM_CAR 1024²) |
+| Review renders → `scratch/house/*.png` (appends the placed props) | `npm run assets -- --only house-review` (group `review`) |
 | GLB contract check (three r186 GLTFLoader in Node) | `node blender/house/check_house.mjs public/assets/max` (runs as the house job's post-check) |
 | Layout analysis without Blender | `python3 blender/house/plan.py` (room wall chains, corners, facades) |
 
-## Outputs (identical in `public/assets/{low,medium,max}/`)
+## Outputs (`public/assets/{low,medium,max}/`; GLBs identical per tier, lightmaps per tier)
 
 | File | Contents |
 |---|---|
-| `house_<atlas>.glb` (`ground`, `parlor`, `kitchen`, `upper_hall`, `upper_rooms`, `exterior`) | Static, lightmapped geometry: one node per room (+ `<room>_stair`, `<room>_glass_<opening>`, exterior parts). `uv` = UVMap, `uv1` = Lightmap. Meshopt. |
+| `house_<atlas>.glb` (`ground`, `parlor`, `kitchen`, `upper_hall`, `upper_rooms`, `exterior`) | Static, lightmapped geometry: one node per room (+ `<room>_stair`, `<room>_glass_<opening>`, exterior parts, `EXT2_terrain`). `uv` = UVMap, `uv1` = Lightmap. Meshopt. |
 | `details_<atlas>.glb` | Small static parts NOT in the lightmap (nails, hinges, sash locks, balusters, louvres, lattice slats, ridge caps, gutter hangers, downspouts, vent bars). Probe-lit at runtime; they are occluders in the bake. |
 | `doors.glb` | Door leaves, Ada's 3 boards, the passage bolt (parented to its leaf). Probe-lit (no uv1). |
 | `collision.glb` | Collision proxies (convex boxes / prisms, faces wound outward), joined per (collider kind, room). |
-| `lm_<atlas>.klm` + `.json` | Lightmaps (KLM, `docs/SMOKE.md`), `lightMapIntensity = π`, sample at `(uv1.x, 1 − uv1.y)`. |
+| `lm_<atlas>.klm` + `.json` | Lightmaps (KLM, `docs/SMOKE.md`), `lightMapIntensity = π`, sample at `(uv1.x, 1 − uv1.y)`. Tier sizes (`lib/encode.py TIER_POLICY` × layout `maxResolution`/2048): Max = bake size (2048 release, 1024 dev), Medium = same m7, **Low 512² m6**; LM_CAR 1024/1024/256. Each house atlas also holds its room's **static props** in a band on top (`lmuv.PROPS_BAND`, docs/PROPS.md "Lightmaps"). |
+| `lm_car.klm` | LM_CAR: the sedan interior set (props only, night-sky ambient; the dash light stays runtime). |
 | `lm_upper_hall_flash.klm`, `lm_upper_rooms_flash.klm` | **Max tier only.** Additive lightning-flash maps (only `mode: flash` lights + storm sky through Cycles portals in the sky-portal windows). |
 
 ### Extras (glTF extras → `userData`)
@@ -50,9 +51,17 @@ Generated entirely from `src/shared/level-layout.json` by Blender Python (no Boo
   Walls: u along the wall (reads left→right from the front), v = z. Floors: u along the boards (the room's long
   axis). Sweeps (mouldings, rails, gutters): u along the run, v along the profile. Roof: u along the ridge, v
   down-slope. Clapboard: u along the facade, v = z.
-- **UV2 ('Lightmap')**: two-level packer (`lmuv.py`): smart-project + `pack_islands(AABB)` for most parts, plus rigid
-  planar charts (roof courses, clapboard sheet, porch deck, porch roof) that would otherwise explode into thousands
-  of islands. 4-texel padding at the smallest (1024) tier.
+- **Clapboard UV (exception, `exterior.clapboard_v`)**: the glTF exporter writes `1 − v` and the runtime generators
+  see that value, so Blender `v = z` reaches a generator with `uv.y` DECREASING upward (true for every wall — lane B:
+  any generator with a gravity direction, drips/streaks/lap profiles, sees walls upside down). Clapboard therefore
+  uses Blender `v = 1 − (z − 0.83)` → runtime `uv.y = z − 0.83` (up), on the hero lap siding, the flat facades and the
+  gables alike. Board exposure 0.10 m in geometry AND in the spec (`boardExposure 0.10`, tile 3 m → 30 rows), every
+  course bottom on a row boundary (drip edge/lap shadow at t = 0), grain along u (horizontal). Verified from the GLB:
+  |uv.y − (y − 0.83)| ≤ 2.4 cm (the house-lean deform only), course bottoms at t = 0.00.
+- **UV2 ('Lightmap')**: two-level packer (`lmuv.py`): smart-project + our shelf packer for most parts, plus rigid
+  planar charts (roof courses, clapboard sheet, porch deck, porch roof, terrain) that would otherwise explode into
+  thousands of islands. 4-texel padding at 1024 (= 2 texels at the 512 Low tier). The house packs into
+  `[0, 1 − PROPS_BAND]` of each atlas; the band on top belongs to that atlas's static props.
 
 ## What is built
 
@@ -89,7 +98,7 @@ Generated entirely from `src/shared/level-layout.json` by Blender Python (no Boo
 - **Imperfection** (`deform.py`): continuous seeded fields — house lean + waviness (mm), floors dip and ceilings sag
   toward mid-room, ridge/eave sag between the gables, porch roof and deck sag between posts.
 
-## Measured (2026-09-30, M1 8 GB, dev bake 1024² @ 32 spp, Metal + OIDN CPU)
+## Measured (2026-09-30, M1 8 GB, dev bake 1024² @ 32 spp, Metal + OIDN CPU — BEFORE the props band/terrain; texel/m @1024 now: exterior 19.3 (with terrain), ground 35.4, parlor 55.7, kitchen 40.0, upper hall 51.0, upper rooms 35.8)
 
 | Atlas | Lightmapped tris | Detail tris | UV2 islands | bbox fill | texel/m @1024 | bake (s) | job wall (s) |
 |---|---|---|---|---|---|---|---|
@@ -100,13 +109,26 @@ Generated entirely from `src/shared/level-layout.json` by Blender Python (no Boo
 | upper hall | 5 342 | 364 | 548 | 0.51 | 56 | 5.1 + flash 6.1 | 22.4 |
 | upper rooms | 10 702 | 1 092 | 1 218 | 0.60 | 49 | 6.8 + flash 8.5 | 28.2 |
 
-Doors: 14 952 tris. House build job: ~4 s of Blender Python (whole house, UV2, 3 exports). Low tier: the house uses
-~16 MB of the 25 MB budget with dev (noisy, 32 spp) lightmaps — ~12 MB of that is KLM; release bakes (128 spp,
-2048 base) compress to ~1 MB per atlas at Low (docs/SMOKE.md), which brings the house to ~10 MB.
+Doors: 14 952 tris. House build job: ~5 s. Per tier after the 2026-09-30 pass (dev bakes 1024², 32 spp):
+**Low 19.9 MB** (lightmaps 2.7 MB at 512² m6 incl. LM_CAR, level GLBs 3.5, props 7.0, characters 5.5 + textures 1.1),
+Medium 35.6 MB, Max 57.2 MB. Release bakes (`bake-release`, 2048²/128 spp) grow Max/Medium lightmaps, not Low.
 
 Review renders: `scratch/house/` — lit (`hall`, `stair`, `parlor`, `upper_hall`, `facade`, `house_sw`), clay
 geometry views (`c_*`), baked-lightmap views (`b_*`, emission = lightmap × albedo exactly like the runtime) and a
-light-leak test (`leak`: interior lights off, sky ×25).
+light-leak test (`leak`: interior lights off, sky ×25), plus `c_chimney_eave`, `c_gutter_end`, `c_steps`,
+`c_siding_mid`, `terrain`/`b_terrain` and `car`/`b_car` (LM_CAR). The review appends the placed props.
+
+## Terrain (`terrain.py`, node `EXT2_terrain` in `house_exterior.glb`, LM_EXTERIOR)
+
+Height field over plan rect **x −22…22, y −41…16** (extras `terrain: true`, `terrainRect`, `terrainHole` = the house
+footprint cut-out), 0.45 m grid whose lines include every exterior `surfaces[]` zone edge, so each quad carries one
+material id (grass_wet, gravel_wet, mud_wet, asphalt_wet; the porch zone is mud under the deck). Crowned road (+4.5 cm),
+flooded ditch south of the road (−0.28 m), two wheel ruts down the drive, 12 puddle dips (3–7 cm) in the ruts, mud
+zones, yard and shoulders; no dips under props standing on the ground; heights feather to exactly 0 at the rect edge.
+Walkable areas stay within ±5 cm of z = 0. ~14.3k quads, lightmapped as one planar chart (`lm_weight` 0.3 → ~6 texel/m
+at 1024). The bake-only ground proxy is skipped when the terrain exists. **Lane B:** skip the runtime ground cells
+(`partitionGround`) inside `terrainRect` (keep them outside as the far field at z = 0); the flat ground collider can
+stay (≤ 5 cm error in the walkable area; the ditch is outside the play bounds).
 
 ## Coordination notes (other lanes)
 - The layout props `porch` (P_PORCH) and `foundation_skirt` (P_FOUNDATION) are realised by the house builder —
@@ -115,8 +137,11 @@ light-leak test (`leak`: interior lights off, sky ×25).
   north newel there.
 - `P_ADA_WARDROBE` (`wardrobe_loose_back`): the loose back boards are `door_D_WARDROBE_BACK` in doors.glb, set in the
   wall opening flush with the U3 face; the wardrobe prop should leave its back open over the 0.7 × 1.8 m opening.
-- Terrain (EXT1/EXT2 ground, road) is not part of the shell; the bake uses a bake-only ground proxy.
 - `blender/lib/bake.py`: fixed `bake_atlas` for materials shared by several baked objects (the bake-target node was
   removed twice).
-- Static props are not yet in the bake scene (they should join as occluders, and static props need their own UV2 in
-  the atlas when they become lightmapped).
+- Static props are in every bake: `bake_house.py` appends `.cache/props/props.blend` (placed at layout pos/yaw);
+  static props of the atlas are bake targets in its props band, every other prop is an occluder (colliders hidden).
+- Fixed 2026-09-30: chimney dark slots (roof/eave were cut for the whole chimney base, 0.26 m wider than the stack on
+  each side: now cut to the stack, shingles clipped per course, soffit infill between wall and stack, zinc step
+  flashing + back apron on the shingles), gutter end caps (soldered half discs at every gutter end, also at the stack),
+  porch stringers (closed/housed, plumb-cut at the bottom nosing instead of a wedge running onto the ground).

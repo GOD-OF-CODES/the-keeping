@@ -23,7 +23,7 @@ TIERS = {'max': 1, 'medium': 2, 'low': 4}
 
 
 # ------------------------------------------------------------------------------------------------ UVs
-def atlas_uv(objs, importance, margin=0.004, angle=66.0):
+def atlas_uv(objs, importance, margin=0.003, angle=66.0):
     """objs: list of mesh objects; importance: {obj.name: texel-density scale}."""
     for ob in objs:
         uvm = ob.data.uv_layers.get('UVMap') or ob.data.uv_layers.new(name='UVMap')
@@ -57,9 +57,11 @@ def atlas_uv(objs, importance, margin=0.004, angle=66.0):
     bpy.ops.uv.select_all(action='SELECT')
     import time as _t
     t0 = _t.time()
-    bpy.ops.uv.pack_islands(udim_source='CLOSEST_UDIM', rotate=True, scale=True, margin_method='FRACTION',
-                            margin=margin, shape_method='CONVEX')
-    log(f'uv pack (CONVEX): {_t.time() - t0:.1f} s')
+    # CONCAVE + free rotation + 0.003 margin (6 px at 2048, 1.5 px at the 512 Low tier; islands are dilated):
+    # Harlan 33 % -> 42 % fill (blender/characters/uvpack_check.py); CONVEX/0.004 was the old setting
+    bpy.ops.uv.pack_islands(udim_source='CLOSEST_UDIM', rotate=True, rotate_method='ANY', scale=True,
+                            margin_method='FRACTION', margin=margin, shape_method='CONCAVE')
+    log(f'uv pack (CONCAVE): {_t.time() - t0:.1f} s')
     bpy.ops.object.mode_set(mode='OBJECT')
 
 

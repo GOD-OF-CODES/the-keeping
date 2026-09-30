@@ -90,7 +90,10 @@ def pose_doors(angle_override=None):
 
 
 def ground(P, size=(-14, -30, 26, 20), z=-0.0):
-    """Bake-only terrain proxy: gently undulating grass/gravel/mud plane (not exported)."""
+    """Bake-only terrain proxy: gently undulating grass/gravel/mud plane (not exported). Skipped when the blend
+    has the real terrain (EXT2_terrain, house/terrain.py), which is lightmapped with the exterior."""
+    if any(o.get('terrain') for o in bpy.data.objects):
+        return None
     import bmesh
     from mathutils import noise
     x0, y0, x1, y1 = size
@@ -155,3 +158,35 @@ def window_openings(P, only_sky=False):
             out.append({'id': o['id'], 'c': c - inside * (w['thickness'] / 2 + 0.01), 'n': inside,
                         'w': o['width'], 'h': o['height'], 'room': w['left'] if w['left'] != 'exterior' else w['right']})
     return out
+
+
+def append_props(path=None):
+    """Append the placed prop instances (.cache/props/props.blend, collection 'instances') and put every placement
+    root at its layout pos/yaw (plan space == Blender space). Lightmapped prop meshes (atlas + Lightmap UVs, see
+    blender/props/lightmap.py) become bake targets of their atlas automatically; everything else is an occluder.
+    Collider proxies never render. Returns the number of placement roots (0 if the props job has not run)."""
+    from pathlib import Path
+    path = Path(path or (scene.CACHE / 'props' / 'props.blend'))
+    if not path.exists():
+        scene.log(f'append_props: {path} missing (run the props job) - props are not in this bake')
+        return 0
+    with bpy.data.libraries.load(str(path), link=False) as (src, dst):
+        dst.collections = [c for c in src.collections if c == 'instances']
+    if not dst.collections:
+        return 0
+    coll = dst.collections[0]
+    bpy.context.scene.collection.children.link(coll)
+    n = 0
+    for ob in list(coll.all_objects):     # a live all_objects iterator breaks when ID props are written
+        if ob.get('collider') in (True, 1) or ob.get('hide_proxy') or ob.name.endswith('-collider'):
+            ob.hide_render = True
+        if ob.parent is None and ob.get('prop_id'):
+            x, y, z = ob['plan_pos']
+            ob.location = (x, y, z)
+            ob.rotation_euler = (0.0, 0.0, float(ob['plan_yaw']))
+            n += 1
+        if ob.type == 'MESH' and not ob.get('kind') == 'level':
+            ob['bake_occluder'] = True
+    bpy.context.view_layer.update()
+    scene.log(f'append_props: {n} placements from {path.name}')
+    return n

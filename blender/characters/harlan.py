@@ -478,9 +478,15 @@ def build_all(material, bake_atlas):
     objs = [R[k] for k in keys]
     tex_harlan.prepare(R)
     bake_atlas('harlan', objs, importance, shaders, bake_size(), normal_strength=1.0)
-    spec = {'body': 'skin_harlan', 'shirt': 'flannel_red', 'trousers': 'wool_coats', 'boots': 'rubber_black',
+    # the cleaver's wooden handle (tex_harlan.cleaver: within 0.12 m of the wrist) becomes its own mesh so the blade
+    # can carry a metal spec (steel_cleaver, metalness 1) and the handle a wood one
+    wr = np.asarray(J['hand_r'][0])
+    mask = [float(np.linalg.norm(np.asarray(p.center) - wr)) < 0.12 for p in R['cleaver'].data.polygons]
+    R['cleaver_handle'] = garments.split_faces(R['cleaver'], mask, 'harlan_cleaver_handle')
+    keys = keys + ['cleaver_handle']
+    spec = {'body': 'skin_harlan', 'shirt': 'flannel_red', 'trousers': 'trousers_wool', 'boots': 'rubber_black',
             'gloves': 'leather_worn', 'apron': 'rubber_black', 'suspenders': 'leather_worn', 'sack': 'burlap_sack',
-            'twine': 'rope_hemp', 'void': 'crepe_black', 'cleaver': 'rust'}
+            'twine': 'twine_jute', 'void': 'crepe_black', 'cleaver': 'steel_cleaver', 'cleaver_handle': 'wood_furniture_dark'}
     mats = {}
     for k in keys:
         mats[k] = material(f'harlan_{k}', spec[k], 'harlan', double_sided=k in ('sack', 'apron'),

@@ -74,9 +74,15 @@ VIEWS = {
     'c_upper': ((2.5, 0.5, 5.75), (1.9, 8.6, 5.3), 72, 0.0, 'clay'),
     'c_kitchen': ((4.3, 7.0, 2.2), (8.5, 10.5, 1.8), 72, 0.0, 'clay'),
     'x_stair': ((4.6, 2.0, 3.2), (0.5, 5.8, 2.0), 60, 0.0, 'clay'),
+    'c_chimney_eave': ((11.2, 0.6, 7.6), (9.2, 3.0, 7.3), 55, 0.0, 'clay'),
+    'c_gutter_end': ((-1.6, -1.9, 7.3), (-0.3, -0.35, 6.95), 50, 0.0, 'clay'),
+    'c_steps': ((1.4, -6.2, 1.1), (3.0, -3.0, 0.3), 60, 0.0, 'clay'),
+    'c_siding_mid': ((4.4, -9.0, 1.7), (4.4, 0.0, 3.2), 45, 0.0, 'clay'),
+    'terrain': ((-6.0, -34.0, 7.0), (3.0, -12.0, 0.0), 60, 3.0, 'lit'),
+    'car': ((100.45, 0.95, 1.1), (100.8, 3.0, 0.85), 75, 4.0, 'lit'),
 }
 # the same framings rendered from the BAKED lightmaps (emission = lightmap texel x albedo, like the runtime)
-for _n in ('hall', 'stair', 'parlor', 'upper_hall', 'facade', 'house_sw', 'porch', 'kitchen', 'u2', 'u3'):
+for _n in ('hall', 'stair', 'parlor', 'upper_hall', 'facade', 'house_sw', 'porch', 'kitchen', 'u2', 'u3', 'terrain', 'car'):
     _v = VIEWS[_n]
     VIEWS['b_' + _n] = (_v[0], _v[1], _v[2], _v[3], 'baked')
 ISO = [n for n in str(args.get('isolate', '')).split(',') if n]
@@ -101,6 +107,7 @@ try:
 except Exception:
     sc.view_settings.view_transform = 'Filmic'
 
+scene_prep.append_props()
 scene_prep.glass_transmissive()
 scene_prep.pose_doors()
 scene_prep.ground(P)

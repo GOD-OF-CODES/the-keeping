@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import bpy  # noqa: E402
 
 from lib import export, scene  # noqa: E402
-from house import deform, doors, exterior, lmuv, rooms, stairs, trim, windows, collision  # noqa: E402
+from house import deform, doors, exterior, lmuv, rooms, stairs, terrain, trim, windows, collision  # noqa: E402
 from house.geom import Mesh  # noqa: E402
 from house.plan import Plan, main_soffit  # noqa: E402
 
@@ -67,6 +67,11 @@ with T('build'):
 with T('deform'):
     deform.apply(P, all_static)
     deform.apply(P, details)
+
+with T('terrain'):
+    terrain_m = room_mesh('EXT2', '_terrain', lm_weight=terrain.TERRAIN_LM_WEIGHT)
+    terrain_stats = terrain.build(P, terrain_m)
+    all_static.append(terrain_m)
     deform.apply(P, [d['mesh'] for d in door_parts], rigid=True)
 
 with T('objects'):
@@ -96,7 +101,7 @@ for ob in objs:
 charts = {}
 with T('uv2'):
     for atlas, obs in sorted(by_atlas.items()):
-        charts[atlas] = lmuv.pack_atlas(obs, pad_texels=PAD, smallest_px=SMALLEST)
+        charts[atlas] = lmuv.pack_atlas(obs, pad_texels=PAD, smallest_px=SMALLEST, region=lmuv.house_region(atlas))
 
 stats = {}
 for atlas, obs in sorted(by_atlas.items()):
@@ -141,7 +146,7 @@ if not args.get('no_export'):
 res = {
     'job': 'house', 'ok': True, 'atlases': stats, 'glb_bytes': sizes,
     'doors': [d['name'] for d in door_parts], 'door_tris': sum(d['mesh'].tris for d in door_parts),
-    'collision_objects': len(coll_objs), 'timings_s': T.t,
+    'collision_objects': len(coll_objs), 'timings_s': T.t, 'terrain': terrain_stats,
     'total_triangles': sum(s['triangles'] for s in stats.values()),
     'process_seconds_in_python': round(time.perf_counter() - t_start, 2),
 }

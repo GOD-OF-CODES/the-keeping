@@ -5,7 +5,9 @@
 //   - every mesh has `uv` (TEXCOORD_0); every material has userData.material_id from src/shared/material-spec.json
 //   - triangle count per placement root <= its generator budget
 //   - UV0 is metric (sum of UV area / sum of surface area ~ 1) on non-decal meshes
-//   - no animations; EXT_meshopt_compression used; the same file exists in every tier
+//   - no animations; EXT_meshopt_compression used; the file exists in every tier (Low = decimated LOD: parsed too)
+//   - lightmapped prop meshes (userData.kind 'level', docs/PROPS.md "Lightmaps"): uv1 present, inside [0,1],
+//     `lightmap` = lm_<atlas>, same count in Low as in Medium
 //   node blender/props/check_props.mjs [public/assets]
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,7 +59,33 @@ for (const name of files) {
   const sizes = tiers.map((f) => (fs.existsSync(f) ? fs.statSync(f).size : -1));
   if (sizes.some((s) => s < 0)) fail(`${name} missing in a tier (${sizes})`);
   const file = tiers[1];
-  console.log(`${name} (${(sizes[1] / 1024).toFixed(0)} KiB)`);
+  console.log(`${name} (${(sizes[1] / 1024).toFixed(0)} KiB, low ${(sizes[0] / 1024).toFixed(0)} KiB)`);
+  const lmCount = {};
+  for (const [tier, f] of [['low', tiers[0]], ['medium', tiers[1]]]) {
+    if (!fs.existsSync(f)) continue;
+    const { gltf: g2 } = await parse(f);
+    let n = 0, bad = 0;
+    g2.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      // child nodes (moving parts, decals, colliders) of a lightmapped node inherit its extras in a merged view
+      // (like level.ts lmFor) but have no uv1: they stay probe-lit. A lightmapped mesh = uv1 present.
+      const ud = { ...(o.parent?.userData ?? {}), ...o.userData };
+      const uv1 = o.geometry.attributes.uv1;
+      if (!uv1) {
+        if (o.userData.kind === 'level') bad++;
+        return;
+      }
+      n++;
+      if (ud.kind !== 'level' || !/^lm_[a-z_]+$/.test(String(ud.lightmap)) || !ud.atlas) return void bad++;
+      for (let i = 0; i < uv1.count; i++) {
+        const u = uv1.getX(i), v = uv1.getY(i);
+        if (!(u >= -1e-4 && u <= 1.0001 && v >= -1e-4 && v <= 1.0001)) return void bad++;
+      }
+    });
+    lmCount[tier] = n;
+    bad ? fail(`${tier}/${name}: ${bad}/${n} lightmapped meshes without a valid uv1/lightmap/atlas`) : ok(`${tier}: ${n} lightmapped prop meshes with uv1`);
+  }
+  if (lmCount.low !== lmCount.medium) fail(`${name}: lightmapped meshes low ${lmCount.low} != medium ${lmCount.medium}`);
   const t0 = performance.now();
   const { json, gltf } = await parse(file);
   const ms = performance.now() - t0;

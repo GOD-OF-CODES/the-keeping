@@ -174,6 +174,8 @@ def bake_clip(rig, clip, meshes=()):
     bpy.ops.object.mode_set(mode='OBJECT')
     baked = rig.animation_data.action
     baked.name = clip.name
+    if 'gown_0_01' in rig.pose.bones:
+        gown_collide(rig, baked, clip.frames, loop=clip.loop)
     rig.animation_data.action = None
     for o in made:
         if o.animation_data and o.animation_data.action:
@@ -217,3 +219,114 @@ def world_bone_pos(rig, bone, clip, t, tail=False):
     bpy.context.view_layer.update()
     pb = rig.pose.bones[bone]
     return np.array(rig.matrix_world @ (pb.tail if tail else pb.head))
+
+
+# ------------------------------------------------------------------------------------------------ gown collision
+# Leg capsules (Ada, slight): radius along the bone from head to tail, plus the gown's own thickness + clearance.
+LEG_CAPSULES = (('thigh', 0.072, 0.05), ('calf', 0.05, 0.034))
+GOWN_CLEARANCE = 0.014
+
+
+def _seg_closest(a, b, p):
+    ab = b - a
+    t = max(0.0, min(1.0, (p - a).dot(ab) / max(ab.length_squared, 1e-12)))
+    return a + ab * t, t
+
+
+def gown_collide(rig, act, frames, loop=False, iters=2):
+    """Post-bake collision of the gown chains against the leg capsules (thigh/calf, both legs), every frame.
+
+    The pose table's gown_follow is a heuristic; on the largest chase strides the forward thigh/knee still ran
+    through the front panels. For each frame and chain (top to bottom) every bone whose tail lies inside a capsule
+    (+ GOWN_CLEARANCE) is swung about its head until the tail sits on the capsule surface, and its keyed rotation is
+    rewritten. Loops keep identical first/last frames. Returns (frames corrected, max push in m)."""
+    cb = actions.channelbag(act)
+    sc = bpy.context.scene
+    mw = rig.matrix_world
+    chains = sorted({pb.name.rsplit('_', 1)[0] for pb in rig.pose.bones if pb.name.startswith('gown_')})
+    legs = [(f'{b}_{s}', r0, r1) for s in ('l', 'r') for b, r0, r1 in LEG_CAPSULES]
+    fixed, max_push = 0, 0.0
+    last = frames if not loop else frames - 1
+    # rest-pose distances: a chain never has to sit further out than it does at rest (the skirt hangs close to the
+    # thighs at rest; only NEW penetration is corrected)
+    ad = rig.animation_data
+    ad.action = None
+    saved_nla = ad.use_nla
+    ad.use_nla = False
+    clear_pose(rig)
+    bpy.context.view_layer.update()
+    rest = {}
+    for ch in chains:
+        for i in range(1, 4):
+            pb = rig.pose.bones.get(f'{ch}_{i:02d}')
+            if pb is None:
+                continue
+            T = mw @ pb.tail
+            for name, r0, r1 in legs:
+                q = rig.pose.bones[name]
+                c, t = _seg_closest(mw @ q.head, mw @ q.tail, T)
+                rest[(pb.name, name)] = (T - c).length
+    ad.use_nla = saved_nla
+    actions.assign(rig, act)
+    rot_cache = {}
+    for f in range(1, last + 1):
+        sc.frame_set(f)
+        caps = []
+        for name, r0, r1 in legs:
+            pb = rig.pose.bones[name]
+            caps.append((name, mw @ pb.head, mw @ pb.tail, r0, r1))
+        touched = False
+        for ch in chains:
+            for i in range(1, 4):
+                pb = rig.pose.bones.get(f'{ch}_{i:02d}')
+                if pb is None:
+                    continue
+                for _ in range(iters):
+                    H = mw @ pb.head
+                    T = mw @ pb.tail
+                    push = None
+                    for cname, a, b, r0, r1 in caps:
+                        c, t = _seg_closest(a, b, T)
+                        r = min(r0 + (r1 - r0) * t + GOWN_CLEARANCE, 0.97 * rest.get((pb.name, cname), 1.0))
+                        d = (T - c)
+                        if d.length < r:
+                            n = d.normalized() if d.length > 1e-6 else (T - H).cross(b - a).normalized()
+                            T2 = c + n * r
+                            if push is None or (T2 - T).length > (push - T).length:
+                                push = T2
+                    if push is None:
+                        break
+                    # swing about the head: keep the bone length, point the tail at the pushed position
+                    L = (T - H).length
+                    newT = H + (push - H).normalized() * L
+                    q = (T - H).normalized().rotation_difference((newT - H).normalized())
+                    Mw = mw @ pb.matrix
+                    R = Matrix.Translation(H) @ q.to_matrix().to_4x4() @ Matrix.Translation(-H)
+                    pb.matrix = mw.inverted() @ R @ Mw
+                    bpy.context.view_layer.update()
+                    max_push = max(max_push, (newT - T).length)
+                    touched = True
+                rot_cache[(pb.name, f)] = tuple(pb.rotation_euler)
+        if touched:
+            fixed += 1
+        # untouched bones keep their baked keys; touched ones are rewritten below
+    for (bone, f), e in rot_cache.items():
+        for k in range(3):
+            fc = cb.fcurves.find(f'pose.bones["{bone}"].rotation_euler', index=k)
+            if fc is None:
+                continue
+            for kp in fc.keyframe_points:
+                if abs(kp.co[0] - f) < 1e-3:
+                    kp.co[1] = e[k]
+                    kp.handle_left[1] = kp.handle_right[1] = e[k]
+                    break
+            if loop and f == 1:
+                for kp in fc.keyframe_points:
+                    if abs(kp.co[0] - frames) < 1e-3:
+                        kp.co[1] = e[k]
+                        kp.handle_left[1] = kp.handle_right[1] = e[k]
+    for fc in cb.fcurves:
+        fc.update()
+    if fixed:
+        log(f'gown_collide {act.name}: {fixed}/{last} frames corrected, max push {max_push * 100:.1f} cm')
+    return fixed, max_push

@@ -67,7 +67,7 @@
                  "blender/house/geom.py", "blender/house/plan.py", "blender/house/rooms.py", "blender/house/stairs.py",
                  "blender/house/trim.py", "blender/house/openings.py", "blender/house/windows.py",
                  "blender/house/doors.py", "blender/house/exterior.py", "blender/house/deform.py",
-                 "blender/house/collision.py", "blender/house/lmuv.py"],
+                 "blender/house/collision.py", "blender/house/lmuv.py", "blender/house/terrain.py"],
       "outputs": [
         { "path": ".cache/house/house.blend" },
         { "path": ".cache/house/build.json" },
@@ -83,14 +83,34 @@
       "post": [["node", "blender/house/check_house.mjs"]]
     },
     {
+      "id": "props",
+      "group": "content",
+      "description": "Prop generators (blender/props, facing -y at yaw 0) -> public/assets/<tier>/props_m1.glb + props_m2.glb (Low: decimated LOD), static props UV2 in their room atlas band, .cache/props/props.blend for the bakes, review renders scratch/props/*.png + docs/props-contact.png",
+      "script": "blender/props/build_props.py",
+      "inputs": ["src/shared/level-layout.json", "src/shared/material-spec.json", "blender/props/**", "blender/house/lmuv.py"],
+      "outputs": [
+        { "path": "public/assets/low/props_m1.glb" },
+        { "path": "public/assets/medium/props_m1.glb" },
+        { "path": "public/assets/max/props_m1.glb" },
+        { "path": "public/assets/low/props_m2.glb" },
+        { "path": "public/assets/medium/props_m2.glb" },
+        { "path": "public/assets/max/props_m2.glb" },
+        { "path": ".cache/props/props.json" },
+        { "path": ".cache/props/props.blend" },
+        { "path": ".cache/props/lightmap.json" },
+        { "path": "docs/props-contact.png" }
+      ],
+      "post": [["node", "blender/props/check_props.mjs"]]
+    },
+    {
       "id": "bake-house-ground",
       "group": "bake",
-      "description": "Dev bake LM_GROUND (1024^2, 32 spp, Metal) + OIDN + per-tier KLM -> public/assets/<tier>/lm_ground.klm",
+      "description": "Dev bake LM_GROUND (1024^2, 32 spp, Metal) + OIDN + per-tier KLM (Low 512^2 m6) -> public/assets/<tier>/lm_ground.klm (house + static props band)",
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_GROUND", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
-      "inputs": [".cache/house/house.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_ground.npz" }, { "path": "public/assets/max/lm_ground.klm" }]
     },
     {
@@ -101,7 +121,7 @@
       "args": ["--atlas", "LM_PARLOR", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
-      "inputs": [".cache/house/house.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_parlor.npz" }, { "path": "public/assets/max/lm_parlor.klm" }]
     },
     {
@@ -112,7 +132,7 @@
       "args": ["--atlas", "LM_KITCHEN", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
-      "inputs": [".cache/house/house.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_kitchen.npz" }, { "path": "public/assets/max/lm_kitchen.klm" }]
     },
     {
@@ -123,7 +143,7 @@
       "args": ["--atlas", "LM_UPPER_HALL", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
-      "inputs": [".cache/house/house.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_upper_hall.npz" }, { "path": "public/assets/max/lm_upper_hall.klm" },
                   { "path": "public/assets/max/lm_upper_hall_flash.klm" }]
     },
@@ -135,7 +155,7 @@
       "args": ["--atlas", "LM_UPPER_ROOMS", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
-      "inputs": [".cache/house/house.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_upper_rooms.npz" }, { "path": "public/assets/max/lm_upper_rooms.klm" },
                   { "path": "public/assets/max/lm_upper_rooms_flash.klm" }]
     },
@@ -147,37 +167,114 @@
       "args": ["--atlas", "LM_EXTERIOR", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
-      "inputs": [".cache/house/house.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_exterior.npz" }, { "path": "public/assets/max/lm_exterior.klm" }]
     },
     {
+      "id": "bake-house-car",
+      "group": "bake",
+      "description": "Dev bake LM_CAR (sedan interior set, 1024^2, 32 spp; maxResolution 1024 -> tiers 1024/1024/256) -> lm_car.klm",
+      "script": "blender/house/bake_house.py",
+      "args": ["--atlas", "LM_CAR", "--size", "1024", "--samples", "32"],
+      "cyclesLog": true,
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "outputs": [{ "path": ".cache/bake/lm_car.npz" }, { "path": "public/assets/max/lm_car.klm" }]
+    },
+    {
+      "id": "bake-release-ground",
+      "group": "bake-release",
+      "manual": true,
+      "description": "RELEASE bake LM_GROUND (2048^2, 128 spp) - only with NO browser/WebGPU session open (~2.4 GB per process): npm run assets -- --only bake-release --force",
+      "script": "blender/house/bake_house.py",
+      "args": ["--atlas", "LM_GROUND", "--size", "2048", "--samples", "128"],
+      "cyclesLog": true,
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "outputs": [{ "path": ".cache/bake/lm_ground.npz" }, { "path": "public/assets/max/lm_ground.klm" }]
+    },
+    {
+      "id": "bake-release-parlor",
+      "group": "bake-release",
+      "manual": true,
+      "description": "RELEASE bake LM_PARLOR (2048^2, 128 spp) - only with NO browser/WebGPU session open (~2.4 GB per process): npm run assets -- --only bake-release --force",
+      "script": "blender/house/bake_house.py",
+      "args": ["--atlas", "LM_PARLOR", "--size", "2048", "--samples", "128"],
+      "cyclesLog": true,
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "outputs": [{ "path": ".cache/bake/lm_parlor.npz" }, { "path": "public/assets/max/lm_parlor.klm" }]
+    },
+    {
+      "id": "bake-release-kitchen",
+      "group": "bake-release",
+      "manual": true,
+      "description": "RELEASE bake LM_KITCHEN (2048^2, 128 spp) - only with NO browser/WebGPU session open (~2.4 GB per process): npm run assets -- --only bake-release --force",
+      "script": "blender/house/bake_house.py",
+      "args": ["--atlas", "LM_KITCHEN", "--size", "2048", "--samples", "128"],
+      "cyclesLog": true,
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "outputs": [{ "path": ".cache/bake/lm_kitchen.npz" }, { "path": "public/assets/max/lm_kitchen.klm" }]
+    },
+    {
+      "id": "bake-release-upper-hall",
+      "group": "bake-release",
+      "manual": true,
+      "description": "RELEASE bake LM_UPPER_HALL (2048^2, 128 spp) - only with NO browser/WebGPU session open (~2.4 GB per process): npm run assets -- --only bake-release --force",
+      "script": "blender/house/bake_house.py",
+      "args": ["--atlas", "LM_UPPER_HALL", "--size", "2048", "--samples", "128"],
+      "cyclesLog": true,
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "outputs": [{ "path": ".cache/bake/lm_upper_hall.npz" }, { "path": "public/assets/max/lm_upper_hall.klm" }]
+    },
+    {
+      "id": "bake-release-upper-rooms",
+      "group": "bake-release",
+      "manual": true,
+      "description": "RELEASE bake LM_UPPER_ROOMS (2048^2, 128 spp) - only with NO browser/WebGPU session open (~2.4 GB per process): npm run assets -- --only bake-release --force",
+      "script": "blender/house/bake_house.py",
+      "args": ["--atlas", "LM_UPPER_ROOMS", "--size", "2048", "--samples", "128"],
+      "cyclesLog": true,
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "outputs": [{ "path": ".cache/bake/lm_upper_rooms.npz" }, { "path": "public/assets/max/lm_upper_rooms.klm" }]
+    },
+    {
+      "id": "bake-release-exterior",
+      "group": "bake-release",
+      "manual": true,
+      "description": "RELEASE bake LM_EXTERIOR (2048^2, 128 spp) - only with NO browser/WebGPU session open (~2.4 GB per process): npm run assets -- --only bake-release --force",
+      "script": "blender/house/bake_house.py",
+      "args": ["--atlas", "LM_EXTERIOR", "--size", "2048", "--samples", "128"],
+      "cyclesLog": true,
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "outputs": [{ "path": ".cache/bake/lm_exterior.npz" }, { "path": "public/assets/max/lm_exterior.klm" }]
+    },
+    {
+      "id": "bake-release-car",
+      "group": "bake-release",
+      "manual": true,
+      "description": "RELEASE bake LM_CAR (1024^2, 128 spp) - only with NO browser/WebGPU session open (~2.4 GB per process): npm run assets -- --only bake-release --force",
+      "script": "blender/house/bake_house.py",
+      "args": ["--atlas", "LM_CAR", "--size", "1024", "--samples", "128"],
+      "cyclesLog": true,
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "outputs": [{ "path": ".cache/bake/lm_car.npz" }, { "path": "public/assets/max/lm_car.klm" }]
+    },
+    {
       "id": "house-review",
-      "group": "house",
+      "group": "review",
       "manual": true,
       "description": "Review renders of the house shell (Cycles, layout lights, AgX) -> scratch/house/*.png",
       "script": "blender/house/render_review.py",
       "args": ["--samples", "48"],
       "libInputs": ["blender/lib/scene.py", "blender/lib/materials.py"],
-      "inputs": [".cache/house/house.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": []
-    },
-    {
-      "id": "props",
-      "group": "content",
-      "description": "Prop generators (blender/props, facing -y at yaw 0) -> public/assets/<tier>/props_m1.glb + props_m2.glb, review renders scratch/props/*.png + docs/props-contact.png",
-      "script": "blender/props/build_props.py",
-      "inputs": ["src/shared/level-layout.json", "src/shared/material-spec.json", "blender/props/**"],
-      "outputs": [
-        { "path": "public/assets/low/props_m1.glb" },
-        { "path": "public/assets/medium/props_m1.glb" },
-        { "path": "public/assets/max/props_m1.glb" },
-        { "path": "public/assets/low/props_m2.glb" },
-        { "path": "public/assets/medium/props_m2.glb" },
-        { "path": "public/assets/max/props_m2.glb" },
-        { "path": ".cache/props/props.json" },
-        { "path": "docs/props-contact.png" }
-      ],
-      "post": [["node", "blender/props/check_props.mjs"]]
     },
     {
       "id": "characters",

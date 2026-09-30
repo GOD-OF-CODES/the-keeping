@@ -52,8 +52,30 @@ def balustrade_run(p, rng):
         part.add(bm, bmat, T((x, 0, 0.045), (rng.j(0.008), rng.j(0.008), 0)))
     if ends:
         for x in (-L / 2 + 0.055, L / 2 - 0.055):
+            if _house_newel_near(p, x):
+                continue            # the house stair's own newel stands there (docs/HOUSE.md coordination)
             newel(part, rail, x, 0, H + 0.2)
     return [part]
+
+
+# Newels built by the house kit (blender/house/stairs.py): ST_MAIN top newel at the stairwell corner.
+HOUSE_NEWELS = ((1.16, 7.86),)
+
+
+def _house_newel_near(p, x_local, r=0.3):
+    pos, yaw = p.get('_pos'), p.get('_yaw')
+    if pos is None or yaw is None:
+        return False
+    import math as _m
+    px = pos[0] + x_local * _m.cos(yaw)
+    py = pos[1] + x_local * _m.sin(yaw)
+    if any((px - hx) ** 2 + (py - hy) ** 2 < r * r for hx, hy in HOUSE_NEWELS):
+        return True
+    # gallery corner (P_GALLERY_RAIL_S meets _E): one newel only, owned by the rail running along x (yaw 0)
+    return abs(yaw) > 0.1 and any((px - hx) ** 2 + (py - hy) ** 2 < r * r for hx, hy in CORNER_NEWELS)
+
+
+CORNER_NEWELS = ((1.2, 4.6),)
 
 
 @prop('floor_register', budget=4000)

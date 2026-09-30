@@ -10,12 +10,13 @@ and peaks at about 1.1 GB RSS.
 
 | File | Content |
 |---|---|
-| `public/assets/<tier>/props_m1.glb` (2.4 MB) | Every `milestone: M1` placement in `level-layout.json` `props[]` |
-| `public/assets/<tier>/props_m2.glb` (3.8 MB) | Every M2 placement |
-| `.cache/props/props.json` | Per-variant triangle counts, budgets, placements, skipped ids |
+| `public/assets/{medium,max}/props_m1.glb` (≈2.9 MB) | Every `milestone: M1` placement in `level-layout.json` `props[]` |
+| `public/assets/{medium,max}/props_m2.glb` (≈4.2 MB) | Every M2 placement |
+| `public/assets/low/props_m*.glb` | Low LOD: same nodes/extras; non-lightmapped meshes ≥ 1500 tris decimated to 45 % (sedan, wrecks, trees, …) |
+| `.cache/props/props.json` | Per-variant triangle counts, budgets, placements, skipped ids, `lightmap`, `low_lod` |
+| `.cache/props/props.blend` | The placed instances with their Lightmap UVs (the bake jobs append them) |
+| `.cache/props/lightmap.json` | Per-atlas props-band packing: islands, fill, texel/m, placements |
 | `scratch/props/<type>__<id>.png`, `docs/props-contact.png` | 512 px Cycles review renders and the labelled grid |
-
-- The same file ships to all three tiers. There is no low-tier LOD yet.
 - Budgets are checked for every placement (`over_budget` fails the job):
   - furniture: 2–15k triangles
   - sedan: ≤ 60k (actual 28.6k)
@@ -69,8 +70,8 @@ and peaks at about 1.1 GB RSS.
 
 **Moving parts** are child nodes with their origin on the hinge or pivot. Keys include `part`, `hinge_axis`,
 `swing_axis`, `slide_axis`, `rotate_axis`, `travel_m` and `pivot_at`. Examples:
-- drawers and doors of furniture, cabinet doors (the armoire's right door `ajar` 14°), the loose back of Ada's
-  wardrobe (`door_id: D_WARDROBE_BACK`)
+- drawers and doors of furniture, cabinet doors (the armoire's right door `ajar` 14°). Ada's wardrobe has NO back
+  (extras `open_back`, `back_door_id`): its loose boards are the house's `door_D_WARDROBE_BACK` (doors.glb)
 - ROOMS board, VACANCY plate, knocker ring, bell-pull knob, crank levers, spring-bell bell, pulley sheave, drop
   bolt, counterweight
 - mailbox door and flag, gate leaf, wipers, steering wheel, glovebox, locket lid, pump handle, stove doors
@@ -90,6 +91,26 @@ and peaks at about 1.1 GB RSS.
   `closet_interior` and `porch`. **The runtime must hide them.** Hides keep an open interior, and the louvre slats
   leave ~13 mm clear slots at eye height (~1.55 m).
 
+## Lightmaps (static props) — `blender/props/lightmap.py`
+
+**Decision: a static prop bakes into its ROOM's atlas** (`lm_<atlas>.klm`), in a band on top of that atlas which the
+house packer leaves free (`blender/house/lmuv.py` `PROPS_BAND`: exterior 0.13, ground 0.12, parlor 0.17, kitchen 0.24,
+upper hall 0.24, upper rooms 0.30 of the height; LM_CAR is all props). Chosen over a separate props atlas because the
+runtime then needs nothing new: same lightmap file, same per-atlas lights node, same Max lightning flash maps.
+- Which: placements with `lighting: 'static'` (+ `sedan_interior`, whose shell is the LM_CAR set), except the types
+  in `EXCLUDE_TYPES` (wrecks: mist vista east of x 12; dead trees; path props; `sedan`). Inside a placement, moving
+  parts and their children (`part`, hinge/slide/pull/rotate keys, `door_id`), decals, colliders, flame/lamp/liquid/
+  reflector nodes and glass-only meshes stay probe-lit.
+- Lightmapped meshes get their own mesh data (UV2 is unique per placement; the dynamic props still share meshes),
+  a `Lightmap` UV layer → `TEXCOORD_1` → `uv1`, and **node extras `kind: 'level'`, `lightmap: 'lm_<atlas>'`,
+  `atlas`, `room`, `lm_prop`** — exactly what `src/world/level.ts` `lmFor` binds (`uv1` present). Children of a
+  lightmapped node inherit `kind`/`lightmap` in a merged-userData view but have no `uv1`: they stay probe-lit.
+- Density: capped at 70 texel/m @1024 (exterior 26, car 220). Measured props / house texel/m @1024: exterior 23 / 19,
+  ground 45 / 35, parlor 47 / 56, kitchen 38 / 40, upper hall 47 / 51, upper rooms 35 / 36, car 151 (`lightmap.json`).
+- Bakes: `bake_house.py` appends `.cache/props/props.blend`, places every root at plan pos/yaw; the atlas's static
+  props are bake targets, every other prop is an occluder (house bakes now include prop shadows).
+- Low tier: lightmapped meshes are NOT decimated (UV2 charts stay exact).
+
 ## Generators (`blender/props/`)
 
 - `kit.py`: the modelling kit.
@@ -102,7 +123,7 @@ and peaks at about 1.1 GB RSS.
 
 | Family | Types |
 |---|---|
-| lighting | `candle` (chamberstick / brass_stick / saucer / bottle, guttering), `kerosene_lamp` |
+| lighting | `candle` (chamberstick / brass_stick / saucer / bottle, guttering), `kerosene_lamp` (brass font on a stepped foot, finger loop, burner with wick-raiser wheel, pronged gallery, flame deflector + slot, flat `wick_cotton` wick with a charred tip, thick-walled grimy chimney: `mat` = chimney glass, `burnerMat` = brass) |
 | signage | `sign_post` (+ ROOMS board), `vacancy_plate`, `sign_lantern` (+ tubular barn lantern), `gas_pump` |
 | exterior | `mailbox`, `reflector_post`, `road_card`, `fence_run`, `farm_gate`, `utility_pole`, `dead_tree`, `rain_barrel` |
 | bells_rope | `door_knocker`, `bell_pull_knob`, `bell_crank`, `bell_wire`, `spring_bell`, `rope_pulley`, `door_rope`, `rope_cleat`, `bolt_box`, `door_counterweight`, `bell_pull_embroidered` |
@@ -125,11 +146,15 @@ and peaks at about 1.1 GB RSS.
 - **Material gaps.** Stand-ins are marked in extras:
   - water surfaces: `glass_*` + `liquid`
   - reflector amber, lamp lenses: `glass_grimy` + `reflector` / `lamp`
-  - candle wick: `crepe_black`
+  - candle wick: `crepe_black` (the lamp wick uses the new `wick_cotton`)
   - cobwebs: `dust_sheet@2s` + `decal: cobweb`
   - ribbon and cap: `flannel_red`
 - **Porch and foundation** are both a layout prop and house-kit geometry. The lead should decide whether the
   layout marks them as house-built.
+- Coordination with the house kit (fixed 2026-09-30): `P_GALLERY_RAIL_E` (`balustrade_run`) builds no north newel
+  (the ST_MAIN top newel stands there, `architecture.HOUSE_NEWELS`) and no south newel (the corner newel belongs to
+  `P_GALLERY_RAIL_S`); `P_ADA_WARDROBE` (`wardrobe_loose_back`) leaves its back open over the
+  0.7 × 1.8 m opening (the loose boards are `door_D_WARDROBE_BACK` in doors.glb).
 - **Weak items:**
   - `coat_hooks` oilskin and the wardrobe coats are sack-like.
   - Brooms in `closet_interior` are crude.
@@ -137,4 +162,7 @@ and peaks at about 1.1 GB RSS.
   - `claw_hammer` claw is long.
   - `rag_rug` is a single spiral with no colour bands (bands are a runtime texture).
   - `dust_sheet` and `rubber_sheet` drape procedurally with no cloth sim.
-- The low tier uses the same meshes (no LOD).
+- Static props lit by `bake_flicker` candles in their room get the baked light AND the runtime flicker light like
+  the house surfaces (same lights node) — consistent. Dynamic props stay probe-lit.
+- The exterior props band packs at only ~21 % fill (long fence rails/pole limit the shelf scale); density still
+  matches the facade (23 vs 19 texel/m @1024).

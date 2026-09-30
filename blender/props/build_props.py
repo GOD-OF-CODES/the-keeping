@@ -7,7 +7,11 @@ Outputs (docs/PROPS.md):
   public/assets/<tier>/props_m1.glb, props_m2.glb   one root node per placement (named by its layout id, at the
       origin: base centre, front facing -y in PLAN space = +Z in three), children = parts. Placements whose params
       differ only in a generator's instance_keys share mesh data (glTF mesh reuse).
+  public/assets/low/props_m*.glb                    Low LOD: big non-lightmapped meshes decimated (LOW_DECIMATE)
   .cache/props/props.json                           per-type/variant triangle counts + budgets (read by check_props)
+  .cache/props/props.blend                          the placed instances (at the origin, root extras plan_pos/yaw) with
+                                                    their Lightmap UVs: the bake jobs append them (props/lightmap.py)
+  .cache/props/lightmap.json                        per-atlas props band packing (islands, texel/m, placements)
   scratch/props/<variant>.png + docs/props-contact.png  review renders (skipped with --no-render)
 Args: --types a,b (subset)  --no-render  --no-export  --samples 24
 """
@@ -21,6 +25,7 @@ import bpy
 from lib.scene import CACHE, REPO, SHARED, job_args, log, reset, result, select, write_json
 from lib import export as gexport
 from props import kit, registry
+from props import lightmap as plm
 
 TIERS = ('low', 'medium', 'max')
 ARGS = job_args()
@@ -85,6 +90,46 @@ def instance(pl, var, coll):
     return out
 
 
+LOW_DECIMATE = {'min_tris': 1500, 'ratio': 0.45}
+
+
+def low_lod(objs):
+    """Replace the mesh data of big, non-lightmapped instance objects by decimated copies (one per unique mesh).
+    Lightmapped meshes keep their exact UV2 charts (decimation would drag island borders into the gutters)."""
+    done, before, after = {}, 0, 0
+    tmp_coll = bpy.data.collections.new('__lod')
+    bpy.context.scene.collection.children.link(tmp_coll)
+    for o in objs:
+        if o.type != 'MESH' or plm.lightmapped(o) or o.get('decal') or o.get('collider'):
+            continue
+        me = o.data
+        n = sum(len(p.vertices) - 2 for p in me.polygons)
+        if n < LOW_DECIMATE['min_tris']:
+            continue
+        if me.name not in done:
+            t = bpy.data.objects.new('__lod_' + me.name, me)
+            tmp_coll.objects.link(t)
+            md = t.modifiers.new('dec', 'DECIMATE')
+            md.decimate_type = 'COLLAPSE'
+            md.ratio = LOW_DECIMATE['ratio']
+            md.use_collapse_triangulate = True
+            dg = bpy.context.evaluated_depsgraph_get()
+            new = bpy.data.meshes.new_from_object(t.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
+            new.name = me.name + '_low'
+            new.validate(clean_customdata=False)
+            for i, m in enumerate(me.materials):
+                if i < len(new.materials):
+                    new.materials[i] = m
+            bpy.data.objects.remove(t)
+            done[me.name] = new
+            before += n
+            after += sum(len(p.vertices) - 2 for p in new.polygons)
+        o.data = done[me.name]
+    bpy.data.collections.remove(tmp_coll)
+    log(f'low LOD: {len(done)} meshes decimated, {before} -> {after} triangles')
+    return {'meshes': len(done), 'tris_before': before, 'tris_after': after}
+
+
 def main():
     layout = json.loads((SHARED / 'level-layout.json').read_text())
     only = set(ARGS['types'].split(',')) if isinstance(ARGS.get('types'), str) else None
@@ -98,6 +143,7 @@ def main():
     placements = layout.get('props', [])
     variants, skipped, missing = {}, {}, set()
     by_ms = {}
+    placed = []
     for pl in placements:
         t = pl['type']
         if only and t not in only:
@@ -119,7 +165,9 @@ def main():
         if t in registry.HOUSE_BUILT:
             skipped[pl['id']] = registry.HOUSE_BUILT[t]
             continue
-        by_ms.setdefault(pl.get('milestone', 'M2'), []).append(instance(pl, variants[key], inst_coll))
+        objs = instance(pl, variants[key], inst_coll)
+        by_ms.setdefault(pl.get('milestone', 'M2'), []).append(objs)
+        placed.append((pl, objs))
 
     # budgets
     over = []
@@ -137,6 +185,14 @@ def main():
     for o in over:
         log('OVER BUDGET', o)
 
+    # static props -> their room's lightmap band (props/lightmap.py)
+    lm_stats = {}
+    if not ARGS.get('no_lightmap'):
+        groups = plm.prepare(layout, placed)
+        lm_stats = plm.pack(groups)
+        write_json(CACHE / 'props' / 'lightmap.json', lm_stats)
+    report['lightmap'] = lm_stats
+
     # export
     files = {}
     if not ARGS.get('no_export'):
@@ -149,11 +205,26 @@ def main():
             size = gexport.export_glb(p, objs, preset='static')
             info = gexport.inspect_glb(p)
             files[name] = {'bytes': size, 'meshes': len(info['meshes']), 'roots': len(groups)}
-            for tier in TIERS:
+            for tier in ('medium', 'max'):
                 dst = REPO / 'public' / 'assets' / tier / name
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(p, dst)
             log(f'exported {name}: {len(groups)} placements, {size / 1024:.0f} KiB')
+        # the bake jobs append the placed instances from here (before the Low decimation touches them)
+        bpy.ops.wm.save_as_mainfile(filepath=str(stage / 'props.blend'), compress=True, copy=True)
+        # Low tier: decimated copies of the big non-lightmapped meshes
+        low = low_lod([o for g in by_ms.values() for grp in g for o in grp])
+        report['low_lod'] = low
+        for ms, groups in sorted(by_ms.items()):
+            objs = [o for g in groups for o in g]
+            name = f'props_{ms.lower()}.glb'
+            p = stage / f'low_{name}'
+            size = gexport.export_glb(p, objs, preset='static')
+            files[name]['low_bytes'] = size
+            dst = REPO / 'public' / 'assets' / 'low' / name
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(p, dst)
+            log(f'exported low {name}: {size / 1024:.0f} KiB')
     report['files'] = files
     write_json(CACHE / 'props' / 'props.json', report)
 

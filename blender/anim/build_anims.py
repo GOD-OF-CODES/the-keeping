@@ -117,6 +117,51 @@ def export_head_track(rig, baked):
     write_json(OUT / 'ada_opening_head.json', {'fps': 30, 'frames': len(mats), 'head_world': mats})
 
 
+LOW = {'frame_step': 2, 'ratio': 0.5, 'min_tris': 3000}
+
+
+def strip_private(objs):
+    """Drop build-internal custom props ('_'-prefixed, e.g. the hair cards' '_arc' = 187 KB of JSON) from the
+    objects, their data and materials before export."""
+    for o in objs:
+        for idb in [o, o.data] + [m for m in getattr(o.data, 'materials', []) if m]:
+            for k in [k for k in idb.keys() if k.startswith('_')]:
+                del idb[k]
+
+
+def export_low(char, rig, meshes):
+    """Low tier GLB: clips sampled every 2nd frame (15 fps, linear), meshes WITHOUT shape keys decimated to
+    LOW['ratio'] (the Decimate modifier is moved in front of the Armature modifier and applied on the rest mesh;
+    vertex groups and UVs are interpolated). Ada's body/hair keep jaw_open/gurgle, so they stay full resolution.
+    Call after the anim .blend is saved: this edits the meshes in place."""
+    before = after = 0
+    for ob in meshes:
+        me = ob.data
+        n = sum(len(p.vertices) - 2 for p in me.polygons)
+        before += n
+        if me.shape_keys or n < LOW['min_tris']:
+            after += n
+            continue
+        for o in bpy.context.selected_objects:
+            o.select_set(False)
+        bpy.context.view_layer.objects.active = ob
+        ob.select_set(True)
+        md = ob.modifiers.new('low_dec', 'DECIMATE')
+        md.decimate_type = 'COLLAPSE'
+        md.ratio = LOW['ratio']
+        md.use_collapse_triangulate = True
+        bpy.ops.object.modifier_move_to_index(modifier=md.name, index=0)
+        bpy.ops.object.modifier_apply(modifier=md.name)
+        after += sum(len(p.vertices) - 2 for p in ob.data.polygons)
+    path = OUT / f'{char}_low.glb'
+    n = gexport.export_glb(path, [rig] + meshes, 'character', export_tangents=True, export_frame_step=LOW['frame_step'])
+    d = REPO / 'public' / 'assets' / 'low'
+    d.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(path, d / f'{char}.glb')
+    log(f'{char} low: {before} -> {after} tris, {n / 1e6:.2f} MB (15 fps)')
+    return {'bytes': n, 'tris': after, 'tris_full': before, 'frame_step': LOW['frame_step']}
+
+
 def main():
     t0 = time.time()
     OUT.mkdir(parents=True, exist_ok=True)
@@ -145,10 +190,11 @@ def main():
         table = [{'name': c.name, 'seconds': round((c.frames - 1) / 30.0, 4), 'frames': c.frames, 'loop': c.loop,
                   'ik_baked': bool(c.ik), 'note': c.note, 'milestone': c.milestone} for c, _ in baked]
         write_json(OUT / f'{char}_clips.json', table)
+        strip_private([rig] + meshes)
         if not ARGS.get('no_export'):
             path = OUT / f'{char}.glb'
             n = gexport.export_glb(path, [rig] + meshes, 'character', export_tangents=True)
-            for tier in TIERS:
+            for tier in ('medium', 'max'):
                 d = REPO / 'public' / 'assets' / tier
                 d.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(path, d / f'{char}.glb')
@@ -157,6 +203,8 @@ def main():
                             'meshes': [(m['name'], m['morph_targets']) for m in info['meshes']]}
             log(f'{char}.glb {n / 1e6:.2f} MB, {len(info["animations"])} animations')
         bpy.ops.wm.save_as_mainfile(filepath=str(OUT / f'{char}_anim.blend'), compress=True)
+        if not ARGS.get('no_export'):
+            report[char]['low'] = export_low(char, rig, meshes)
         # evaluate from a fresh load (in-session evaluation after nla.bake can stay stale)
         names = [(c, a.name) for c, a in baked]
         bpy.ops.wm.open_mainfile(filepath=str(OUT / f'{char}_anim.blend'))

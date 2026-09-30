@@ -2,8 +2,10 @@
 
   bake_house.py -- --atlas LM_GROUND [--size 1024] [--samples 32] [--out public/assets] [--no-flash]
 
-Scene: .cache/house/house.blend (exact geometry + UV2 of the exported GLBs) + layout lights (mode bake /
-bake_flicker) + night world + door leaves at their initial pose + bake-only ground. Detail meshes and doors are
+Scene: .cache/house/house.blend (exact geometry + UV2 of the exported GLBs) + the placed props from
+.cache/props/props.blend (static props of this atlas are bake targets in the atlas's top band, the rest occluders)
++ layout lights (mode bake / bake_flicker) + night world + door leaves at their initial pose + the terrain
+(EXT2_terrain, part of LM_EXTERIOR). LM_CAR holds only the sedan interior set (props). Detail meshes and doors are
 occluders only. Flash atlases (layout atlases[].flash) get a second bake with ONLY the lightning lights (mode
 flash), a bright storm sky and Cycles portals in the sky-portal windows -> lm_<atlas>_flash.klm (additive).
 
@@ -42,6 +44,7 @@ device = scene.setup_cycles(SPP, device='GPU', max_bounces=8, diffuse_bounces=4)
 sc = bpy.context.scene
 sc.view_settings.view_transform = 'Standard'
 
+n_props = scene_prep.append_props()
 scene_prep.glass_transmissive()
 scene_prep.pose_doors()
 scene_prep.ground(P)
@@ -75,12 +78,14 @@ def save(den, mask, lm_id, tiers=None):
     np.savez_compressed(d / f'{lm_id}.npz', rgb=den[..., :3].astype(np.float32), mask=mask)
     policy = {t: p for t, p in encode.TIER_POLICY.items() if tiers is None or t in tiers}
     with T(f'encode_{lm_id}'):
-        written = encode.encode_tiers(den, lm_id.replace('lm_', ''), OUT, policy=policy, intensity=math.pi)
+        written = encode.encode_tiers(den, lm_id.replace('lm_', ''), OUT, policy=policy, intensity=math.pi,
+                                      max_resolution=int(adef.get('maxResolution', 2048)))
     return written, encode.stats(den)
 
 
 res = {'job': f'bake-house-{SHORT}', 'ok': True, 'atlas': ATLAS, 'size': SIZE, 'samples': SPP, 'device': device,
-       'objects': len(objs), 'triangles': tris}
+       'objects': len(objs), 'triangles': tris, 'prop_placements_in_scene': n_props,
+       'lightmapped_prop_objects': sum(1 for o in objs if o.get('lm_prop'))}
 den, mask, info, oinfo = bake_one('base')
 written, st = save(den, mask, f'lm_{SHORT}')
 res['base'] = {'bake_seconds': info['bake_seconds'], 'coverage': info['coverage'], 'oidn': oinfo, 'stats': st,

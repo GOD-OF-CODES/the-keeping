@@ -203,10 +203,31 @@ def build_all(material, bake_atlas):
     shaders = {R[k].name: tex_arms.shader(k, ctx) for k in keys}
     importance = {'arms_gloves': 2.5, 'arms_sleeves': 1.0, 'arms_flashlight': 3.0}
     bake_atlas('arms', [R[k] for k in keys], importance, shaders, bake_size())
-    spec = {'gloves': 'leather_worn', 'sleeves': 'wool_coats', 'flashlight': 'chrome_pitted'}
+    spec = {'gloves': 'leather_worn', 'sleeves': 'coat_rain_dark', 'flashlight': 'steel_flashlight'}
     mats = {}
     for k in keys:
-        mats[k] = material(f'arms_{k}', spec[k], 'arms', extras={'lens': 1} if k == 'flashlight' else None)
+        mats[k] = material(f'arms_{k}', spec[k], 'arms')
         R[k].data.materials.clear()
         R[k].data.materials.append(mats[k])
+    # the lens/reflector/bulb face inside the bezel becomes its own mesh + material (same atlas UVs), so the runtime
+    # can make it emissive when the light is on (material_id lens_flashlight, extras lens/emissive)
+    R['flashlight_lens'] = split_lens(R['flashlight'], R['tail'], R['F'])
+    mats['flashlight_lens'] = material('arms_flashlight_lens', 'lens_flashlight', 'arms',
+                                       extras={'lens': 1, 'emissive': 1, 'emissive_color': [1.0, 0.86, 0.62]})
+    R['flashlight_lens'].data.materials.clear()
+    R['flashlight_lens'].data.materials.append(mats['flashlight_lens'])
     return R, mats
+
+
+def split_lens(fl, tail, F, t_min=0.2275, r_max=0.0237):
+    """Separate the head's inner face (reflector cone + bulb: t > t_min along the beam axis, inside the bezel lip)
+    into 'arms_flashlight_lens'."""
+    mask = []
+    for p in fl.data.polygons:
+        c = np.array(p.center)
+        t = float((c - tail) @ F)
+        r = float(np.linalg.norm(c - tail - F * t))
+        mask.append(t > t_min and r < r_max)
+    lens = garments.split_faces(fl, mask, 'arms_flashlight_lens')
+    log(f'arms: lens split {sum(mask)} faces -> {lens.name}')
+    return lens

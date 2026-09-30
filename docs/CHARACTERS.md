@@ -12,7 +12,7 @@ node blender/characters/dev.mjs blender/characters/review_opening.py   # C2 tabl
 | Job | Script | Output |
 |---|---|---|
 | `characters` | `blender/characters/build_characters.py` (`--only ada,harlan,arms --tex 2048 --no-render`) | `.cache/characters/<char>.blend` (rig + skinned meshes + shape keys + materials), textures in `public/assets/<tier>/` |
-| `anims` | `blender/anim/build_anims.py` (`--only … --clips a,b --no-render --no-export`) | `public/assets/<tier>/{ada,harlan,arms}.glb` (identical in every tier), `.cache/anims/<char>_clips.json`, review sheets |
+| `anims` | `blender/anim/build_anims.py` (`--only … --clips a,b --no-render --no-export`) | `public/assets/{medium,max}/{ada,harlan,arms}.glb` (identical), `public/assets/low/<char>.glb` (Low variant), `.cache/anims/<char>_clips.json`, review sheets |
 
 Review renders land in `scratch/characters/` (`<char>_turn.png`, `<char>_detail.png`, `<char>_clips_*.png`,
 `arms_view.png`, `opening.png`).
@@ -45,7 +45,7 @@ Review renders land in `scratch/characters/` (`<char>_turn.png`, `<char>_detail.
 
 | File | Content | Size max / medium / low |
 |---|---|---|
-| `ada.glb`, `harlan.glb`, `arms.glb` | skinned meshes, one armature, all clips; meshopt; tangents; no images | same file in every tier |
+| `ada.glb`, `harlan.glb`, `arms.glb` | skinned meshes, one armature, all clips; meshopt; tangents; no images | Max = Medium; **Low**: clips sampled at 15 fps (`export_frame_step` 2, linear), meshes without shape keys decimated to 50 % (Ada's body/hair keep `jaw_open`/`gurgle` at full resolution); same nodes, bones, clip names, materials |
 | `<char>_albedo.webp` | RGB = albedo (sRGB), **A = roughness** (linear) | 2048 / 1024 / 512 |
 | `<char>_normal.png` | tangent-space normal (OpenGL +Y, MikkTSpace), RGB | 2048 / 1024 / 512 |
 | `ada_hair_albedo.webp` | RGB = strand albedo (sRGB), **A = alpha coverage** (roughness = factor 0.25) | 1024×2048 / 512×1024 / 256×512 |
@@ -55,14 +55,15 @@ Every character material shares its character's atlas (UVMap = `TEXCOORD_0`). Ma
 `material.userData`**: `material_id` (spec id, see open issues), `albedo_tex`, `normal_tex` (base names, add the
 extension from the table), `albedo_alpha` (`roughness` or `alpha`), plus flags: `alpha_mode: 'hash'` (Ada's hair:
 alpha-hash, alpha-test on Low), `sss` (Ada skin), `eye` + `clearcoat` (Ada's eye: wet cornea), `void` (Harlan's
-head under the sack: unlit black), `lens` (flashlight: lens/bulb sits inside the head — emissive when on).
+head under the sack: unlit black), `lens` + `emissive` + `emissive_color` (the separate `arms_flashlight_lens` mesh: reflector cone + bulb inside the
+bezel, material `lens_flashlight` — make it emissive when the light is on).
 **`baseColorFactor` carries the spec average as a fallback; when you bind the albedo texture set the colour to
 white.** The GLB's `roughnessFactor`/`metallicFactor` are exporter defaults, not data: roughness comes only from
 the albedo texture's alpha (hair: `material.roughness = 0.25`), metalness from the spec by `material_id`
-(flashlight `chrome_pitted` metal, cleaver `rust` 0.25 — the cleaver handle shares it, everything else 0).
-The flashlight's `lens: 1` flag is on the whole flashlight material: the lens/bulb is only a region of the texture
-(and of one primitive), so emission can't be toggled on a sub-mesh — put the beam light at `flashlight_beam` and, if
-a glowing bulb is wanted, split the lens off in a later pass.
+(flashlight body `steel_flashlight` and cleaver blade `steel_cleaver` metal 1, everything else 0 — the cleaver's
+wooden handle is its own mesh `harlan_cleaver_handle` (`wood_furniture_dark`), weighted to the `cleaver` bone like the
+blade: hide/reparent BOTH). Material ids: Harlan trousers `trousers_wool`, twine `twine_jute`, FP sleeves
+`coat_rain_dark`, Ada's eye `eye_ada` (all in material-spec.json since 2026-09-30).
 `doubleSided` is set for the gown, hair, sack and apron. The sack also has a `TEXCOORD_1` (fabric coordinates) —
 unused at runtime.
 
@@ -184,8 +185,11 @@ track; stray actions are pruned; export `export_animation_mode='ACTIONS'`, `expo
 | Harlan | 68 234 (shirt 13.4k · sack 13.4k · trousers 9.1k · gloves 9k · apron 7.5k · boots 7k · forearms 5.2k · …) | 64 (63) | 2.23 MB, 6 clips | atlas 2048 |
 | Arms | 24 490 (gloves 12k · sleeves 11.3k · flashlight 1.2k) | 39 (37) | 1.14 MB, 10 clips | atlas 2048 |
 
-Per tier (all three characters): **max 17.0 MB, medium 10.0 MB, low 7.8 MB** (the GLBs, 7.1 MB, are identical in
-every tier). `characters` job: ~6 min, peak RSS ~2.6 GB; `anims`: ~30 s. Parse time in three r186 (Node): 8–54 ms.
+Per tier (all three characters, 2026-09-30): GLBs Max/Medium 6.9 MB (ada 3.52, harlan 2.24, arms 1.14), **Low 5.75 MB**
+(ada 3.36 — body/hair keep shape keys, harlan 1.53, arms 0.87); Low total with textures 6.6 MB.
+Gown collision (`gown_check.py`, depth beyond calibrated leg capsules): static/idle clips 0.7 → 0.0 cm, stairs_down
+5.2 → 2.7 cm, patrol 5.6 → 5.1 cm; chase/stairs_up/rise/table still ≈ 5.7–6.2 cm (vertices near the hip crease that
+the chain bones don't control — bigger clearance didn't change it; the runtime verlet should collide there). `characters` job: ~6 min, peak RSS ~2.6 GB; `anims`: ~30 s. Parse time in three r186 (Node): 8–54 ms.
 
 ## Review notes
 
@@ -200,19 +204,21 @@ every tier). `characters` job: ~6 min, peak RSS ~2.6 GB; `anims`: ~30 s. Parse t
 
 ## Open issues (for the lead / other lanes)
 
-1. **Low tier budget**: the whole Low manifest is 30.0 MB vs 25 MB (all lanes); the character GLBs are 7.1 MB of
-   it (`ada.glb` alone is 3.7 MB, 13 clips keyed at 30 fps on 112 bones). Cheapest experiment from this lane:
-   `anim/clip.py` `FPS = 15` for a Low-only export (one constant + duration math), or a Low GLB with decimated
-   meshes; or drop `harlan.glb` from Low until M2.
-2. `material-spec.json` has no ids for Harlan's **trousers, twine, cleaver steel**, the **FP coat**, the
-   **flashlight steel** or **Ada's eye**; substitutes used: `wool_coats`, `rope_hemp`, `rust`, `wool_coats`,
-   `chrome_pitted`, `skin_ada` (+ `eye` flag). The textures are baked unique, so only the fallback factors differ.
+1. **Low tier**: done — Low GLBs (15 fps, decimated garments), and `_`-prefixed build props are stripped from every
+   export (Ada's hair `_arc` was 187 KB of JSON). About half of `ada.glb` is still glTF JSON (≈3.8k accessors/
+   bufferViews for 13 clips × 112 bones); fewer clips or bones would be the next lever.
+2. Material ids: done (see above). `lens_flashlight` is `source: 'constant'`.
 3. Runtime (lane B): bind `<char>_albedo` with a white colour factor, roughness from its alpha (hair: alpha), normal
    map with tangents (exported); hair alpha-hash/test per preset; `void` material unlit black; Ada's stop-motion
    sampling, neck spring and verlet chains per the table above. Ada's skirt clips the thighs on the largest chase
-   strides unless the `gown_*` chains get collision.
-4. Atlas packing efficiency is ~35–40 % (CONVEX pack of many smart-project islands): texel density is lower than
-   2048 suggests. A custom packer or fewer, larger islands would roughly double it.
+   strides unless the `gown_*` chains get collision — the clips now run a post-bake collision pass
+   (`anim/clip.py gown_collide`: every frame each gown bone whose tail enters a thigh/calf capsule (+14 mm) is swung
+   about its head back onto the capsule, never further out than at rest); `blender/characters/gown_check.py`
+   measures the remaining penetration of the skinned gown per clip (see Numbers). Runtime verlet chains can still
+   add capsule collision on top.
+4. Atlas packing: CONCAVE + free rotation + 0.003 margin (was CONVEX, 0.004): Harlan 33 % → 42 % UV fill
+   (`blender/characters/uvpack_check.py`). The remaining limit is island count (smart-project on organic meshes);
+   seam-guided unwraps would be the next step.
 5. M2 clips listed above are not built. Harlan's static poses are 2-frame clips (use them as poses).
 6. The characters job once crashed mid-bake ("terminated abnormally" during the Metal AO bake) under memory
    pressure; a rerun passed. If it recurs, bake AO on the CPU (`texbake.bake_geometry(ao_samples)` / device).

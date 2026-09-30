@@ -2,7 +2,8 @@
 // THE KEEPING — serial Blender asset pipeline (lane A). Plain Node, no dependencies.
 //
 //   npm run assets                      run every non-manual job whose inputs changed, then write manifests
-//   npm run assets -- --only smoke      only jobs whose id or group matches (comma-separated)
+//   npm run assets -- --only smoke      only jobs whose id or group matches (comma-separated); a manual job runs
+//                                       only when its id or its group is named (--only bake-release, house-review)
 //   npm run assets -- --force           ignore the input-hash cache
 //   npm run assets -- --check           verify manifests + GLB/lightmap invariants (no Blender)
 //   npm run assets -- --list            list jobs and their cache state
@@ -124,7 +125,8 @@ function selected(job) {
   const only = opt('only');
   if (only) {
     const keys = only.split(',').map((s) => s.trim());
-    if (keys.includes(job.id)) return true; // manual jobs run only when named exactly
+    // manual jobs run only when named exactly: by id, or by their group (`--only bake-release`)
+    if (keys.includes(job.id) || (job.manual && keys.includes(job.group))) return true;
     return !job.manual && keys.some((k) => k === job.group || job.id.startsWith(k + '-'));
   }
   return !job.manual;

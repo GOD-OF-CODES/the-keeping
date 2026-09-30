@@ -112,7 +112,7 @@ export const MATERIALS = [
   // ---------- exterior envelope ----------
   m('clapboard_peeling', 'clapboard', {
     albedo: [0.36, 0.35, 0.32], rough: 0.7, tile: 3, hero: true, wet: 0.6,
-    params: { boardExposure: 0.11, paint: [0.42, 0.41, 0.37], bareWood: [0.12, 0.1, 0.08], peel: 0.55, mildew: 0.35, rainStreaks: 0.6, seed: 41 },
+    params: { boardExposure: 0.10, paint: [0.42, 0.41, 0.37], bareWood: [0.12, 0.1, 0.08], peel: 0.55, mildew: 0.35, rainStreaks: 0.6, seed: 41 },
   }),
   m('porch_boards_wet', 'porch_boards', {
     albedo: [0.1, 0.088, 0.072], rough: 0.35, tile: 2, hero: true, wet: 0.8,
@@ -280,6 +280,43 @@ export const MATERIALS = [
     params: { strandWidth: 0.0004, clumping: 0.85, specShift: 0.05, alphaThreshold: 0.35, seed: 103 },
   }),
 
+  // ---------- characters: garments & hand props (baked unique on the character; factors are the fallback) ----------
+  m('trousers_wool', 'fabric', {
+    albedo: [0.055, 0.05, 0.042], rough: 0.92, tile: 0.3, source: 'baked_unique',
+    params: { weave: 'twill', dust: 0.4, kneeWear: 0.6, mud: 0.5, seed: 104 },
+    notes: 'Harlan\'s work trousers (brown-black wool twill, muddy hems).',
+  }),
+  m('twine_jute', 'rope', {
+    albedo: [0.3, 0.23, 0.13], rough: 0.95, tile: 0.1, source: 'baked_unique',
+    params: { strands: 2, twist: 0.9, fuzz: 0.7, grime: 0.5, seed: 105 },
+    notes: 'Twine tying Harlan\'s sack at the neck; spare twine on the mask-making chair.',
+  }),
+  m('steel_cleaver', 'chrome', {
+    albedo: [0.3, 0.3, 0.29], rough: 0.45, metal: 1, tile: 0.3, source: 'baked_unique',
+    params: { pitting: 0.7, rustSpots: 0.55, honedEdge: 0.8, seed: 106 },
+    notes: 'Hog-cleaver blade: carbon steel, pitted, rust blooms, bright honed edge.',
+  }),
+  m('coat_rain_dark', 'fabric', {
+    albedo: [0.04, 0.04, 0.045], rough: 0.8, tile: 0.3, wet: 0.7, source: 'baked_unique',
+    params: { weave: 'twill', dust: 0.1, seed: 107 },
+    notes: 'Player\'s rain-dark coat sleeves (first-person arms).',
+  }),
+  m('steel_flashlight', 'chrome', {
+    albedo: [0.45, 0.45, 0.44], rough: 0.35, metal: 1, tile: 0.2, source: 'baked_unique',
+    params: { pitting: 0.2, rustSpots: 0.05, knurl: 0.8, seed: 108 },
+    notes: 'Steel two-cell flashlight body (first-person arms).',
+  }),
+  m('lens_flashlight', 'glass', {
+    albedo: [0.04, 0.04, 0.04], rough: 0.05, tile: 0.1, source: 'constant',
+    params: { ior: 1.5, transmission: 0.9, grime: 0.2, emissive_srgb: [1.0, 0.86, 0.62], seed: 109 },
+    notes: 'Flashlight lens + reflector/bulb (separate mesh arms_flashlight_lens): emissive warm white when the light is on.',
+  }),
+  m('eye_ada', 'skin', {
+    albedo: [0.36, 0.35, 0.31], rough: 0.05, tile: 1, wet: 1, source: 'baked_unique',
+    params: { clouded: 0.8, bloodshot: 0.5, seed: 110 },
+    notes: 'Ada\'s single visible eye: milky, clouded cornea under a wet clearcoat.',
+  }),
+
   // ---------- vehicles ----------
   m('car_paint_sedan', 'car_paint', {
     albedo: [0.05, 0.075, 0.11], rough: 0.35, tile: 1, hero: true, wet: 0.9,
@@ -309,6 +346,11 @@ export const MATERIALS = [
     albedo: [0.55, 0.48, 0.35], rough: 0.9, tile: 0.3,
     params: { foxing: 0.5, waterDamage: 0.3, ruled: true, ink: [0.02, 0.02, 0.04], seed: 122 },
     notes: 'Guest book, ledger, letter, bus ticket. Text drawn at runtime by src/materials/handwriting.ts.',
+  }),
+  m('wick_cotton', 'rope', {
+    albedo: [0.3, 0.27, 0.22], rough: 0.95, tile: 0.05,
+    params: { strands: 12, twist: 0.2, fuzz: 0.8, grime: 0.4, charredTip: 0.9, seed: 125 },
+    notes: 'Flat woven kerosene-lamp wick (charred at the tip) and candle wicks.',
   }),
   m('rope_hemp', 'rope', {
     albedo: [0.28, 0.22, 0.14], rough: 0.9, tile: 0.15,

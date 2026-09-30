@@ -139,21 +139,26 @@ def sidecar(path, **fields):
 TIER_POLICY = {
     'max': {'size': 2048, 'container': 'klm', 'mantissa_bits': 10},     # lossless half, ~7.1 MB / atlas (S4 room)
     'medium': {'size': 2048, 'container': 'klm', 'mantissa_bits': 7},   # <= 0.39 % rel. error, ~3.7 MB / atlas
-    'low': {'size': 1024, 'container': 'klm', 'mantissa_bits': 7},      # ~1.0 MB / atlas
+    # Low (25 MB budget for EVERYTHING): 512^2 m6 (<= 0.78 % rel. error), 0.35-0.6 MB / atlas even from noisy dev bakes.
+    # UV2 gutters are 4 texels at 1024 = 2 texels at 512, and the coverage-weighted downsample never mixes islands.
+    'low': {'size': 512, 'container': 'klm', 'mantissa_bits': 6},
 }
 
 
-def encode_tiers(rgba, atlas_id, out_root, policy=None, intensity=None):
+def encode_tiers(rgba, atlas_id, out_root, policy=None, intensity=None, max_resolution=2048):
     """Write <out_root>/<tier>/lm_<atlas_id>.<klm|exr> + lm_<atlas_id>.json sidecar per tier.
 
     Returns [{tier, path, bytes}]. `intensity` is the runtime lightMapIntensity (S3: pi).
+    `max_resolution` (layout atlases[].maxResolution) scales every tier's size by max_resolution / 2048, so a
+    1024-max atlas (LM_CAR) ships 1024 / 1024 / 256. A tier is never larger than the bake itself.
     """
     policy = policy or TIER_POLICY
     base = rgba.shape[0]
+    scale = min(1.0, max_resolution / 2048.0)
     written = []
     cache = {}
     for tier, p in policy.items():
-        size = min(p['size'], base)
+        size = min(max(64, int(p['size'] * scale)), base)
         if size not in cache:
             cache[size] = downsample(rgba, base // size)
         img = cache[size]

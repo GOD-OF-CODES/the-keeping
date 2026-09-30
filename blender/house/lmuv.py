@@ -8,7 +8,32 @@
 4. Islands (UV-connected faces) are turned landscape and shelf-packed (next-fit decreasing height) into the unit
    square; the common scale is found by bisection. Gap between islands = `pad_texels` texels of the smallest tier.
 bpy.ops.uv.pack_islands(AABB) left ~60 % of the atlas empty on these interiors (thousands of thin moulding strips).
+5. `region` (u0, v0, u1, v1) packs into a sub-rectangle: the house packs every atlas into [0, 1 - PROPS_BAND[atlas]]
+   (v from the bottom) and the props job (blender/props/lightmap.py) packs that atlas's static props into the band on
+   top, so static props share their room's lightmap file, lights and flash maps (docs/PROPS.md "Lightmaps").
 """
+
+# Fraction of each atlas's height reserved for its static props (top band). Measured prop surface areas
+# (.cache/props/lightmap.json) vs the house's own texel density decide these; LM_CAR is all props.
+PROPS_BAND = {             # tuned so props ~= house texel density (dev run 2026-09-30, texel/m @1024)
+    'LM_EXTERIOR': 0.13,      # house 19.8 / props 15.6 at 0.10
+    'LM_GROUND': 0.12,        # 32.9 / 64 at 0.20
+    'LM_PARLOR': 0.17,        # 53.6 / 47
+    'LM_KITCHEN': 0.24,       # 40.0 / 31 at 0.19
+    'LM_UPPER_HALL': 0.24,    # 52.7 / 41 at 0.20
+    'LM_UPPER_ROOMS': 0.30,   # 37.7 / 35
+    'LM_CAR': 1.0,
+}
+
+
+def band_region(atlas):
+    """(u0, v0, u1, v1) of the props band of an atlas (Blender UV, v up)."""
+    b = PROPS_BAND.get(atlas, 0.0)
+    return (0.0, 1.0 - b, 1.0, 1.0)
+
+
+def house_region(atlas):
+    return (0.0, 0.0, 1.0, 1.0 - PROPS_BAND.get(atlas, 0.0))
 import math
 
 import bmesh
@@ -109,7 +134,10 @@ def _shelf(sizes, order, gap):
     return pos, y + shelf + 2 * gap
 
 
-def pack_atlas(objs, pad_texels=4, smallest_px=1024, angle_limit=1.15192):
+def pack_atlas(objs, pad_texels=4, smallest_px=1024, angle_limit=1.15192, region=(0.0, 0.0, 1.0, 1.0),
+               max_texels_per_m=None):
+    """Pack every object's Lightmap layer into `region` of the unit square. max_texels_per_m (at smallest_px) caps
+    the density (a sparse props band would otherwise blow tiny props up)."""
     t_smart = [o for o in objs if not o.get('lm_prebuilt')]
     t_pre = [o for o in objs if o.get('lm_prebuilt')]
     k0 = 1.0
@@ -153,10 +181,15 @@ def pack_atlas(objs, pad_texels=4, smallest_px=1024, angle_limit=1.15192):
         w, h = float(hi[0] - lo[0]), float(hi[1] - lo[1])
         rot = h > w * 1.05
         rects.append((name, g, lo, rot, (h, w) if rot else (w, h)))
-    gap = pad_texels / float(smallest_px)
+    u0, v0, u1, v1 = region
+    RW, RH = u1 - u0, v1 - v0            # pack in a strip of width 1 and height RH / RW, then scale by RW
+    lim = RH / RW
+    gap = pad_texels / float(smallest_px) / RW
     order = sorted(range(len(rects)), key=lambda i: -rects[i][4][1])
     total = sum(r[4][0] * r[4][1] for r in rects)
-    lo_s, hi_s = 1e-6, 1.0 / math.sqrt(max(total, 1e-12))
+    lo_s, hi_s = 1e-6, math.sqrt(lim / max(total, 1e-12))
+    if max_texels_per_m:
+        hi_s = min(hi_s, max_texels_per_m / smallest_px * k0 / RW * 1.0001)
     best = None
     for _ in range(40):
         s = (lo_s + hi_s) / 2
@@ -165,10 +198,12 @@ def pack_atlas(objs, pad_texels=4, smallest_px=1024, angle_limit=1.15192):
             hi_s = s
             continue
         pos, used = _shelf(sizes, order, gap)
-        if used <= 1.0:
+        if used <= lim:
             lo_s, best = s, (s, pos)
         else:
             hi_s = s
+    if best is None:
+        raise RuntimeError(f'lmuv: {len(rects)} islands do not fit region {region}')
     s, pos = best
     out = {n: u.copy() for n, u in uvs.items()}
     for (name, g, lo, rot, (w, h)), (px, py) in zip(rects, pos):
@@ -176,11 +211,13 @@ def pack_atlas(objs, pad_texels=4, smallest_px=1024, angle_limit=1.15192):
         if rot:  # 90 degree rotation, no mirroring
             wid = float(p[:, 0].max())
             p = np.stack([p[:, 1], wid - p[:, 0]], 1)
-        out[name][g] = p * s + np.array([px, py], np.float32)
+        out[name][g] = (p * s + np.array([px, py], np.float32)) * RW + np.array([u0, v0], np.float32)
+    s = s * RW
     for o in objs:
         _set_uv(o, out[o.name])
         o.data.uv_layers.active = o.data.uv_layers[0]
-    fill = total * s * s
+    fill = total * s * s / (RW * RH)
     tpm = s / k0 * smallest_px
-    log(f'lmuv: {len(rects)} islands, bbox fill {fill:.2f}, {tpm:.1f} texel/m at {smallest_px}')
-    return {'islands': len(rects), 'bbox_fill': round(fill, 3), 'texels_per_m_at_1024': round(tpm * 1024 / smallest_px, 2)}
+    log(f'lmuv: {len(rects)} islands in {region}, bbox fill {fill:.2f}, {tpm:.1f} texel/m at {smallest_px}')
+    return {'islands': len(rects), 'bbox_fill': round(fill, 3), 'texels_per_m_at_1024': round(tpm * 1024 / smallest_px, 2),
+            'region': [round(v, 4) for v in region], 'area_m2': round(total * k0 * k0, 2)}

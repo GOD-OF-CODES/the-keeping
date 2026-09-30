@@ -27,8 +27,8 @@ const SPEC = {
     meshes: ['ada_body', 'ada_gown', 'ada_hair', 'ada_eye'], maxTris: 60000, textures: ['ada_albedo.webp', 'ada_normal.png', 'ada_hair_albedo.webp', 'ada_hair_normal.png'] },
   harlan: { bones: [...CORE, 'cleaver'], prefixes: ['sack_', 'apron_'], morphs: {},
     meshes: ['harlan_body', 'harlan_shirt', 'harlan_trousers', 'harlan_boots', 'harlan_gloves', 'harlan_apron', 'harlan_suspenders',
-      'harlan_sack', 'harlan_twine', 'harlan_void', 'harlan_cleaver'], maxTris: 75000, textures: ['harlan_albedo.webp', 'harlan_normal.png'] },
-  arms: { bones: ARMS, prefixes: [], morphs: {}, meshes: ['arms_gloves', 'arms_sleeves', 'arms_flashlight'], maxTris: 40000,
+      'harlan_sack', 'harlan_twine', 'harlan_void', 'harlan_cleaver', 'harlan_cleaver_handle'], maxTris: 75000, textures: ['harlan_albedo.webp', 'harlan_normal.png'] },
+  arms: { bones: ARMS, prefixes: [], morphs: {}, meshes: ['arms_gloves', 'arms_sleeves', 'arms_flashlight', 'arms_flashlight_lens'], maxTris: 40000,
     textures: ['arms_albedo.webp', 'arms_normal.png'] },
 };
 
@@ -102,11 +102,35 @@ for (const ch of chars) {
     const bad = a.tracks.filter((t) => [...t.values].some((v) => !Number.isFinite(v)));
     if (bad.length) expect(false, `${a.name}: non-finite values in ${bad.length} tracks`);
   }
-  // textures in every tier + the GLB copied to every tier
+  // textures in every tier; medium ships the Max GLB, Low its own (15 fps sampling, decimated garments)
   for (const tier of TIERS) {
     for (const t of spec.textures) expect(fs.existsSync(path.join(ROOT, 'public/assets', tier, t)), `${tier}/${t}`);
-    const g = path.join(ROOT, 'public/assets', tier, `${ch}.glb`);
-    expect(fs.existsSync(g) && fs.statSync(g).size === buf.length, `${tier}/${ch}.glb identical`);
+  }
+  const gm = path.join(ROOT, 'public/assets/medium', `${ch}.glb`);
+  expect(fs.existsSync(gm) && fs.statSync(gm).size === buf.length, `medium/${ch}.glb identical to max`);
+  const gl = path.join(ROOT, 'public/assets/low', `${ch}.glb`);
+  if (!fs.existsSync(gl)) expect(false, `low/${ch}.glb exists`);
+  else {
+    const lb = fs.readFileSync(gl);
+    const lo = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)
+      .parseAsync(lb.buffer.slice(lb.byteOffset, lb.byteOffset + lb.byteLength), '');
+    const lnames = lo.animations.map((a) => a.name).sort();
+    expect(JSON.stringify(lnames) === JSON.stringify(gltf.animations.map((a) => a.name).sort()), `low: same ${lnames.length} clips`);
+    for (const a of lo.animations) {
+      const full = gltf.animations.find((x) => x.name === a.name);
+      if (full) expect(Math.abs(a.duration - full.duration) <= 2 / 30 + 1e-4, `low ${a.name}: ${a.duration.toFixed(3)} s vs ${full.duration.toFixed(3)} s`);
+    }
+    let ltris = 0;
+    const lbones = new Set();
+    lo.scene.traverse((o) => {
+      if (o.isSkinnedMesh) o.skeleton.bones.forEach((b) => lbones.add(b.name));
+      if (o.isMesh) ltris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+    });
+    expect([...bones].every((b) => lbones.has(b)), `low: same skeleton (${lbones.size} bones)`);
+    expect(ltris <= tris, `low: ${Math.round(ltris)} tris <= max ${Math.round(tris)}, ${(lb.length / 1e6).toFixed(2)} MB vs ${(buf.length / 1e6).toFixed(2)} MB`);
+    lo.scene.traverse((o) => o.isMesh && [o.material].flat().forEach((m) => {
+      if (!m.userData?.material_id) expect(false, `low: material ${m.name} lacks material_id`);
+    }));
   }
   report[ch] = { bytes: buf.length, parseMs: Math.round(ms), bones: bones.size, tris: Math.round(tris), animations: durations,
     skinnedPrimitives: skinned.length, materials: [...mats].map((m) => ({ name: m.name, ...m.userData })) };

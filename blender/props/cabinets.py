@@ -118,25 +118,20 @@ def slatted_cabinet(p, rng):
             (W / 2 - 0.001, D / 2 - 0.01, 0)]
     part.add(tube(path, 0.01, section=[(y, -x) for x, y in sec]), mat, T((0, 0, zc1)))
     part.add(box(W + 0.1, D + 0.05, 0.02, 0.004, 2, base=True), mat, T((0, -0.02, H - 0.02)))
-    # back boards (tongue & groove, slightly uneven); loose-back variant makes them a hinged child
+    # back boards (tongue & groove, slightly uneven). The loose-back variant (Ada's wardrobe, U3) has NO back: it
+    # stands over the 0.7 x 1.8 m wall opening whose loose boards are the house kit's door_D_WARDROBE_BACK
+    # (doors.glb, flush with the U3 wall face) - building them here too would double them (docs/HOUSE.md).
     loose = variant == 'wardrobe_loose_back'
-    back = Part('slatted_cabinet.back', rng) if loose else part
-    hinge_x = -(W / 2 - t)
     nb = 6
     bw = (W - 2 * t) / nb
-    for k in range(nb):
+    for k in range(0 if loose else nb):
         x = -W / 2 + t + bw * (k + 0.5)
         bb = box(bw - 0.002, 0.014, ch - 0.01, 0.002, 1, cuts={2: 2})
         jitter(bb, 0.002, freq=2.0, seed=rng.randint(0, 999), axes=(0, 1, 0))
-        if loose:
-            back.add(bb, mat, T((x - hinge_x, 0, ch / 2)))
-        else:
-            back.add(bb, mat, T((x, D / 2 - 0.012, zc0 + ch / 2 + 0.005)))
+        part.add(bb, mat, T((x, D / 2 - 0.012, zc0 + ch / 2 + 0.005)))
     if loose:
-        back.add(box(0.04, 0.02, 0.02, 0.003, 1), 'cast_iron', T((W - 2 * t - 0.05, -0.012, ch * 0.5)))
-        back.extras = {'part': 'back', 'hinge_axis': [0, 0, 1], 'door_id': str(p.get('looseBackDoor', '')),
-                       'note': 'loose back boards: swing open into U4T after dress_visit_done'}
-        part.children.append((back, T((hinge_x, D / 2 - 0.012, zc0 + 0.005))))
+        part.extras['open_back'] = True
+        part.extras['back_door_id'] = str(p.get('looseBackDoor', ''))
     # interior: hat shelf + hanging rail
     part.add(box(W - 2 * t, D - 0.06, 0.018, 0.002, 1, base=True), mat, T((0, 0.02, zc1 - 0.32)))
     rail_z = zc1 - 0.38
