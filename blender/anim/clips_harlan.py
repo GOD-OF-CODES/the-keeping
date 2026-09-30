@@ -130,8 +130,87 @@ def seated_look_up():
 
 
 def all_clips(geo):
-    return [opening(), car_push(), look_up(), stairs_foot(), seated(), seated_look_up()]
+    return [opening(), car_push(), look_up(), stairs_foot(), seated(), seated_look_up()] + m2_clips(geo)
 
 
-M2_TODO = ['harlan_finale (static in the door gap, backs away raising the cleaver)',
-           'harlan_finale_shadow (pre-rendered wall-shadow clip of the fall)']
+# ================================================================================================ M2 clips
+from . import gait                                     # noqa: E402
+
+FINALE_FLINCH = 2.2       # her hand in the gap (C5 8.6 s - 6.4 s)
+FINALE_BACK = (3.6, 8.6)  # C5 moves him 10.0-15.0 s
+
+
+def _blend(a, b, w):
+    return lerp(a, b, w)
+
+
+def finale(geo):
+    """C5 (cued at C5 6.4 s, re-cued at 10.0 s without a restart, so clip t = C5 t - 6.4): the sack in the door gap,
+    his left hand on the door's edge (0-2.2 s); flinches when her hand comes through (2.2 s); frozen; backs away
+    (3.6-8.6 s, 0.4 m/s backward gait in place: the C5 move track carries him and turns him) raising the cleaver by
+    reflex (4.0-5.8 s); holds it raised, trembling, as she walks into it (to 10 s)."""
+    t0, t1 = FINALE_BACK
+
+    def fn(t):
+        peer = 1 - ps.ease((t - FINALE_FLINCH) / 0.25)
+        flinch = ps.ease((t - FINALE_FLINCH) / 0.12) * (1 - 0.6 * ps.ease((t - 2.8) / 0.8))
+        stand = add(stoop(t), spine(bend=12 * peer - 10 * flinch), neck(bend=10 * peer - 16 * flinch),
+                    {'head': (-8 * peer - 6 * flinch, 0, 0)}, {'_hips': (0, 0.06 * flinch, -0.018)})
+        g = ps.ease((t - t0) / 0.5) * (1 - ps.ease((t - t1) / 0.5))
+        if g > 0:
+            walk = gait.walk_pose(t - t0, geo, speed=-0.4, period=1.6, lift=0.045, lean=3, bob=0.012, sway=0.02,
+                                  arm_swing=0.0, stance=0.64)
+            walk.update(add(stoop(t), spine(bend=-8), neck(bend=-6)))
+            p = _blend(stand, walk, g)
+        else:
+            p = stand
+        # left hand: on the door edge -> released at the flinch -> half-raised, open, fending
+        door = add(arm('l', fwd=62, down=8, elbow=72, wrist=-20, twist=20), fingers('l', curl=58, thumb=35))
+        fend = add(arm('l', fwd=42, down=22, elbow=62, wrist=-15, fore_twist=40), fingers('l', curl=12, spread=10, thumb=6))
+        p.update(_blend(door, fend, ps.ease((t - FINALE_FLINCH) / 0.35)))
+        raise_ = ps.ease((t - 4.0) / 1.8)
+        p.update(cleaver_raised(raise_))
+        p.update(grip_cleaver())
+        tr = raise_ * (1.0 + 1.5 * ps.ease((t - 8.4) / 1.0))
+        p['forearm_r'] = tuple(a + b for a, b in zip(p['forearm_r'], (wobble(t, 12, 3.5, 1.2 * tr), 0, 0)))
+        p['upperarm_r'] = tuple(a + b for a, b in zip(p['upperarm_r'], (wobble(t, 13, 2.7, 1.0 * tr), 0, 0)))
+        return p
+    return Clip('harlan_finale', 10.0, fn, milestone='M2',
+                note='C5: sack in the door gap, hand on the edge (0-2.2), flinch 2.2 s, backs away 3.6-8.6 s (0.4 m/s '
+                     'backward, in place) raising the cleaver 4.0-5.8 s, held trembling to 10 s')
+
+
+def finale_shadow():
+    """Pre-rendered silhouette, synced with ada_finale_shadow: from the raised-cleaver hold, the sack is yanked off
+    (head pulled down 0.5-0.9 s, snaps up bare), his left hand to his face; the cleaver arm sags and she takes it
+    (2.8 s: hide/reparent the cleaver + handle to Ada's socket prop_r there); his knees buckle (3.2-4.2 s) and he
+    slumps forward, kneeling (to 5 s)."""
+    def fn(t):
+        yank = ps.ease((t - 0.5) / 0.3) * (1 - ps.ease((t - 0.9) / 0.35))
+        bare = ps.ease((t - 0.9) / 0.4)
+        sag = ps.ease((t - 1.4) / 0.9)
+        fall = ps.ease((t - 3.2) / 1.0)
+        slump = ps.ease((t - 4.1) / 0.8)
+        p = add(stoop(t), spine(bend=18 * yank - 8 * bare * (1 - fall) + 26 * fall + 20 * slump),
+                neck(bend=28 * yank - 22 * bare * (1 - slump) + 30 * slump, side=6 * bare), {'head': (14 * yank - 10 * bare, 0, 0)})
+        p.update(both(leg, hip=6 + 4 * fall, knee=10 + 82 * fall, ankle=-4 - 36 * fall))
+        p['_hips'] = (0, 0.02 * fall, -0.018 - 0.46 * fall)
+        p['hips'] = (-6 * fall, 0, 0)
+        p.update(cleaver_raised(1.0 - sag))
+        p.update(lerp(grip_cleaver(), fingers('r', curl=10, thumb=5), ps.ease((t - 2.85) / 0.2)))
+        drop = ps.ease((t - 2.9) / 0.4)
+        p['upperarm_r'] = tuple(a + b for a, b in zip(p['upperarm_r'], (20 * sag * (1 - drop), 0, 0)))
+        face = ps.ease((t - 1.0) / 0.5) * (1 - ps.ease((t - 3.4) / 0.6))
+        p.update(lerp(arm('l', down=44, fwd=4, elbow=12), add(arm('l', fwd=100, down=12, elbow=128, wrist=-10, twist=-20)), face))
+        p.update(fingers('l', curl=30 * face + 15, spread=6 * face))
+        return p
+    return Clip('harlan_finale_shadow', 5.0, fn, milestone='M2',
+                note='silhouette: sack yanked off 0.5-0.9 s (hide harlan_sack/twine, show the bare head: harlan_void off), '
+                     'hand to face, cleaver taken 2.8 s, knees buckle 3.2-4.2 s, slumps kneeling by 5 s')
+
+
+def m2_clips(geo):
+    return [finale(geo), finale_shadow()]
+
+
+M2_TODO = []

@@ -7,6 +7,7 @@ node scripts/assets.mjs --only characters,anims     # full build (2048 textures)
 node blender/characters/dev.mjs <script.py> [args]   # dev runs; takes the same lock as scripts/assets.mjs
 node blender/characters/check_chars.mjs              # runtime-side contract check (three r186 GLTFLoader in Node)
 node blender/characters/dev.mjs blender/characters/review_opening.py   # C2 tableau review render
+node blender/characters/dev.mjs blender/anim/review_m2.py --char ada --clips ada_sting   # big M2 review tiles
 ```
 
 | Job | Script | Output |
@@ -78,9 +79,9 @@ bend, finger curl toward the palm, clavicle shrug, jaw open). Rest = A-pose (arm
 
 | Rig | Bones | Extra bones |
 |---|---|---|
-| Ada | 112 (110 deform) | `jaw_hold` (non-deform, under her chin: IK target for the hand that lifts her head), `hair_<g>_01..04` (8 groups around the head, 32), `gown_<k>_01..03` (8 around the skirt, 24; k = 0 front, counter-clockwise seen from above) |
+| Ada | 114 (110 deform) | `prop_l`/`prop_r` sockets (non-deform, added by `anim/sockets.py`), `jaw_hold` (non-deform, under her chin: IK target for the hand that lifts her head), `hair_<g>_01..04` (8 groups around the head, 32), `gown_<k>_01..03` (8 around the skirt, 24; k = 0 front, counter-clockwise seen from above) |
 | Harlan | 64 (63 deform) | `cleaver` (child of `hand_r`; the hog cleaver is weighted 100 % to it — reparent/hide it), `sack_0..3` (skirt of the sack below the twine), `apron_{l,r}_01..02` |
-| Arms | 39 (37 deform) | `root` = the camera (eye); `upperarm/forearm/hand_{l,r}` + fingers; `flashlight` (child of `hand_l`), `flashlight_beam` (non-deform, at the lens, +Y along the beam: attach the SpotLight here) |
+| Arms | 41 (37 deform) | `prop_r` + `locket` sockets (non-deform, `anim/sockets.py`); `root` = the camera (eye); `upperarm/forearm/hand_{l,r}` + fingers; `flashlight` (child of `hand_l`), `flashlight_beam` (non-deform, at the lens, +Y along the beam: attach the SpotLight here) |
 
 **Runtime overrides** (clips key them lightly so the GLB looks right without runtime physics):
 - Ada `neck_02`/`head`: spring joint (head loll) — clips key a plausible hang; add the spring on top.
@@ -158,13 +159,58 @@ lifted/turned 4.5–7.5 s; her eye opens 9.0 s; the sack turns to the doorway 8�
 | `arms_key` | 1.5 | turn the ignition key (catch cue 0.8 s) |
 | `arms_hide_push` | 1.0 | push a hide door (palm flat) |
 
-**M2 clips — not built yet**: Ada `search` (nails on plaster; under-bed head flop, side-on), `door_push`, `dress`
-(hand to the cut hem, near-sob, head lifts toward the wardrobe), `finale` (stop, lift head, look, take the locket by
-IK and reparent, hand in the door gap, walk in), `finale_shadow`, `sting` (seated; lifts her own head; turns the
-sack to camera); Harlan `finale` (static in the door gap, backs away raising the cleaver) and `finale_shadow`; arms
-`pickup_read`, `pry_board`, `cut_hem`, `raise_locket`, `slide_bolt`, `pour_can`; "enter/peek/exit hide" is
-currently camera-only plus `arms_hide_push`. The framework (`anim/clip.py`, `gait.py`, `poses.py`) makes each a
-short pose-table function.
+### M2 clips (built 2026-09-30; `milestone: 'M2'` in `.cache/anims/<char>_clips.json`)
+
+Review sheets: `scratch/characters/m2_<clip>.png` (`node blender/characters/dev.mjs blender/anim/review_m2.py --char ada
+--clips a,b [--views front,side|cam,side,front]`; socket bones drawn as orange markers).
+
+**Ada** (suggested `adaClipFor` mapping in brackets; lane B owns `src/characters/ada.ts`):
+
+| Clip | s | Loop | Notes |
+|---|---|---|---|
+| `ada_search` | 2.0 | yes | [`search_plaster`] right-hand nails dragged down the plaster ~0.45 m ahead (stroke 0–1.44 s), head flopping; cue `nails_plaster`. She claws air if the brain stops her away from a wall. |
+| `ada_search_bed` | 4.0 | | under-bed look, **side-on only**: folds down, right hand on the bed edge (0.45 m ahead/high) 1.2–3.0 s, head flopped sideways, searching; rises. Not yet a brain state. |
+| `ada_door_push` | 1.2 | | [`door_push`] palm flat on the door by 0.5 s, pushes 12 cm by 1.2 s (brain `openS` 1.2); clamp the last frame. |
+| `ada_dress` | 3.5 | | [`dress_hem`] (brain `hemS` 3.5) bends to the cut hem, takes it 0.9–1.1 s, lifts it; near-sob heaves at 1.7 / 2.25 / 2.8 s (jaw bone; drive `gurgle`), left hand to her throat; head stirs 3.0–3.5 s. The head lift at the slats stays `ada_look`. |
+| `ada_finale_approach` | 1.5 | yes | [`finale_approach`] 0.8 m/s slow walk holding her head up (right hand, IK `jaw_hold`), left hand half-raised to the light. |
+| `ada_finale_take` | 1.0 | | [`finale_take`, timeScale 1.25 for the brain's 0.8 s] head held by the right hand; **left** wrist reaches **(0.05, −0.47, 1.40)** in her frame (Blender; glTF (0.05, 1.40, 0.47)) at **0.45 s (frame 13)**; `prop_l` is then at ≈ (0.02, −0.50, 1.42) — reparent the locket to `prop_l` there — fist closes 0.45–0.6 s, drawn to her chest by 1.0 s. `finale_look` stays `ada_look` (right hand under the jaw), so the left hand is the free one. |
+| `ada_finale_carry` | 1.5 | yes | [`finale_carry`] the patrol stutter-walk (0.9 m/s), head hanging, locket clutched to the breastbone (left fist, `prop_l`). |
+| `ada_finale` | 10.0 | | C5 at the parlor door (door ~0.42 m ahead): locket clutched, three slow knocks with the right knuckles at **3.0 / 4.4 / 5.8 s** (contact), hand into the door gap at **8.6 s**, fingers hook the edge 8.6–8.9 s. |
+| `ada_finale_shadow` | 4.5 | | silhouette, facing Harlan ~0.5 m ahead: both hands to the sack (grab 0.5 s), yank 0.5–0.9 s, dropped 2.0 s; takes his cleaver (grip 2.8 s → `prop_r`), lifts it overhead by 3.8 s, held. |
+| `ada_sting` | 5.0 | | C7 rocker (seat 0.42 m, hips as `harlan_seated`): frame 0 = seated, head hanging, right fist on the sack's knot in her lap (`prop_r`, or C7's `attach … hand_r`); left hand lifts her head, **crack 1.0 s**; sack raised by the knot beside her face 1.4–2.4 s and turned (the right hand yaws 110° about up) 2.4–3.2 s; held to 5 s. Attach the sack so its eyeholes face along `prop_r`'s local **+X**: that is her left (+X) at frame 0 and ≈ her front (−Y, the doorway) from 3.2 s (measured: (−0.45, −0.87, 0.22)). |
+| LURED | — | | `lured_scrape` keeps `ada_vigil` (the same forehead-to-the-planks scrape). |
+
+**Harlan**:
+
+| Clip | s | Notes |
+|---|---|---|
+| `harlan_finale` | 10.0 | C5 cues it at 6.4 s and again at 10.0 s (no restart) ⇒ clip t = C5 t − 6.4: sack in the door gap, left hand on the door edge (0–2.2 s); **flinch 2.2 s** (her hand); frozen; backs away 3.6–8.6 s (0.4 m/s backward gait, in place — the C5 move track carries and turns him) raising the cleaver 4.0–5.8 s by reflex; held, trembling, to 10 s. |
+| `harlan_finale_shadow` | 5.0 | silhouette, synced with `ada_finale_shadow`: sack yanked 0.5–0.9 s (hide `harlan_sack`/`harlan_twine`, bare head), hand to his face, cleaver taken 2.8 s (hide/reparent `harlan_cleaver` + `_handle`), knees buckle 3.2–4.2 s, slumps kneeling by 5 s. |
+| seated rocking / sack tilt | — | already built: `harlan_seated` + `harlan_seated_look_up`. |
+
+**Arms** (flashlight stays in the left hand; it is re-aimed so the beam falls where the right hand works):
+
+| Clip | s | Loop | Notes |
+|---|---|---|---|
+| `arms_pickup_read` | 2.2 | | reach down (~0.6 m below the eye along the view), grip 0.8 s, raise to read (hold from 1.6 s; clamp the last frame, play reversed to put down). Page on `prop_r`. |
+| `arms_pry_board` | 2.0 | yes | hammer (`prop_r`) claw under a board ~0.4 m ahead, levered back in three jerks (screech/crack cue ~1.2 s); one loop = one 2 s pry hold. |
+| `arms_cut_hem` | 1.2 | yes | shears (`prop_r`) at the hem with the camera pitched down; snips close at 0.3 / 0.9 s; loop while E is held. |
+| `arms_raise_locket` | 1.2 | | RMB: thumb flicks the locket open (0.5 s) and raises it in front of the face; the flashlight is drawn under the chin so the beam passes the locket. Continue with `arms_locket_hold`; reverse to lower. |
+| `arms_locket_hold` | 3.0 | yes | the open locket held at (0.02, 0.42, −0.10) camera space (Blender: +Y view), trembling; DOF target = the `locket` socket. |
+| `arms_slide_bolt` | 1.6 | | grip the knob ~0.45 m ahead, slide it 10 cm left 0.65–0.95 s (clack 0.95 s), release. |
+| `arms_pour_can` | 4.3 | | C6: can (`prop_r`) to the filler by 0.6 s, tipped (glugs 0.1 / 2.2 s), lowered by 4.3 s (`can_in_hand` off). |
+| turn key | — | | already built: `arms_key`. |
+
+**Prop sockets** (non-deform bones added at anim-build time by `anim/sockets.py`, so the `characters` job's
+`.blend` is untouched; three: `skeleton.getBoneByName(name).add(prop)` with an identity local transform):
+- arms `prop_r` (child of `hand_r`): centre of the right fist, axes = the hand's (+Y knuckles, +Z palm).
+- arms `locket` (child of `hand_r`): centre of the open locket in the right fingertips. In `arms_raise_locket`
+  (end) / `arms_locket_hold` its +Y points along the view (the photo face, toward Ada), +Z up, +X to the player's right
+  Its rest-pose position is meaningless outside those clips.
+- Ada `prop_l` / `prop_r` (children of `hand_l`/`hand_r`): centre of each closed fist (locket; sting sack / cleaver).
+
+The M2 clips drive hand orientation with world-frame COPY_ROTATION targets (`clip.py` `rot`/`rot_bone`), baked like
+every IK contact.
 
 ## Authoring API (for new clips)
 
@@ -181,12 +227,13 @@ track; stray actions are pruned; export `export_animation_mode='ACTIONS'`, `expo
 
 | | Triangles | Bones (deform) | GLB | Textures max / medium / low |
 |---|---|---|---|---|
-| Ada | 58 448 (body 28 950 · gown 15 968 · hair 12 810 · eye 720) | 112 (110) | 3.73 MB, 13 clips | atlas 2048 + hair 1024×2048 |
-| Harlan | 68 234 (shirt 13.4k · sack 13.4k · trousers 9.1k · gloves 9k · apron 7.5k · boots 7k · forearms 5.2k · …) | 64 (63) | 2.23 MB, 6 clips | atlas 2048 |
-| Arms | 24 490 (gloves 12k · sleeves 11.3k · flashlight 1.2k) | 39 (37) | 1.14 MB, 10 clips | atlas 2048 |
+| Ada | 58 448 (body 28 950 · gown 15 968 · hair 12 810 · eye 720) | 114 (110) | 4.81 MB, 23 clips | atlas 2048 + hair 1024×2048 |
+| Harlan | 68 234 (shirt 13.4k · sack 13.4k · trousers 9.1k · gloves 9k · apron 7.5k · boots 7k · forearms 5.2k · …) | 64 (63) | 2.40 MB, 8 clips | atlas 2048 |
+| Arms | 24 490 (gloves 12k · sleeves 11.3k · flashlight 1.2k) | 41 (37) | 1.50 MB, 17 clips | atlas 2048 |
 
-Per tier (all three characters, 2026-09-30): GLBs Max/Medium 6.9 MB (ada 3.52, harlan 2.24, arms 1.14), **Low 5.75 MB**
-(ada 3.36 — body/hair keep shape keys, harlan 1.53, arms 0.87); Low total with textures 6.6 MB.
+Per tier (all three characters, 2026-09-30, with the M2 clips): GLBs Max/Medium 8.7 MB (ada 4.81, harlan 2.40,
+arms 1.50), **Low 7.6 MB** (ada 4.65 — body/hair keep shape keys and most of the file is glTF JSON, harlan 1.69, arms
+1.23); tier totals (all assets) Low 21.65 / 25 MB, Medium 37.4 / 60, Max 59.0 / 120. M1-only was Max 6.9 / Low 5.75 MB.
 Gown collision (`gown_check.py`, depth beyond calibrated leg capsules): static/idle clips 0.7 → 0.0 cm, stairs_down
 5.2 → 2.7 cm, patrol 5.6 → 5.1 cm; chase/stairs_up/rise/table still ≈ 5.7–6.2 cm (vertices near the hip crease that
 the chain bones don't control — bigger clearance didn't change it; the runtime verlet should collide there). `characters` job: ~6 min, peak RSS ~2.6 GB; `anims`: ~30 s. Parse time in three r186 (Node): 8–54 ms.
@@ -206,7 +253,7 @@ the chain bones don't control — bigger clearance didn't change it; the runtime
 
 1. **Low tier**: done — Low GLBs (15 fps, decimated garments), and `_`-prefixed build props are stripped from every
    export (Ada's hair `_arc` was 187 KB of JSON). About half of `ada.glb` is still glTF JSON (≈3.8k accessors/
-   bufferViews for 13 clips × 112 bones); fewer clips or bones would be the next lever.
+   bufferViews for 13 clips × 112 bones — now 23 clips × 114 bones: Ada's Low GLB is ~97 % of Max); fewer clips or bones would be the next lever.
 2. Material ids: done (see above). `lens_flashlight` is `source: 'constant'`.
 3. Runtime (lane B): bind `<char>_albedo` with a white colour factor, roughness from its alpha (hair: alpha), normal
    map with tangents (exported); hair alpha-hash/test per preset; `void` material unlit black; Ada's stop-motion
@@ -219,6 +266,15 @@ the chain bones don't control — bigger clearance didn't change it; the runtime
 4. Atlas packing: CONCAVE + free rotation + 0.003 margin (was CONVEX, 0.004): Harlan 33 % → 42 % UV fill
    (`blender/characters/uvpack_check.py`). The remaining limit is island count (smart-project on organic meshes);
    seam-guided unwraps would be the next step.
-5. M2 clips listed above are not built. Harlan's static poses are 2-frame clips (use them as poses).
+5. M2 clips are built (above). Harlan's static poses are 2-frame clips (use them as poses). Lane B still has to map
+   them: `adaClipFor` (search_plaster/door_push/dress_hem/finale_approach/finale_take/finale_carry), the `ONCE` /
+   `ONE_SHOTS` sets (one-shots: ada_search_bed, ada_door_push, ada_dress, ada_finale_take, ada_finale, ada_finale_shadow,
+   ada_sting, arms_pickup_read, arms_raise_locket, arms_slide_bolt, arms_pour_can), `KNOWN_CLIPS`/`PENDING_CLIPS` in
+   `src/cutscenes/index.ts`, the locket/sack/cleaver props on the sockets.
 6. The characters job once crashed mid-bake ("terminated abnormally" during the Metal AO bake) under memory
    pressure; a rerun passed. If it recurs, bake AO on the CPU (`texbake.bake_geometry(ao_samples)` / device).
+7. M2 clip caveats: on the bent/seated clips (`ada_search_bed`, `ada_dress` at the reach, `ada_sting`) a knee can
+   show through the front gown panel (the chain follow + capsule pass can't fully cover a 90° thigh); the approach/
+   carry walks share the patrol's stride clipping. Harlan's raised cleaver arm crosses in front of the sack (same pose
+   as the opening). The locket sits between the right thumb and index, so from the camera the case edge is seen with
+   the photo face toward Ada.

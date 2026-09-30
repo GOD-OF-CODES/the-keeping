@@ -19,6 +19,7 @@ from lib import actions
 from lib import export as gexport
 from lib.scene import CACHE, REPO, job_args, log, result, write_json
 from anim import clip as clipmod
+from anim import sockets
 
 ARGS = job_args()
 ONLY = (ARGS.get('only') or 'ada,harlan,arms').split(',')
@@ -46,7 +47,7 @@ def clips_for(char, rig):
         return clips_harlan.all_clips(gait.LegGeo(rig))
     if char == 'arms':
         from anim import clips_arms
-        return clips_arms.all_clips()
+        return clips_arms.all_clips(rig)
     raise SystemExit(char)
 
 
@@ -174,6 +175,7 @@ def main():
             ad.nla_tracks.remove(tr)
         for a in list(bpy.data.actions):
             bpy.data.actions.remove(a)
+        sockets.add_sockets(char, rig)
         clipmod.clear_pose(rig)
         clips = clips_for(char, rig)
         if SUBSET:
