@@ -40,6 +40,13 @@ export const materialUniforms = {
 
 const FABRIC = new Set(['rug', 'fabric', 'crepe', 'burlap', 'flannel', 'nightgown']);
 const DUST_RGB: [number, number, number] = [0.3, 0.285, 0.26];
+/**
+ * Families whose generators have a gravity direction (rising damp, scuffs low on the wainscot, the tally's top
+ * limit, rain streaks on glass): the glTF exporter writes v' = 1 − v, so walls reach us with uv.y DECREASING upward
+ * (docs/HOUSE.md). Sample them at 1 − v (= Blender's v = height) so "up" in the texture is up on the wall and height-in-metres effects start at the floor.
+ * Clapboard is authored pre-flipped in Blender and is not in this set.
+ */
+const GRAVITY_FAMILIES = new Set(['wallpaper', 'plaster', 'wood_painted', 'glass']);
 
 export interface SurfaceOptions {
   preset: PresetConfig;
@@ -87,12 +94,14 @@ export function createSurfaceMaterial(spec: MaterialSpec, baked: BakedMaterial |
     if (src.aoMap) ao = texture(src.aoMap).r;
   } else if (baked) {
     const rep = o.repeat ?? 1 / baked.repeatM;
-    const tuv = uv().mul(rep);
+    const flipV = GRAVITY_FAMILIES.has(spec.family) && !o.vertexTangents;
+    const tuv = flipV ? vec2(uv().x, uv().y.oneMinus()).mul(rep) : uv().mul(rep);
     const A = texture(baked.mapA, tuv);
     const B = texture(baked.mapB, tuv);
     albedo = A.rgb.mul(vec3(...baked.gain));
     rough = A.a;
-    const nm = o.vertexTangents ? normalMap(B, vec2(1, -1)) : normalMap(B);
+    // a mirrored V mirrors the tangent frame: flip the normal's green channel with it
+    const nm = o.vertexTangents || flipV ? normalMap(B, vec2(1, -1)) : normalMap(B);
     nm.unpackNormalMode = THREE.NormalRGPacking;
     normal = nm;
     ao = B.z;

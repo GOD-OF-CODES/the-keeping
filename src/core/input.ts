@@ -35,6 +35,18 @@ export class Input {
       this.dx += e.movementX;
       this.dy += e.movementY;
     });
+    // Mouse buttons as pseudo-codes 'Mouse0' (left), 'Mouse2' (right: raise the locket) — only while locked.
+    on('mousedown', (e) => {
+      if (!this.locked) return;
+      this.down.add(`Mouse${e.button}`);
+      this.pressed.add(`Mouse${e.button}`);
+    });
+    on('mouseup', (e) => {
+      this.down.delete(`Mouse${e.button}`);
+    });
+    on('contextmenu', (e) => {
+      if (this.locked) e.preventDefault();
+    });
     on('pointerlockchange', () => {
       const was = this.locked;
       this.locked = document.pointerLockElement === this.target;

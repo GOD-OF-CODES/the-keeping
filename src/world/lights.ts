@@ -18,6 +18,8 @@ import { planToWorld } from '../shared/coords.ts';
 
 /** Share of the baked light the runtime flicker light swings by. */
 const FLICKER_SHARE = 0.22;
+/** Constant moonlight (directional, lux-like units) under the lightning peak. */
+export const MOONLIGHT = 0.07;
 
 export interface FlickerLight {
   def: LightDef;
@@ -87,8 +89,10 @@ export class RuntimeLights {
   readonly lightningDir: any;
   readonly lightningSpots: Array<{ light: any; room: string; peak: number }> = [];
   private readonly lightningPeakDir: number;
+  /** Layout `mode: runtime` lights (headlights, dashboard): created dark, driven by the cutscene lane. */
+  readonly runtime = new Map<string, { light: any; room: string }>();
 
-  constructor(layout: LevelLayout, flameAnchors: Map<string, any>, opts: { lightningSpots: boolean }) {
+  constructor(layout: LevelLayout, flameAnchors: Map<string, any>, opts: { lightningSpots: boolean; props?: Map<string, any> }) {
     this.group = new THREE.Group();
     this.group.name = 'runtime-lights';
     let seed = 1;
@@ -133,6 +137,7 @@ export class RuntimeLights {
     this.lightningDir.name = 'lightning-dir';
     this.group.add(this.lightningDir, this.lightningDir.target);
     this.lightningPeakDir = 2.2 * (sun ? Math.max(0.5, Math.min(2, sun.watts / 3)) : 1);
+    if (opts.props) this.createRuntime(layout, opts.props);
     if (opts.lightningSpots) {
       for (const l of layout.lights) {
         if (l.role !== 'lightning' || l.type !== 'area' || !l.target) continue;
@@ -150,9 +155,49 @@ export class RuntimeLights {
     }
   }
 
+  /**
+   * `mode: runtime` lights, pre-created at load (the light set is fixed once LightsNodes exist) with intensity 0 and
+   * `userData.csBase` = the layout watts / 4π. Headlights hang off the gate sedan (P_CAR_GATE), the dashboard light off
+   * the car interior set, so they follow the `vehicle` track.
+   */
+  private createRuntime(layout: LevelLayout, props: Map<string, any>): void {
+    for (const l of layout.lights) {
+      if (l.mode !== 'runtime') continue;
+      const c = new THREE.Color(...kelvinToLinearRGB(l.kelvin));
+      const cd = l.watts / (4 * Math.PI);
+      let light: any;
+      if (l.type === 'spot') {
+        light = new THREE.SpotLight(c, 0, 45, Math.PI / 7, 0.55, 2);
+      } else light = new THREE.PointLight(c, 0, 2.5, 2);
+      light.castShadow = false;
+      light.name = `runtime_${l.id}`;
+      light.userData.csBase = l.role === 'headlight' ? cd * 0.6 : cd;
+      const parent = l.role === 'dashboard' ? props.get('P_CAR_INTERIOR') : l.role === 'headlight' ? props.get('P_CAR_GATE') : null;
+      const [x, y, z] = planToWorld(l.pos);
+      const tgt = l.target ? planToWorld(l.target) : null;
+      if (parent) {
+        parent.updateWorldMatrix(true, false);
+        light.position.copy(parent.worldToLocal(new THREE.Vector3(x, y, z)));
+        parent.add(light);
+        if (light.isSpotLight && tgt) {
+          light.target.position.copy(parent.worldToLocal(new THREE.Vector3(...tgt)));
+          parent.add(light.target);
+        }
+      } else {
+        light.position.set(x, y, z);
+        this.group.add(light);
+        if (light.isSpotLight && tgt) {
+          light.target.position.set(...tgt);
+          this.group.add(light.target);
+        }
+      }
+      this.runtime.set(l.id, { light, room: l.room });
+    }
+  }
+
   /** Every runtime light (for LightsNode lists). */
   all(): any[] {
-    return [...this.flickers.map((f) => f.light), this.lightningDir, ...this.lightningSpots.map((s) => s.light)];
+    return [...this.flickers.map((f) => f.light), this.lightningDir, ...this.lightningSpots.map((s) => s.light), ...[...this.runtime.values()].map((r) => r.light)];
   }
 
   /** Lights relevant to one lightmap atlas's rooms (keeps per-pixel light loops short on lightmapped surfaces). */
@@ -160,6 +205,7 @@ export class RuntimeLights {
     const out: any[] = [];
     for (const f of this.flickers) if (rooms.has(f.room)) out.push(f.light);
     if (exterior) out.push(this.lightningDir);
+    for (const r of this.runtime.values()) if (rooms.has(r.room) || (exterior && r.room.startsWith('EXT'))) out.push(r.light);
     for (const s of this.lightningSpots) if (rooms.has(s.room)) out.push(s.light);
     return out;
   }
@@ -181,7 +227,9 @@ export class RuntimeLights {
       f.light.intensity = f.base * FLICKER_SHARE * Math.max(0, 0.35 + k * 0.65) * f.fade;
       if (f.flame) f.flame.visible = f.fade > 0.01;
     }
-    this.lightningDir.intensity = lightning * this.lightningPeakDir * (outside ? 1 : 0.15);
+    // Overcast moonlight: a faint constant through the storm clouds so the ground, the house and her silhouette
+    // read outdoors (the lightning shares the same light; inside, only the windows let a little through).
+    this.lightningDir.intensity = (MOONLIGHT + lightning * this.lightningPeakDir) * (outside ? 1 : 0.15);
     for (const s of this.lightningSpots) s.light.intensity = lightning * s.peak * (!visible || visible.has(s.room) ? 1 : 0);
   }
 }

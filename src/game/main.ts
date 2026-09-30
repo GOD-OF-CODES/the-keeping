@@ -109,6 +109,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
   // ---- Pipeline
   h.status('Compiling shaders…');
   const pipeline = createPipeline(renderer, scene, camera, preset);
+  (rt.expose.setPipeline as ((p: Pipeline) => void) | undefined)?.(pipeline);
   const dynres = new DynamicResolution(preset.dynamicResolution, preset.sceneScale);
   camera.updateMatrixWorld(true);
   const tc = performance.now();
@@ -141,8 +142,10 @@ export async function startGame(h: BootHandoff): Promise<void> {
   };
   overlay.setExtra(extraLine);
 
-  // ---- Lightning (L, and occasionally on its own)
+  // ---- Lightning (L, and on the story's storm cadence)
   const lightning = createLightning(ctx, pipeline, lightningHooks);
+  (rt.expose.attachLightning as ((l: typeof lightning) => void) | undefined)?.(lightning);
+  if (sceneParam === 'cutscene') await (await import('../cutscenes/preview.ts')).installCutscenePreview(rt as any, { ctx, pipeline, params, input, canvas, lightning });
 
   // ---- Loop
   let paused = true;
@@ -292,6 +295,34 @@ export async function startGame(h: BootHandoff): Promise<void> {
     },
     memory: () => renderer.info.memory,
     /**
+     * Debug screenshot that works in hidden/occluded tabs: renders the pipeline into a render target, reads it back
+     * and returns a JPEG data URL (w px wide; AgX output is already display-referred — sRGB-encoded here).
+     */
+    capture: async (w = 640) => {
+      const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+      const h = Math.round((w * size.y) / size.x);
+      const rtg = new THREE.RenderTarget(w, h, { type: THREE.UnsignedByteType }); // output is already display-encoded
+      renderer._nodes?.nodeFrame?.update();
+      renderer.setRenderTarget(rtg);
+      pipeline.render();
+      renderer.setRenderTarget(null);
+      const px = await renderer.readRenderTargetPixelsAsync(rtg, 0, 0, w, h);
+      rtg.dispose();
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const g2 = c.getContext('2d')!;
+      const img = g2.createImageData(w, h);
+      const flipY = backend === 'webgl2';
+      for (let y = 0; y < h; y++) {
+        const sy = flipY ? h - 1 - y : y;
+        img.data.set(px.subarray(sy * w * 4, sy * w * 4 + w * 4), y * w * 4);
+      }
+      for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+      g2.putImageData(img, 0, 0);
+      return c.toDataURL('image/jpeg', 0.8);
+    },
+    /**
      * Advances the game n frames WITHOUT rAF (hidden tabs / automation): full update (as if unpaused) + render.
      * Optional `keys` are held down during the frames (KeyboardEvent.code, e.g. ['KeyW', 'ShiftLeft']).
      */
@@ -429,6 +460,20 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
     audio.setLayout?.(ctx.layout);
   }
 
+  // ---- written surfaces (signs, guest book, letter, plates, chalk): our stroke font on CanvasTextures
+  try {
+    const { bindDecals } = await import('../world/decals.ts');
+    const drawn = bindDecals(level.root, { anisotropy: preset.textures.anisotropy });
+    console.info(`[level] decals drawn: ${drawn.length}`);
+  } catch (e) {
+    console.warn('[level] decals failed:', e);
+  }
+
+  // ---- story: Director (Ada's brain + beats), characters, voices
+  overlay.set('compile', 0.1, 'characters');
+  const { createStoryRuntime } = await import('./story-runtime.ts');
+  const story = await createStoryRuntime({ ctx, input, level, player, hides, rig, inventory, journal, interact, audio, toast: toastEl.show, params });
+
   const spawnId = params.get('spawn') ?? 'CP1';
   const teleport = (id: string): boolean => {
     const s = level.spawn(id);
@@ -446,6 +491,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
   }
 
   // ---- per-frame state
+  let torchPending = false;
   let lastRoom: string | null = null;
   let weatherKey = '';
   const insideTriggers = new Set<string>();
@@ -475,21 +521,29 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
     fog.density = outside ? 0.028 : 0.0;
     level.update(dt, t, lightning);
     rig.update(dt, t);
-    // sky flash
+    // sky flash (+ C6's blue hour: the sky pales toward dawn)
+    const bh = story.skyTint();
+    if (bh > 0) sky.setRGB(SKY_COLOR[0] + bh * 0.05, SKY_COLOR[1] + bh * 0.07, SKY_COLOR[2] + bh * 0.11);
     (scene.background as any).setRGB(sky.r + lightning * 0.35, sky.g + lightning * 0.38, sky.b + lightning * 0.46);
     // the rain haze is lit by the same sky: fog colour follows the background (flashes included)
     fog.color.setRGB(sky.r * 1.05 + lightning * 0.3, sky.g * 1.05 + lightning * 0.33, sky.b * 1.05 + lightning * 0.4);
   };
 
   const runtime: SceneRuntime = {
-    beginText: ['Click to begin', 'WASD move · Shift run · C crouch · mouse look · E interact · F flashlight · Space hold breath · Tab journal · Esc pause'],
+    beginText: ['Click to begin', 'WASD move · Shift run · C crouch · mouse look · E interact · F flashlight · Space hold breath · RMB raise the locket · Tab journal · Esc pause'],
     update(dt, now, paused, lightning) {
       if (!paused) {
         hides.update(dt);
         player.update(dt, now);
-        if (input.wasPressed('KeyF')) {
-          rig.toggle();
-          audio?.play('flashlight_click', { gain: 0.6 });
+        if (input.wasPressed('KeyF') && !torchPending) {
+          // thumb reaches the slide switch at 0.2 s into arms_flashlight_toggle: click + light together
+          story.arms?.play('arms_flashlight_toggle');
+          torchPending = true;
+          setTimeout(() => {
+            torchPending = false;
+            rig.toggle();
+            audio?.play('flashlight_click', { gain: 0.6 });
+          }, story.arms ? 200 : 0);
         }
         if (input.wasPressed('Tab')) journal.toggle();
         // story triggers (enter only): forwarded as `interact { id: trigger id, action: trigger event }`
@@ -504,6 +558,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
         insideTriggers.clear();
         for (const id of now2) insideTriggers.add(id);
       }
+      story.update(paused ? 0 : dt, paused);
       world(paused ? 0 : dt, now, lightning);
       interact.update(dt, !paused && !hides.active);
       audio?.update(paused ? 0 : dt, ctx);
@@ -512,6 +567,19 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
       world(dt, t, lightning);
     },
     expose: {
+      attachLightning: story.attachLightning,
+      setPipeline: story.setPipeline,
+      story,
+      characters: story.characters,
+      cutscenes: story.cutscenes,
+      director: story.director,
+      brain: story.director.brain,
+      ada: story.ada,
+      harlan: story.harlan,
+      arms: story.arms,
+      voice: story.voice,
+      beat: () => story.director.story.beat,
+      storyState: () => story.director.story.s,
       level,
       player,
       hides,
@@ -553,6 +621,25 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
           overlay.set('compile', 0.3 + (0.7 * ++k) / rooms.length, r.id);
           await nextFrame();
         }
+        // C2 turns on the table candle's shadow: compile that variant now (a pipeline hitch mid-cutscene otherwise)
+        const candle = level.lights.flickers.find((f) => f.def.id === 'L_CANDLE_TABLE');
+        if (candle) {
+          candle.light.castShadow = true;
+          candle.light.shadow.mapSize.set(512, 512);
+          candle.light.shadow.bias = -0.002;
+          const g2 = ctx.layout.rooms.find((r) => r.id === 'G2');
+          if (g2) {
+            const e = level.index.elevationOf('G2');
+            const eye = coords.planToWorld([3.3, 1.5, e + 1.6]);
+            camera.position.set(eye[0], eye[1], eye[2]);
+            camera.rotation.set(-0.15, -Math.PI / 2 + 0.3, 0);
+            camera.updateMatrixWorld(true);
+            level.setViewer(3.3, 1.5, e);
+            render();
+            await nextFrame();
+          }
+          candle.light.castShadow = false;
+        }
         player.teleport(saved, yaw, pitch);
         const pf = player.planFeet();
         level.setViewer(pf[0], pf[1], pf[2]);
@@ -563,7 +650,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
       onReady: () => overlay.remove(),
       whereText: () => {
         const f = player.planFeet();
-        return `${level.room ?? '?'} · ${f.map((v) => v.toFixed(2)).join(', ')} · ${level.visible.size} rooms`;
+        return `${level.room ?? '?'} · ${f.map((v) => v.toFixed(2)).join(', ')} · ${level.visible.size} rooms\n${story.whereText()}`;
       },
       teleport,
       spawns: () => ctx.layout.spawns.map((s) => s.id),
@@ -747,10 +834,17 @@ function nextFrame(): Promise<void> {
   });
 }
 
-/** Lightning pulses: uLightning (flash lightmaps, window), `level` for runtime lights, exposure kick. Reduced flash softens it. */
+/**
+ * Lightning pulses: uLightning (flash lightmaps, window), `level` for runtime lights, exposure kick. Reduced flash
+ * softens it. Thunder contract (docs/AUDIO.md, docs/AI.md): every flash emits `thunder { delayMs 1500, durationMs
+ * 2500 × rumbleScale }` — the audio roll and the AI's noise mask use that same window. The storm cadence comes from
+ * the story (`setStorm(intervalSec, rumbleScale)`: 35 s normally, 28 s in B06–B07, 12 s in B08–B09, 0 = over).
+ */
 function createLightning(ctx: GameContext, pipeline: Pipeline, hooks: LightningHooks) {
   let t = -1; // time since strike (s); <0 = idle
   let pulses: Array<{ at: number; peak: number; len: number }> = [];
+  let interval = 35;
+  let rumble = 1;
   let auto = 18 + Math.random() * 20;
   const api = {
     level: 0,
@@ -765,13 +859,24 @@ function createLightning(ctx: GameContext, pipeline: Pipeline, hooks: LightningH
       if (r) pulses = pulses.map((p) => ({ ...p, len: p.len * 2.5 }));
       t = 0;
       ctx.events.emit('lightning', { strength: peak, durationMs: 800 });
-      ctx.events.emit('thunder', { delayMs: 1500 + Math.random() * 2500, durationMs: 4000, distance: Math.random() });
+      ctx.events.emit('thunder', { delayMs: 1500, durationMs: 2500 * rumble, distance: 0.2 + Math.random() * 0.6 });
+    },
+    /** Story storm cadence: a flash every `intervalSec` (± a little so it never feels mechanical; 0 = storm over). */
+    setStorm(intervalSec: number, rumbleScale: number) {
+      const changed = intervalSec !== interval;
+      interval = intervalSec;
+      rumble = rumbleScale > 0 ? rumbleScale : 1;
+      if (changed) auto = interval > 0 ? Math.min(auto, interval) : Infinity;
+    },
+    get stormInterval() {
+      return interval;
     },
     update(dt: number, paused: boolean) {
-      if (!paused) {
+      if (!paused && interval > 0) {
         auto -= dt;
         if (auto <= 0) {
-          auto = 25 + Math.random() * 25;
+          // B08 needs a regular rhythm (three rolls per lure): jitter only ±8 %
+          auto = interval * (0.92 + Math.random() * 0.16);
           api.strike();
         }
       }

@@ -165,7 +165,29 @@ export class WorldCollision {
     const hit = this.octree.rayIntersect(ray);
     return hit && hit.distance <= far ? hit.distance : Infinity;
   }
+
+  /** rayDistance + the enabled dynamic blockers (closed door leaves) — sight lines for the AI / relocation guard. */
+  sightDistance(origin: any, dir: any, far: number): number {
+    let best = this.rayDistance(origin, dir, far);
+    for (const b of this.blockers) {
+      if (!b.enabled()) continue;
+      b.object.updateWorldMatrix(true, false);
+      _sInv.copy(b.object.matrixWorld).invert();
+      _ray.origin.copy(origin).applyMatrix4(_sInv);
+      _ray.direction.copy(dir).transformDirection(_sInv);
+      const p = _ray.intersectBox(b.box, _hitP);
+      if (!p) continue;
+      p.applyMatrix4(b.object.matrixWorld);
+      const d = p.distanceTo(origin);
+      if (d < best && d <= far) best = d;
+    }
+    return best;
+  }
 }
+
+const _sInv = new THREE.Matrix4();
+const _ray = new THREE.Ray();
+const _hitP = new THREE.Vector3();
 
 /** Ground collider: one quad at world y = `y` covering plan rect [x0, y0, x1, y1]. */
 export function groundColliderMesh(rect: [number, number, number, number], y = 0): any {

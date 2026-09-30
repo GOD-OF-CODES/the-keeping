@@ -60,7 +60,7 @@ export interface GridInfo {
 }
 
 /** Sky radiance behind everything (linear). The probe grids capture it as the storm sky. */
-export const SKY_COLOR: [number, number, number] = [0.011, 0.013, 0.018];
+export const SKY_COLOR: [number, number, number] = [0.022, 0.026, 0.036];
 
 export class Level {
   readonly layout: LevelLayout;
@@ -77,6 +77,10 @@ export class Level {
   readonly probeLit: any[] = [];
   readonly missingMaterials: string[] = [];
   readonly stats: Record<string, number | string> = {};
+  /** LightsNode of every probe-lit material (flashlight, lightning, probe grids): characters use it too. */
+  probeLightsNode: any = null;
+  /** The lights in probeLightsNode (flashlight first). */
+  probeLights: any[] = [];
   /** Current camera room (null until known) and the culling set. */
   room: string | null = null;
   visible: Set<string> = new Set();
@@ -154,6 +158,11 @@ export class Level {
   update(dt: number, t: number, lightning: number): void {
     this.doors.update(dt);
     this.lights.update(dt, t, this.cullingEnabled ? this.visible : null, lightning, this.isOutside());
+  }
+
+  /** A layout `mode: runtime` light (L_HEADLIGHT_L/R, L_DASH), created dark at load; null if absent. */
+  runtimeLight(id: string): any | null {
+    return this.lights.runtime.get(id)?.light ?? null;
   }
 
   /** Props by layout id (world-placed roots). */
@@ -262,6 +271,9 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
         continue;
       }
       const w = planToWorld(p.pos);
+      // The rubber sheet is generated draped from the FLOOR (its mesh already spans 0.28–0.81 m) but the layout
+      // gives it the table-top height: put it back on the floor so it drapes over the sawbuck, not above it.
+      if (p.type === 'rubber_sheet') w[1] = planToWorld([p.pos[0], p.pos[1], new RoomIndex(layout).elevationOf(p.room)])[1];
       n.position.set(w[0], w[1], w[2]);
       n.rotation.set(0, p.yaw, 0);
       n.userData.static = p.lighting === 'static';
@@ -285,10 +297,20 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
 
   // exterior ground from the surface zones (probe-lit; UV0 in metres like every other surface)
   const cells = partitionGround(layout, index.footprint, [-160, -160, 160, 160]);
+  // The baked terrain (house_exterior `EXT2_terrain`, extras terrain/terrainRect) replaces the flat cells inside its
+  // rect; outside it they stay as the far field at z = 0 (docs/HOUSE.md "Terrain").
+  let terrainRect: [number, number, number, number] | null = null;
+  for (const [id, g] of gltfs) {
+    if (!STEM_RE.test(id)) continue;
+    g.scene.traverse((n: any) => {
+      const r = n.userData?.terrainRect;
+      if (n.userData?.terrain && Array.isArray(r) && r.length === 4) terrainRect = r.map(Number) as [number, number, number, number];
+    });
+  }
   const byMat = new Map<string, number[]>();
   for (const c of cells) {
     const list = byMat.get(c.mat) ?? [];
-    list.push(...c.rect);
+    for (const piece of terrainRect ? subtractRect(c.rect as [number, number, number, number], terrainRect) : [c.rect]) list.push(...piece);
     byMat.set(c.mat, list);
   }
   for (const [mat, rects] of byMat) {
@@ -361,6 +383,17 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
     }
   });
   root.add(doors.group);
+  // Door-mounted props ride their leaf (the knocker hung in mid-air once the front door swung open).
+  for (const [propId, doorId] of [['P_KNOCKER', 'D_FRONT']] as const) {
+    const obj = props.get(propId);
+    const leaf = doors.doors.get(doorId)?.group;
+    if (!obj || !leaf) continue;
+    leaf.updateWorldMatrix(true, false);
+    leaf.attach(obj);
+    obj.traverse((n: any) => {
+      n.matrixAutoUpdate = true;
+    });
+  }
 
   overlay.set('collision', 0.2);
   const colGltf = gltfs.get('collision');
@@ -375,7 +408,14 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
   doors.attachCollision(collision);
   overlay.set('collision', 1);
 
-  const runtimeLights = new RuntimeLights(layout, flameAnchors, { lightningSpots: !preset.lightmaps.lightningFlashMaps });
+  // the sedans move in cutscenes (vehicle track): keep their matrices live
+  for (const id of ['P_CAR_GATE', 'P_CAR_ROW', 'P_CAR_INTERIOR']) {
+    const car = props.get(id);
+    car?.traverse((n: any) => {
+      n.matrixAutoUpdate = true;
+    });
+  }
+  const runtimeLights = new RuntimeLights(layout, flameAnchors, { lightningSpots: !preset.lightmaps.lightningFlashMaps, props });
   root.add(runtimeLights.group);
 
   scene.add(root);
@@ -426,8 +466,10 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
   for (const g of grids) root.add(g);
   const fill = grids.length ? null : new THREE.HemisphereLight(0x2a3040, 0x0c0906, 0.6);
   if (fill) root.add(fill);
-  const probeLights = [o.flashlight.light, runtimeLights.lightningDir, ...runtimeLights.lightningSpots.map((s) => s.light), ...grids, ...(fill ? [fill] : [])];
+  const probeLights = [o.flashlight.light, runtimeLights.lightningDir, ...runtimeLights.lightningSpots.map((s) => s.light), ...[...runtimeLights.runtime.values()].map((r) => r.light), ...grids, ...(fill ? [fill] : [])];
   const probeNode = lights(probeLights);
+  level.probeLightsNode = probeNode;
+  level.probeLights = probeLights;
   for (const m of level.probeLit) {
     m.lightsNode = probeNode;
     m.needsUpdate = true;
@@ -449,6 +491,22 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
   console.info(`[level] loaded ${JSON.stringify(level.stats)}`);
   if (unplaced.length) console.warn(`[level] props without a layout placement / missing from the GLBs: ${unplaced.join(', ')}`);
   return level;
+}
+
+/** a − b for axis-aligned plan rects [x0, y0, x1, y1] (0–4 pieces). */
+export function subtractRect(a: [number, number, number, number], b: [number, number, number, number]): [number, number, number, number][] {
+  const [ax0, ay0, ax1, ay1] = a;
+  const ix0 = Math.max(ax0, b[0]);
+  const iy0 = Math.max(ay0, b[1]);
+  const ix1 = Math.min(ax1, b[2]);
+  const iy1 = Math.min(ay1, b[3]);
+  if (ix0 >= ix1 || iy0 >= iy1) return [a];
+  const out: [number, number, number, number][] = [];
+  if (ay0 < iy0) out.push([ax0, ay0, ax1, iy0]);
+  if (iy1 < ay1) out.push([ax0, iy1, ax1, ay1]);
+  if (ax0 < ix0) out.push([ax0, iy0, ix0, iy1]);
+  if (ix1 < ax1) out.push([ix1, iy0, ax1, iy1]);
+  return out;
 }
 
 /** Ground quads (plan rects, flattened) at grade with UV0 in metres (u = x, v = plan y) and an up normal. */

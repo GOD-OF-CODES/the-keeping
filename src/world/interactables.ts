@@ -152,15 +152,12 @@ function isShown(o: any): boolean {
 
 // ------------------------------------------------------------------------------------------ default bindings
 
-const DOCS: Record<string, { title: string; text: string }> = {
-  read_guest_book: { title: 'Guest book', text: 'Names of lodgers going back years, each in a different hand. The last line waits for a name.' },
-  examine_portrait: { title: 'Wedding portrait', text: "A bride, veiled. The groom's face has been cut out with a knife." },
-  examine_pump_photo: { title: "Stroud's Gas & Feed, 1970", text: 'The pump, the sign, a man in an apron. His face is scratched out.' },
-  read_ledger: { title: 'Ledger', text: 'Tallies in pencil. Rooms let, cars kept.' },
-  read_letter: { title: 'Letter', text: 'A letter in a careful hand, never sent.' },
-  read_ticket: { title: 'Bus ticket', text: 'One way. Never used.' },
-  read_can_plate: { title: 'Jerry can', text: 'A plate riveted to the can: RVX-318.' },
-};
+/**
+ * Readable props. The TEXT comes from src/story/documents.ts through the Director (`host.document`): the story
+ * owns which document/page a read shows (ledger pages cycle p1 → p3, the guest-book sting …), so the world only
+ * plays the paper sound and emits `interact`.
+ */
+const READ_ACTIONS = new Set(['read_guest_book', 'examine_portrait', 'examine_pump_photo', 'read_ledger', 'read_letter', 'read_ticket', 'read_can_plate']);
 
 const TAKE_LABEL: Record<string, string> = {
   take_hammer: 'Claw hammer',
@@ -181,7 +178,7 @@ export interface BindDeps {
 }
 
 export function bindDefaultInteractions(ix: Interactables, d: BindDeps): void {
-  const { ctx, level, doors, hides, inventory, journal } = d;
+  const { ctx, level, doors, hides, inventory } = d;
   const emit = (id: string, action: string) => ctx.events.emit('interact', { id, action });
   const posOf = (o: any): [number, number, number] => {
     const b = new THREE.Box3().setFromObject(o);
@@ -221,8 +218,9 @@ export function bindDefaultInteractions(ix: Interactables, d: BindDeps): void {
           d.toast('The boards are nailed fast. I need something to pry them with.');
           return;
         }
+        // The 14 m screech noise is emitted by the story (src/story/beats.ts onPry) so a pry inside a thunder roll
+        // stays silent to her; the world only plays the sound.
         d.sound?.play('nail_screech', { pos: posOf(b), room: 'U1' });
-        noise(b, 'U1', 8);
         const flag = `ada_board_${k}`;
         ctx.flags.set(flag, true);
         ctx.events.emit('flag', { name: flag, value: true });
@@ -245,16 +243,13 @@ export function bindDefaultInteractions(ix: Interactables, d: BindDeps): void {
       const h = level.layout.hides.find((x) => x.propId === p.id);
       if (!h) continue;
       it = { id: p.id, object: obj, label: () => (hides.active ? null : 'Hide'), use: () => hides.enter(h.id) };
-    } else if (act in DOCS) {
-      const doc = DOCS[act];
+    } else if (READ_ACTIONS.has(act)) {
       it = {
         id: p.id,
         object: obj,
         label: () => (act.startsWith('read') ? 'Read' : 'Examine'),
         use: () => {
-          journal.add({ id: act, ...doc });
           d.sound?.play('paper', { gain: 0.7 });
-          d.toast(doc.text);
           emit(p.id, act);
         },
       };

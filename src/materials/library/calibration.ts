@@ -66,4 +66,13 @@ export const ALBEDO_CAL: Record<string, [number, number, number]> = {
   paper_aged: [1.034, 1.064, 1.131],
   rope_hemp: [1.141, 1.159, 1.175],
   photo_print: [0.994, 1.029, 1.11],
+  // 2026-09-30: character/prop specs added by the Blender quality pass (measured in the material lab, Medium)
+  trousers_wool: [0.609, 0.597, 0.578],
+  twine_jute: [1.138, 1.156, 1.17],
+  steel_cleaver: [0.559, 0.582, 0.557],
+  coat_rain_dark: [1.081, 1.091, 1.144],
+  steel_flashlight: [0.764, 0.767, 0.729],
+  lens_flashlight: [0.853, 0.87, 0.906],
+  eye_ada: [1.053, 1.053, 1.054],
+  wick_cotton: [1.108, 1.121, 1.135],
 };

@@ -1,0 +1,756 @@
+// The playable game on top of the level: the Director (src/story/director.ts: Ada's brain + the beat machine),
+// the characters (src/characters), voices + subtitles, documents, prompts, hints, death fades and the lightning /
+// storm cadence. Created by main.ts's startLevel after the level, player, hides and audio exist; docs/INTEGRATION.md
+// describes the wiring. Update order (per frame): player → director.update → characters → (world, audio, render).
+
+import * as THREE from 'three/webgpu';
+import type { GameContext } from './context.ts';
+import type { Input } from '../core/input.ts';
+import type { Level } from '../world/level.ts';
+import type { PlayerController } from '../player/controller.ts';
+import type { HideSystem } from '../world/hides.ts';
+import type { FlashlightRig } from '../player/flashlight-rig.ts';
+import type { Inventory, Journal } from '../player/inventory.ts';
+import type { Interactables } from '../world/interactables.ts';
+import type { AdaOutput, BeamView, PlayerView } from '../ai/types.ts';
+import type { P3 } from '../shared/layout-types.ts';
+import type { StoryDocument } from '../story/documents.ts';
+import type { BeatId } from '../story/escape-state.ts';
+import { planToWorld, worldToPlan } from '../shared/coords.ts';
+import { headingToCameraYaw } from '../world/rooms.ts';
+import { AdaCharacter } from '../characters/ada.ts';
+import { HarlanCharacter } from '../characters/harlan.ts';
+import { FpArms } from '../characters/arms.ts';
+import { loadCharacter } from '../characters/loader.ts';
+import { CharacterBank } from '../characters/bank.ts';
+import { PENS, drawGuestBook, drawPage } from '../render/handwriting.ts';
+
+/** What main.ts's lightning controller offers the story (strike + storm cadence). */
+export interface LightningControl {
+  strike(): void;
+  setStorm(intervalSec: number, rumbleScale: number): void;
+}
+
+export interface StoryDeps {
+  ctx: GameContext;
+  input: Input;
+  level: Level;
+  player: PlayerController;
+  hides: HideSystem;
+  rig: FlashlightRig;
+  inventory: Inventory;
+  journal: Journal;
+  interact: Interactables;
+  audio: any | null;
+  toast(text: string): void;
+  params: URLSearchParams;
+}
+
+const BEATS: BeatId[] = ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B10', 'B11', 'B12', 'B13'];
+const beatIdx = (b: string | null | undefined) => (b ? BEATS.indexOf(b as BeatId) : -1);
+
+export async function createStoryRuntime(d: StoryDeps) {
+  const { ctx, input, level, player, hides, rig, inventory, journal, interact, audio } = d;
+  const { camera, scene, layout } = ctx;
+  const P = (v: any): P3 => worldToPlan([v.x, v.y, v.z]) as P3;
+
+  // ---------------------------------------------------------------- characters (tolerate missing assets)
+  const lopt = { presetId: ctx.presetId, preset: ctx.preset, lightsNode: level.probeLightsNode };
+  const [adaC, harlanC, armsC] = await Promise.all(
+    (['ada', 'harlan', 'arms'] as const).map((id) =>
+      loadCharacter(id, lopt).catch((e) => {
+        console.warn(`[story] ${id} failed to load:`, e);
+        return null;
+      }),
+    ),
+  );
+  const ada = adaC ? new AdaCharacter(adaC) : null;
+  const harlan = harlanC ? new HarlanCharacter(harlanC) : null;
+  const arms = armsC ? new FpArms(armsC, rig.rig) : null;
+  if (armsC) {
+    // The SpotLight sits INSIDE the torch head: the arms must not see it (the bezel lit up like a ring from
+    // behind). They keep the probes, lightning and runtime lights.
+    const { lights } = await import('three/tsl');
+    const armLights = lights(level.probeLights.filter((l) => l !== rig.flashlight.light));
+    for (const m of armsC.materials) m.lightsNode = armLights;
+  }
+  if (ada) {
+    scene.add(ada.group);
+    ada.roomVisible = (room) => !level.cullingEnabled || level.visible.has(room);
+  }
+  if (harlan) (level.roomGroups.get('G2') ?? scene).add(harlan.group);
+  /** The cutscene lane's CharacterDirector (structural match of src/cutscenes/host.ts). */
+  const characters = new CharacterBank(ada, harlan, arms);
+  /** The cutscene lane plugs its CutscenePlayer.playCutscene in here (setCutscenePlayer); null = director fallback. */
+  let cutscenePlayer: ((id: string, done: (skipped: boolean) => void) => boolean) | null = null;
+  let stormNow = { interval: 35, rumble: 1 };
+  let stormAutoOn = true;
+  const fxWarned = new Set<string>();
+  /** Cutscene fx the world/render lanes provide (docs/CUTSCENES.md fx table); unknown ones are logged once. */
+  const cutsceneFx = (id: string, p: Record<string, number | string | boolean>) => {
+    if (id === 'blue_hour') {
+      // C6: the storm is over — pale the sky toward dawn and thin the rain haze
+      const mist = Number(p.mist ?? 0.5);
+      skyTint = Math.max(0, Math.min(1, mist));
+      return;
+    }
+    if (!fxWarned.has(id)) {
+      fxWarned.add(id);
+      console.info(`[story] cutscene fx '${id}' has no world implementation yet (${JSON.stringify(p)})`);
+    }
+  };
+  let skyTint = 0;
+  let tableauOn = false;
+
+  // ---------------------------------------------------------------- voices + subtitles
+  let voice: any = null;
+  let script: any = null;
+  let voiceIdx: any = null;
+  const voiceMod = await import('../story/voice-cues.ts');
+  try {
+    const [{ VoicePlayer, loadVoiceScript }, { Subtitles }] = await Promise.all([import('../audio/voice.ts'), import('../ui/subtitles.ts')]);
+    const subs = new Subtitles();
+    subs.attach(ctx.events);
+    script = await loadVoiceScript();
+    if (script) {
+      voice = new VoicePlayer({ engine: audio, script, events: ctx.events, subtitles: subs, settings: ctx.settings });
+      await voice.load();
+      voiceIdx = voiceMod.buildTriggerIndex(script.lines ?? []);
+    }
+  } catch (e) {
+    console.warn('[story] voices unavailable:', e);
+  }
+  const speakerOf = (lineId: string): string | null => script?.lines?.find((l: any) => l.id === lineId)?.speaker ?? null;
+
+  // ---------------------------------------------------------------- tableau (pre-C2): Ada on the sawbuck table, Harlan over her
+  const tableau = computeTableau(level);
+
+  // ---------------------------------------------------------------- UI: fade, prompt, reading overlay, end card
+  const ui = makeUi();
+  let lightning: LightningControl | null = null;
+
+  // ---------------------------------------------------------------- per-frame player sampling
+  const lensW = new THREE.Vector3();
+  const tgtW = new THREE.Vector3();
+  const dirW = new THREE.Vector3();
+  const eyeW = new THREE.Vector3();
+  const tmpA = new THREE.Vector3();
+  const tmpB = new THREE.Vector3();
+  const tmpD = new THREE.Vector3();
+  const upW = new THREE.Vector3();
+  const sideW = new THREE.Vector3();
+  const RING = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const;
+  const frustum = new THREE.Frustum();
+  const projView = new THREE.Matrix4();
+  let locketForced = false;
+  let lastOut: AdaOutput | null = null;
+
+  const los = (a: P3, b: P3): boolean => {
+    tmpA.set(...planToWorld(a));
+    tmpB.set(...planToWorld(b));
+    const len = tmpD.subVectors(tmpB, tmpA).length();
+    if (len < 1e-3) return true;
+    tmpD.normalize();
+    return level.collision.sightDistance(tmpA, tmpD, len) >= len - 0.05;
+  };
+
+  const beamView = (): BeamView => {
+    const L = rig.flashlight.light;
+    L.getWorldPosition(lensW);
+    L.target.getWorldPosition(tgtW);
+    dirW.subVectors(tgtW, lensW).normalize();
+    const range = 14;
+    const hitD = level.collision.rayDistance(lensW, dirW, range);
+    const hit = Number.isFinite(hitD) ? P(tmpA.copy(lensW).addScaledVector(dirW, hitD)) : null;
+    // eye adaptation: a wall at arm's length would clip the hot spot to white — the pupil closes down. The nearest
+    // of the centre ray and four rays at ~60 % of the cone decides (a door frame beside the beam counts too).
+    let near = Number.isFinite(hitD) ? hitD : 99;
+    const sa = Math.tan(L.angle * 0.6);
+    upW.set(0, 1, 0);
+    if (Math.abs(dirW.y) > 0.95) upW.set(1, 0, 0);
+    sideW.crossVectors(dirW, upW).normalize();
+    upW.crossVectors(sideW, dirW).normalize();
+    for (const [a, b] of RING) {
+      tmpB.copy(dirW).addScaledVector(sideW, a * sa).addScaledVector(upW, b * sa).normalize();
+      near = Math.min(near, level.collision.rayDistance(lensW, tmpB, 3) * (1 + sa * 0.5));
+    }
+    // she is not in the collision octree: a close figure in the cone (her pale gown) counts as a near surface too
+    if (lastOut?.visible && ada) {
+      const w = planToWorld(lastOut.pos);
+      tmpB.set(w[0], w[1] + 1.1, w[2]).sub(lensW);
+      const d = tmpB.length();
+      if (d > 1e-3 && tmpB.dot(dirW) / d > Math.cos(L.angle)) near = Math.min(near, d);
+    }
+    const adapt = Math.max(0.28, Math.min(1, Math.pow(near / 1.8, 1.4)));
+    const fl = rig.flashlight;
+    fl.gain += (adapt - fl.gain) * Math.min(1, ctx.time.dt * (adapt < fl.gain ? 6 : 1.5));
+    const dp = worldToPlan([dirW.x, dirW.y, dirW.z]) as P3;
+    return { on: rig.on, origin: P(lensW), dir: dp, range, halfAngle: L.angle, hit };
+  };
+
+  const playerView = (): PlayerView => {
+    camera.getWorldPosition(eyeW);
+    const rmb = input.isDown('Mouse2');
+    if (rmb) locketForced = false;
+    const hasLocket = inventory.has('locket');
+    return {
+      pos: player.planFeet() as P3,
+      eye: P(eyeW),
+      room: level.room,
+      crouched: player.crouch > 0.5,
+      running: player.running,
+      speed: player.speed,
+      hiddenIn: hides.active?.id ?? null,
+      holdingBreath: player.holdingBreath,
+      beam: beamView(),
+      locketRaised: hasLocket && (rmb || locketForced),
+    };
+  };
+
+  const playerCanSee = (p: P3): boolean => {
+    if (ui.black) return false;
+    camera.updateMatrixWorld();
+    projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(projView);
+    const head: P3 = [p[0], p[1], p[2] + 1.4];
+    const mid: P3 = [p[0], p[1], p[2] + 0.8];
+    camera.getWorldPosition(eyeW);
+    const eye = P(eyeW);
+    const see = (q: P3) => frustum.containsPoint(tmpB.set(...planToWorld(q))) && los(eye, q);
+    return see(head) || see(mid);
+  };
+
+  // ---------------------------------------------------------------- Ada audio (drip, tells, loops, footfalls)
+  let dripStarted = false;
+  let loopHandle: any = null;
+  let loopKind: string | null = null;
+  let stride = 0;
+  const lastAdaPos = new THREE.Vector3();
+  const adaAudio = (out: AdaOutput) => {
+    if (!audio) return;
+    const w = planToWorld(out.pos);
+    if (!out.visible) {
+      if (dripStarted) {
+        audio.layers.stopDrip(false);
+        dripStarted = false;
+      }
+      if (loopHandle) {
+        loopHandle.stop(0.4);
+        loopHandle = null;
+        loopKind = null;
+      }
+      return;
+    }
+    if (!dripStarted) {
+      audio.layers.startDrip(out.tells.dripRate || 1);
+      dripStarted = true;
+    }
+    audio.layers.setDripPosition(w[0], w[1] + 1.2, w[2], out.room);
+    audio.layers.setDripRate(out.tells.dripRate);
+    if (out.tells.dripStopped) audio.layers.stopDrip(false);
+    else if (out.state !== 'LISTEN') audio.layers.resumeDrip();
+    if (out.tells.crack) audio.play('ada_bone_crack', { pos: [w[0], w[1] + 1.45, w[2]], room: out.room });
+    if (out.tells.gurgle) audio.play('ada_gurgle', { pos: [w[0], w[1] + 1.4, w[2]], room: out.room });
+    // looping foley
+    const want = out.tells.loop === 'scrape_wood' ? 'ada_scrape_wood' : out.tells.loop === 'nails_plaster' ? 'ada_nails_plaster' : null;
+    if (want !== loopKind) {
+      loopHandle?.stop(0.5);
+      loopHandle = want ? audio.play(want, { pos: [w[0], w[1] + 1.5, w[2]], room: out.room, loop: true, gain: 0.8, fadeIn: 0.4 }) : null;
+      loopKind = want;
+    } else loopHandle?.setPosition(w[0], w[1] + 1.5, w[2], out.room);
+    // wet footfalls (slaps) by distance travelled
+    tmpA.set(w[0], w[1], w[2]);
+    const moved = lastAdaPos.distanceTo(tmpA);
+    lastAdaPos.copy(tmpA);
+    if (moved < 1) {
+      stride += moved;
+      const step = out.state === 'CHASE' ? 0.9 : 0.55;
+      if (stride > step) {
+        stride = 0;
+        audio.play(Math.random() < 0.7 ? 'ada_slap' : 'ada_gown_slap', { pos: [w[0], w[1] + 0.05, w[2]], room: out.room, gain: out.state === 'CHASE' ? 1 : 0.7 });
+      }
+    }
+  };
+
+  // ---------------------------------------------------------------- the Director
+  const { Director } = await import('../story/director.ts');
+  const hintMarkers: any[] = [];
+  const director = new Director({
+    layout,
+    events: ctx.events,
+    flags: ctx.flags,
+    seed: 1976,
+    host: {
+      player: playerView,
+      doorState: (id) => {
+        const dd = level.doors.doors.get(id);
+        return !dd ? 'closed' : dd.lock ? 'locked' : Math.abs(dd.angle) > 10 ? 'open' : 'closed';
+      },
+      lineOfSight: los,
+      playerCanSee,
+      pushDoor: (id, fast) => level.doors.open(id, fast, true),
+      door: (id, a) => {
+        if (a === 'rope_open') level.doors.ropeOpen();
+        else if (a === 'rope_close') level.doors.ropeClose();
+        else level.doors.setLock(id, a === 'lock' ? 'locked' : null);
+      },
+      // The cutscene lane plugs in via setCutscenePlayer (docs/INTEGRATION.md); until then the director times out.
+      playCutscene: (id, done) => (cutscenePlayer ? cutscenePlayer(id, done) : false),
+      voice: (t) => {
+        if (!voice || !voiceIdx) return;
+        for (const id of voiceMod.linesForTrigger(voiceIdx, t)) {
+          const sp = speakerOf(id);
+          if (sp === 'ada' && ada && lastOut?.visible) {
+            const h = ada.headWorld(new THREE.Vector3());
+            void voice.play(id, { pos: [h.x, h.y, h.z], room: lastOut.room });
+          } else if (sp === 'harlan' && harlan?.visible) {
+            const h = harlan.group.getWorldPosition(new THREE.Vector3());
+            void voice.play(id, { pos: [h.x, h.y + 1.7, h.z], room: 'G2' });
+          } else void voice.play(id);
+        }
+      },
+      sfx: (id, pos, room) => {
+        if (!audio) return;
+        if (id === 'spring_bell_loop') {
+          const bell = level.prop('P_SPRING_BELL');
+          const bp = bell ? bell.getWorldPosition(new THREE.Vector3()) : null;
+          nonstopBell?.stop(0.2);
+          nonstopBell = audio.play(id, bp ? { pos: [bp.x, bp.y, bp.z], room: 'G2', loop: true } : { loop: true });
+          return;
+        }
+        audio.play(id, pos ? { pos: planToWorld(pos), room } : {});
+      },
+      lightning: () => lightning?.strike(),
+      storm: (interval, rumble) => {
+        stormNow = { interval, rumble };
+        if (stormAutoOn) lightning?.setStorm(interval, rumble);
+      },
+      hint: (target) => {
+        lightning?.strike();
+        const obj = target.startsWith('board_') ? level.doors.doors.get('D_ADA')?.boards.find((b: any) => `board_${b.userData?.board}` === target) : (level.prop(target) ?? level.doors.doors.get(target)?.group);
+        if (!obj) return;
+        const box = new THREE.Box3().setFromObject(obj);
+        const helper = new THREE.Box3Helper(box, 0xd8cfb8);
+        scene.add(helper);
+        hintMarkers.push({ helper, t: 1.4 });
+      },
+      toast: (t) => d.toast(t),
+      prompt: (t) => ui.prompt(t),
+      document: (doc) => {
+        journal.add({ id: doc.id, title: doc.title, text: doc.text });
+        ui.read(doc);
+        interact.enabled = false;
+      },
+      removeItem: (id) => inventory.remove(id),
+      setPropVisible: (id, v) => {
+        const o = level.prop(id);
+        if (o) o.visible = v;
+      },
+      teleport: (_id, pos, yaw, pitch) => {
+        if (hides.active) hides.exit();
+        player.teleport(planToWorld(pos), headingToCameraYaw(yaw), pitch);
+        rig.snap();
+        const pf = player.planFeet();
+        level.setViewer(pf[0], pf[1], pf[2]);
+      },
+      raiseLocket: () => {
+        locketForced = true;
+        rig.setOn(true);
+      },
+      end: () => ui.end(),
+      ada: (out) => {
+        lastOut = out;
+        ada?.apply(out);
+        adaAudio(out);
+        const pf = player.planFeet();
+        const dist = out.visible ? Math.hypot(out.pos[0] - pf[0], out.pos[1] - pf[1], (out.pos[2] - pf[2]) * 2) : 99;
+        rig.tremble = Math.max(0, Math.min(1, 1 - dist / 6));
+      },
+    },
+  });
+  let nonstopBell: any = null;
+
+  // ---------------------------------------------------------------- cutscenes (src/cutscenes, docs/CUTSCENES.md)
+  let pipelineRef: any = null;
+  let cs: any = null;
+  try {
+    const [{ createCutsceneSystem }, { setGuestBookState }] = await Promise.all([import('../cutscenes/bindings.ts'), import('../world/decals.ts')]);
+    cs = createCutsceneSystem({
+      ctx,
+      camera,
+      level,
+      player,
+      rig,
+      audio,
+      characters,
+      pipeline: () => pipelineRef,
+      sayTrigger: (t: string) => {
+        if (!voice || !voiceIdx) return;
+        for (const id of voiceMod.linesForTrigger(voiceIdx, t)) void voice.play(id);
+      },
+      canvas: ctx.renderer.domElement,
+      hooks: {
+        lightning: () => lightning?.strike(),
+        stormAuto: (on: boolean) => {
+          stormAutoOn = on;
+          lightning?.setStorm(on ? stormNow.interval : 0, stormNow.rumble);
+        },
+        runtimeLight: (id: string) => level.runtimeLight(id),
+        fx: (id: string, p: Record<string, number | string | boolean>) => cutsceneFx(id, p),
+        dressing: (set: string, on: boolean) => {
+          if (set === 'sting') setGuestBookState(level.root, on ? 'sting' : 'tonight_blank');
+        },
+      },
+    });
+    cutscenePlayer = cs.player.playCutscene;
+  } catch (e) {
+    console.warn('[story] cutscenes unavailable (director fallbacks):', e);
+  }
+
+  // ---------------------------------------------------------------- bus reactions (controls, fades, arms, harlan)
+  let cutscene: string | null = null;
+  ctx.events.on('cutscene:start', ({ id }) => {
+    cutscene = id;
+    if (id === 'death') return;
+    interact.enabled = false;
+    if (cutscenePlayer) return; // the cutscene bindings own the input lock
+    player.enabled = false;
+    if (id !== 'C2') player.lookEnabled = false; // C2: frozen at the threshold, but you may still look
+    if (id === 'C2' && !cutscenePlayer) {
+      arms?.play('arms_freeze');
+      // fallback staging: she slides off the table, he releases the rope
+      if (tableau && ada) ada.override({ clip: 'ada_rise', pos: tableau.ada.pos, yaw: tableau.ada.yaw, loop: false });
+      if (tableau && harlan) harlan.play({ clip: 'harlan_opening', pos: tableau.harlan.pos, yaw: tableau.harlan.yaw, time: 12.2 });
+    }
+  });
+  ctx.events.on('cutscene:end', ({ id }) => {
+    if (cutscene === id) cutscene = null;
+    if (id === 'death') return;
+    if (!hides.active && !cutscenePlayer) {
+      player.enabled = true;
+      player.lookEnabled = true;
+    }
+    interact.enabled = true;
+    if ((id === 'C2' || id === 'C2_replay') && !characters.acquired.has('ada')) {
+      tableauOn = false;
+      ada?.release();
+    }
+  });
+  ctx.events.on('player:death', () => {
+    if (!cutscenePlayer) ui.fade(1, 0.35); // the death cutaway fades to black itself
+    else ui.snapBlackAfter(2.2);
+    player.enabled = false;
+    player.lookEnabled = false;
+    audio?.play('grab_hit', { gain: 0.9 });
+  });
+  ctx.events.on('player:respawn', () => {
+    player.enabled = true;
+    player.lookEnabled = true;
+    ui.fade(0, 1.4);
+  });
+  ctx.events.on('flag', ({ name, value }) => {
+    if (name === 'bell_nonstop' && !value) {
+      nonstopBell?.stop(1);
+      nonstopBell = null;
+    }
+    if (name === 'rang_front_bell' && value) whetstone?.stop(0.6);
+  });
+  ctx.events.on('interact', ({ action }) => {
+    if (!arms) return;
+    if (action === 'knock') arms.play('arms_knock');
+    else if (action === 'ring_bell' || action === 'pull_bell') arms.play('arms_bell_pull');
+    else if (action === 'rattle_front_door' || action.startsWith('rattle_')) arms.play('arms_door_rattle');
+  });
+  ctx.events.on('player:hide', ({ inside }) => {
+    // the hide camera sits at the slats: the hands would fill the view (and clip the doors) — lower them
+    if (arms) arms.visible = !inside;
+    if (!inside) arms?.play('arms_hide_push');
+  });
+  ctx.events.on('player:breath', ({ holding }) => arms?.loop(holding ? 'arms_breath_hold' : 'arms_idle', 0.3));
+
+  // Harlan sharpens the cleaver in the parlor until the bell (B02: the rasp stops when you ring).
+  let whetstone: any = null;
+
+  // ---------------------------------------------------------------- start (after lightning is attached)
+  let started = false;
+  const startBeat = (d.params.get('beat') ?? '').toUpperCase();
+  const start = () => {
+    started = true;
+    if (BEATS.includes(startBeat as BeatId) && startBeat !== 'B01') {
+      const b = startBeat === 'B05' ? 'B04' : (startBeat as BeatId);
+      director.startAt(b);
+      if (startBeat === 'B05') {
+        // straight into the first hide: the story moves to B05 and she comes to the slats (hide_demo)
+        const h = layout.hides.find((x) => x.id === 'H_ARMOIRE') ?? layout.hides[0];
+        if (h) {
+          player.teleport(planToWorld([h.entry[0], h.entry[1], h.entry[2] + 1.65]), headingToCameraYaw(h.eyeYaw + Math.PI), 0);
+          rig.snap();
+          hides.enter(h.id);
+        }
+      }
+    } else director.start();
+    // B02–B03: the parlor door "stands ajar and candlelit" — the layout's 20° ajar leaf hid the whole tableau (and
+    // blocked C2's threshold lens); open it far enough to read the candlelit room. C2 shuts it.
+    const parlor = level.doors.doors.get('D_PARLOR');
+    if (parlor && !parlor.lock && Math.abs(parlor.angle) < 30 && beatIdx(director.story.beat) <= 2) {
+      parlor.target = 70;
+      parlor.angle = 69.9;
+      parlor.speed = 1000;
+    } else if (parlor && parlor.lock && Math.abs(parlor.angle) > 0) {
+      // debug starts after C2: the parlor is shut and locked, as C2 leaves it
+      parlor.angle = 0.1;
+      parlor.target = 0;
+    }
+    if (audio && beatIdx(director.story.beat) <= 1 && tableau) {
+      const p = tableau.harlan.pos;
+      whetstone = audio.play('whetstone', { pos: [p[0], p[1] + 1.1, p[2]], room: 'G2', loop: true, gain: 0.9 });
+    }
+  };
+
+  // ---------------------------------------------------------------- per frame
+  const update = (dt: number, paused: boolean) => {
+    if (!started) return;
+    ui.update(dt);
+    if (ui.reading && (input.wasPressed('KeyE') || input.wasPressed('Escape') || input.wasPressed('Mouse0') || player.speed > 0.8)) {
+      ui.closeReading();
+      interact.enabled = true;
+    }
+    if (!paused && dt > 0) director.update(dt);
+    if (cs) {
+      cs.update(paused ? 0 : dt, {
+        skipHeld: input.isDown('Space') || input.isDown('Enter'),
+        interactHeld: input.isDown('KeyE'),
+        interactPressed: input.wasPressed('KeyE'),
+        breathHeld: player.holdingBreath,
+      });
+      cs.hem.update(lastOut, hides.active?.id ?? null);
+      if (cs.lock !== 'none') interact.enabled = false;
+      else if (!ui.reading && !cutscene) interact.enabled = true;
+    }
+    const beat = director.story.beat;
+    // pre-C2 tableau (the cutscene lane replaces this with C2 proper)
+    if (tableau && !cutscene && beatIdx(beat) <= 2 && !characters.acquired.has('ada')) {
+      if (ada && !ada.overridden) {
+        ada.override({ clip: 'ada_table', pos: tableau.ada.pos, yaw: tableau.ada.yaw, loop: true });
+        tableauOn = true;
+      }
+      if (harlan && !harlan.visible) harlan.play({ clip: 'harlan_opening', pos: tableau.harlan.pos, yaw: tableau.harlan.yaw, time: 0.5, timeScale: 0 });
+    } else if (tableau && harlan && !harlan.visible && beatIdx(beat) >= 3 && beatIdx(beat) <= 10) {
+      // after C2 he stays in the locked parlor
+      harlan.play({ clip: 'harlan_opening', pos: tableau.harlan.pos, yaw: tableau.harlan.yaw, time: 14.9, timeScale: 0 });
+    }
+    const cdt = paused ? 0 : dt;
+    ada?.update(cdt);
+    if (ada && tableauOn && ada.overridden) ada.group.visible = !level.cullingEnabled || level.visible.has('G2');
+    harlan?.update(cdt);
+    if (arms) arms.update(cdt, rig.flashlight.light, rig.flashlight.beam, rig.on, rig.on ? rig.flashlight.light.intensity / 30 : 0);
+    for (let i = hintMarkers.length - 1; i >= 0; i--) {
+      const h = hintMarkers[i];
+      h.t -= dt;
+      if (h.t <= 0) {
+        scene.remove(h.helper);
+        h.helper.dispose?.();
+        hintMarkers.splice(i, 1);
+      }
+    }
+  };
+
+  const attachLightning = (l: LightningControl) => {
+    lightning = l;
+    if (!started) start();
+  };
+
+  return {
+    director,
+    characters,
+    /** Plug the cutscene lane's CutscenePlayer.playCutscene (null → the director's fallback timeouts). */
+    setCutscenePlayer: (fn: typeof cutscenePlayer) => {
+      cutscenePlayer = fn;
+    },
+    /** The cutscene system (null if src/cutscenes failed to load). */
+    cutscenes: cs,
+    setPipeline: (p: any) => {
+      pipelineRef = p;
+    },
+    /** C6 blue hour: 0 storm night … 1 pale dawn (main.ts tints sky + fog). */
+    skyTint: () => skyTint,
+    playerView,
+    ada,
+    harlan,
+    arms,
+    voice,
+    tableau,
+    update,
+    attachLightning,
+    /** Debug: current beat, Ada's state. */
+    whereText: () => {
+      const o = lastOut;
+      return `${director.story.beat}${cutscene ? ` · ${cutscene}` : ''} · Ada ${o ? `${o.state}/${o.anim}${o.visible ? '' : ' (off)'} @${o.room}` : '-'}`;
+    },
+  };
+}
+
+// ================================================================================================ staging
+
+export interface Tableau {
+  ada: { pos: [number, number, number]; yaw: number };
+  harlan: { pos: [number, number, number]; yaw: number };
+}
+
+/**
+ * C2 staging from the real props: Ada's root sits 0.33 m back from the sawbuck's centre line (the table spans
+ * 0.03…0.63 m in front of her, long axis along her local X), facing across it; Harlan 1.08 m in front of her, yawed
+ * 180°. Of the two mirror placements, the one with the parlor threshold on her LEFT (+X) is used (docs/CHARACTERS.md).
+ */
+export function computeTableau(level: Level): Tableau | null {
+  const table = level.prop('P_SAWBUCK');
+  if (!table) return null;
+  table.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(table);
+  if (box.isEmpty()) return null;
+  const c = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const trig = level.layout.triggers.find((t) => t.id === 'T_B03_THRESHOLD');
+  const door = trig ? new THREE.Vector3(...planToWorld([(trig.rect[0] + trig.rect[2]) / 2, (trig.rect[1] + trig.rect[3]) / 2, 0.6])) : new THREE.Vector3(c.x - 3, c.y, c.z);
+  const cands = size.x >= size.z ? [0, Math.PI] : [Math.PI / 2, -Math.PI / 2];
+  let yaw = cands[0];
+  let best = -Infinity;
+  for (const y of cands) {
+    const lx = new THREE.Vector3(Math.cos(y), 0, -Math.sin(y)); // her local +X in world
+    const s = lx.dot(new THREE.Vector3().subVectors(door, c));
+    if (s > best) {
+      best = s;
+      yaw = y;
+    }
+  }
+  const fwd = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  const side = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  const floorY = box.min.y;
+  const adaPos = new THREE.Vector3(c.x, floorY, c.z).addScaledVector(fwd, -0.33);
+  const harlanPos = adaPos.clone().addScaledVector(fwd, 1.08).addScaledVector(side, 0.02);
+  return {
+    ada: { pos: [adaPos.x, adaPos.y, adaPos.z], yaw },
+    harlan: { pos: [harlanPos.x, harlanPos.y, harlanPos.z], yaw: yaw + Math.PI },
+  };
+}
+
+// ================================================================================================ UI
+
+function makeUi() {
+  const fadeEl = document.createElement('div');
+  Object.assign(fadeEl.style, { position: 'fixed', inset: '0', background: '#000', opacity: '0', pointerEvents: 'none', zIndex: '30' } as Partial<CSSStyleDeclaration>);
+  document.body.appendChild(fadeEl);
+  const promptEl = document.createElement('div');
+  Object.assign(promptEl.style, {
+    position: 'fixed',
+    left: '50%',
+    top: '18%',
+    transform: 'translateX(-50%)',
+    maxWidth: 'min(560px, calc(100% - 32px))',
+    color: '#e6dfcf',
+    font: '15px/1.45 system-ui, sans-serif',
+    letterSpacing: '0.03em',
+    textAlign: 'center',
+    textShadow: '0 1px 4px #000',
+    opacity: '0',
+    transition: 'opacity .4s',
+    pointerEvents: 'none',
+    zIndex: '22',
+  } as Partial<CSSStyleDeclaration>);
+  document.body.appendChild(promptEl);
+  const readEl = document.createElement('div');
+  Object.assign(readEl.style, {
+    position: 'fixed',
+    left: '50%',
+    top: '50%',
+    transform: 'translate(-50%, -50%)',
+    display: 'none',
+    zIndex: '26',
+    pointerEvents: 'none',
+    textAlign: 'center',
+  } as Partial<CSSStyleDeclaration>);
+  const readCanvas = document.createElement('canvas');
+  Object.assign(readCanvas.style, { width: 'min(460px, calc(100vw - 32px))', height: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,.7)' } as Partial<CSSStyleDeclaration>);
+  const readHint = document.createElement('div');
+  readHint.textContent = 'E  close';
+  Object.assign(readHint.style, { marginTop: '10px', color: 'rgba(230,223,207,.6)', font: '12px system-ui, sans-serif', letterSpacing: '.12em' } as Partial<CSSStyleDeclaration>);
+  readEl.append(readCanvas, readHint);
+  document.body.appendChild(readEl);
+
+  let fadeFrom = 0;
+  let fadeTo = 0;
+  let fadeT = 1;
+  let fadeLen = 1;
+  let promptT = 0;
+  const api = {
+    black: false,
+    reading: false,
+    fade(to: number, sec: number) {
+      fadeFrom = Number(fadeEl.style.opacity) || 0;
+      fadeTo = to;
+      fadeT = 0;
+      fadeLen = Math.max(0.01, sec);
+      if (to >= 1) api.black = true;
+    },
+    /** After the death cutaway's own fade: hold black (our overlay) until the respawn fade-in. */
+    snapBlackAfter(sec: number) {
+      setTimeout(() => {
+        fadeEl.style.opacity = '1';
+        fadeFrom = 1;
+        fadeTo = 1;
+        fadeT = 1;
+        api.black = true;
+      }, sec * 1000);
+    },
+    prompt(text: string) {
+      promptEl.textContent = text;
+      promptEl.style.opacity = '1';
+      promptT = 6;
+    },
+    read(doc: StoryDocument) {
+      const W = 720;
+      const H = 960;
+      readCanvas.width = W;
+      readCanvas.height = H;
+      const g = readCanvas.getContext('2d')!;
+      if (doc.lines && doc.lines.length) drawGuestBook(g, W, H, doc.lines, { seed: 1977 });
+      else {
+        const pen = doc.id === 'ticket' || doc.id === 'can_plate' || doc.id === 'portrait' || doc.id === 'pump_photo' ? PENS.pencil : doc.id.startsWith('ledger') ? PENS.pencil : PENS.ink;
+        drawPage(g, W, H, `${doc.title}\n\n${doc.text}`, { pen, em: 30, lineGap: 1.8, ruled: doc.id.startsWith('ledger'), seed: doc.id.length * 977 });
+      }
+      readEl.style.display = 'block';
+      api.reading = true;
+    },
+    closeReading() {
+      readEl.style.display = 'none';
+      api.reading = false;
+    },
+    end() {
+      api.fade(1, 3);
+      setTimeout(() => {
+        const el = document.createElement('div');
+        Object.assign(el.style, { position: 'fixed', inset: '0', display: 'grid', placeItems: 'center', zIndex: '40', color: '#d8d2c4', font: '28px/1.4 ui-serif, Georgia, serif', letterSpacing: '.4em' } as Partial<CSSStyleDeclaration>);
+        el.textContent = 'THE KEEPING';
+        document.body.appendChild(el);
+      }, 3200);
+    },
+    update(dt: number) {
+      if (fadeT < 1) {
+        fadeT = Math.min(1, fadeT + dt / fadeLen);
+        const v = fadeFrom + (fadeTo - fadeFrom) * fadeT;
+        fadeEl.style.opacity = String(v);
+        if (fadeT >= 1 && fadeTo < 1) api.black = false;
+      }
+      if (promptT > 0) {
+        promptT -= dt;
+        if (promptT <= 0) promptEl.style.opacity = '0';
+      }
+    },
+  };
+  return api;
+}

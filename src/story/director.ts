@@ -108,9 +108,14 @@ export class Director {
   startAt(beat: BeatId): void {
     this.story.restore(Story.debugStateAt(beat));
     this.brain.clearScripted();
-    if (beat === 'B12' || beat === 'B13') this.brain.setScripted('hidden');
+    // before C2 she is offstage (on the table, a cutscene/tableau prop); after C5 she is gone
+    const early = beat === 'B01' || beat === 'B02' || beat === 'B03';
+    if (early || beat === 'B12' || beat === 'B13') this.brain.setScripted('hidden');
     this.apply(this.story.resumeCommands());
-    this.brain.grace(this.host.player().pos, this.host.player().room);
+    if (beat === 'B04' || beat === 'B05') {
+      // the scripted chase normally starts at C2's end: start it as C2 would
+      this.brain.setScripted('b04_chase', { node: 'G_PARLOR_LURE', force: true });
+    } else if (!early) this.brain.grace(this.host.player().pos, this.host.player().room);
   }
 
   update(dt: number): AdaOutput | null {

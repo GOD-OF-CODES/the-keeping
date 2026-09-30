@@ -49,7 +49,7 @@ const SLOW_DPS = 70;
 const FAST_DPS = 260;
 
 /** Noise radii (m, at the source) — the AI's hearing multiplies by room-graph attenuation. */
-export const DOOR_NOISE = { slow: 3, fast: 9, slam: 13, rattle: 6, bolt: 5 } as const;
+export const DOOR_NOISE = { slow: 3, fast: 8, slam: 13, rattle: 6, bolt: 5 } as const;
 
 export class DoorSystem {
   readonly doors = new Map<string, Door>();

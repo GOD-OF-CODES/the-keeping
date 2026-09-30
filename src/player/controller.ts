@@ -23,22 +23,31 @@ const GRAVITY = 9.81;
 const STEP_UP = 0.32;
 const SNAP_DOWN = 0.38;
 
-/** Noise radius (m) of one walking footstep per surface; run ×2.5, crouch ×0.35. */
+/**
+ * Noise radius (m) of one WALKING footstep per surface (DESIGN: runner 2, bare wood 4). Crouching is at most
+ * CROUCH_NOISE (half the surface value), running is RUN_NOISE on every surface ("running is never safe").
+ */
 export const STEP_NOISE: Record<AcousticSurface, number> = {
-  runner: 1.5,
-  carpet: 1.4,
-  bare_wood: 3,
-  stair_wood: 3.5,
-  porch_wood: 3,
-  tile: 3,
-  linoleum: 2.5,
+  runner: 2,
+  carpet: 1.8,
+  bare_wood: 4,
+  stair_wood: 4,
+  porch_wood: 4,
+  tile: 3.5,
+  linoleum: 3,
   gravel: 4,
   mud: 2.5,
   grass: 2,
   asphalt: 2.5,
   car: 1,
 };
-export const CREAK_NOISE = 9;
+export const CROUCH_NOISE = 1.5;
+export const RUN_NOISE = 10;
+export const CREAK_NOISE = 7;
+/** Horizontal speed above which a step counts as running (walk 1.6, run 3.6). */
+export const RUN_SPEED_THRESHOLD = 2.6;
+/** Gasp after a long breath hold (DESIGN 3 m); forced at the 7 s limit: 5 m. */
+export const GASP_NOISE = 3;
 
 
 export interface PlayerAudio {
@@ -83,6 +92,7 @@ export class PlayerController {
   private lastStepHalf = 0;
   private bobAmp = 0;
   private speedNow = 0;
+  private runningNow = false;
   private runTime = 0;
   private pantT = 0;
   private breathState: 'calm' | 'strained' | 'panting' | null = null;
@@ -134,6 +144,16 @@ export class PlayerController {
     return worldToPlan([this.feet.x, this.feet.y, this.feet.z]);
   }
 
+  /** Actual horizontal speed (m/s). */
+  get speed(): number {
+    return this.speedNow;
+  }
+
+  /** Sprint key held, moving forward and actually running (PlayerView.running). */
+  get running(): boolean {
+    return this.runningNow && this.speedNow > RUN_SPEED_THRESHOLD;
+  }
+
   eyeHeight(): number {
     return EYE_HEIGHT + (CROUCH_EYE_HEIGHT - EYE_HEIGHT) * this.crouch;
   }
@@ -148,6 +168,8 @@ export class PlayerController {
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch));
     }
     if (!this.enabled || dt <= 0) {
+      this.runningNow = false;
+      if (!this.enabled) this.speedNow = 0;
       this.updateBreath(dt, false);
       if (this.enabled) this.applyCamera(dt, t);
       return;
@@ -169,6 +191,7 @@ export class PlayerController {
     if (this.stamina <= 0.02) this.runLocked = true;
     if (this.stamina > 0.3) this.runLocked = false;
     const running = shift && moving && f > 0 && this.crouch < 0.3 && !this.runLocked;
+    this.runningNow = running;
     const target = !moving ? 0 : this.crouch > 0.5 ? SPEED.crouch : running ? SPEED.run : SPEED.walk;
     // ---- stamina / breath
     if (running) {
@@ -313,7 +336,8 @@ export class PlayerController {
     const room = this.world.room();
     const idx = this.world.index;
     this.surface = idx.surfaceAt(room, px, py);
-    let radius = STEP_NOISE[this.surface] * (this.speedNow > 2.6 ? 2.5 : this.crouch > 0.5 ? 0.35 : 1) * (landing ? 1.8 : 1);
+    const walk = STEP_NOISE[this.surface];
+    let radius = (this.speedNow > RUN_SPEED_THRESHOLD ? RUN_NOISE : this.crouch > 0.5 ? Math.min(CROUCH_NOISE, walk * 0.5) : walk) * (landing ? 1.8 : 1);
     const snd = SURFACE_STEP[this.surface] ?? 'step_bare';
     this.audio?.play(snd, { gain: Math.min(1.4, weight), rate: 0.96 + Math.random() * 0.08 });
     // creaking boards (radius) and creaky stair treads
@@ -346,7 +370,7 @@ export class PlayerController {
           this.audio?.play('gasp', { gain: forced ? 1 : 0.6 });
           const [px, py, pz] = this.planFeet();
           const room = this.world.room();
-          if (room) this.ctx.events.emit('noise', { pos: [px, py, pz], room, radius: forced ? 5 : 2.5, source: 'player' });
+          if (room) this.ctx.events.emit('noise', { pos: [px, py, pz], room, radius: forced ? 5 : GASP_NOISE, source: 'player' });
           this.pantT = Math.max(this.pantT, forced ? 5 : 2.5);
         }
       }
@@ -359,7 +383,8 @@ export class PlayerController {
     }
   }
 
-  private applyCamera(dt: number, t: number): void {
+  /** Re-applies the player camera pose (the cutscene bindings call it when they hand the camera back). */
+  applyCamera(dt: number, t: number): void {
     this.swayT += dt;
     const pant = this.pantT > 0 ? Math.min(1, this.pantT / 4) : 0;
     const held = this.holdingBreath ? 0.2 : 1;
