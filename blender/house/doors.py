@@ -19,6 +19,10 @@ UP = Vector((0, 0, 1))
 LINING = 0.02
 GAP = 0.003
 INITIAL_ANGLE = {'closed': 0.0, 'locked': 0.0, 'bolted': 0.0, 'boarded': 0.0, 'ajar': 20.0, 'open': 95.0}
+# Per-door overrides of the status angle (layout `initial` stays the story status). D_PARLOR is 'ajar' in the story
+# but a 20 deg crack hides the candlelit tableau and blocks C2's threshold lens: it stands ~70 deg open (the bake
+# poses it here too, so the hall/parlor light spill matches the runtime).
+INITIAL_ANGLE_BY_DOOR = {'D_PARLOR': 70.0}
 
 
 def casing(fr, M, face, mat, rough=False, plinth=True, top_only=False):
@@ -185,17 +189,19 @@ def louvred_leaf(M, L, mat):
     for (a, b) in ((0, bot), (zm - mid / 2, zm + mid / 2), (H - top, H)):
         L.box(M, st - 0.002, W - st + 0.002, 0, T, a, b, mat, bevel=0.003)
     for (za, zb) in ((bot, zm - mid / 2), (zm + mid / 2, H - top)):
-        n = max(1, int((zb - za) / 0.038))
+        # outer (swing-face, G3P) edge lower like a real louvred door; 35 deg slats, 6 mm thick on a ~36 mm pitch
+        # leave a ~12 mm clear slot looking level, so the H_CLOSET eye (1.5 m) sees out into the passage.
+        n = max(1, int((zb - za) / 0.036))
         pitch = (zb - za) / n
         for k in range(n):
             zz = za + pitch * (k + 0.5)
-            ang = math.radians(42)
+            ang = math.radians(35)
             # slat: rotated box about the leaf's x axis
             ce = L.P(W / 2, T / 2, zz)
             ax_y = (L.Y * math.cos(ang) + UP * math.sin(ang)).normalized()
             ax_z = L.X.cross(ax_y).normalized()
             oriented_box(M, ce, L.X, ax_y, ax_z, (W - 2 * st) / 2 + 0.004, (T - 0.004) / 2 / math.cos(ang) * 0.95,
-                         0.0035, mat, bevel=0.0008)
+                         0.003, mat, bevel=0.0008)
 
 
 def plank_leaf(M, L, mat, boards=5, battens_side=1):
@@ -249,7 +255,8 @@ def leaf_extras(P, door, fr, L, swing_sign, W, H, T, style):
     return {'doorId': door['id'], 'openingId': door['openingId'], 'style': style, 'hinge': door['hinge'],
             'swingInto': door['swingInto'], 'initial': door['initial'], 'interactive': bool(door['interactive']),
             'unlockFlag': door.get('unlockFlag', ''), 'swingSign': swing_sign,
-            'initialAngleDeg': INITIAL_ANGLE.get(door['initial'], 0.0), 'leafWidth': round(W, 4),
+            'initialAngleDeg': INITIAL_ANGLE_BY_DOOR.get(door['id'], INITIAL_ANGLE.get(door['initial'], 0.0)),
+            'leafWidth': round(W, 4),
             'leafHeight': round(H, 4), 'thickness': round(T, 4), 'kind': 'door'}
 
 
@@ -452,3 +459,42 @@ def to_objects(parts):
             o.matrix_parent_inverse.identity()
             o.location = world - leaf.location      # leaf is unrotated (closed) at export
     return objs
+
+
+def mount_knocker(P, door_objs):
+    """The iron ring knocker (layout P_KNOCKER, type door_knocker) is built with the props generator and parented to
+    the D_FRONT leaf, so it swings with the door (it used to be a standalone prop that hung in mid-air when the rope
+    opened the door). Node 'P_KNOCKER' keeps the prop extras (prop_id, interaction 'knock'); its 'P_KNOCKER-ring'
+    child keeps the ring's swing extras. The back of the plate is seated on the leaf's exterior face."""
+    import bpy
+    from props import registry
+    pl = next((p for p in P.L['props'] if p['type'] == 'door_knocker'), None)
+    leaf = next((o for o in door_objs if o.get('doorId') == 'D_FRONT' and o.get('kind') == 'door'), None)
+    if pl is None or leaf is None:
+        return None
+    objs = registry.build('door_knocker', pl.get('params'), pos=pl['pos'], yaw=pl.get('yaw', 0.0))
+    root = objs[0]
+    for o in objs:
+        local = o.get('_local', o.name)
+        o.name = pl['id'] if o is root else f"{pl['id']}-{local.split('.')[-1]}"
+        if '_local' in o:
+            del o['_local']
+    # seat the plate (its back is local y = 0, front toward -y at yaw 0) on the leaf face under the knocker
+    wx, wy, wz = pl['pos']
+    lv = [leaf.location + v.co for v in leaf.data.vertices]    # matrix_world is not evaluated yet; leaf unrotated
+    near = [v.y for v in lv if abs(v.x - wx) < 0.03 and abs(v.z - wz) < 0.05]
+    face_y = min(near) if near else wy
+    root.parent = leaf
+    root.matrix_parent_inverse.identity()
+    root.location = Vector((wx, face_y, wz)) - leaf.location          # the leaf is unrotated (closed) at export
+    root.rotation_euler = (0.0, 0.0, float(pl.get('yaw', 0.0)))
+    root['prop_id'] = pl['id']
+    root['prop_type'] = pl['type']
+    root['room'] = pl.get('room', '')
+    root['interaction'] = pl.get('interaction', '')
+    root['doorId'] = 'D_FRONT'
+    root['kind'] = 'door_mount'
+    root['plan_pos_closed'] = [round(wx, 4), round(face_y, 4), round(wz, 4)]
+    for o in objs:
+        o['bake_occluder'] = True
+    return {'objects': objs, 'face_y': round(face_y, 4), 'layout_y': wy, 'seat_shift_m': round(face_y - wy, 4)}

@@ -90,6 +90,9 @@ with T('objects'):
         ob['bake_occluder'] = True
         detail_objs.append(ob)
     door_objs = doors.to_objects(door_parts)
+    knocker = doors.mount_knocker(P, door_objs)
+    if knocker:
+        door_objs += knocker.pop('objects')
     coll_objs = collision.build(P)
     for ob in coll_objs:
         ob.hide_render = True          # proxies must never render or occlude in the bake
@@ -146,7 +149,7 @@ if not args.get('no_export'):
 res = {
     'job': 'house', 'ok': True, 'atlases': stats, 'glb_bytes': sizes,
     'doors': [d['name'] for d in door_parts], 'door_tris': sum(d['mesh'].tris for d in door_parts),
-    'collision_objects': len(coll_objs), 'timings_s': T.t, 'terrain': terrain_stats,
+    'collision_objects': len(coll_objs), 'timings_s': T.t, 'terrain': terrain_stats, 'knocker': knocker,
     'total_triangles': sum(s['triangles'] for s in stats.values()),
     'process_seconds_in_python': round(time.perf_counter() - t_start, 2),
 }

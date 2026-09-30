@@ -78,11 +78,23 @@ VIEWS = {
     'c_gutter_end': ((-1.6, -1.9, 7.3), (-0.3, -0.35, 6.95), 50, 0.0, 'clay'),
     'c_steps': ((1.4, -6.2, 1.1), (3.0, -3.0, 0.3), 60, 0.0, 'clay'),
     'c_siding_mid': ((4.4, -9.0, 1.7), (4.4, 0.0, 3.2), 45, 0.0, 'clay'),
+    # clapboard lap shadow lines: porch-approach camera zoomed onto the SW corner (hero S + fog W facade), and near
+    'facade_close': (tuple(cams['porch_approach']['pos']), (-0.3, -0.3, 3.2), 16, 2.5, 'lit'),
+    'facade_near': ((-3.2, -4.6, 1.7), (-0.3, -0.3, 2.6), 50, 2.5, 'lit'),
+    'c_facade_near': ((-3.2, -4.6, 1.7), (-0.3, -0.3, 2.6), 50, 0.0, 'clay'),
+    # hide eyes (layout hides[].eye / eyeYaw): the louvres must show real gaps
+    'armoire_eye': ((3.3, 4.2, 5.65), (2.3, 4.2, 5.45), 70, 5.0, 'lit'),
+    'closet_eye': ((0.55, 8.4, 2.1), (0.55, 9.4, 1.95), 70, 5.0, 'lit'),
+    'c_armoire_eye': ((3.3, 4.2, 5.65), (2.3, 4.2, 5.45), 70, 0.0, 'clay'),
+    'c_closet_eye': ((0.55, 8.4, 2.1), (0.55, 9.4, 1.95), 70, 0.0, 'clay'),
+    'c_closet_door': ((0.9, 10.6, 1.7), (0.5, 9.0, 1.6), 60, 0.0, 'clay'),
+    'c_armoire': ((1.3, 4.2, 5.2), (3.2, 4.2, 5.1), 60, 0.0, 'clay'),
     'terrain': ((-6.0, -34.0, 7.0), (3.0, -12.0, 0.0), 60, 3.0, 'lit'),
     'car': ((100.45, 0.95, 1.1), (100.8, 3.0, 0.85), 75, 4.0, 'lit'),
 }
 # the same framings rendered from the BAKED lightmaps (emission = lightmap texel x albedo, like the runtime)
-for _n in ('hall', 'stair', 'parlor', 'upper_hall', 'facade', 'house_sw', 'porch', 'kitchen', 'u2', 'u3', 'terrain', 'car'):
+for _n in ('hall', 'stair', 'parlor', 'upper_hall', 'facade', 'house_sw', 'porch', 'kitchen', 'u2', 'u3', 'terrain', 'car',
+           'facade_close', 'facade_near'):
     _v = VIEWS[_n]
     VIEWS['b_' + _n] = (_v[0], _v[1], _v[2], _v[3], 'baked')
 ISO = [n for n in str(args.get('isolate', '')).split(',') if n]
@@ -195,7 +207,7 @@ for name in want:
     cam.rotation_euler = (Vector(tgt) - Vector(pos)).to_track_quat('-Z', 'Y').to_euler()
     cam_d.angle = math.radians(fov) if fov > 1 else fov
     cam_d.sensor_fit = 'VERTICAL' if fov < 60 else 'HORIZONTAL'
-    if name in ('parlor', 'facade'):
+    if name in ('parlor', 'facade', 'facade_close', 'b_facade_close'):
         cam_d.sensor_fit = 'VERTICAL'
     sc.view_settings.exposure = ev
     for ob in lights_lit:

@@ -125,16 +125,18 @@ def rag_rug(p, rng):
 
 @prop('rubber_sheet', budget=5000)
 def rubber_sheet(p, rng):
-    """Black rubber sheet thrown over the sawbuck table (2.2 x 0.8 x 0.8 m): stiff, broad folds, pooled corners."""
+    """Black rubber sheet thrown over the sawbuck table (2.2 x 0.6 x 0.8 m): stiff, broad folds, hanging edges.
+
+    ORIGIN = the TABLE TOP centre (the layout places P_RUBBER_SHEET at table-top height, floor + 0.8 m): the sheet
+    lies at z ~ 0 and hangs down the sides; the floor is at z = -tableHeight (hem pools there if it ever reaches)."""
     part = Part('rubber_sheet', rng)
-    L, W, H = float(p.get('tableLength', 2.2)), float(p.get('tableWidth', 0.8)), 0.8
+    L, W, H = float(p.get('tableLength', 2.2)), float(p.get('tableWidth', 0.6)), float(p.get('tableHeight', 0.8))
     sw, sd = 2.0, 1.5
     off = (rng.j(0.08), rng.j(0.1))
     sd_seed = rng.randint(0, 99)
-    # the sheet lies on the table top (origin = table base centre, sheet top at z = H)
     rot = rng.j(0.12)
-    lump = lambda x, y: H + 0.0 * x
-    part.add_grid(48, 36, lambda u, v: drape(u, v, sw, sd, L - 0.02, W, lump, 0.0, off, sd_seed, 1.4, 0.012, rot),
+    top = lambda x, y: 0.003 + 0.0 * x   # noqa: E731  (clears the cupped planks)
+    part.add_grid(48, 36, lambda u, v: drape(u, v, sw, sd, L - 0.02, W, top, -H, off, sd_seed, 1.4, 0.012, rot),
                   p.get('mat', 'rubber_black') + '@2s', uv_size=(sw, sd))
     part.extras['spatter'] = bool(p.get('spatter', False))
     return [part]

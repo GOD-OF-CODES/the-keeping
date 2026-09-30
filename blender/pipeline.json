@@ -67,7 +67,8 @@
                  "blender/house/geom.py", "blender/house/plan.py", "blender/house/rooms.py", "blender/house/stairs.py",
                  "blender/house/trim.py", "blender/house/openings.py", "blender/house/windows.py",
                  "blender/house/doors.py", "blender/house/exterior.py", "blender/house/deform.py",
-                 "blender/house/collision.py", "blender/house/lmuv.py", "blender/house/terrain.py"],
+                 "blender/house/collision.py", "blender/house/lmuv.py", "blender/house/terrain.py",
+                 "blender/props/bells_rope.py", "blender/props/kit.py", "blender/props/registry.py"],
       "outputs": [
         { "path": ".cache/house/house.blend" },
         { "path": ".cache/house/build.json" },

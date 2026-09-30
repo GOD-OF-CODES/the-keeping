@@ -110,10 +110,20 @@ def plank_top(part, rng, L, W, t, n, mat, z, gap=0.003, cuts=8, warp=0.003):
         part.add(bm, mat, T((rng.j(0.004), y, z)))
 
 
+SAWBUCK_W = 0.6
+
+
 @prop('sawbuck_table', budget=6000)
 def sawbuck_table(p, rng):
-    """Farm sawbuck table: 3-plank top on cleats, two pegged X-trestles, a through-tenoned stretcher with wedges."""
-    L, W, H = float(p.get('length', 2.2)), float(p.get('width', 0.8)), float(p.get('height', 0.8))
+    """Farm sawbuck table: 3-plank top on cleats, two pegged X-trestles, a through-tenoned stretcher with wedges.
+
+    Width is FIXED at SAWBUCK_W = 0.6 m: Ada's `ada_table` / `ada_opening` clips assume the top spans 0.03-0.63 m in
+    front of her root (her head hangs over the far edge). The layout's P_SAWBUCK.params.width (0.8) is overridden
+    until the lead changes it to 0.6 (docs/PROPS.md)."""
+    L, H = float(p.get('length', 2.2)), float(p.get('height', 0.8))
+    W = SAWBUCK_W
+    if abs(float(p.get('width', SAWBUCK_W)) - SAWBUCK_W) > 1e-6:
+        print(f"[props] sawbuck_table: layout width {p.get('width')} overridden -> {SAWBUCK_W} (Ada's table clips)")
     mat = p.get('mat', 'wood_raw_plank')
     part = Part('sawbuck_table', rng)
     tt = 0.042

@@ -33,7 +33,14 @@ Generated entirely from `src/shared/level-layout.json` by Blender Python (no Boo
 - Door leaves (`door_<id>`): `doorId, openingId, style, hinge, swingInto, initial, interactive, unlockFlag,
   swingSign, initialAngleDeg, leafWidth, leafHeight, thickness, kind: 'door', pivotWorldPlan`.
   The node origin is the hinge axis at the leaf bottom; the leaf is exported CLOSED. Open by rotating about world
-  +Y by `swingSign * angle` (swings into `swingInto`). Initial poses: ajar 20°, open 95°, others 0°.
+  +Y by `swingSign * angle` (swings into `swingInto`). Initial poses: ajar 20°, open 95°, others 0°; per-door
+  override `doors.INITIAL_ANGLE_BY_DOOR`: **D_PARLOR 70°** (story status stays `ajar`; a 20° crack hid the candlelit
+  tableau and blocked C2's threshold lens). The bakes pose the leaves from the same `initialAngleDeg`.
+- Knocker (`P_KNOCKER`, child of `door_D_FRONT`): built with the props `door_knocker` generator
+  (`doors.mount_knocker`), plate seated on the leaf's exterior face, so it swings with the door. Extras `prop_id`,
+  `prop_type`, `interaction: 'knock'`, `doorId`, `kind: 'door_mount'`, `plan_pos_closed`; the ring is the child
+  `P_KNOCKER-ring` (`part: ring`, `swing_axis`). It is no longer in `props_m1.glb` (registry `HOUSE_BUILT`), so the
+  runtime must look it up in doors.glb (not `level.prop()` over the props GLBs).
 - Boards (`board_D_ADA_1..3`): `doorId, board, flag ('ada_board_k'), kind: 'door_board'`; origin at the board centre.
 - Bolt (`bolt_D_PASSAGE`, child of `door_D_PASSAGE`): `slideAxis` (leaf-local, plan), `slideTravel` 0.045 m; exported
   in the BOLTED position (slide by −travel along the axis to unbolt).
@@ -60,7 +67,8 @@ Generated entirely from `src/shared/level-layout.json` by Blender Python (no Boo
   |uv.y − (y − 0.83)| ≤ 2.4 cm (the house-lean deform only), course bottoms at t = 0.00.
 - **UV2 ('Lightmap')**: two-level packer (`lmuv.py`): smart-project + our shelf packer for most parts, plus rigid
   planar charts (roof courses, clapboard sheet, porch deck, porch roof, terrain) that would otherwise explode into
-  thousands of islands. 4-texel padding at 1024 (= 2 texels at the 512 Low tier). The house packs into
+  thousands of islands. The siding charts are stretched ×2.5 in v (`exterior.LM_V_STRETCH`) so the bake resolves
+  every 10 cm course with ~4 texels at 1024 (2 at Low 512): the lap shadow under each butt is in the lightmap. 4-texel padding at 1024 (= 2 texels at the 512 Low tier). The house packs into
   `[0, 1 − PROPS_BAND]` of each atlas; the band on top belongs to that atlas's static props.
 
 ## What is built
@@ -82,13 +90,15 @@ Generated entirely from `src/shared/level-layout.json` by Blender Python (no Boo
 - **Doors**: jamb linings, stops, casings with plinths (rough board casings in plank rooms), the front entrance
   with pilasters, frieze and cornice, transom bar + fanlight (radiating muntins), oak threshold, kitchen arch
   (cased opening). Leaves: 4-panel raised-and-fielded with sticking mouldings (front door heavier), knobs + roses,
-  escutcheons, butt-hinge knuckles; louvred closet door; plank-and-batten wardrobe back.
+  escutcheons, butt-hinge knuckles; louvred closet door (35° slats, outer/passage edge lower, ~12 mm clear slot
+  looking level so the H_CLOSET eye sees out); plank-and-batten wardrobe back.
 - **Stairs**: ST_MAIN — bullnosed treads, painted risers, scotia under each nosing, wall string, closed outer string
   with cap, turned balusters (2 per tread), moulded handrail, panelled newels with ball finials, soffit (also the
   closet ceiling), landing nosing. ST_BACK — 3 kite winders about the SW corner then a straight flight west, wall
   strings, pole handrail on iron brackets.
-- **Exterior**: real lap clapboard on the hero (south) facade incl. the gable (boards 3–4.8 m, staggered joints,
-  warp and sag per board), flat clapboard planes elsewhere (fog), corner boards, water table with drip cap, frieze,
+- **Exterior**: real lap clapboard on ALL four facades incl. the gables (objects `EXT2_siding_S/E/N/W`; boards
+  3–4.8 m, staggered joints, warp and sag per board — 0.8 m warp strips on the hero south facade, 1.6 m elsewhere;
+  20 mm butt tapering to 4 mm under the lap, 4 mm 45° drip chamfer, butt underside), corner boards, water table with drip cap, frieze,
   boxed eaves (fascia, soffit, bed mould), rakes with soffit and frieze, cornice returns, wood-shingle courses
   (random widths, jittered butts, the odd curled shingle), ridge cap, half-round gutters + downspouts (SE one ends
   over the rain barrel), exterior brick chimney (shoulders, corbelled cap, flue pots, zinc flashing), rubble stone

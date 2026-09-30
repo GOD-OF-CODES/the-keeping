@@ -1,4 +1,4 @@
-"""Exterior shell: facades (clapboard lap geometry on the hero facade, flat elsewhere), corner boards, water table,
+"""Exterior shell: facades (real clapboard lap geometry on EVERY facade), corner boards, water table,
 frieze, boxed eaves with returns, gable rakes, wood-shingle roof courses, ridge cap, gutters + downspouts,
 exterior brick chimney, stone foundation, porch (deck, frame, steps, posts, railings, lattice, shed roof).
 """
@@ -17,6 +17,12 @@ SIDING_T = 0.02          # clapboard butt thickness (proud of the sheathing plan
 CASING_T = 0.03          # exterior casings stand proud of the siding
 EXPOSURE = 0.10          # board exposure == material-spec clapboard_peeling boardExposure (tile 3 m -> 30 rows)
 SIDING_Z0 = 0.83         # bottom of the first course (top of the water table); every course starts at Z0 + k*EXPOSURE
+DRIP_CH = 0.004          # 45-degree drip chamfer on each board's bottom front edge (catches a highlight over the shadow)
+# Lightmap: the siding's planar chart is stretched in v (height) so the bake resolves each 10 cm course with ~4 texels
+# at 1024 (2 at the 512 Low tier): the dark band under every butt and the lit drip edge are IN the lightmap, not only
+# in the albedo. u (along the facade) keeps the atlas density. Costs ~15 % of LM_EXTERIOR's density elsewhere.
+LM_V_STRETCH = 2.5
+FACADE_TAG = {(0, -1): 'S', (1, 0): 'E', (0, 1): 'N', (-1, 0): 'W'}
 
 
 def clapboard_v(z):
@@ -160,9 +166,10 @@ def facade_region(fp, roof, zmin):
 
 
 # ------------------------------------------------------------------------------------------------ siding
-def hero_siding(P, fp, M, roof, rng):
-    """Real lap siding: each course a tilted board face + butt; boards 3-4.8 m with staggered joints, slight
-    warps and sags. Returns nothing; the Mesh gets a planar lightmap projection in the facade plane."""
+def hero_siding(P, fp, M, roof, rng, strip=0.8):
+    """Real lap siding (every facade): each course a tilted board face + drip chamfer + butt underside; boards
+    3-4.8 m with staggered joints, slight warps and sags (the warp shows per `strip` m). Returns nothing; the Mesh
+    gets a planar lightmap projection in the facade plane (v stretched by LM_V_STRETCH)."""
     zw = SIDING_Z0
     region, gable = facade_region(fp, roof, zw)
     zmax = max(p[1] for p in region)
@@ -220,7 +227,7 @@ def hero_siding(P, fp, M, roof, rng):
                     u = 0.0 if sb - sa < 1e-6 else (s_ - sa) / (sb - sa)
                     return z_ - sag * math.sin(math.pi * u) * (1.0 - (z_ - zc) / EXPOSURE)
                 # split the piece along s into ~0.8 m strips so the warp shows
-                nsplit = max(1, int((sb - sa) / 0.8))
+                nsplit = max(1, int((sb - sa) / strip))
                 for k in range(nsplit):
                     a_ = sa + (sb - sa) * k / nsplit
                     b_ = sa + (sb - sa) * (k + 1) / nsplit
@@ -229,29 +236,44 @@ def hero_siding(P, fp, M, roof, rng):
                         continue
                     if _area(qq) < 0:
                         qq = list(reversed(qq))
+                    # the board face starts DRIP_CH above the course bottom; the chamfer closes the corner
+                    ch = DRIP_CH if max(p[1] for p in qq) - zc > 3 * DRIP_CH else 0.0
+
+                    def zf(z_):
+                        return zc + ch if abs(z_ - zc) < 1e-6 else z_
                     base = len(verts)
                     for (s_, z_) in qq:
-                        verts.append(V_(s_, z_at(s_, z_), out_at(s_, z_)))
+                        verts.append(V_(s_, z_at(s_, zf(z_)), out_at(s_, zf(z_))))
                     faces.append(list(range(base, base + len(qq))))
-                    luv.append([(s_, clapboard_v(z_)) for (s_, z_) in qq])
-                    # butt faces along edges lying on z = zc
+                    luv.append([(s_, clapboard_v(zf(z_))) for (s_, z_) in qq])
+                    # drip chamfer + butt underside along edges lying on z = zc
+                    from .geom import newell
                     for i in range(len(qq)):
                         p1, p2 = qq[i], qq[(i + 1) % len(qq)]
                         if abs(p1[1] - zc) < 1e-6 and abs(p2[1] - zc) < 1e-6:
-                            A = V_(p1[0], z_at(p1[0], zc), out_at(p1[0], zc))
-                            B = V_(p2[0], z_at(p2[0], zc), out_at(p2[0], zc))
+                            A = V_(p1[0], z_at(p1[0], zc), out_at(p1[0], zc) - ch)
+                            B = V_(p2[0], z_at(p2[0], zc), out_at(p2[0], zc) - ch)
+                            if ch > 0:
+                                F1 = V_(p1[0], z_at(p1[0], zc + ch), out_at(p1[0], zc + ch))
+                                F2 = V_(p2[0], z_at(p2[0], zc + ch), out_at(p2[0], zc + ch))
+                                b2 = len(verts)
+                                verts += [A, B, F2, F1]
+                                faces.append([b2, b2 + 1, b2 + 2, b2 + 3])   # outward fix below (|n.z| ~ 0.7)
+                                luv.append([(p1[0], clapboard_v(zc + 0.001)), (p2[0], clapboard_v(zc + 0.001)),
+                                            (p2[0], clapboard_v(zc + ch)), (p1[0], clapboard_v(zc + ch))])
                             A2 = V_(p1[0], z_at(p1[0], zc), 0.0035)
                             B2 = V_(p2[0], z_at(p2[0], zc), 0.0035)
                             b2 = len(verts)
                             verts += [A, B, B2, A2]
                             f = [b2, b2 + 1, b2 + 2, b2 + 3]
-                            from .geom import newell
                             if newell([verts[j] for j in f]).dot(Vector((0, 0, -1))) < 0:
                                 f = list(reversed(f))
                             faces.append(f)
-                            # the butt shows the board's bottom edge (t 0..0.08: drip edge, lap shadow)
+                            # the underside is the darkest line of the lap shadow (t 0..0.01)
                             luv.append([(p1[0], clapboard_v(zc)), (p2[0], clapboard_v(zc)),
-                                        (p2[0], clapboard_v(zc + 0.008)), (p1[0], clapboard_v(zc + 0.008))])
+                                        (p2[0], clapboard_v(zc + 0.001)), (p1[0], clapboard_v(zc + 0.001))])
+                            if f[0] != b2:
+                                luv[-1] = list(reversed(luv[-1]))
         zc = z_top
         c += 1
     # orient the board faces outward
@@ -949,7 +971,6 @@ def build_exterior(P, factory):
     roof.soffit_z = roof.z_surface(roof.fx0 - roof.over) - 0.26
     ext = {
         'walls': factory('_walls'),
-        'siding_s': factory('_siding_S', lm_weight=1.0),
         'trim': factory('_trim'),
         'roof_w': factory('_roof_W', lm_weight=0.55),
         'roof_e': factory('_roof_E', lm_weight=0.55),
@@ -963,18 +984,17 @@ def build_exterior(P, factory):
     }
     for fp in P.facade_planes():
         ops = openings_on_plane(P, fp)
-        if fp['detail'] == 'hero':
-            hero_siding(P, fp, ext['siding_s'], roof, rng)
-            ext['siding_s'].extras['lm_planar'] = (tuple(fp_point(fp, 0, 0)), (fp['dir'][0], fp['dir'][1], 0.0),
-                                                   (0.0, 0.0, 1.0))
-            reveals(ext['walls'], fp, ops)
-        else:
-            region, gable = facade_region(fp, roof, 0.6)
-            facade_flat_region(P, fp, ext['walls'], roof, region)
-            reveals(ext['walls'], fp, ops)
-        facade_trim(P, fp, ext['trim'], roof, fp['detail'] == 'hero')
-    clapboard_uvs(ext['walls'])          # flat (fog) facades + gables: same v convention as the hero lap siding
-        # sheathing plane behind the hero siding strip under the water table cap is covered by the trim
+        # Every facade gets real lap boards (the fog facades read as flat plaster up close otherwise); the hero
+        # facade keeps the finer 0.8 m warp strips, the others warp per 1.6 m (fewer triangles).
+        tag = FACADE_TAG.get((round(fp['n'][0]), round(fp['n'][1])), f"{len(ext)}")
+        M = ext.setdefault(f'siding_{tag}', factory(f'_siding_{tag}', lm_weight=1.0))
+        hero = fp['detail'] == 'hero'
+        hero_siding(P, fp, M, roof, rng, strip=0.8 if hero else 1.6)
+        M.extras['lm_planar'] = (tuple(fp_point(fp, 0, 0)), (fp['dir'][0], fp['dir'][1], 0.0),
+                                 (0.0, 0.0, LM_V_STRETCH))
+        reveals(ext['walls'], fp, ops)
+        facade_trim(P, fp, ext['trim'], roof, hero)
+    clapboard_uvs(ext['walls'])          # (no clapboard faces left on the walls; kept for facade_flat fallbacks)
     build_roof(P, roof, ext, rng)
     chimney(P, roof, ext['chimney'], rng)
     foundation(P, ext['foundation'], rng)

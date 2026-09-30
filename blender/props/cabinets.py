@@ -1,8 +1,9 @@
 """Slatted-cabinet generator (DESIGN: 4 hides). Variants: armoire (U1, first hide), wardrobe_coats (U2),
 wardrobe_loose_back (U3: back boards are the hinged D_WARDROBE_BACK), plus the coat-hook rail of the back passage.
 
-Louvred upper door panels have REAL gaps: slats 45 mm wide tilted 40 deg on a 42 mm pitch leave ~13 mm clear slots,
-so the in-hide eye (layout hides[].eye, ~1.55 m) sees out between them. Doors are child nodes with their origin on
+Louvred upper door panels have REAL see-through gaps: 30 mm slats tilted 35 deg (outer edge LOWER, like real louvred
+doors) on a 34 mm pitch leave a 12 mm clear slot looking level (~35 % open), so the in-hide eye (layout hides[].eye,
+~1.55 m) sees out between them, slightly downward. Doors are child nodes with their origin on
 the hinge line (extras.hinge_axis z); `ajar` opens the right door 14 deg. A low-poly `<id>.collider` child
 (extras.collider=true, no material binding needed) keeps the interior walkable for the hide logic.
 """
@@ -11,6 +12,9 @@ import math
 from mathutils import Vector
 
 from .kit import (Part, T, box, cyl, extrude, fillet, jitter, lathe, nz, prop, rect_section, sphere, tube)
+
+
+LOUVRE_CHORD, LOUVRE_T, LOUVRE_DEG, LOUVRE_PITCH = 0.030, 0.006, 35.0, 0.034
 
 
 def _panel(part, rng, w, h, t, mat, m, raised=True):
@@ -43,16 +47,18 @@ def _door(name, rng, w, h, t, mat, louvre_frac=0.55, hinge_side=-1, knob=True):
     ph = zm - mid_r / 2 - bot_r
     d.add(box(w - 2 * fw + 0.01, t * 0.45, ph + 0.01, 0.002, 1), mat, T((cx, 0, bot_r + ph / 2)))
     d.add(box(w - 2 * fw - 0.05, t * 0.3, ph - 0.05, 0.01, 2), mat, T((cx, -t * 0.32, bot_r + ph / 2)))
-    # louvres
-    z0 = zm + mid_r / 2 + 0.012
-    z1 = h - top_r - 0.012
-    pitch = 0.042
+    # louvres: like a real louvred door the OUTER (-y) edge is lower (rain/view shed), so from the hide the sight
+    # lines run slightly down-and-out. 30 mm chord x 6 mm slats at 35 deg on a 34 mm pitch: vertical extent 22 mm
+    # -> a 12 mm clear slot looking level, ~22 mm along the slat angle; chord x cos = 24.6 mm (flush with the stiles).
+    z0 = zm + mid_r / 2 + 0.01
+    z1 = h - top_r - 0.01
+    pitch = LOUVRE_PITCH
     n = int((z1 - z0) / pitch)
     sw = w - 2 * fw + 0.012
     for k in range(n):
         z = z0 + pitch * (k + 0.5) + ((z1 - z0) - n * pitch) / 2
-        sl = box(sw, 0.045, 0.0075, 0.0025, 2)
-        d.add(sl, mat, T((cx, 0, z), (math.radians(-40 + rng.j(1.5)), 0, 0)))
+        sl = box(sw, LOUVRE_CHORD, LOUVRE_T, 0.0015, 1)
+        d.add(sl, mat, T((cx, 0, z), (math.radians(LOUVRE_DEG + rng.j(1.0)), 0, 0)))
     if knob:
         kx = cx + s * (w / 2 - fw / 2)
         d.add(lathe([(0, 0), (0.009, 0), (0.008, 0.008), (0.014, 0.018), (0.013, 0.026), (0, 0.027)], n=12), mat,

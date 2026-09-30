@@ -367,7 +367,7 @@ p('P_BELL_CRANK_4', 'bell_crank', 'G1', [3.52, 8.95, zG + 3.12], 0, { params: { 
 p('P_HALL_RUNNER', 'runner_rug', 'G1', [2.35, 2.2, zG], FACE.E, { params: { length: 3.6, width: 0.8, mat: 'runner_rug' }, collider: 'none' });
 
 // G2 — parlor (dressed for the tableau)
-p('P_SAWBUCK', 'sawbuck_table', 'G2', [5.6, 3.3, zG], FACE.E, { params: { length: 2.2, width: 0.8, height: 0.8, mat: 'wood_raw_plank' }, collider: 'box' });
+p('P_SAWBUCK', 'sawbuck_table', 'G2', [5.6, 3.3, zG], FACE.E, { params: { length: 2.2, width: 0.6, height: 0.8, mat: 'wood_raw_plank' }, collider: 'box' });
 p('P_RUBBER_SHEET', 'rubber_sheet', 'G2', [5.6, 3.3, zG + 0.8], FACE.E, { params: { mat: 'rubber_black', spatter: true }, lighting: 'dynamic', collider: 'none' });
 p('P_BUCKET', 'zinc_bucket', 'G2', [6.25, 2.5, zG], 0.6, { params: { mat: 'zinc_galvanized', contents: 'water_dark' }, collider: 'box' });
 p('P_ROCKER', 'rocking_chair', 'G2', [7.4, 4.95, zG], faceYaw(3.6 - 7.4, 1.5 - 4.95), { params: { mat: 'wood_furniture_dark', rocks: true }, lighting: 'dynamic', collider: 'box' });

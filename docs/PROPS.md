@@ -88,8 +88,9 @@ and peaks at about 1.1 GB RSS.
   runtime tints them.
 - Liquids: `zinc_bucket-water` and `rain_barrel-water` carry `liquid`.
 - Colliders: `<id>-…-collider` children (`collider: true`, `hide_proxy` on hides) on `slatted_cabinet`,
-  `closet_interior` and `porch`. **The runtime must hide them.** Hides keep an open interior, and the louvre slats
-  leave ~13 mm clear slots at eye height (~1.55 m).
+  `closet_interior` and `porch`. **The runtime must hide them.** Hides keep an open interior. Louvres: 30 × 6 mm
+  slats at 35° on a 34 mm pitch, OUTER edge lower like a real louvred door: a 12 mm clear slot looking level
+  (~35 % open) at eye height (~1.55 m), ~22 mm along the slat angle (looking slightly down and out).
 
 ## Lightmaps (static props) — `blender/props/lightmap.py`
 
@@ -162,6 +163,14 @@ runtime then needs nothing new: same lightmap file, same per-atlas lights node, 
   - `claw_hammer` claw is long.
   - `rag_rug` is a single spiral with no colour bands (bands are a runtime texture).
   - `dust_sheet` and `rubber_sheet` drape procedurally with no cloth sim.
+- `rubber_sheet` ORIGIN = the table-top centre (the layout's `P_RUBBER_SHEET` z 1.4 = floor 0.6 + table 0.8): the
+  sheet lies at z ≈ +3 mm and hangs ~0.45 m down both long sides of the 0.6 m table. (The runtime workaround in
+  `level.ts` that re-placed it at floor height must go.)
+- `sawbuck_table` is FIXED at 0.6 m wide (`furniture.SAWBUCK_W`, length from the layout): Ada's `ada_table` /
+  `ada_opening` clips assume the top spans 0.03–0.63 m in front of her root. The layout still says
+  `P_SAWBUCK.params.width: 0.8` — lead: change it to 0.6 (the generator ignores it and logs the override).
+- `door_knocker` is exported by the HOUSE job as a child of `door_D_FRONT` in doors.glb (registry `HOUSE_BUILT`);
+  it still renders in the contact sheet.
 - Static props lit by `bake_flicker` candles in their room get the baked light AND the runtime flicker light like
   the house surfaces (same lights node) — consistent. Dynamic props stay probe-lit.
 - The exterior props band packs at only ~21 % fill (long fence rails/pole limit the shelf scale); density still

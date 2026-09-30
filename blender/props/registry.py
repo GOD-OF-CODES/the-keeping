@@ -31,6 +31,7 @@ REGISTRY = kit.REGISTRY
 HOUSE_BUILT = {
     'porch': 'built by blender/house/exterior.py from this placement (lightmapped with the facade)',
     'foundation_skirt': 'built by blender/house/exterior.py (stone foundation) - generator kept as fallback',
+    'door_knocker': 'built by blender/house/doors.py mount_knocker: child node P_KNOCKER of door_D_FRONT in doors.glb',
 }
 
 # Types in the layout that intentionally have no mesh (runtime-only effects).
