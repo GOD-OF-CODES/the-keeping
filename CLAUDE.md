@@ -36,6 +36,24 @@ verified research (three r186 APIs, Blender 5.2 experiments, device detection) i
   `Material.use_nodes` deprecated. Set `cycles.samples` + `use_adaptive_sampling=False` explicitly; bakes are never
   denoised by Cycles (use `blender/lib/oidn.py`). Apply modifiers on static meshes before UV2/bake/export.
 
+## How work is verified (Landslide process — mandatory for every agent)
+- **Never open the game in the user's browser** (no claude-in-chrome tabs; it lags their laptop). See the game only
+  through `node scripts/shot.mjs` — a private HEADLESS Chrome (real M1 GPU) with its own server, lock and cleanup:
+  `--preset low|medium|max --beat B05 | --spawn CP1 --wait 6 --fps 5 --shots 2 --backend webgl --boot-only --scenario f.mjs`.
+  One headless Chrome at a time (`.cache/chrome.lock`); look at no more than 2 screenshots per step.
+- **Look, improve, re-check at least 3 times** for any visual work (Blender review renders or shot.mjs screenshots).
+  Judge realism harshly, as a AAA art director would; fix the biggest problems first.
+- **Zero console errors/exceptions**, both in the full game and with your system loaded alone.
+- **Playthrough bot:** every QA round runs `node scripts/shot.mjs --scenario scripts/qa/playthrough.mjs` and it must
+  reach the ending (C7 → title) on the real game, plus `npm test` (headless logic playthroughs) and `npm run build`.
+- **Performance budget (M1 7-core, Medium, WebGPU, measured with `--fps`):** ≥ 45 fps floor, 60 target; ≤ 1.5 M
+  triangles and ≤ 400 draw calls per frame in any room; Low ≥ 30 fps. Download budgets are enforced by
+  `node scripts/assets.mjs --check`.
+- **Realism from physics:** use real-world numbers (dimensions, light power in W, candle ≈ 1 cd, rain drop sizes and
+  fall speeds, wet-surface roughness, lens/film behaviour), not "make it look nice".
+- **Reports end with "requests for the lead"** instead of editing files you don't own. Every deviation from the
+  contract (layout, schemas, formats, conventions) is logged in `docs/CONTRACT-CHANGES.md`.
+
 ## Commands
 - `npm run dev` (http://localhost:5173) · `npm run typecheck` · `npm test` · `npm run build`
 - `npm run assets` (serial Blender pipeline, hash-cached) · `npm run voices -- --dry-run`
