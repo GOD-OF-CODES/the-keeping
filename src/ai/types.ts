@@ -153,6 +153,7 @@ export const ADA_ANIMS = [
   'vigil_scrape',
   'lured_scrape',
   'search_plaster',
+  'search_bed',
   'hide_check',
   'hide_tear_open',
   'dress_hem',

@@ -125,6 +125,9 @@ export interface SimOptions {
   /** After an early finale, go down the main stair to the hall first (C5 before the can). */
   hallFirst?: boolean;
   maxSeconds?: number;
+  /** Extra / overriding DirectorHost members (e2e: the real CutscenePlayer, documents, the fade's playerCanSee).
+   *  Called once inside the constructor: use `sim` lazily (sim.director does not exist yet). */
+  host?: (sim: Sim) => Partial<DirectorHost>;
 }
 
 type Task = { kind: 'go'; to: string; speed?: number; then?: () => void; label: string } | { kind: 'wait'; label: string } | { kind: 'approach'; label: string };
@@ -230,6 +233,7 @@ export class Sim {
         for (const e of out.events) if (e.type === 'relocated') this.relocations.push({ node: e.node, forced: e.forced, inView: this.playerCanSee(G.node(e.node).pos), t: this.t });
       },
     };
+    if (o.host) Object.assign(host, o.host(this));
     this.director = new Director({ layout, events: this.events, host, flags: this.flags, seed: o.seed ?? 1, cutsceneFallbackS: 1.5 });
     // world-lane mimicry: door unlock flags
     this.events.on('flag', ({ name, value }) => {
@@ -423,7 +427,17 @@ export class Sim {
 
   // ------------------------------------------------------------------ world interactions (mimic src/world)
 
+  /** Where a cutscene hands the body back (CutsceneWorld.placePlayer): PLAN eye position; the scripted walk re-plans. */
+  placeAt(eye: P3): void {
+    this.pos = [eye[0], eye[1], eye[2] - 1.65];
+    this.room = G.roomAt(this.pos) ?? this.room;
+    this.path = [];
+    this.task = null;
+    this.stepFrom = null;
+  }
+
   interact(id: string, action: string): void {
+    for (const f of this.onVerb) f('interact', `${id}:${action}`);
     if (action.startsWith('take_')) {
       const item = action.slice(5);
       if (!this.items.has(item)) {
@@ -438,6 +452,7 @@ export class Sim {
   }
 
   pry(k: number): void {
+    for (const f of this.onVerb) f('pry', `board_${k}`);
     this.noise(8, 'prop', [3.6, 8.2, 4.1], 'U1');
     const f = `ada_board_${k}`;
     this.flags.set(f, true);
@@ -451,6 +466,7 @@ export class Sim {
 
   hide(id: string): void {
     if (this.hiddenIn) return;
+    for (const f of this.onVerb) f('hide', id);
     const h = layout.hides.find((x) => x.id === id)!;
     this.pos = [...h.entry] as P3;
     this.hiddenIn = id;
@@ -461,6 +477,7 @@ export class Sim {
 
   unhide(): void {
     if (!this.hiddenIn) return;
+    for (const f of this.onVerb) f('unhide', this.hiddenIn);
     const id = this.hiddenIn;
     this.hiddenIn = null;
     this.stepFrom = this.nearestWp();
@@ -590,6 +607,7 @@ export class Sim {
       const cp6Death = s.checkpoint === 'CP6' && !!this.o.dieAt?.includes('CP6') && !this.diedAt.has('CP6');
       const want = !!near && !cp6Death;
       if (want && !this.holding && this.breathHeld === 0) {
+        for (const f of this.onVerb) f('breath', this.hiddenIn!);
         this.holding = true;
         this.events.emit('player:breath', { holding: true });
       }
@@ -657,17 +675,22 @@ export class Sim {
       if (!this.triggersIn.has(id)) {
         const tv = layout.triggers.find((q) => q.id === id)!;
         this.events.emit('interact', { id, action: tv.event });
-        // the car trigger doubles as the car interaction
-        if (tv.event === 'b12:at_car') this.interact('P_CAR_ROW', 'car');
+        // the car trigger doubles as the car interaction (not once the trigger itself started C6: E is locked then)
+        if (tv.event === 'b12:at_car' && !this.cutscene) this.interact('P_CAR_ROW', 'car');
       }
     this.triggersIn = now;
   }
 
   /** Called after every tick (tests hook assertions here). */
   readonly afterStep: (() => void)[] = [];
+  /** Called at the start of every tick, before the scripted player acts (e2e: close a reading page). */
+  readonly beforeStep: (() => void)[] = [];
+  /** Every player verb the scripted player performs (e2e: assert the body was allowed to do it). */
+  readonly onVerb: ((verb: 'interact' | 'pry' | 'hide' | 'unhide' | 'breath', what: string) => void)[] = [];
 
   step(): void {
     this.t += this.dt;
+    for (const f of this.beforeStep) f();
     this.act();
     this.triggers();
     if (this.stormEvery > 0 && this.t >= this.nextFlash) {

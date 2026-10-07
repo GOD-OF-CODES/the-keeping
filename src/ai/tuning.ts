@@ -25,7 +25,8 @@ export const TUNING = {
   locket: { range: 4 },
   chase: { lostS: 4, catchDist: 1, runNoiseMin: 5 },
   bumpDist: 0.55,
-  search: { looks: 2, betweenLooksS: 2, hideListen: [4, 6] as const },
+  /** bedS = the ada_search_bed one-shot (4.0 s) when she searches beside Harlan's bed; bedReach = her feet to its edge. */
+  search: { looks: 2, betweenLooksS: 2, hideListen: [4, 6] as const, bedS: 4, bedReach: 1.0 },
   lure: { durations: [60, 50, 40] as const, floor: 40 },
   vigil: [[15, 30], [12, 24], [10, 18]] as const,
   /** Probability of a LOOK at optional look nodes (doorways) per escalation level; stair top & window always look. */

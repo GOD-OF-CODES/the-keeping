@@ -300,9 +300,12 @@ export class Director {
       case 'routine':
         b.setRoutine(c.kind);
         break;
-      case 'bell':
-        b.bell();
+      case 'bell': {
+        // bell_used only when the pull really lured her (or queued a lure behind a CHASE)
+        const r = b.bell();
+        if (r !== 'ignored') this.apply(this.story.handle({ type: 'bell', queued: r === 'queued' }));
         break;
+      }
       case 'escalation':
         b.setEscalation(c.level);
         break;

@@ -111,25 +111,29 @@ export class RoomIndex {
     return rectContains(this.footprint, x, y) || this.roomAt(x, y, feetZ) !== null;
   }
 
-  /** Culling set for a camera: the room's visibleRooms plus those of interior rooms within `margin` metres. */
-  visibleFrom(room: string | null, x: number, y: number, feetZ: number, margin = 0.6): Set<string> {
-    const out = new Set<string>();
-    const add = (id: string) => {
-      const r = this.rooms.get(id);
-      if (!r) return;
-      out.add(id);
-      for (const v of r.visibleRooms) out.add(v);
-    };
-    if (room) add(room);
+  /**
+   * Culling set for a camera: the room's visibleRooms plus those of interior rooms within `margin` metres.
+   * `out` (cleared first) lets a per-frame caller reuse one Set instead of allocating.
+   */
+  visibleFrom(room: string | null, x: number, y: number, feetZ: number, margin = 0.6, out: Set<string> = new Set()): Set<string> {
+    out.clear();
+    if (room) this.addVisible(room, out);
     const fl = this.floorForZ(feetZ);
     for (const r of this.interiors) {
       if (r.id === room) continue;
       const e = this.floorElevation.get(r.floor) ?? 0;
       const sameLevel = r.floor === fl || (feetZ >= e - 0.8 && feetZ <= e + r.ceiling);
-      if (sameLevel && rectDistance(r.rect, x, y) <= margin) add(r.id);
+      if (sameLevel && rectDistance(r.rect, x, y) <= margin) this.addVisible(r.id, out);
     }
     if (out.size === 0) for (const r of this.layout.rooms) out.add(r.id); // unknown position: render everything
     return out;
+  }
+
+  private addVisible(id: string, out: Set<string>): void {
+    const r = this.rooms.get(id);
+    if (!r) return;
+    out.add(id);
+    for (const v of r.visibleRooms) out.add(v);
   }
 
   /** Acoustic surface under plan (x, y) in `room` (smallest containing zone wins). */
@@ -157,8 +161,11 @@ export class RoomIndex {
     return null;
   }
 
-  triggersAt(x: number, y: number, feetZ: number): TriggerVolume[] {
-    return this.layout.triggers.filter((t) => rectContains(t.rect, x, y) && feetZ >= t.zMin && feetZ <= t.zMax);
+  /** Trigger volumes containing the point. `out` (cleared first) lets a per-frame caller reuse one array. */
+  triggersAt(x: number, y: number, feetZ: number, out: TriggerVolume[] = []): TriggerVolume[] {
+    out.length = 0;
+    for (const t of this.layout.triggers) if (rectContains(t.rect, x, y) && feetZ >= t.zMin && feetZ <= t.zMax) out.push(t);
+    return out;
   }
 }
 

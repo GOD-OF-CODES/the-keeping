@@ -55,6 +55,8 @@ test('M2 clips are picked up when the GLB has them (search, dress, door push, fi
   const m2 = new Set(['ada_search', 'ada_dress', 'ada_door_push', 'ada_finale_approach', 'ada_finale_take', 'ada_finale_carry', 'ada_look', 'ada_patrol', 'ada_vigil']);
   const has = (c: string) => m2.has(c);
   assert.equal(adaClipFor('search_plaster', 0, has), 'ada_search');
+  assert.equal(adaClipFor('search_bed', 0, has), 'ada_search', 'no bed clip yet → the plaster search');
+  assert.equal(adaClipFor('search_bed', 0, (c) => c === 'ada_search_bed' || has(c)), 'ada_search_bed');
   assert.equal(adaClipFor('dress_hem', 0, has), 'ada_dress');
   assert.equal(adaClipFor('door_push', 0, has), 'ada_door_push');
   assert.equal(adaClipFor('finale_approach', 0, has), 'ada_finale_approach');

@@ -118,19 +118,65 @@ Script: `blender/tests/smoke_s2.py` (Blender's EXR writer, `Image.save_render` w
   - **Extension `.klm`, never `.gz`.** Static servers may add `Content-Encoding: gzip`, and `fetch` would inflate
     the file before our `DecompressionStream` sees it.
 - **Tiers** (`TIER_POLICY` in `blender/lib/encode.py`). The base bake is at 2048²; lower tiers are coverage-weighted
-  downsampled from it, then re-dilated.
-  - Max: 2048², lossless.
-  - Medium: 2048², m7.
-  - Low: 1024², m7.
-  - Projected for 6 atlases:
-    - Max ≈ 43 MB, plus the lightning-flash maps.
-    - Medium ≈ 22 MB.
-    - Low ≈ 6 MB.
-  - A real house has more shadow detail than the test room: allow +30 %, which still meets the targets.
+  downsampled from it, then re-dilated. The current policy and its measured error are in
+  [Release lightmap budgets](#release-lightmap-budgets) below (this S2 projection was superseded).
 - **Fallback.** EXR half ZIP RGB, via `encode.save_exr`; set `container: 'exr'` in `TIER_POLICY`. For a lossy EXR
   fallback, DWAA. Both are proven to decode in r186.
 - **Sidecar** `lm_<atlas>.json` next to each file: `{rowOrder:'bottom-up', uvDecode, width, height, container,
-  mantissaBits, channels, intensity: π, stats}`.
+  mantissaBits, floorExp, channels, intensity: π, stats}`. `floorExp` is informational: the decoder just reads halves.
+
+### Release lightmap budgets
+
+The release bakes (2048², 128 spp, post-OIDN) are kept as float32 in `.cache/bake/lm_*.npz`. The `encode` job
+(`blender/bake/encode_atlases.py`) turns them into the shipped KLM files per tier. It never re-bakes.
+
+**Quantizer.** Two pre-quantizations of the half values. The decoder is unchanged.
+- Mantissa bits N: the half mantissa is rounded to N bits, a relative error of at most 2^-(N+1).
+- Absolute floor `floor_exp` E: below 2^-E the values sit on a fixed grid of step 2^-(E+N), the N-bit spacing at
+  2^-E. The house is dark: 42–97 % of texels are below 2^-12, where AgX's toe maps everything to near-black. Without
+  the floor, that noise costs full half precision.
+
+**Error metric.** The display-referred error is measured on every covered texel of every file, against the float
+source at the tier's size.
+- A lightmapped Lambert texel renders as texel × albedo × exposure. The lightmap intensity π cancels the BRDF's 1/π
+  (S3).
+- The value goes through three r186's exact AgX (`agxToneMapping`, `ToneMappingFunctions.js`) and the sRGB OETF.
+- The error is the difference in 8-bit code values. Per albedo, a texel counts with its worst channel over the
+  exposures 1, 1.18 (the lightning kick) and 1.3 (the kick × the blue-hour tint of 1.1).
+- An error below 0.5 code can move a pixel by at most one 8-bit step, and only when it sits on a rounding boundary.
+  The job fails at 0.5 code or more.
+
+**Policy and results.** Measured 2026-09-30, from `.cache/bake/encode.json`. Error columns are 8-bit code values,
+max / p99 over all atlases.
+
+| Tier | Policy | Lightmaps | Tier total (budget) | Albedo 0.2 | Albedo 0.5 | Albedo 0.8 |
+|---|---|---|---|---|---|---|
+| Max | 2048², m10, f8 | 70.2 MiB, 9 maps (was 90.3) | 102.2 MB (120) | 0.026 / 0.020 | 0.027 / 0.020 | 0.027 / 0.021 |
+| Medium | 2048², m7, f8 | 26.5 MiB, 7 maps (was 43.7) | 50.4 MB (60) | 0.235 / 0.145 | 0.237 / 0.172 | 0.238 / 0.182 |
+| Low | 512², m6, f8 | 1.6 MiB, 7 maps | 20.9 MB (25) | 0.429 / 0.279 | 0.442 / 0.329 | 0.442 / 0.347 |
+
+- No texel on any tier reaches 0.5 code.
+- The Max error equals plain float32 → half rounding. The floor adds nothing there and costs 20 MiB less.
+- For Medium, the floor adds nothing over plain m7.
+- 1536² was not needed for Medium. It is also not an integer downsample of 2048², so the coverage-weighted
+  downsample does not support it.
+- The flash maps (`lm_upper_hall_flash`, `lm_upper_rooms_flash`) ship on Max only.
+
+**Commands.** These are the only runner calls that touch lightmaps.
+
+| Command | Effect |
+|---|---|
+| `npm run assets -- --only encode` | Re-encode all tiers from the cached float atlases (≈ 3.5 min), then write the manifests. It re-runs by itself when `encode.py`, the `.npz` files or the layout change. |
+| `npm run assets -- --only bake-release` | Re-bake the release atlases (≈ 80 min on the M1). Close the browser first. |
+| `npm run assets -- --only bake-house-ground` (exact id) | Replace a release atlas with a dev bake (1024², 32 spp), deliberately. |
+| `npm run assets -- --touch --only <ids>` | Mark jobs fresh without running them. It only works when the job was fresh at git HEAD, and is meant for an uncommitted edit that cannot change their outputs. |
+
+**Release protection.** The dev bakes (`bake-house-*`) share their outputs with the manual `bake-release-*` jobs.
+- A plain `npm run assets`, `--only bake` or `--force` never re-runs a dev bake whose outputs a manual job wrote
+  later. It logs `SKIP …` with the remedy, and `--list` shows `stale/kept`. Only naming the exact job id runs it.
+- If `house` or `props` re-run after the release bakes, the runner prints `WARNING: shipped outputs of bake-release-*
+  are stale`. `--check` then fails, because the GLBs' UV2 may no longer match the lightmaps. Re-bake with
+  `--only bake-release`.
 
 ## S3 — Photometric calibration (PASS)
 
@@ -254,8 +300,11 @@ browser closed** (as PLAN §2.5 says), one atlas per process. The runner enforce
 - Flags:
   - `--only <id|group>`: `manual` jobs run only when named by id.
   - `--force`, `--dry-run`, `--list`, `--manifest`.
+  - `--touch --only <ids>`: mark jobs fresh without running them, only if they were fresh at git HEAD.
+  - The release protection guard, described under [Release lightmap budgets](#release-lightmap-budgets).
   - `--check`: manifest ↔ files (size and hash); TEXCOORD_1 on level GLBs; expected or stray animations; lightmap
-    sidecar `rowOrder` and KLM header vs sidecar; per-tier budgets; last-run failures.
+    sidecar `rowOrder` and KLM header vs sidecar; per-tier budgets; last-run failures; manual (release) jobs whose
+    shipped outputs are stale vs their inputs.
 
 ## Open issues (for the lead / other lanes)
 

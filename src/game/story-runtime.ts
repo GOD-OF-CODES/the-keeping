@@ -26,6 +26,8 @@ import { CharacterBank } from '../characters/bank.ts';
 import { drawDocumentPage } from '../player/inventory.ts';
 import { createM2World, ITEM_PROPS } from './m2-world.ts';
 import { createCutsceneFx } from '../world/cutscene-fx.ts';
+import { END_CARD_Z, harlanHeldAtTable } from './staging.ts';
+import { createBodyControl, FadeState } from './body-control.ts';
 
 /** What main.ts's lightning controller offers the story (strike + storm cadence). */
 export interface LightningControl {
@@ -58,6 +60,8 @@ const SFX_AT: Record<string, { prop: string; room: string }> = {
 
 const BEATS: BeatId[] = ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B09', 'B10', 'B11', 'B12', 'B13'];
 const beatIdx = (b: string | null | undefined) => (b ? BEATS.indexOf(b as BeatId) : -1);
+/** Movement keys that close a reading page (and are consumed with it). */
+const MOVE_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'] as const;
 
 export async function createStoryRuntime(d: StoryDeps) {
   const { ctx, input, level, player, hides, rig, inventory, journal, interact, audio } = d;
@@ -183,6 +187,7 @@ export async function createStoryRuntime(d: StoryDeps) {
 
   // ---------------------------------------------------------------- UI: fade, prompt, reading overlay, end card
   const ui = makeUi();
+  input.addBlocker(() => ui.reading); // a page on screen: no walking / looking / interacting under it
 
   // ---------------------------------------------------------------- per-frame player sampling
   void ITEM_PROPS;
@@ -479,20 +484,25 @@ export async function createStoryRuntime(d: StoryDeps) {
   }
 
   // ---------------------------------------------------------------- bus reactions (controls, fades, arms, harlan)
-  let cutscene: string | null = null;
+  // who owns the body (enable flags, interact / hide / breath gating) and the black fade: src/game/body-control.ts
+  // (pure, so tests/e2e-playthrough.test.ts drives the same rules). Registered here, after the Director's own
+  // cutscene:end listener, as before the extraction; the visual reactions below run right after it.
+  const body = createBodyControl({
+    events: ctx.events,
+    player,
+    interact,
+    hides,
+    hasCutscenePlayer: () => !!cutscenePlayer,
+    fade: (to, sec) => ui.fade(to, sec),
+    snapBlackAfter: (sec) => ui.snapBlackAfter(sec),
+  });
   ctx.events.on('cutscene:start', ({ id }) => {
-    cutscene = id;
     if (id === 'C6') {
       // you drive YOUR car away: the vehicle track moves the gate sedan to the row — the row copy steps aside
       level.prop('P_CAR_ROW') && (level.prop('P_CAR_ROW').visible = false);
       if (arms?.has('arms_pour_can')) armsProp('P_JERRY_10');
       else m2.canAtFiller(true);
     }
-    if (id === 'death') return;
-    interact.enabled = false;
-    if (cutscenePlayer) return; // the cutscene bindings own the input lock
-    player.enabled = false;
-    if (id !== 'C2') player.lookEnabled = false; // C2: frozen at the threshold, but you may still look
     if (id === 'C2' && !cutscenePlayer) {
       arms?.play('arms_freeze');
       // fallback staging: she slides off the table, he releases the rope
@@ -501,7 +511,6 @@ export async function createStoryRuntime(d: StoryDeps) {
     }
   });
   ctx.events.on('cutscene:end', ({ id }) => {
-    if (cutscene === id) cutscene = null;
     if (id === 'C5') {
       fxw.resetSilhouette();
       characters.attach('ada', 'locket', null);
@@ -510,28 +519,13 @@ export async function createStoryRuntime(d: StoryDeps) {
       m2.canAtFiller(false);
       armsProp(null);
     }
-    if (id === 'death') return;
-    if (!hides.active && !cutscenePlayer) {
-      player.enabled = true;
-      player.lookEnabled = true;
-    }
-    interact.enabled = true;
     if ((id === 'C2' || id === 'C2_replay') && !characters.acquired.has('ada')) {
       tableauOn = false;
       ada?.release();
     }
   });
   ctx.events.on('player:death', () => {
-    if (!cutscenePlayer) ui.fade(1, 0.35); // the death cutaway fades to black itself
-    else ui.snapBlackAfter(2.2);
-    player.enabled = false;
-    player.lookEnabled = false;
     audio?.play('grab_hit', { gain: 0.9 });
-  });
-  ctx.events.on('player:respawn', () => {
-    player.enabled = true;
-    player.lookEnabled = true;
-    ui.fade(0, 1.4);
   });
   let restoring = false;
   ctx.events.on('flag', ({ name, value }) => {
@@ -546,7 +540,10 @@ export async function createStoryRuntime(d: StoryDeps) {
       nonstopBell = audio.play('spring_bell_loop', bp ? { pos: [bp.x, bp.y, bp.z], room: 'G2', loop: true } : { loop: true });
     }
     if (name === 'rang_front_bell' && value) whetstone?.stop(0.6);
-    if (name === 'harlan_taken' && value) fxw.fx('blue_hour', { mist: 1, rain: 0 }); // B12: the storm is over
+    if (name === 'harlan_taken' && value) {
+      fxw.fx('blue_hour', { mist: 1, rain: 0 }); // B12: the storm is over
+      if (harlan) harlan.visible = false; // C5 took him (also a debug / restore start at B12+)
+    }
     if (name === 'locket_given' && value && !restoring) {
       // FINALE take: her left fist closes on it (ada_finale_take: prop_l reaches the lens at 0.45 s of the clip ×1.25)
       setTimeout(() => characters.attach('ada', 'locket', 'prop_l'), 360);
@@ -641,7 +638,9 @@ export async function createStoryRuntime(d: StoryDeps) {
   const update = (dt: number, paused: boolean) => {
     if (!started) return;
     ui.update(dt);
-    if (ui.reading && (input.wasPressed('KeyE') || input.wasPressed('Escape') || input.wasPressed('Mouse0') || player.speed > 0.8)) {
+    // the page blocks gameplay input (input.addBlocker below): it closes on E / Esc / click or a movement key, and
+    // that press is consumed (a key pressed under the page stays swallowed until it is released)
+    if (ui.reading && (input.uiPressed('KeyE') || input.uiPressed('Escape') || input.uiPressed('Mouse0') || MOVE_KEYS.some((k) => input.uiPressed(k)))) {
       ui.closeReading();
       // the E that closed the page must not read it again this frame (the ledger would turn a page and re-voice)
       input.consume('KeyE');
@@ -657,26 +656,22 @@ export async function createStoryRuntime(d: StoryDeps) {
         breathHeld: player.holdingBreath,
       });
       cs.hem.update(lastOut, hides.active?.id ?? null);
-      if (cs.lock !== 'none') interact.enabled = false;
-      else if (!ui.reading && !cutscene) interact.enabled = true;
       camHeldByCutscene = !!cs.cameraHeld;
     }
-    // Space is skip AND breath: breath only when gameplay has the body (or in a hide), never under a cutscene lock
-    const locked = (cs && cs.lock !== 'none') || (!!cutscene && cutscene !== 'death');
-    hides.inputEnabled = !locked;
-    player.breathAllowed = !locked && (!!hides.active || player.enabled);
+    // interact / hide / breath gating on the cutscene lock (Space is skip AND breath): src/game/body-control.ts
+    body.frame(cs ? cs.lock : null, ui.reading);
     m2.update(paused ? 0 : dt);
     fxw.update(paused ? 0 : dt);
     const beat = director.story.beat;
     // pre-C2 tableau (the cutscene lane replaces this with C2 proper)
-    if (tableau && !cutscene && beatIdx(beat) <= 2 && !characters.acquired.has('ada')) {
+    if (tableau && !body.cutscene && beatIdx(beat) <= 2 && !characters.acquired.has('ada')) {
       if (ada && !ada.overridden) {
         ada.override({ clip: 'ada_table', pos: tableau.ada.pos, yaw: tableau.ada.yaw, loop: true });
         tableauOn = true;
       }
       if (harlan && !harlan.visible) harlan.play({ clip: 'harlan_opening', pos: tableau.harlan.pos, yaw: tableau.harlan.yaw, time: 0.5, timeScale: 0 });
-    } else if (tableau && harlan && !harlan.visible && beatIdx(beat) >= 3 && beatIdx(beat) <= 10) {
-      // after C2 he stays in the locked parlor
+    } else if (tableau && harlan && !harlan.visible && harlanHeldAtTable(beatIdx(beat), body.cutscene, !!ctx.flags.get('harlan_taken'))) {
+      // after C2 he stays in the locked parlor (never re-shown under a cutscene's own hide cues, nor once C5 took him)
       harlan.play({ clip: 'harlan_opening', pos: tableau.harlan.pos, yaw: tableau.harlan.yaw, time: 14.9, timeScale: 0 });
     }
     const cdt = paused ? 0 : dt;
@@ -752,9 +747,15 @@ export async function createStoryRuntime(d: StoryDeps) {
     tableau,
     update,
     attachLightning,
+    /**
+     * A cutscene owns the body (any lock, or any Director cutscene incl. the death cutaway): gameplay verbs outside
+     * the controller (F torch, Tab journal) must not act — they would fight the cutscene's light / arms cues.
+     */
+    inputLocked: (): boolean => body.inputLocked(cs ? cs.lock : null),
     /** Debug: current beat, Ada's state. */
     whereText: () => {
       const o = lastOut;
+      const cutscene = body.cutscene;
       return `${director.story.beat}${cutscene ? ` · ${cutscene}` : ''} · Ada ${o ? `${o.state}/${o.anim}${o.visible ? '' : ' (off)'} @${o.room}` : '-'}`;
     },
   };
@@ -847,25 +848,20 @@ function makeUi() {
   readEl.append(readCanvas, readHint);
   document.body.appendChild(readEl);
 
-  let fadeFrom = 0;
-  let fadeTo = 0;
-  let fadeT = 1;
-  let fadeLen = 1;
+  // the fade maths is pure (src/game/body-control.ts FadeState); this element just shows fade.opacity
+  const fade = new FadeState();
   let promptT = 0;
-  let snapIn = 0;
   const api = {
-    black: false,
+    get black() {
+      return fade.black;
+    },
     reading: false,
     fade(to: number, sec: number) {
-      fadeFrom = Number(fadeEl.style.opacity) || 0;
-      fadeTo = to;
-      fadeT = 0;
-      fadeLen = Math.max(0.01, sec);
-      if (to >= 1) api.black = true;
+      fade.fade(to, sec);
     },
     /** After the death cutaway's own fade: hold black (our overlay) until the respawn fade-in. */
     snapBlackAfter(sec: number) {
-      snapIn = sec; // counted down in update() on game time (a paused game doesn't go black behind the menu)
+      fade.snapBlackAfter(sec); // counted down in update() on game time (a paused game doesn't go black behind the menu)
     },
     prompt(text: string) {
       promptEl.textContent = text;
@@ -885,14 +881,13 @@ function makeUi() {
       readEl.style.display = 'none';
       api.reading = false;
     },
-    /** The end: C7 already cut to black on its own title — hold black and keep the title up (no fade, no flicker). */
+    /** The end: C7 already cut to black on its own title — hold black and keep the title up (no fade, no flicker).
+     * The card sits under the pause menu (z 40) so 'Esc  menu' opens a menu the player can actually click. */
     end() {
+      fade.hold();
       fadeEl.style.opacity = '1';
-      fadeFrom = fadeTo = 1;
-      fadeT = 1;
-      api.black = true;
       const el = document.createElement('div');
-      Object.assign(el.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: '40', color: '#d9d2c3', font: '400 clamp(28px,5vw,64px)/1.1 ui-serif, Georgia, "Times New Roman", serif', letterSpacing: '.32em', textAlign: 'center', padding: '0 16px', background: '#000' } as Partial<CSSStyleDeclaration>);
+      Object.assign(el.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: String(END_CARD_Z), pointerEvents: 'none', color: '#d9d2c3', font: '400 clamp(28px,5vw,64px)/1.1 ui-serif, Georgia, "Times New Roman", serif', letterSpacing: '.32em', textAlign: 'center', padding: '0 16px', background: '#000' } as Partial<CSSStyleDeclaration>);
       const t = document.createElement('div');
       t.textContent = 'THE KEEPING';
       const sub = document.createElement('div');
@@ -903,22 +898,7 @@ function makeUi() {
       requestAnimationFrame(() => (sub.style.opacity = '1'));
     },
     update(dt: number) {
-      if (snapIn > 0) {
-        snapIn -= dt;
-        if (snapIn <= 0) {
-          fadeEl.style.opacity = '1';
-          fadeFrom = 1;
-          fadeTo = 1;
-          fadeT = 1;
-          api.black = true;
-        }
-      }
-      if (fadeT < 1) {
-        fadeT = Math.min(1, fadeT + dt / fadeLen);
-        const v = fadeFrom + (fadeTo - fadeFrom) * fadeT;
-        fadeEl.style.opacity = String(v);
-        if (fadeT >= 1 && fadeTo < 1) api.black = false;
-      }
+      if (fade.update(dt)) fadeEl.style.opacity = String(fade.opacity);
       if (promptT > 0) {
         promptT -= dt;
         if (promptT <= 0) promptEl.style.opacity = '0';

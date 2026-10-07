@@ -199,7 +199,8 @@ export function createM2World(d: M2Deps) {
       case 'pull_bell': {
         const pull = prop('P_BELL_PULL');
         if (pull) {
-          const base = pull.position.clone();
+          // rest pose cached once: a re-pull inside the 1.3 s tween must not start from the displaced position
+          const base = pull.userData.restPos ?? (pull.userData.restPos = pull.position.clone());
           tween(pull, 1.3, (o, u) => {
             o.position.copy(base);
             o.position.y -= Math.sin(Math.min(1, u * 1.6) * Math.PI) * 0.08;
@@ -337,8 +338,9 @@ export function createM2World(d: M2Deps) {
     }
     // wardrobe back
     const inWardrobe = hides.active?.id === 'H_ADA_WARDROBE' && flag('dress_visit_done');
-    hint.style.opacity = inWardrobe ? '1' : '0';
-    if (inWardrobe && input.isDown('KeyS')) {
+    hint.style.opacity = inWardrobe && hides.inputEnabled ? '1' : '0';
+    // never under a cutscene lock (hides.inputEnabled): a push mid-death would free the body and teleport it
+    if (inWardrobe && hides.inputEnabled && input.isDown('KeyS')) {
       pushT += dt;
       if (pushT >= PUSH_HOLD_S) {
         pushT = 0;

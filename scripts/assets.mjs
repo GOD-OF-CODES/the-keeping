@@ -9,6 +9,10 @@
 //   npm run assets -- --list            list jobs and their cache state
 //   npm run assets -- --manifest        only (re)write public/assets/<tier>/manifest.json
 //   npm run assets -- --dry-run         show what would run
+//   npm run assets -- --touch --only X  mark jobs fresh without running them, ONLY if they were fresh at git HEAD
+//                                       (use after an uncommitted edit that cannot change their outputs)
+// A non-manual job whose outputs a MANUAL job wrote later (dev bake vs release bake) is never re-run implicitly:
+// it is skipped with a SKIP line (--list: 'stale/kept') unless named by exact id (--only bake-house-ground).
 //
 // Rules enforced here (CLAUDE.md): at most ONE Blender process at a time — a lock dir .cache/blender.lock
 // (pid + stale detection) plus a wait while any foreign Blender.app process is running.
@@ -106,19 +110,114 @@ if (!pipeline) {
 }
 const state = readJSON(STATE, { jobs: {} });
 
-function jobHash(job) {
+const readDisk = (f) => fs.readFileSync(path.join(ROOT, f));
+
+/** `read(f)` supplies file contents (default: the working tree); `--touch` hashes "as of git HEAD" through it. */
+function jobHash(job, read = readDisk, libDefault = pipeline.libInputs) {
   const h = createHash('sha256');
   h.update(JSON.stringify({ script: job.script, args: job.args ?? [], env: job.env ?? {}, post: job.post ?? [] }));
-  const files = expand([job.script, ...(job.libInputs ?? pipeline.libInputs ?? []), ...(job.inputs ?? [])]);
+  const files = expand([job.script, ...(job.libInputs ?? libDefault ?? []), ...(job.inputs ?? [])]);
   for (const f of files) {
     h.update(f);
-    h.update(sha256(fs.readFileSync(path.join(ROOT, f))));
+    h.update(sha256(read(f)));
   }
   return { hash: h.digest('hex').slice(0, 16), files };
 }
 
+// ---------- --touch: mark jobs fresh WITHOUT running them (like `make -t`), but only provably safe ones ----------
+// A job is touched only if (a) its last run was ok and its outputs exist, and (b) the hash computed from git HEAD
+// (HEAD's job definition + HEAD's content for every tracked file; untracked inputs such as .cache/*.blend from disk)
+// equals its stored hash, or the hash of its last REAL run if it was touched before. (b) proves the job was fresh
+// at HEAD, so the ONLY differences are the uncommitted working-tree edits — which the caller asserts do not change
+// this job's outputs (e.g. an encode-policy edit that the `encode` job re-applies from the cached float atlases).
+// Jobs that were already stale at HEAD are refused.
+function touch() {
+  const git = (...a) => execFileSync('git', a, { cwd: ROOT, maxBuffer: 1 << 30 });
+  const tracked = new Set(git('ls-tree', '-r', '--name-only', 'HEAD').toString().split('\n').filter(Boolean));
+  let headPipeline;
+  try {
+    headPipeline = JSON.parse(git('show', 'HEAD:blender/pipeline.json').toString());
+  } catch {
+    headPipeline = pipeline;
+  }
+  const headCache = new Map();
+  const readHead = (f) => {
+    if (!tracked.has(f)) return readDisk(f);
+    if (!headCache.has(f)) headCache.set(f, git('show', `HEAD:${f}`));
+    return headCache.get(f);
+  };
+  const fresh = readJSON(STATE, { jobs: {} });
+  let touched = 0;
+  for (const job of pipeline.jobs.filter(selected)) {
+    const prev = fresh.jobs[job.id];
+    const headJob = headPipeline.jobs.find((j) => j.id === job.id);
+    if (!prev?.ok || !outputsExist(job) || !headJob) {
+      log(`touch: refuse ${job.id} (${!headJob ? 'not in HEAD pipeline' : 'never ran ok / outputs missing'})`);
+      continue;
+    }
+    let atHead;
+    try {
+      atHead = jobHash(headJob, readHead, headPipeline.libInputs).hash;
+    } catch (e) {
+      log(`touch: refuse ${job.id} (cannot hash at HEAD: ${e.message})`);
+      continue;
+    }
+    // touchedFrom = the hash of the job's last REAL run, kept across repeated touches (so a second uncommitted edit
+    // can be touched again as long as HEAD still matches that real run)
+    const runHash = prev.touchedFrom ?? prev.hash;
+    if (atHead !== runHash && atHead !== prev.hash) {
+      log(`touch: refuse ${job.id} (already stale at HEAD — its inputs changed since its last run; run it instead)`);
+      continue;
+    }
+    const now = jobHash(job).hash;
+    fresh.jobs[job.id] = { ...prev, hash: now, touchedAt: new Date().toISOString(), touchedFrom: runHash };
+    touched++;
+    log(`touch: ${job.id} ${prev.hash} -> ${now}`);
+  }
+  writeJSON(STATE, fresh);
+  log(`touch: ${touched} job(s) marked fresh`);
+}
+
 function outputsExist(job) {
   return (job.outputs ?? []).every((o) => fs.existsSync(path.join(ROOT, o.path)));
+}
+
+// ---------- output ownership guard ----------
+// Dev and release variants of a job share outputs (bake-house-X and bake-release-X both write .cache/bake/lm_X.npz
+// and public/assets/*/lm_X.klm). A job that is merely stale must never silently overwrite outputs a MANUAL job
+// (release bake, hours of GPU time) wrote after it: such a job runs only when named by its exact id in --only
+// (not by group, not via --force). Returns the manual job that owns the outputs, or null.
+function supersededBy(job) {
+  if (job.manual || opt('only')?.split(',').map((s) => s.trim()).includes(job.id)) return null;
+  const mine = new Set((job.outputs ?? []).map((o) => o.path));
+  const myTime = Date.parse(state.jobs[job.id]?.finishedAt ?? '') || 0;
+  let owner = null;
+  for (const m of pipeline.jobs) {
+    const s = state.jobs[m.id];
+    if (!m.manual || m === job || !s?.ok || !(m.outputs ?? []).some((o) => mine.has(o.path))) continue;
+    const t = Date.parse(s.finishedAt ?? '') || 0;
+    if (t > myTime && (!owner || t > Date.parse(state.jobs[owner.id].finishedAt))) owner = m;
+  }
+  return owner;
+}
+
+/** Loud warning when a manual job's shipped outputs no longer match its inputs (e.g. `house` re-ran after the
+ *  release bakes: the GLBs' UV2 may no longer match the release lightmaps). Never runs anything. */
+function warnStaleManual() {
+  const stale = pipeline.jobs.filter((m) => {
+    const s = state.jobs[m.id];
+    if (!m.manual || !s?.ok || !outputsExist(m) || !pipeline.jobs.some((j) => j !== m && supersededBy(j)?.id === m.id))
+      return false;
+    try {
+      return jobHash(m).hash !== s.hash;
+    } catch {
+      return true;
+    }
+  });
+  if (stale.length)
+    log(`WARNING: shipped outputs of ${stale.map((m) => m.id).join(', ')} are stale vs their inputs (house/props changed`
+      + ` since?) — re-run them (--only ${[...new Set(stale.map((m) => m.group))].join(',')}) or the lightmaps may not match the GLBs`);
+  return stale;
 }
 
 function selected(job) {
@@ -412,6 +511,7 @@ function check() {
     const s = state.jobs[j.id];
     if (s && !s.ok) fail(`job ${j.id} last run failed (${s.log})`);
   }
+  for (const m of warnStaleManual()) fail(`manual job ${m.id}: shipped outputs are stale vs its inputs`);
   if (foreignBlender().length && !fs.existsSync(LOCK)) fail('a Blender process is running outside the runner');
   log(bad ? `check: ${bad} problem(s)` : 'check: ok');
   return bad === 0;
@@ -421,18 +521,23 @@ function check() {
 async function main() {
   if (flag('check')) process.exit(check() ? 0 : 1);
   if (flag('manifest')) return writeManifests();
+  if (flag('touch')) {
+    if (!opt('only')) throw new Error('--touch needs --only <ids|groups>');
+    return touch();
+  }
   const jobs = pipeline.jobs.filter(selected);
   if (flag('list')) {
     for (const j of pipeline.jobs) {
       const { hash } = jobHash(j);
       const s = state.jobs[j.id];
       const st = j.placeholder && !fs.existsSync(path.join(ROOT, j.script)) ? 'placeholder'
-        : s?.hash === hash && s.ok && outputsExist(j) ? 'cached' : 'stale';
+        : s?.hash === hash && s.ok && outputsExist(j) ? 'cached' : supersededBy(j) ? 'stale/kept' : 'stale';
       console.log(`${j.id.padEnd(22)} ${String(j.group).padEnd(10)} ${st.padEnd(12)} ${j.manual ? 'manual ' : ''}${j.description ?? ''}`);
     }
     return;
   }
   let failed = 0;
+  let skippedGuard = 0;
   for (const job of jobs) {
     if (!fs.existsSync(path.join(ROOT, job.script))) {
       log(`skip ${job.id}: ${job.placeholder ? 'placeholder (not implemented yet)' : 'script missing'} — ${job.script}`);
@@ -442,6 +547,14 @@ async function main() {
     const prev = state.jobs[job.id];
     if (!flag('force') && prev?.ok && prev.hash === hash && outputsExist(job)) {
       log(`cached ${job.id} (${hash})`);
+      continue;
+    }
+    const owner = supersededBy(job);
+    if (owner) {
+      log(`SKIP ${job.id}: its outputs were last written by manual job ${owner.id} (${state.jobs[owner.id].finishedAt}),`
+        + ` which a run of ${job.id} would overwrite. Keep them: do nothing. Replace them with this job's output:`
+        + ` --only ${job.id}. Re-run the manual job: --only ${owner.id} (or its group ${owner.group}).`);
+      skippedGuard++;
       continue;
     }
     if (flag('dry-run')) {
@@ -454,6 +567,8 @@ async function main() {
       if (!flag('keep-going')) break;
     }
   }
+  if (skippedGuard) log(`note: ${skippedGuard} job(s) skipped to protect newer manual-job outputs (see SKIP lines)`);
+  warnStaleManual();
   if (!flag('dry-run')) writeManifests();
   const still = foreignBlender();
   if (still.length) log(`note: Blender still running (pid ${still.join(', ')})`);

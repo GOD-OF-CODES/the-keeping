@@ -110,7 +110,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_GROUND", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_ground.npz" }, { "path": "public/assets/max/lm_ground.klm" }]
     },
@@ -121,7 +121,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_PARLOR", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_parlor.npz" }, { "path": "public/assets/max/lm_parlor.klm" }]
     },
@@ -132,7 +132,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_KITCHEN", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_kitchen.npz" }, { "path": "public/assets/max/lm_kitchen.klm" }]
     },
@@ -143,7 +143,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_UPPER_HALL", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_upper_hall.npz" }, { "path": "public/assets/max/lm_upper_hall.klm" },
                   { "path": "public/assets/max/lm_upper_hall_flash.klm" }]
@@ -155,7 +155,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_UPPER_ROOMS", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_upper_rooms.npz" }, { "path": "public/assets/max/lm_upper_rooms.klm" },
                   { "path": "public/assets/max/lm_upper_rooms_flash.klm" }]
@@ -167,7 +167,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_EXTERIOR", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_exterior.npz" }, { "path": "public/assets/max/lm_exterior.klm" }]
     },
@@ -178,7 +178,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_CAR", "--size", "1024", "--samples", "32"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_car.npz" }, { "path": "public/assets/max/lm_car.klm" }]
     },
@@ -190,7 +190,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_GROUND", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_ground.npz" }, { "path": "public/assets/max/lm_ground.klm" }]
     },
@@ -202,7 +202,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_PARLOR", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_parlor.npz" }, { "path": "public/assets/max/lm_parlor.klm" }]
     },
@@ -214,7 +214,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_KITCHEN", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_kitchen.npz" }, { "path": "public/assets/max/lm_kitchen.klm" }]
     },
@@ -226,7 +226,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_UPPER_HALL", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_upper_hall.npz" }, { "path": "public/assets/max/lm_upper_hall.klm" }]
     },
@@ -238,7 +238,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_UPPER_ROOMS", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_upper_rooms.npz" }, { "path": "public/assets/max/lm_upper_rooms.klm" }]
     },
@@ -250,7 +250,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_EXTERIOR", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_exterior.npz" }, { "path": "public/assets/max/lm_exterior.klm" }]
     },
@@ -262,7 +262,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_CAR", "--size", "1024", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/encode.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_car.npz" }, { "path": "public/assets/max/lm_car.klm" }]
     },
@@ -345,12 +345,12 @@
     },
     {
       "id": "encode",
-      "group": "content",
-      "placeholder": true,
-      "description": "Per-tier lightmap encode (lib/encode.py TIER_POLICY) -> public/assets/<tier>/lm_*.exr + .json",
+      "group": "bake",
+      "description": "Per-tier lightmap encode from the cached float atlases (.cache/bake/lm_*.npz) with lib/encode.py TIER_POLICY -> public/assets/<tier>/lm_*.klm + .json; QA: display error after AgX. Never re-bakes: bake jobs do not hash encode.py, this job does",
       "script": "blender/bake/encode_atlases.py",
-      "inputs": [".cache/bake/*.npz", "blender/bake/**"],
-      "outputs": []
+      "libInputs": ["blender/lib/encode.py", "blender/lib/bake.py", "blender/lib/scene.py"],
+      "inputs": [".cache/bake/*.npz", "src/shared/level-layout.json"],
+      "outputs": [{ "path": ".cache/bake/encode.json" }]
     }
   ]
 }

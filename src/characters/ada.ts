@@ -33,6 +33,7 @@ const CLIP_PREFS: Partial<Record<AdaAnim, readonly string[]>> = {
   vigil_scrape: ['ada_vigil'],
   lured_scrape: ['ada_vigil'],
   search_plaster: ['ada_search', 'ada_vigil'],
+  search_bed: ['ada_search_bed', 'ada_search', 'ada_vigil'],
   dress_hem: ['ada_dress', 'ada_vigil'],
   hide_check: ['ada_hide_check'],
   hide_tear_open: ['ada_hide_tear'],
@@ -48,7 +49,7 @@ export function adaClipFor(anim: AdaAnim, velZ = 0, has?: (clip: string) => bool
   return prefs[prefs.length - 1];
 }
 
-const ONCE = new Set(['ada_listen', 'ada_look', 'ada_hide_check', 'ada_hide_tear', 'ada_catch', 'ada_rise', 'ada_opening', 'ada_finale_take', 'ada_finale', 'ada_sting', 'ada_dress']);
+const ONCE = new Set(['ada_search_bed', 'ada_listen', 'ada_look', 'ada_hide_check', 'ada_hide_tear', 'ada_catch', 'ada_rise', 'ada_opening', 'ada_finale_take', 'ada_finale', 'ada_sting', 'ada_dress']);
 const CLIP_SPEED: Record<string, number> = { ada_patrol: 0.9, ada_chase: 3.2, ada_stairs_up: 0.35, ada_stairs_down: 0.35, ada_finale_approach: 0.8, ada_finale_carry: 0.9, ada_door_push: 0.9 };
 const LOOK = { windupEnd: 1.2, holdEnd: 4.1, lowerStart: 4.2 } as const;
 

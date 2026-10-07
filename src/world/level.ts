@@ -86,6 +86,7 @@ export class Level {
   visible: Set<string> = new Set();
   cullingEnabled = true;
   private dirtyVis = true;
+  private visScratch: Set<string> = new Set();
   private readonly scene: any;
 
   constructor(o: {
@@ -128,11 +129,13 @@ export class Level {
     const r = this.index.roomAt(px, py, feetZ);
     const changed = r !== null && r !== this.room;
     if (r !== null) this.room = r;
-    const vis = this.index.visibleFrom(this.room, px, py, feetZ);
+    // double-buffered: the candidate set is filled in place and swapped in only when it differs (no per-frame Set)
+    const vis = this.index.visibleFrom(this.room, px, py, feetZ, undefined, this.visScratch);
     let same = !this.dirtyVis && vis.size === this.visible.size;
     if (same) for (const r of vis) if (!this.visible.has(r)) same = false;
     if (!same) {
       this.dirtyVis = false;
+      this.visScratch = this.visible;
       this.visible = vis;
       this.applyVisibility();
     }

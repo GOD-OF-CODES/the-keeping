@@ -59,7 +59,9 @@ export type StoryInput =
   | { type: 'flag'; name: string; value: boolean }
   | { type: 'cutscene_end'; id: string; skipped?: boolean }
   | { type: 'hide'; hideId: string; inside: boolean }
-  | { type: 'ai'; event: AiEvent };
+  | { type: 'ai'; event: AiEvent }
+  /** The brain's answer to a bell pull (the Director sends it only when the pull lured her now or queued a lure). */
+  | { type: 'bell'; queued: boolean };
 
 /** What the story samples each tick. */
 export interface StoryView {
@@ -135,6 +137,9 @@ export class Story {
         break;
       case 'ai':
         this.onAi(input.event);
+        break;
+      case 'bell':
+        this.onBellAnswered();
         break;
     }
     return this.flush();
@@ -388,9 +393,8 @@ export class Story {
         return;
       // ---- B08: bell + boards
       case 'pull_bell':
-        s.bellPulls++;
-        this.setFlag('bell_used');
-        this.progress();
+        // the pull always rings; bell_used is set only when she answers (lured now, or queued behind a CHASE):
+        // the Director feeds the brain's answer back as { type: 'bell' } → onBellAnswered
         this.emit({ type: 'sfx', id: 'bell_pull' });
         this.ai({ op: 'bell' });
         return;
@@ -563,6 +567,13 @@ export class Story {
     }
     if (!inside && s.beat === 'B05' && this.f('first_hide_done')) this.once('cp:CP3', () => this.checkpoint('CP3'));
     void hideId;
+  }
+
+  /** A bell pull she answered (or will answer when a CHASE ends): counts for B08 → B09 and silences the bell hint. */
+  private onBellAnswered(): void {
+    this.s.bellPulls++;
+    this.setFlag('bell_used');
+    this.progress();
   }
 
   private onAi(e: AiEvent): void {

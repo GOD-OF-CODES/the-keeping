@@ -6,7 +6,7 @@ const assert = ((await import('node:' + 'assert/strict')) as any).default;
 import layoutJson from '../src/shared/level-layout.json' with { type: 'json' };
 import type { LevelLayout, P3 } from '../src/shared/layout-types.ts';
 import { AiGraph } from '../src/ai/graph.ts';
-import { AdaBrain } from '../src/ai/ada-brain.ts';
+import { AdaBrain, bedBox, bedNearest } from '../src/ai/ada-brain.ts';
 import { TUNING } from '../src/ai/tuning.ts';
 import { ADA_STATES, type BeamView, type DoorState, type PlayerView, type WorldQuery } from '../src/ai/types.ts';
 import {
@@ -309,23 +309,26 @@ test('priority: FINALE > CATCH > SCRIPTED > CHASE > LOOK > newest(LURED|INVESTIG
   for (const s of ['FINALE', 'CATCH', 'SCRIPTED', 'CHASE', 'LOOK', 'LURED', 'INVESTIGATE', 'SEARCH', 'PATROL', 'VIGIL']) assert.ok((ADA_STATES as readonly string[]).includes(s));
 });
 
-test('brain: a bell never breaks a CHASE; a bell during a LOOK is honoured after it; newer noise overrides the lure', () => {
+test('brain: a bell never breaks a CHASE (it is queued); a bell cancels a LOOK; newer noise overrides the lure', () => {
   const b = new AdaBrain(layout, world(), { seed: 11 });
   // lit player in the corridor 4 m south, beam on her → fast LOOK → sees → CHASE
   const p = player([3.0, 4.2, 4.1]);
   const lit = { ...p, beam: { on: true, origin: p.eye, dir: [0.05, 1, -0.1] as P3, range: 14, halfAngle: 0.3, hit: null } };
   const r1 = run(b, lit, 1.5);
   assert.ok(states(r1.events).includes('CHASE'), states(r1.events).join(','));
-  assert.equal(b.bell(), false, 'bell ignored in CHASE');
+  assert.equal(b.bell(), 'queued', 'bell queued behind the CHASE');
+  assert.ok(b.chase && b.lureQueued && !b.lure);
   assert.equal(b.lurePulls, 0);
-  // LOOK then bell
+  // LOOK then bell: the bell cancels the LOOK
   const b2 = new AdaBrain(layout, world(), { seed: 11 });
   b2.update(0.05, FAR_PLAYER());
   (b2 as any).startLook('patrol', 0, false, null, 0);
-  assert.equal(b2.bell(), true);
-  const r2 = run(b2, FAR_PLAYER, 6);
-  const st = states(r2.events);
-  assert.ok(st.indexOf('LURED') > st.indexOf('LOOK'), st.join(','));
+  b2.update(0.05, FAR_PLAYER());
+  assert.equal(b2.state, 'LOOK');
+  assert.equal(b2.bell(), 'lured');
+  assert.equal(b2.look, null);
+  const r2 = run(b2, FAR_PLAYER, 0.2);
+  assert.deepEqual(states(r2.events), ['LURED']);
   // a newer noise pulls her off the lure (a pry outside the thunder brings her back)
   const b3 = new AdaBrain(layout, world(), { seed: 11 });
   b3.bell();
@@ -345,7 +348,7 @@ test('lure: 60 / 50 / 40 / 40 s (floor 40); reset on death (grace)', () => {
   const b = new AdaBrain(layout, world(), { seed: 5 });
   const holds: number[] = [];
   for (let k = 0; k < 4; k++) {
-    assert.equal(b.bell(), true);
+    assert.equal(b.bell(), 'lured');
     let arrive = -1;
     let end = -1;
     let t = 0;
@@ -596,4 +599,37 @@ test('brain: chase speed bursts at 3.2 m/s (never faster than the player run 3.6
     if (b.state !== 'CHASE') break;
   }
   assert.ok(max <= TUNING.speed.chase + 1e-6 && max > 3.0, `max ${max}`);
+});
+
+// ------------------------------------------------------------------ search at Harlan's bed
+
+test("search: beside Harlan's bed (U2) she plays search_bed for the whole 4 s clip, facing the bed; elsewhere search_plaster", () => {
+  const bed = bedBox(layout);
+  assert.ok(bed && bed.room === 'U2', 'P_BED is in U2');
+  const searchAt = (b: AdaBrain) =>
+    (b.search = { id: 50, phase: 'plaster', t: 0, dur: 0, looks: 0, target: [...b.pos] as P3, room: b.room, hideNode: null, hideId: null } as any);
+  const b = new AdaBrain(layout, world(), { seed: 3 });
+  b.relocate('U2_BEDLOOK', true);
+  assert.equal(b.room, 'U2');
+  searchAt(b);
+  const o = b.update(0.05, FAR_PLAYER());
+  assert.equal(o.state, 'SEARCH');
+  assert.equal(o.anim, 'search_bed');
+  assert.equal(o.tells.loop, null, 'no nails-on-plaster foley at the bed');
+  const q = bedNearest(bed!, b.pos);
+  const want = Math.atan2(q[1] - b.pos[1], q[0] - b.pos[0]);
+  assert.ok(Math.abs(Math.atan2(Math.sin(o.facing - want), Math.cos(o.facing - want))) < 1e-6, 'she faces the bed edge');
+  run(b, FAR_PLAYER, TUNING.search.bedS - 0.3);
+  assert.equal(b.search?.phase, 'plaster', 'the one-shot is not cut at the 2 s plaster beat');
+  run(b, FAR_PLAYER, 0.5);
+  assert.equal(b.search?.phase, 'look', 'then she looks round');
+  // anywhere else: the plaster search
+  const b2 = new AdaBrain(layout, world(), { seed: 3 });
+  b2.relocate('U_VIGIL', true);
+  searchAt(b2);
+  const o2 = b2.update(0.05, FAR_PLAYER());
+  assert.equal(o2.anim, 'search_plaster');
+  assert.equal(o2.tells.loop, 'nails_plaster');
+  run(b2, FAR_PLAYER, TUNING.search.betweenLooksS + 0.1);
+  assert.equal(b2.search?.phase, 'look');
 });

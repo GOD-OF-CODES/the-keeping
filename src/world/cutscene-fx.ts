@@ -103,17 +103,30 @@ class RainSim {
       const lo = Math.min(b.a0, b.a1) - 0.02;
       const hi = Math.max(b.a0, b.a1) + 0.02;
       if (hi - lo < 1e-4) continue;
-      this.drops = this.drops.filter((d) => {
+      // stable in-place compaction (no per-blade array): keep the drops outside the swept sector
+      const ds = this.drops;
+      let n = 0;
+      for (let k = 0; k < ds.length; k++) {
+        const d = ds[k];
         const dx = d.x - b.s;
         const dy = d.y - b.t;
         const rr = Math.hypot(dx, dy);
-        if (rr > b.len || rr < 0.03) return true;
-        const a = Math.atan2(dy, dx);
-        return a < lo || a > hi;
-      });
+        let keep = rr > b.len || rr < 0.03;
+        if (!keep) {
+          const a = Math.atan2(dy, dx);
+          keep = a < lo || a > hi;
+        }
+        if (keep) ds[n++] = d;
+      }
+      ds.length = n;
       if (b.a0 !== b.a1) this.film *= 0.985;
     }
-    this.drops = this.drops.filter((d) => d.y > -0.02 && d.age < 40);
+    {
+      const ds = this.drops;
+      let n = 0;
+      for (let k = 0; k < ds.length; k++) if (ds[k].y > -0.02 && ds[k].age < 40) ds[n++] = ds[k];
+      ds.length = n;
+    }
     if (this.drops.length > 1400) this.drops.splice(0, this.drops.length - 1400);
     this.draw(blades);
   }
@@ -694,10 +707,14 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     }
   };
 
+  const prevWiperA: number[] = [];
+  const bladeBuf: { s: number; t: number; len: number; a0: number; a1: number }[] = [];
   /** Per frame, after the cutscene player applied the camera. */
   const update = (dt: number) => {
     // wipers
-    const prev = cars.flatMap((c) => c.wipers.map((w) => w.a));
+    // last frame's wiper angles (flattened over the cars, cars[0] first), into a reused buffer
+    prevWiperA.length = 0;
+    for (const c of cars) for (const w of c.wipers) prevWiperA.push(w.a);
     if (wipersOn) {
       wiperT += dt;
       wiperParkT = 0;
@@ -721,9 +738,18 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     // rain (one shared simulation; the set's blades clear it)
     if (rainSim && (rainOn || rainSim.drops.length)) {
       const set = cars[0];
-      let i = 0;
-      const blades = (set?.wipers ?? []).map((w) => ({ s: w.s, t: w.t, len: w.len, a0: w.restAng + w.planeSign * (prev[i++] ?? w.a), a1: w.restAng + w.planeSign * w.a }));
-      rainSim.step(dt, blades);
+      const ws = set?.wipers ?? [];
+      bladeBuf.length = ws.length;
+      for (let i = 0; i < ws.length; i++) {
+        const w = ws[i];
+        const b = (bladeBuf[i] ??= { s: 0, t: 0, len: 0, a0: 0, a1: 0 });
+        b.s = w.s;
+        b.t = w.t;
+        b.len = w.len;
+        b.a0 = w.restAng + w.planeSign * (prevWiperA[i] ?? w.a);
+        b.a1 = w.restAng + w.planeSign * w.a;
+      }
+      rainSim.step(dt, bladeBuf);
     }
     // dash
     if (dash.lamp === 'blink') {

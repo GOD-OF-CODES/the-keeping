@@ -190,7 +190,8 @@ export class PlayerController {
     if (i.isDown('KeyS') || i.isDown('ArrowDown')) f -= 1;
     if (i.isDown('KeyD') || i.isDown('ArrowRight')) r += 1;
     if (i.isDown('KeyA') || i.isDown('ArrowLeft')) r -= 1;
-    const wantCrouch = i.isDown('KeyC') || i.isDown('ControlLeft') || i.isDown('ControlRight');
+    // an overlay (journal / page / pause) blocks every key: hold the crouch as it is rather than standing up
+    const wantCrouch = i.blocked ? this.crouch > 0.5 : i.isDown('KeyC') || i.isDown('ControlLeft') || i.isDown('ControlRight');
     const shift = i.isDown('ShiftLeft') || i.isDown('ShiftRight');
     const moving = f !== 0 || r !== 0;
     // crouch: only stand up when there's headroom
@@ -367,7 +368,8 @@ export class PlayerController {
   }
 
   private updateBreath(dt: number, running: boolean): void {
-    const space = this.breathAllowed && this.input.isDown('Space');
+    // under an overlay the breath is held as it is (opening the journal must not force a gasp in a hide)
+    const space = this.breathAllowed && (this.input.blocked ? this.holdingBreath : this.input.isDown('Space'));
     if (space && !this.holdingBreath && this.breathHeld === 0) {
       this.holdingBreath = true;
       this.ctx.events.emit('player:breath', { holding: true });

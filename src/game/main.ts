@@ -23,7 +23,7 @@ import { createFlashlight } from '../render/flashlight.ts';
 import { uLightning } from '../render/lightmap-material.ts';
 import { bakeProbeGrid, excludeGridFromLightmapped } from '../render/probes.ts';
 import type { GameContext } from './context.ts';
-import type { LevelLayout } from '../shared/layout-types.ts';
+import type { LevelLayout, TriggerVolume } from '../shared/layout-types.ts';
 import layoutJson from '../shared/level-layout.json';
 import { buildTestRoom, ROOM } from './test-room.ts';
 import { TestController } from './test-controller.ts';
@@ -150,6 +150,9 @@ export async function startGame(h: BootHandoff): Promise<void> {
   // ---- Loop
   let paused = true;
   let lastRenderT = -1;
+  // the pause menu owns the keyboard: nothing pressed under it acts once play resumes (advance() plays as unpaused)
+  let advancing = false;
+  input.addBlocker(() => paused && !advancing);
   const loop: Loop = new Loop(
     {
       update(dt, nowSec) {
@@ -341,6 +344,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
      */
     advance: async (n = 1, dt = 1 / 60, keys: string[] = []) => {
       for (const k of keys) input.down.add(k);
+      advancing = true;
       try {
         for (let i = 0; i < n; i++) {
           renderer._nodes?.nodeFrame?.update();
@@ -354,6 +358,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
           if (i % 20 === 19) await new Promise((r) => setTimeout(r, 0));
         }
       } finally {
+        advancing = false;
         for (const k of keys) input.down.delete(k);
       }
       return rt.expose.whereText ? (rt.expose.whereText as () => string)() : '';
@@ -455,6 +460,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
   const hides = new HideSystem(ctx, camera, player, input, audio);
   const inventory = new Inventory(ctx);
   const journal = new Journal();
+  input.addBlocker(() => journal.open); // ← / → turn its pages: never a strafe, not even after it closes
   const interact = new Interactables(camera, input, level);
   const toastEl = makeToast();
   // Hiding: the torch goes off inside (a lit wardrobe gives you away); it comes back on as you step out.
@@ -507,7 +513,9 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
   let torchPending = false;
   let lastRoom: string | null = null;
   let weatherKey = '';
-  const insideTriggers = new Set<string>();
+  let insideTriggers = new Set<string>();
+  let triggersNow = new Set<string>();
+  const triggerHits: TriggerVolume[] = [];
   const sky = new THREE.Color(...SKY_COLOR);
   const fog = new THREE.FogExp2(new THREE.Color(0.012, 0.014, 0.019), 0.0);
   scene.fog = fog;
@@ -550,28 +558,34 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
       if (!paused) {
         hides.update(dt);
         player.update(dt, now);
-        if (input.wasPressed('KeyF') && !torchPending) {
+        const csLocked = story.inputLocked();
+        if (input.wasPressed('KeyF') && !torchPending && !csLocked) {
           // thumb reaches the slide switch at 0.2 s into arms_flashlight_toggle: click + light together
           story.arms?.play('arms_flashlight_toggle');
           torchPending = true;
           setTimeout(() => {
             torchPending = false;
+            if (paused || story.inputLocked()) return; // a pause / cutscene began inside the 200 ms: no toggle
             rig.toggle();
             audio?.play('flashlight_click', { gain: 0.6 });
           }, story.arms ? 200 : 0);
         }
-        if (input.wasPressed('Tab')) journal.toggle();
+        if (input.uiPressed('Tab') && (journal.open || (!input.blocked && !csLocked))) journal.toggle();
         // story triggers (enter only): forwarded as `interact { id: trigger id, action: trigger event }`
         const [px, py, pz] = player.planFeet();
-        const now2 = new Set(level.index.triggersAt(px, py, pz).map((t) => t.id));
-        for (const id of now2)
-          if (!insideTriggers.has(id)) {
-            const tv = ctx.layout.triggers.find((x) => x.id === id)!;
-            ctx.events.emit('interact', { id, action: tv.event });
-            if (ctx.debug) console.info(`[trigger] ${id} → ${tv.event}`);
+        // reused buffers (no per-frame arrays / Sets): hits → triggersNow, then the two Sets swap
+        triggersNow.clear();
+        for (const t of level.index.triggersAt(px, py, pz, triggerHits)) {
+          if (triggersNow.has(t.id)) continue;
+          triggersNow.add(t.id);
+          if (!insideTriggers.has(t.id)) {
+            ctx.events.emit('interact', { id: t.id, action: t.event });
+            if (ctx.debug) console.info(`[trigger] ${t.id} → ${t.event}`);
           }
-        insideTriggers.clear();
-        for (const id of now2) insideTriggers.add(id);
+        }
+        const prevInside = insideTriggers;
+        insideTriggers = triggersNow;
+        triggersNow = prevInside;
       }
       story.update(paused ? 0 : dt, paused);
       world(paused ? 0 : dt, now, lightning);

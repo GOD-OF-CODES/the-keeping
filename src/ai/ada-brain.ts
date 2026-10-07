@@ -4,7 +4,9 @@
 //
 // Layers and priority (rule 3): FINALE > CATCH > SCRIPTED > CHASE > LOOK > newest(LURED | INVESTIGATE) > SEARCH >
 // PATROL > VIGIL. Each layer is a small state object; the highest one present runs this tick, the others wait
-// (e.g. a bell heard during a LOOK is honoured when the LOOK ends). LISTEN is the first ≈1 s of an INVESTIGATE.
+// (a LOOK that starts during a lure runs first). A bell PULL overrides every state except CHASE: it cancels a LOOK /
+// INVESTIGATE / SEARCH in progress; during a CHASE it is queued and fires when the chase ends without a catch.
+// LISTEN is the first ≈1 s of an INVESTIGATE.
 //
 // Rule 1 (no cheating): the player's position is only used through sense checks — hearing (noise events, synthesized
 // post-sprint panting), light (beam cone / beam landing point / flames) and sight (head lifted, cone, range, LOS),
@@ -153,6 +155,8 @@ export interface AdaSnapshot {
   chase: ChaseLayer | null;
   look: LookLayer | null;
   lure: LureLayer | null;
+  /** A bell pulled during CHASE, honoured when the chase ends (optional: older saves). */
+  lureQueued?: boolean;
   inv: InvLayer | null;
   search: SearchLayer | null;
   routine: RoutineLayer;
@@ -169,6 +173,40 @@ export interface AdaSnapshot {
   parked: boolean;
   pendingRelocate: string | null;
 }
+
+interface BedBox {
+  room: string;
+  c: [number, number];
+  z: number;
+  /** Half extents along the bed's local x (width) and y (length). */
+  hx: number;
+  hy: number;
+  yaw: number;
+}
+
+/** P_BED's footprint (props face -y at yaw 0: width along x, length along y). */
+export function bedBox(layout: LevelLayout): BedBox | null {
+  const p = layout.props.find((x) => x.id === 'P_BED');
+  if (!p) return null;
+  const par = (p.params ?? {}) as Record<string, unknown>;
+  const w = typeof par.width === 'number' ? par.width : 1.4;
+  const l = typeof par.length === 'number' ? par.length : 2;
+  return { room: p.room, c: [p.pos[0], p.pos[1]], z: p.pos[2], hx: w / 2, hy: l / 2, yaw: p.yaw ?? 0 };
+}
+
+/** Closest point of the bed's footprint to p (PLAN, at p's height). */
+export function bedNearest(b: BedBox, p: P3): P3 {
+  const cs = Math.cos(b.yaw);
+  const sn = Math.sin(b.yaw);
+  const dx = p[0] - b.c[0];
+  const dy = p[1] - b.c[1];
+  const lx = Math.max(-b.hx, Math.min(b.hx, dx * cs + dy * sn));
+  const ly = Math.max(-b.hy, Math.min(b.hy, -dx * sn + dy * cs));
+  return [b.c[0] + lx * cs - ly * sn, b.c[1] + lx * sn + ly * cs, p[2]];
+}
+
+/** What a bell pull did: lured her now, queued behind a CHASE, or ignored (scripted / finale / catch / nonstop bell). */
+export type BellResult = 'lured' | 'queued' | 'ignored';
 
 export interface AdaBrainOptions {
   seed?: number;
@@ -187,6 +225,8 @@ export class AdaBrain {
   private readonly rng: SeededRng;
   private readonly flames: LightDef[];
   private readonly portals: Map<string, P3>;
+  /** Harlan's bed (P_BED, U2): SEARCH beside it plays ada_search_bed instead of the plaster search. */
+  private readonly bed: BedBox | null;
   /** Offstage while waiting for an out-of-view anchor (grace when every anchor is in view). */
   parked = false;
 
@@ -197,6 +237,8 @@ export class AdaBrain {
   chase: ChaseLayer | null = null;
   look: LookLayer | null = null;
   lure: LureLayer | null = null;
+  /** A bell pulled during CHASE: the lure fires when the chase ends (lost / hide out of reach); a catch drops it. */
+  lureQueued = false;
   inv: InvLayer | null = null;
   search: SearchLayer | null = null;
   routine: RoutineLayer;
@@ -236,6 +278,7 @@ export class AdaBrain {
     this.flames = flamesOf(layout);
     const fz = new Map(layout.floors.map((f) => [f.id, f.elevation]));
     this.portals = stairPortals(layout.stairs, (id) => fz.get(id) ?? 0);
+    this.bed = bedBox(layout);
     this.routine = this.newRoutine(kind, start === ROUTINES[kind].vigil ? 'vigil' : 'patrol');
   }
 
@@ -255,10 +298,29 @@ export class AdaBrain {
     return this.thunder.isMasked(this.t);
   }
 
-  /** A bell pull anywhere in the house. Returns true if it lured her (never during CHASE / SCRIPTED / FINALE). */
-  bell(): boolean {
-    if (this.finale || this.caught || this.scripted || this.chase) return false;
-    if (this.routine.kind === 'ground_finale') return false; // the nonstop bell already calls her onto the ground floor
+  /**
+   * A bell pull anywhere in the house. The bell overrides every state (VIGIL, PATROL, LISTEN, INVESTIGATE, LOOK,
+   * SEARCH, an earlier lure) except an active CHASE, which it never breaks: then the lure is QUEUED and fires when
+   * the chase ends without a catch. 'ignored' = SCRIPTED / FINALE / CATCH / the nonstop-bell ground routine.
+   */
+  bell(): BellResult {
+    if (this.finale || this.caught || this.scripted) return 'ignored';
+    if (this.routine.kind === 'ground_finale') return 'ignored'; // the nonstop bell already calls her onto the ground floor
+    if (this.chase) {
+      this.lureQueued = true;
+      return 'queued';
+    }
+    this.startLure();
+    return 'lured';
+  }
+
+  /** The bell calls her: drop what she was doing (a LOOK in progress, an investigation, a search) and go down. */
+  private startLure(): void {
+    this.lureQueued = false;
+    this.look = null;
+    this.inv = null;
+    this.search = null;
+    this.noiseQueue = []; // anything heard before the bell is older than it: the bell is the newest stimulus
     this.lurePulls++;
     const dur = lureDuration(this.lurePulls);
     if (this.lure && this.lure.phase === 'scrape') {
@@ -266,7 +328,7 @@ export class AdaBrain {
       this.lure.t = 0;
       this.lure.dur = dur;
     } else this.lure = { t0: this.t, phase: 'travel', t: 0, dur };
-    return true;
+    this.nav.goalKey = '';
   }
 
   /** Current / next lure hold time (s). */
@@ -450,6 +512,12 @@ export class AdaBrain {
         else this.hides.exit();
       }
       this.prevHidden = player.hiddenIn;
+    }
+
+    // a queued bell whose chase ended some other way (restore, a layer cleared by a command): honour it now
+    if (this.lureQueued && !this.chase) {
+      if (!this.finale && !this.caught && !this.scripted && this.routine.kind !== 'ground_finale') this.startLure();
+      else this.lureQueued = false;
     }
 
     const want = resolvePriority({
@@ -715,6 +783,7 @@ export class AdaBrain {
     if (this.caught || this.finale) return;
     this.caught = cause;
     this.chase = null;
+    this.lureQueued = false;
     this.look = null;
     this.nav.stop();
     this.events.push({ type: 'catch', cause });
@@ -735,6 +804,7 @@ export class AdaBrain {
     this.chase = null;
     this.look = null;
     this.lure = null;
+    this.lureQueued = false;
     this.inv = null;
     this.search = null;
     this.noiseQueue = [];
@@ -828,8 +898,14 @@ export class AdaBrain {
     const C = this.chase!;
     this.head = 'lifted';
     if (!C.hideId && this.t - C.lastSenseT > TUNING.chase.lostS) {
-      // lost: SEARCH where she last sensed you
       this.chase = null;
+      this.head = 'hanging';
+      if (this.lureQueued) {
+        // a bell pulled during the chase: now she answers it
+        this.startLure();
+        return [0, 'idle', 'lost_lured'];
+      }
+      // lost: SEARCH where she last sensed you
       this.search = { id: this.nextId++, phase: 'go', t: 0, dur: 0, looks: 0, target: C.target, room: C.targetRoom, hideNode: null, hideId: null };
       this.head = 'hanging';
       this.nav.goalKey = '';
@@ -865,6 +941,10 @@ export class AdaBrain {
       // the hide is out of her reach: search there instead
       const hide = this.hides.hide(C.hideId)!;
       this.chase = null;
+      if (this.lureQueued) {
+        this.startLure();
+        return [0, 'idle', 'hide_unreachable_lured'];
+      }
       this.search = { id: this.nextId++, phase: 'go', t: 0, dur: 0, looks: 0, target: [...hide.entry] as P3, room: hide.room, hideNode: null, hideId: null };
       this.nav.goalKey = '';
       return [0, 'idle', 'hide_unreachable'];
@@ -960,6 +1040,14 @@ export class AdaBrain {
     return [0, 'idle', 'done', 'INVESTIGATE'];
   }
 
+  /** Nearest point of Harlan's bed footprint when she stands within reach of it in its room (else null). */
+  private bedEdgeNear(p: P3, room: string | null): P3 | null {
+    const b = this.bed;
+    if (!b || room !== b.room || Math.abs(p[2] - b.z) > 1) return null;
+    const q = bedNearest(b, p);
+    return dist2(p, q) <= TUNING.search.bedReach ? q : null;
+  }
+
   private nearHideCheck(p: P3): { node: string; hideId: string } | null {
     for (const h of this.layout.hides) {
       const n = this.g.hideCheckNode(h);
@@ -985,11 +1073,14 @@ export class AdaBrain {
       case 'plaster': {
         this.nav.speed = 0;
         this.nav.vel = [0, 0, 0];
-        if (S.t >= TUNING.search.betweenLooksS) {
+        // beside Harlan's bed she folds down and feels under it (a 4 s one-shot, played side-on to the bed edge)
+        const edge = this.bedEdgeNear(this.nav.pos, this.nav.room);
+        if (edge) this.nav.facing = this.yawTo(edge);
+        if (S.t >= (edge ? TUNING.search.bedS : TUNING.search.betweenLooksS)) {
           S.phase = 'look';
           this.startLook('search', this.nav.facing + Math.PI * (this.rng.chance(0.5) ? 0.5 : -0.5), false, null, S.id);
         }
-        return [0, 'search_plaster', 'plaster', 'SEARCH'];
+        return edge ? [0, 'search_bed', 'bed', 'SEARCH'] : [0, 'search_plaster', 'plaster', 'SEARCH'];
       }
       case 'to_hide': {
         if (!S.hideNode) {
@@ -1465,6 +1556,7 @@ export class AdaBrain {
       chase: c(this.chase),
       look: c(this.look),
       lure: c(this.lure),
+      lureQueued: this.lureQueued,
       inv: c(this.inv),
       search: c(this.search),
       routine: c(this.routine),
@@ -1496,6 +1588,7 @@ export class AdaBrain {
     this.chase = c(s.chase);
     this.look = c(s.look);
     this.lure = c(s.lure);
+    this.lureQueued = !!s.lureQueued;
     this.inv = c(s.inv);
     this.search = c(s.search);
     this.routine = c(s.routine);
