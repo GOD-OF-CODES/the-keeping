@@ -1,0 +1,22 @@
+{
+  "rowOrder": "bottom-up",
+  "uvDecode": "vec2(uv1.x, 1 - uv1.y)",
+  "colorSpace": "linear",
+  "atlas": "car",
+  "tier": "low",
+  "width": 256,
+  "height": 256,
+  "container": "klm",
+  "codec": null,
+  "mantissaBits": 6,
+  "floorExp": 8,
+  "channels": 3,
+  "intensity": 3.141592653589793,
+  "stats": {
+    "mean": 0.00301,
+    "p99": 0.00686,
+    "max": 0.00727,
+    "coverage": 0.7128
+  },
+  "file": "lm_car.klm"
+}

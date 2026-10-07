@@ -1,0 +1,22 @@
+{
+  "rowOrder": "bottom-up",
+  "uvDecode": "vec2(uv1.x, 1 - uv1.y)",
+  "colorSpace": "linear",
+  "atlas": "kitchen",
+  "tier": "low",
+  "width": 512,
+  "height": 512,
+  "container": "klm",
+  "codec": null,
+  "mantissaBits": 6,
+  "floorExp": 8,
+  "channels": 3,
+  "intensity": 3.141592653589793,
+  "stats": {
+    "mean": 0.00563,
+    "p99": 0.04934,
+    "max": 12.80137,
+    "coverage": 0.538
+  },
+  "file": "lm_kitchen.klm"
+}

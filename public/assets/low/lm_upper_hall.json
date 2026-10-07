@@ -1,0 +1,22 @@
+{
+  "rowOrder": "bottom-up",
+  "uvDecode": "vec2(uv1.x, 1 - uv1.y)",
+  "colorSpace": "linear",
+  "atlas": "upper_hall",
+  "tier": "low",
+  "width": 512,
+  "height": 512,
+  "container": "klm",
+  "codec": null,
+  "mantissaBits": 6,
+  "floorExp": 8,
+  "channels": 3,
+  "intensity": 3.141592653589793,
+  "stats": {
+    "mean": 0.00026,
+    "p99": 0.00949,
+    "max": 0.03381,
+    "coverage": 0.5816
+  },
+  "file": "lm_upper_hall.klm"
+}

@@ -1,0 +1,294 @@
+{
+  "tier": "low",
+  "generatedAt": "2026-09-30T06:02:48.656Z",
+  "totalBytes": 21857851,
+  "files": [
+    {
+      "id": "ada_albedo",
+      "kind": "texture",
+      "path": "assets/low/ada_albedo.webp",
+      "bytes": 134484,
+      "hash": "3a4c1b7322791cca"
+    },
+    {
+      "id": "ada_hair_albedo",
+      "kind": "texture",
+      "path": "assets/low/ada_hair_albedo.webp",
+      "bytes": 60282,
+      "hash": "9c6fce72e494d8ea"
+    },
+    {
+      "id": "ada_hair_normal.png",
+      "kind": "texture",
+      "path": "assets/low/ada_hair_normal.png",
+      "bytes": 136871,
+      "hash": "bda273e55e75247b"
+    },
+    {
+      "id": "ada_normal.png",
+      "kind": "texture",
+      "path": "assets/low/ada_normal.png",
+      "bytes": 189547,
+      "hash": "17b7760bfc7dbf76"
+    },
+    {
+      "id": "ada",
+      "kind": "character",
+      "path": "assets/low/ada.glb",
+      "bytes": 4654432,
+      "hash": "364b9f7ff6656e0f"
+    },
+    {
+      "id": "arms_albedo",
+      "kind": "texture",
+      "path": "assets/low/arms_albedo.webp",
+      "bytes": 100540,
+      "hash": "07faae05bef79287"
+    },
+    {
+      "id": "arms_normal.png",
+      "kind": "texture",
+      "path": "assets/low/arms_normal.png",
+      "bytes": 181130,
+      "hash": "93e3f13b718a51bc"
+    },
+    {
+      "id": "arms",
+      "kind": "character",
+      "path": "assets/low/arms.glb",
+      "bytes": 1227608,
+      "hash": "6885172843a2701d"
+    },
+    {
+      "id": "collision",
+      "kind": "collision",
+      "path": "assets/low/collision.glb",
+      "bytes": 48212,
+      "hash": "0f324dfc6117ac1d"
+    },
+    {
+      "id": "details_exterior",
+      "kind": "prop",
+      "path": "assets/low/details_exterior.glb",
+      "bytes": 727312,
+      "hash": "fd105b60ac18bbfe"
+    },
+    {
+      "id": "details_ground",
+      "kind": "prop",
+      "path": "assets/low/details_ground.glb",
+      "bytes": 234612,
+      "hash": "cc9bcda9b1f88a51"
+    },
+    {
+      "id": "details_kitchen",
+      "kind": "prop",
+      "path": "assets/low/details_kitchen.glb",
+      "bytes": 14772,
+      "hash": "57702c5c27b750bd"
+    },
+    {
+      "id": "details_parlor",
+      "kind": "prop",
+      "path": "assets/low/details_parlor.glb",
+      "bytes": 25684,
+      "hash": "7f1467570f72e04b"
+    },
+    {
+      "id": "details_upper_hall",
+      "kind": "prop",
+      "path": "assets/low/details_upper_hall.glb",
+      "bytes": 15140,
+      "hash": "f76231363c1f86ec"
+    },
+    {
+      "id": "details_upper_rooms",
+      "kind": "prop",
+      "path": "assets/low/details_upper_rooms.glb",
+      "bytes": 40456,
+      "hash": "444d204bfb37768a"
+    },
+    {
+      "id": "doors",
+      "kind": "prop",
+      "path": "assets/low/doors.glb",
+      "bytes": 426500,
+      "hash": "7e3be5068251fa79"
+    },
+    {
+      "id": "harlan_albedo",
+      "kind": "texture",
+      "path": "assets/low/harlan_albedo.webp",
+      "bytes": 152830,
+      "hash": "84e96ea031202685"
+    },
+    {
+      "id": "harlan_normal.png",
+      "kind": "texture",
+      "path": "assets/low/harlan_normal.png",
+      "bytes": 217560,
+      "hash": "8164a2dee418e9ae"
+    },
+    {
+      "id": "harlan",
+      "kind": "character",
+      "path": "assets/low/harlan.glb",
+      "bytes": 1694524,
+      "hash": "73d3206cd2dbb632"
+    },
+    {
+      "id": "house_exterior",
+      "kind": "level",
+      "path": "assets/low/house_exterior.glb",
+      "bytes": 2459724,
+      "hash": "69ee18188a369f9f"
+    },
+    {
+      "id": "house_ground",
+      "kind": "level",
+      "path": "assets/low/house_ground.glb",
+      "bytes": 509724,
+      "hash": "82666fcd5ced5fa6"
+    },
+    {
+      "id": "house_kitchen",
+      "kind": "level",
+      "path": "assets/low/house_kitchen.glb",
+      "bytes": 296400,
+      "hash": "47d43538f5de0112"
+    },
+    {
+      "id": "house_parlor",
+      "kind": "level",
+      "path": "assets/low/house_parlor.glb",
+      "bytes": 203276,
+      "hash": "12a521216009740e"
+    },
+    {
+      "id": "house_upper_hall",
+      "kind": "level",
+      "path": "assets/low/house_upper_hall.glb",
+      "bytes": 167432,
+      "hash": "02970d52fb5c40c6"
+    },
+    {
+      "id": "house_upper_rooms",
+      "kind": "level",
+      "path": "assets/low/house_upper_rooms.glb",
+      "bytes": 363116,
+      "hash": "96143440efc02c9a"
+    },
+    {
+      "id": "lm_car.meta",
+      "kind": "lightmap",
+      "path": "assets/low/lm_car.json",
+      "bytes": 418,
+      "hash": "b74a1e9419ab7fa8"
+    },
+    {
+      "id": "lm_car",
+      "kind": "lightmap",
+      "path": "assets/low/lm_car.klm",
+      "bytes": 73440,
+      "hash": "eb1fd50c50ff9711"
+    },
+    {
+      "id": "lm_exterior.meta",
+      "kind": "lightmap",
+      "path": "assets/low/lm_exterior.json",
+      "bytes": 429,
+      "hash": "25ce170bfcd17374"
+    },
+    {
+      "id": "lm_exterior",
+      "kind": "lightmap",
+      "path": "assets/low/lm_exterior.klm",
+      "bytes": 428891,
+      "hash": "bce1e4ffe18ceef8"
+    },
+    {
+      "id": "lm_ground.meta",
+      "kind": "lightmap",
+      "path": "assets/low/lm_ground.json",
+      "bytes": 423,
+      "hash": "db7276147e73023b"
+    },
+    {
+      "id": "lm_ground",
+      "kind": "lightmap",
+      "path": "assets/low/lm_ground.klm",
+      "bytes": 334069,
+      "hash": "29abd65338b64411"
+    },
+    {
+      "id": "lm_kitchen.meta",
+      "kind": "lightmap",
+      "path": "assets/low/lm_kitchen.json",
+      "bytes": 426,
+      "hash": "97b523b8c6e62c62"
+    },
+    {
+      "id": "lm_kitchen",
+      "kind": "lightmap",
+      "path": "assets/low/lm_kitchen.klm",
+      "bytes": 300826,
+      "hash": "86f8c02fa69047e6"
+    },
+    {
+      "id": "lm_parlor.meta",
+      "kind": "lightmap",
+      "path": "assets/low/lm_parlor.json",
+      "bytes": 424,
+      "hash": "2822a6806b41b6b9"
+    },
+    {
+      "id": "lm_parlor",
+      "kind": "lightmap",
+      "path": "assets/low/lm_parlor.klm",
+      "bytes": 339931,
+      "hash": "f60c0b243d3457d1"
+    },
+    {
+      "id": "lm_upper_hall.meta",
+      "kind": "lightmap",
+      "path": "assets/low/lm_upper_hall.json",
+      "bytes": 432,
+      "hash": "a2fe4a319c05071b"
+    },
+    {
+      "id": "lm_upper_hall",
+      "kind": "lightmap",
+      "path": "assets/low/lm_upper_hall.klm",
+      "bytes": 96863,
+      "hash": "516228ac5c9746e1"
+    },
+    {
+      "id": "lm_upper_rooms.meta",
+      "kind": "lightmap",
+      "path": "assets/low/lm_upper_rooms.json",
+      "bytes": 434,
+      "hash": "cbe5d3f703c84729"
+    },
+    {
+      "id": "lm_upper_rooms",
+      "kind": "lightmap",
+      "path": "assets/low/lm_upper_rooms.klm",
+      "bytes": 128701,
+      "hash": "926e80a779b15faf"
+    },
+    {
+      "id": "props_m1",
+      "kind": "prop",
+      "path": "assets/low/props_m1.glb",
+      "bytes": 2541028,
+      "hash": "86c339018beae392"
+    },
+    {
+      "id": "props_m2",
+      "kind": "prop",
+      "path": "assets/low/props_m2.glb",
+      "bytes": 3328948,
+      "hash": "327b0a8d9ff5d64e"
+    }
+  ]
+}

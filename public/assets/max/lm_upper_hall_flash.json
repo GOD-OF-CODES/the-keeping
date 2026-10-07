@@ -1,0 +1,22 @@
+{
+  "rowOrder": "bottom-up",
+  "uvDecode": "vec2(uv1.x, 1 - uv1.y)",
+  "colorSpace": "linear",
+  "atlas": "upper_hall_flash",
+  "tier": "max",
+  "width": 2048,
+  "height": 2048,
+  "container": "klm",
+  "codec": null,
+  "mantissaBits": 10,
+  "floorExp": 8,
+  "channels": 3,
+  "intensity": 3.141592653589793,
+  "stats": {
+    "mean": 0.33713,
+    "p99": 1.84696,
+    "max": 69.49054,
+    "coverage": 0.4887
+  },
+  "file": "lm_upper_hall_flash.klm"
+}

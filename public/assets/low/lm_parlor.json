@@ -1,0 +1,22 @@
+{
+  "rowOrder": "bottom-up",
+  "uvDecode": "vec2(uv1.x, 1 - uv1.y)",
+  "colorSpace": "linear",
+  "atlas": "parlor",
+  "tier": "low",
+  "width": 512,
+  "height": 512,
+  "container": "klm",
+  "codec": null,
+  "mantissaBits": 6,
+  "floorExp": 8,
+  "channels": 3,
+  "intensity": 3.141592653589793,
+  "stats": {
+    "mean": 0.03883,
+    "p99": 0.21483,
+    "max": 4.55568,
+    "coverage": 0.6475
+  },
+  "file": "lm_parlor.klm"
+}

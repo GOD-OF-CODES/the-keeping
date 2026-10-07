@@ -1,0 +1,22 @@
+{
+  "rowOrder": "bottom-up",
+  "uvDecode": "vec2(uv1.x, 1 - uv1.y)",
+  "colorSpace": "linear",
+  "atlas": "upper_rooms",
+  "tier": "low",
+  "width": 512,
+  "height": 512,
+  "container": "klm",
+  "codec": null,
+  "mantissaBits": 6,
+  "floorExp": 8,
+  "channels": 3,
+  "intensity": 3.141592653589793,
+  "stats": {
+    "mean": 0.00023,
+    "p99": 0.00342,
+    "max": 6.16184,
+    "coverage": 0.5308
+  },
+  "file": "lm_upper_rooms.klm"
+}

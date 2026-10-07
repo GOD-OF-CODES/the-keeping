@@ -1,0 +1,22 @@
+{
+  "rowOrder": "bottom-up",
+  "uvDecode": "vec2(uv1.x, 1 - uv1.y)",
+  "colorSpace": "linear",
+  "atlas": "ground",
+  "tier": "medium",
+  "width": 2048,
+  "height": 2048,
+  "container": "klm",
+  "codec": null,
+  "mantissaBits": 7,
+  "floorExp": 8,
+  "channels": 3,
+  "intensity": 3.141592653589793,
+  "stats": {
+    "mean": 0.01189,
+    "p99": 0.06949,
+    "max": 7.85747,
+    "coverage": 0.4025
+  },
+  "file": "lm_ground.klm"
+}

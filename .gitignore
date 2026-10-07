@@ -1,6 +1,5 @@
 node_modules/
 dist/
-public/assets/
 voices/
 .env.local
 .env*.local
@@ -11,3 +10,4 @@ scratch/
 .DS_Store
 __pycache__/
 *.pyc
+.vercel

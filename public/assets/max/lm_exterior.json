@@ -1,0 +1,22 @@
+{
+  "rowOrder": "bottom-up",
+  "uvDecode": "vec2(uv1.x, 1 - uv1.y)",
+  "colorSpace": "linear",
+  "atlas": "exterior",
+  "tier": "max",
+  "width": 2048,
+  "height": 2048,
+  "container": "klm",
+  "codec": null,
+  "mantissaBits": 10,
+  "floorExp": 8,
+  "channels": 3,
+  "intensity": 3.141592653589793,
+  "stats": {
+    "mean": 0.01206,
+    "p99": 0.03414,
+    "max": 171.81532,
+    "coverage": 0.4032
+  },
+  "file": "lm_exterior.klm"
+}
