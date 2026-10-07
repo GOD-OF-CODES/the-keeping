@@ -36,7 +36,9 @@ export function effectivePixelRatio(preset: PresetConfig): number {
 }
 
 export async function createRenderer(preset: PresetConfig, opts: { forceWebGL: boolean; parent: HTMLElement }): Promise<RendererInfo> {
-  const antialias = preset.antialiasing === 'msaa'; // TAAU: "MSAA must be disabled when TAAU is in use."
+  // TAAU: "MSAA must be disabled when TAAU is in use." Debug/QA override: ?aa=0|1 (only meaningful on the MSAA tier).
+  const aaParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('aa') : null;
+  const antialias = preset.antialiasing === 'msaa' && aaParam !== '0';
   const canvas = document.createElement('canvas');
   canvas.className = 'tk-canvas';
   Object.assign(canvas.style, { display: 'block', width: '100%', height: '100%', outline: 'none' });

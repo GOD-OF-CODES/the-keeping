@@ -18,6 +18,8 @@
 //   --shots <n> screenshots at the end (default 1)     --width/--height viewport (default 1280x800; width multiple of 64)
 //   --dev (use vite dev instead of a production build) --no-build (reuse existing dist/)
 //   --out <dir> (default scratch/shots)                --name <prefix>
+//   --console    stream every page console message (all are kept in report.console)
+//   --start-timeout <s> max loading time before the game counts as stuck (default 300)
 //   --boot-only  only load the boot page, report requests/recommendation, do not press Start
 //   --no-start   load the URL but don't press Start (e.g. ?scene=matlab pages)
 //   --scenario <file.mjs>  module exporting `default async function (qa)` with qa = {
@@ -63,7 +65,8 @@ const noStart = flag('no-start');
 const scenarioPath = opt('scenario', null);
 const outDir = resolve(ROOT, opt('out', 'scratch/shots'));
 const name = opt('name', bootOnly ? 'boot' : `${preset}${beat ? '-' + beat : spawnId ? '-' + spawnId : ''}`);
-const TIMEOUT_MS = Number(opt('timeout', 240)) * 1000;
+const TIMEOUT_MS = Number(opt('timeout', 420)) * 1000;
+const startTimeoutS = Number(opt('start-timeout', 300)); // loading (downloads, probes, shader warm-up)
 
 if (width % 64 !== 0) console.warn(`[shot] width ${width} is not a multiple of 64 — WebGPU readback may stripe`);
 mkdirSync(outDir, { recursive: true });
@@ -211,7 +214,7 @@ class CDP {
 const report = {
   when: new Date().toISOString(), preset, backend, beat, spawn: spawnId, viewport: [width, height],
   url: '', consoleErrors: [], consoleWarnings: [], exceptions: [], requestsBeforeStart: [], requests: 0,
-  recommendation: null, gameBackend: null, fps: null, gpuFrameMs: null, memory: null, shots: [], assertions: [], notes: [],
+  recommendation: null, gameBackend: null, fps: null, gpuFrameMs: null, memory: null, shots: [], assertions: [], notes: [], console: [], stalls: [], loadSeconds: null,
 };
 let server, chrome, cdp, sessionId;
 let exitCode = 0;
@@ -250,21 +253,38 @@ async function screenshot(label) {
   return file;
 }
 
-try {
-  await acquireLock();
-  server = await startServer();
+class StallError extends Error {}
+let started = false;
+const tStart = Date.now();
+
+async function closeSession() {
+  try { cdp?.close(); } catch {}
+  killTree(chrome?.proc);
+  await sleep(400);
+  if (chrome?.profile) rmSync(chrome.profile, { recursive: true, force: true });
+  cdp = null;
+  chrome = null;
+}
+
+// Launch a fresh headless Chrome, open the game, press Start and wait for the game to be ready. A load that makes no
+// progress within --start-timeout throws StallError (the caller retries once with a fresh Chrome and records the stall).
+async function openGame(attempt) {
+  started = false;
+  report.requestsBeforeStart = [];
   chrome = await startChrome();
   cdp = await CDP.connect(chrome.wsUrl);
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
   ({ sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true }));
   await Promise.all(['Page.enable', 'Runtime.enable', 'Network.enable', 'Log.enable'].map((m) => cdp.send(m, {}, sessionId)));
   await cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }, sessionId);
-
-  let started = false;
+  if (attempt > 1) report.console.push(`--- attempt ${attempt} (fresh Chrome) ---`);
   cdp.on('Runtime.consoleAPICalled', (p) => {
     const text = p.args.map((a) => a.value ?? a.description ?? '').join(' ');
     if (p.type === 'error') report.consoleErrors.push(text.slice(0, 500));
     else if (p.type === 'warning') report.consoleWarnings.push(text.slice(0, 300));
+    report.console.push(`${((Date.now() - tStart) / 1000).toFixed(1)}s ${p.type}: ${text.slice(0, 300)}`);
+    if (report.console.length > 600) report.console.splice(0, 100);
+    if (flag('console')) console.log(`[page ${((Date.now() - tStart) / 1000).toFixed(1)}s ${p.type}] ${text.slice(0, 300)}`);
   });
   cdp.on('Runtime.exceptionThrown', (p) => report.exceptions.push((p.exceptionDetails.exception?.description ?? p.exceptionDetails.text).slice(0, 800)));
   cdp.on('Log.entryAdded', (p) => { if (p.entry.level === 'error' && !/favicon/.test(p.entry.url ?? '')) report.consoleErrors.push(`[log] ${p.entry.text}`.slice(0, 500)); });
@@ -306,8 +326,15 @@ try {
     } else {
       await evaluate(`(() => { const want = ${JSON.stringify(preset)}; const inputs = [...document.querySelectorAll('input[name=tk-preset]')]; const byVal = inputs.find(i => i.value === want); const i = byVal ?? inputs[['low','medium','max'].indexOf(want)]; if (i) { i.click(); i.checked = true; i.dispatchEvent(new Event('change', { bubbles: true })); } return !!i; })()`);
       started = true;
+      const tLoad = Date.now();
       await evaluate(`document.querySelector('.tk-start').click()`);
-      await waitFor(`window.__game && window.__game.renderer`, 180, 'game start');
+      try {
+        await waitFor(`window.__game && window.__game.renderer`, startTimeoutS, 'game start');
+      } catch (e) {
+        const where = await evaluate(`(document.querySelector('.tk-loading-overlay') || document.body).innerText.slice(0, 200)`).catch(() => '?');
+        throw new StallError(`load stalled after ${startTimeoutS}s at: ${String(where).replace(/\s+/g, ' ').trim()}`);
+      }
+      report.loadSeconds = Math.round((Date.now() - tLoad) / 100) / 10;
       // Wait for loading to finish (the loading overlay removes itself on ready), then unpause without pointer lock.
       await waitFor(`!document.querySelector('.tk-loading-overlay')`, 240, 'loading overlay removed').catch((e) => report.notes.push(String(e)));
       await evaluate(`window.__game.unpause && window.__game.unpause()`);
@@ -317,6 +344,23 @@ try {
   } else {
     started = true;
     await sleep(waitS * 1000);
+  }
+}
+
+try {
+  await acquireLock();
+  server = await startServer();
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await openGame(attempt);
+      break;
+    } catch (e) {
+      if (!(e instanceof StallError) || attempt >= 2) throw e;
+      report.stalls.push(e.message);
+      console.log(`[shot] ${e.message} — retrying once with a fresh Chrome`);
+      try { await screenshot('stall'); } catch {}
+      await closeSession();
+    }
   }
 
   if (scenarioPath) {
@@ -370,8 +414,10 @@ const s = report;
 console.log(`[shot] ${s.url}  backend=${s.gameBackend?.backend ?? '-'}  recommended=${s.recommendation?.recommended ?? '-'}`);
 if (s.fps) console.log(`[shot] fps: ${JSON.stringify(s.fps)}`);
 if (s.gpuFrameMs != null) console.log(`[shot] gpu frame ≈ ${Number(s.gpuFrameMs).toFixed(2)} ms`);
+if (s.loadSeconds != null) console.log(`[shot] load ${s.loadSeconds}s${s.stalls.length ? ` (after ${s.stalls.length} stalled attempt(s): ${s.stalls.join(' | ')})` : ''}`);
 console.log(`[shot] requests before Start: ${s.requestsBeforeStart.length} · console errors: ${s.consoleErrors.length} · exceptions: ${s.exceptions.length}`);
 for (const e of [...s.consoleErrors, ...s.exceptions].slice(0, 8)) console.log('  ✗', e.split('\n')[0]);
 for (const n of s.notes.slice(0, 8)) console.log('  •', n.split('\n')[0]);
+if (exitCode === 2) for (const c of s.console.slice(-25)) console.log('  ·', c);
 for (const f of s.shots) console.log('  📷', f.replace(ROOT + '/', ''));
 process.exit(exitCode);
