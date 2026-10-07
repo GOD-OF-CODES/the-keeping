@@ -25,9 +25,15 @@ no three.js, no DOM, no `Math.random`/`Date.now`). Positions are PLAN tuples (me
 ## Behaviour summary (what the code does)
 
 - **Priority** (rule 3): FINALE > CATCH > SCRIPTED > CHASE > LOOK > newest(LURED | INVESTIGATE) > SEARCH > PATROL > VIGIL.
-  Layers wait under higher ones (a bell heard during a LOOK is honoured after it). A newer noise pulls her off a lure
-  (the pry-outside-thunder rule); a bell never breaks a CHASE and is ignored in SCRIPTED/FINALE and once the nonstop
-  bell has started.
+  A newer noise pulls her off a lure (the pry-outside-thunder rule).
+- **Bell pull** (`AdaBrain.bell()` → `'lured' | 'queued' | 'ignored'`): overrides VIGIL, PATROL, LISTEN, INVESTIGATE,
+  LOOK (including a LOOK wind-up), SEARCH and an earlier lure, clearing any look/investigation/search in progress and
+  noises queued before the pull. During a CHASE the lure is **queued** (`lureQueued`, kept in snapshots) and fires
+  where the chase ends without a catch, in place of the SEARCH. Ignored in SCRIPTED/FINALE, after a catch and once
+  the nonstop bell has started. A LOOK that starts during a lure still outranks it. Story counts every pull
+  (`bellPulls`, hints); the brain counts a queued lure once (`lurePulls`, the 60/50/40 s holds).
+- **Search**: at Harlan's bed (`U2_BEDLOOK`, within `TUNING.search.bedReach` of the bed) she plays `ada_search_bed`
+  facing the nearest bed edge, then LOOKs; elsewhere `search_plaster` with the nails loop.
 - **Hearing**: effective radius = source radius × best room-graph attenuation (layout numbers; parity-tested against
   `src/audio/spatial.ts bestPath`) × multipliers (grace 0.7, assist 0.8). Sound that crosses the open stairwell is
   measured as a walk through the stair's mid-flight point (it goes *down the stairwell*, not through the slab); the

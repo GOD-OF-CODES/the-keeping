@@ -30,7 +30,7 @@ the Director starts on that call (`?beat=` debug starts included), so the first 
 | `sfx` | bank one-shots (PLAN → WORLD); `spring_bell_loop` loops positionally at the parlor bell until `bell_nonstop` clears. |
 | `lightning` / `storm` | `lightning.strike()` / `setStorm(interval, rumble)` (cutscene `stormAuto` pauses/restores it). |
 | `hint` | lightning + a 1.4 s `Box3Helper` around the prop / door / board. |
-| `document` | journal + a reading overlay drawn with the stroke font (E / click / walking closes it). |
+| `document` | journal + a reading overlay drawn with the stroke font (E / Esc / click / a movement-key press closes it). While any overlay (journal, page, pause) is open, `Input` blockers swallow movement, look and keys; overlays read their own keys through `uiPressed`. |
 | `teleport`, `removeItem`, `setPropVisible`, `raiseLocket`, `end` | as named; `end` fades to a title card. |
 | `ada(out)` | `AdaCharacter.apply` + her audio: drip (start/position/rate/stop), bone crack, gurgle, scrape/nails loops (positional), wet footfalls by distance; flashlight tremble by distance. |
 
@@ -189,7 +189,8 @@ P_AIR_FRESHENER (sting only) and P_CAR_ROW.
 **Clips**: `adaClipFor(anim, velZ, has)` prefers the M2 clips (search, door_push, dress, finale_approach/take ×1.25/
 carry) and falls back to the M1 stand-ins. Re-cueing the clip that already plays continues it (C5 `harlan_finale` at
 6.4 s and 10 s; C7 `ada_sting` held then run). `CharacterBank.attach` implements sockets: `sting_sack` (plumb, eyeholes
-along `prop_r` +X), `locket` (`prop_l`), `cleaver` (`prop_r`). `ada_search_bed` is exported but no brain state uses it.
+along `prop_r` +X), `locket` (`prop_l`), `cleaver` (`prop_r`). `ada_search_bed` plays when SEARCH reaches Harlan's bed
+(`U2_BEDLOOK`).
 
 **Lighting**: characters' LightsNode = probe lights + every candle/lamp flicker light (the tableau and the kitchen read
 with a warm flickering key). C2's `cast_shadow` also raises the table candle's runtime share ×4.5 for the shot. The
@@ -198,9 +199,12 @@ room warm-up renders the candle-shadow variant WITH Ada, Harlan and their hand p
 **Review fixes**: E that closes a page is consumed (no re-read / page turn / re-voice); L lightning is debug-only;
 resume can't soft-lock (menu hides on lock gained, `pointerlockerror` → click-to-begin); the pipeline caches one output
 per chain shape (no bloom rebuild per DOF cue); guttered flames stay out; Space holds the breath only in gameplay or a
-hide (never under a cutscene lock) and E can't leave a hide during one; no per-frame allocations in `setViewer`, the
-controller's step/snap/headroom (headroom only while crouched), Ada's root velocity, the prompt DOM; the death black is
-timed on game time; Ada's velocity isn't reset on dt = 0.
+hide (never under a cutscene lock) and E can't leave a hide during one; no per-frame allocations in `setViewer`
+(double-buffered Set; `triggersAt` / `visibleFrom` take optional output buffers), the controller's step/snap/headroom
+(headroom only while crouched), Ada's root velocity, the prompt DOM; the death black is timed on game time; Ada's
+velocity isn't reset on dt = 0. Round QA-1: Harlan never reappears at the table after C5 (`harlanHeldAtTable`,
+`src/game/staging.ts`); the end card (z 36, click-through) sits below the pause menu; F, Tab and the wardrobe push are
+ignored while `inputLocked()`.
 
 **Prop/asset follow-ups applied**: rubber-sheet floor re-placement removed; P_KNOCKER registered from doors.glb (child
 of the front leaf); the parlor door's 70° comes from doors.glb; clapboard normal-map lap depth reduced (0.012 → 0.003 m,

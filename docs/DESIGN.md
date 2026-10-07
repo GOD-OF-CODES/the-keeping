@@ -337,7 +337,7 @@ SIGHT (only while her head is lifted, during LOOK and CHASE). 60-degree cone: 14
 
 **Rules.** 1) No cheating: she knows where you are only through a sense event.
 2) Head hanging means blind, always. She sees only in LOOK or CHASE, and only what is lit.
-3) Priority: FINALE > CATCH > SCRIPTED > CHASE > LOOK > newest of LURED/INVESTIGATE > SEARCH > PATROL > VIGIL. She acts on the newest stimulus that reaches her. A bell reaches her anywhere in the house; a noise reaches her only within its attenuated radius. A bell never breaks a CHASE.
+3) Priority: FINALE > CATCH > SCRIPTED > CHASE > LOOK > newest of LURED/INVESTIGATE > SEARCH > PATROL > VIGIL. She acts on the newest stimulus that reaches her. A bell reaches her anywhere in the house; a noise reaches her only within its attenuated radius. A bell never breaks a CHASE: a pull during a chase is remembered, and she goes down to the parlor when the chase ends without a catch. Outside a chase, a pull overrides everything else, even a look already winding up.
 4) She opens ordinary doors, slowly and audibly. She cannot get past nails (her boarded door until it is pried, every nailed sash). She never opens the locked parlor door herself and never uses the servants' stair.
 5) Hides (armoire, two wardrobes, under-stair closet) are safe unless she saw you within 2 s of entering or you are audible within 2 m. At the slats, hold your breath (Space, up to 7 s). A gasp makes her tear the door open.
 6) To lose her: break line of sight, then stop running; after 4 s she SEARCHes.
