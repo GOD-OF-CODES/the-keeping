@@ -28,7 +28,7 @@
 // page exceptions, failed assertions or (for boot) any asset/three request before Start.
 
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, mkdtempSync, statSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -71,25 +71,44 @@ mkdirSync(dirname(LOCK), { recursive: true });
 
 // ---------------------------------------------------------------- lock (one headless Chrome at a time)
 function pidAlive(pid) {
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
+const BLENDER_LOCK = join(ROOT, '.cache', 'blender.lock'); // held by scripts/assets.mjs while a Blender job runs
+function blenderBusy() {
+  try {
+    const owner = JSON.parse(readFileSync(join(BLENDER_LOCK, 'owner.json'), 'utf8'));
+    return owner?.pid && pidAlive(owner.pid) ? owner.pid : 0;
+  } catch {
+    return existsSync(BLENDER_LOCK) ? -1 : 0; // lock dir just created, owner.json not written yet
+  }
+}
+// One headless Chrome at a time, and never alongside a Blender job (8 GB machine). We never wait while holding our
+// own lock: if a Blender job holds its lock we back off, so assets.mjs (which waits for us holding its lock) can't
+// deadlock with us. A release bake can take ~80 min, hence the long timeout.
 async function acquireLock() {
   const t0 = Date.now();
+  let lastMsg = 0;
+  const say = (m) => { if (Date.now() - lastMsg > 30000) { console.log(`[shot] ${m}`); lastMsg = Date.now(); } };
   for (;;) {
+    if (Date.now() - t0 > 120 * 60 * 1000) throw new Error('waited >120 min for the headless-Chrome / Blender locks');
+    const b = blenderBusy();
+    if (b) { say(`waiting: a Blender job is running (pid ${b > 0 ? b : '?'}) …`); await sleep(2000 + Math.random() * 1000); continue; }
     try {
       mkdirSync(LOCK);
       writeFileSync(join(LOCK, 'pid'), String(process.pid));
+      if (blenderBusy()) { rmSync(LOCK, { recursive: true, force: true }); continue; } // raced a Blender job: back off
       return;
     } catch {
       let pid = 0;
       try { pid = Number(readFileSync(join(LOCK, 'pid'), 'utf8')); } catch {}
-      if (!pid || !pidAlive(pid)) {
+      let age = 0;
+      try { age = Date.now() - statSync(LOCK).mtimeMs; } catch {}
+      if ((!pid && age > 10000) || (pid && !pidAlive(pid))) {
         rmSync(LOCK, { recursive: true, force: true });
         continue;
       }
-      if (Date.now() - t0 > 20 * 60 * 1000) throw new Error(`chrome lock held by pid ${pid} for >20 min`);
-      if ((Date.now() - t0) % 30000 < 1000) console.log(`[shot] waiting for headless Chrome lock (pid ${pid})…`);
-      await sleep(1000);
+      say(`waiting for the headless-Chrome lock (pid ${pid || '?'}) …`);
+      await sleep(1000 + Math.random() * 500);
     }
   }
 }
@@ -270,7 +289,17 @@ try {
     // Device test (benchmark ~1.5 s, slower headless): wait until a card is marked recommended.
     await waitFor(`document.querySelector('.tk-card.recommended')`, 45, 'device recommendation').catch((e) => report.notes.push(String(e)));
     report.recommendation = await evaluate(`(() => { const r = document.querySelector('.tk-reason'); const b = document.querySelector('.tk-card.recommended'); return { reason: r ? r.textContent : '', recommended: b ? b.querySelector('.tk-card-name').textContent : null }; })()`);
-    const bad = report.requestsBeforeStart.filter((u) => /\/assets\/|three|webgpu|\.glb|\.klm|\.mp3/.test(u) && !/\/src\/boot\//.test(u));
+    // Allowed before Start: the HTML, whatever index.html itself references (the boot entry chunk + CSS), and in
+    // dev mode the boot's own modules. Flagged: game asset tiers, binary assets, three.js, any other script chunk.
+    const html = await (await fetch(server.base + '/')).text();
+    const referenced = new Set([...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]));
+    const bootDev = /^\/(src\/boot\/|src\/shared\/|src\/render\/presets\.ts|@vite\/client|node_modules\/vite\/)/;
+    const bad = report.requestsBeforeStart.filter((u) => {
+      const p = u.split('?')[0];
+      if (p === '/' || p === '/favicon.ico' || referenced.has(p) || bootDev.test(p)) return false;
+      if (/^\/assets\/(low|medium|max|voice)\//.test(p) || /\.(glb|klm|mp3|wasm|bin|ktx2)$/.test(p) || /three/.test(p)) return true;
+      return /\.(js|mjs|ts)$/.test(p); // any script chunk the boot page did not reference itself
+    });
     if (bad.length) { report.notes.push('ASSET/THREE REQUESTS BEFORE START: ' + bad.join(', ')); exitCode = 1; }
     if (bootOnly) {
       await screenshot('boot');

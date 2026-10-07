@@ -27,6 +27,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PIPELINE = path.join(ROOT, 'blender/pipeline.json');
 const CACHE = path.join(ROOT, '.cache');
 const LOCK = path.join(CACHE, 'blender.lock');
+const CHROME_LOCK = path.join(CACHE, 'chrome.lock'); // held by scripts/shot.mjs (headless-Chrome QA)
 const LOGS = path.join(CACHE, 'logs');
 const STATE = path.join(CACHE, 'assets-state.json');
 const PUBLIC = path.join(ROOT, 'public');
@@ -277,10 +278,27 @@ async function acquireLock(timeoutMs = 60 * 60 * 1000) {
   told = false;
   for (;;) {
     const others = foreignBlender();
-    if (!others.length) return;
+    if (!others.length) break;
     if (!told) log(`waiting: another Blender is running (pid ${others.join(', ')}) …`), (told = true);
     if (Date.now() - t0 > timeoutMs) throw new Error('timed out waiting for a foreign Blender to exit');
     await sleep(3000);
+  }
+  // 8 GB machine: never run Blender while a headless-Chrome QA session (scripts/shot.mjs) is up. We hold the
+  // Blender lock while waiting; shot.mjs backs off whenever this lock exists, so the two can't deadlock.
+  told = false;
+  for (;;) {
+    const owner = Number(readText(path.join(CHROME_LOCK, 'pid')));
+    if (!owner || !pidAlive(owner)) return;
+    if (!told) log(`waiting: a headless-Chrome QA session (pid ${owner}) is running …`), (told = true);
+    if (Date.now() - t0 > timeoutMs) throw new Error('timed out waiting for the headless-Chrome QA session');
+    await sleep(3000);
+  }
+}
+function readText(p) {
+  try {
+    return fs.readFileSync(p, 'utf8');
+  } catch {
+    return '';
   }
 }
 function releaseLock() {
