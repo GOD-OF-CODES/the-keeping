@@ -46,6 +46,14 @@ html body #boot {
   color: #e6dfcf;
   text-shadow: 0 0 24px rgba(184, 165, 122, 0.12);
 }
+.tk-by {
+  margin: 12px 0 0;
+  color: #b9ad94;
+  font: 400 12px/1.4 var(--tk-serif);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  padding-left: 0.3em;
+}
 .tk-sub { margin: 10px 0 0; color: var(--tk-dim); font: italic 15px/1.5 var(--tk-serif); }
 
 .tk-warn {

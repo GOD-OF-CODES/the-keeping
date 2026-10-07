@@ -2,7 +2,8 @@
   "name": "the-keeping",
   "private": true,
   "version": "0.1.0",
-  "description": "THE KEEPING — a first-person horror game for desktop browsers. All content generated from scratch.",
+  "description": "THE KEEPING \u2014 a first-person horror game for desktop browsers by Raj Vardhan Singh.",
+  "author": "Raj Vardhan Singh",
   "type": "module",
   "scripts": {
     "dev": "vite",

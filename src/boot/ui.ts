@@ -48,7 +48,7 @@ export function createBootUI(host: HTMLElement, initial: Settings): BootUI {
   const head = h('header', 'tk-head');
   const title = h('h1', 'tk-title', 'The Keeping');
   title.id = 'tk-title';
-  head.append(title, h('p', 'tk-sub', 'A short first-person horror story. About twelve minutes. Headphones recommended.'));
+  head.append(title, h('p', 'tk-by', 'A game by Raj Vardhan Singh'), h('p', 'tk-sub', 'A short first-person horror story. About twelve minutes. Headphones recommended.'));
 
   const warn = h('section', 'tk-warn');
   warn.setAttribute('aria-label', 'Content warning');

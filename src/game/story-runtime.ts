@@ -890,12 +890,18 @@ function makeUi() {
       Object.assign(el.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: String(END_CARD_Z), pointerEvents: 'none', color: '#d9d2c3', font: '400 clamp(28px,5vw,64px)/1.1 ui-serif, Georgia, "Times New Roman", serif', letterSpacing: '.32em', textAlign: 'center', padding: '0 16px', background: '#000' } as Partial<CSSStyleDeclaration>);
       const t = document.createElement('div');
       t.textContent = 'THE KEEPING';
+      const by = document.createElement('div');
+      by.textContent = 'a game by Raj Vardhan Singh';
+      Object.assign(by.style, { marginTop: '22px', font: 'italic 400 clamp(13px,1.4vw,18px)/1.4 ui-serif, Georgia, "Times New Roman", serif', letterSpacing: '.18em', color: 'rgba(217,210,195,.8)', opacity: '0', transition: 'opacity 2s 1.5s' } as Partial<CSSStyleDeclaration>);
       const sub = document.createElement('div');
       sub.textContent = 'Esc  menu';
       Object.assign(sub.style, { marginTop: '28px', font: '12px system-ui, sans-serif', letterSpacing: '.2em', color: 'rgba(217,210,195,.45)', opacity: '0', transition: 'opacity 2s 3s' } as Partial<CSSStyleDeclaration>);
-      el.append(t, sub);
+      el.append(t, by, sub);
       document.body.appendChild(el);
-      requestAnimationFrame(() => (sub.style.opacity = '1'));
+      requestAnimationFrame(() => {
+        by.style.opacity = '1';
+        sub.style.opacity = '1';
+      });
     },
     update(dt: number) {
       if (fade.update(dt)) fadeEl.style.opacity = String(fade.opacity);

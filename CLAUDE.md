@@ -17,6 +17,13 @@ verified research (three r186 APIs, Blender 5.2 experiments, device detection) i
   a full-resolution bake while a browser/WebGPU session is open.
 - Never print or commit `ELEVENLABS_API_KEY` (lives in `.env.local`, git-ignored). Never use a `VITE_` prefix for it.
 
+## Credits
+- **THE KEEPING is a game by Raj Vardhan Singh. All credits go to him**: the boot screen and loading screen byline,
+  the end card, any end-credits roll (every role → Raj Vardhan Singh), `docs/CREDITS.md`, the README and
+  `package.json` "author". Never credit AI assistants or tools as authors anywhere in the game, docs or commit
+  messages (no "Co-Authored-By" trailers). Keep only the legally required open-source license notices
+  (three.js MIT, Vite MIT, TypeScript Apache-2.0) in `docs/CREDITS.md`.
+
 ## Conventions
 - Coordinates: PLAN space (layout JSON, Blender) is Z-up, x=east, y=north; WORLD (three/glTF) is Y-up. Convert with
   `src/shared/coords.ts` (`planToWorld(x,y,z) = (x, z, -y)`). Prop generators build props facing -y at yaw 0.

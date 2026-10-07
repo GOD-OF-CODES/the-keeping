@@ -1,8 +1,12 @@
 # The Keeping
 
+**A game by Raj Vardhan Singh.** Play it at https://the-keeping.vercel.app
+
 A short, first-person horror game for desktop browsers. Everything in it (geometry, materials, lighting, animation,
 sound and music) is generated from scratch by the code in this repository: Blender Python, three.js/TSL and Web Audio.
-Character voices are designed and generated with ElevenLabs from an original script. See `docs/CREDITS.md`.
+Character voices are designed from original descriptions and speak the game's original script. See `docs/CREDITS.md`.
+
+© Raj Vardhan Singh. All rights reserved.
 
 Built with three.js r186 (`WebGPURenderer`, automatic WebGL2 fallback), Vite 8 and TypeScript 7. Those three are the
 only npm dependencies.

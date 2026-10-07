@@ -37,6 +37,9 @@ export class LoadingOverlay {
     const title = document.createElement('div');
     title.textContent = 'THE KEEPING';
     Object.assign(title.style, { font: '400 22px/1 ui-serif, Georgia, serif', letterSpacing: '0.4em', color: '#e6dfcf' });
+    const byline = document.createElement('div');
+    byline.textContent = 'A GAME BY RAJ VARDHAN SINGH';
+    Object.assign(byline.style, { font: '400 10px/1 ui-serif, Georgia, serif', letterSpacing: '0.3em', color: '#8d877b', marginTop: '-4px' });
     const track = document.createElement('div');
     Object.assign(track.style, { width: 'min(360px, 70vw)', height: '2px', background: '#1c1a17', overflow: 'hidden' });
     const bar = document.createElement('div');
@@ -44,7 +47,7 @@ export class LoadingOverlay {
     track.appendChild(bar);
     const text = document.createElement('div');
     Object.assign(text.style, { color: '#8d877b', fontSize: '12px', minHeight: '1.4em', fontFamily: 'system-ui, sans-serif', letterSpacing: '0.04em' });
-    el.append(title, track, text);
+    el.append(title, byline, track, text);
     document.body.appendChild(el);
     this.el = el;
     this.bar = bar;
