@@ -301,6 +301,46 @@ const carInterior: Generator = (c) => {
   return { albedo: alb, roughness: rough, height: emb.mul(0.3).add(0.5).sub(crack.mul(0.5)).add(velour.mul(nap).mul(0.2)), heightDepthM: 0.0006, cavity: 0.5 };
 };
 
+const needlepoint: Generator = (c) => {
+  // Berlin wool-work (round E, R3: the embroidered bell pull). Tent stitches on 10-count canvas (2.54 mm pitch): each
+  // stitch is a slanted twisted wool tuft over one canvas crossing; the design is quantised PER STITCH from a mirrored
+  // floral field into a period palette (claret ground, black outline, sage, old gold, cream). Aniline reds fade toward
+  // brown, the raised wool catches dust, the canvas shows dark in the gaps. Wool ρ 0.03–0.45, rough 0.9.
+  const n = Math.min(c.cells(0.00254), Math.floor(c.size / 4));
+  const g = c.uv.mul(n);
+  const cell = floor(g);
+  const f = fract(g);
+  const cc = cell.add(0.5).div(n);
+  const mir = vec2(abs(cc.x.mul(2).sub(1)), cc.y);
+  const m = fbm01(mir, [Math.max(1, Math.round(c.cells(0.05) / 2)), c.cells(0.05)], 3, c.seed);
+  const m2 = fbm01(mir, [Math.max(1, Math.round(c.cells(0.02) / 2)), c.cells(0.02)], 2, c.seed + 1);
+  const v = m.mul(0.75).add(m2.mul(0.25));
+  const claret = vec3(0.1, 0.018, 0.02);
+  let col: N = claret;
+  col = mix(col, vec3(0.018, 0.014, 0.012), smoothstep(0.545, 0.55, v)); // outline
+  col = mix(col, vec3(0.06, 0.085, 0.035), smoothstep(0.575, 0.58, v)); // sage leaves
+  col = mix(col, vec3(0.3, 0.19, 0.055), smoothstep(0.65, 0.655, v)); // old gold
+  col = mix(col, vec3(0.42, 0.37, 0.27), smoothstep(0.74, 0.745, v)); // cream highlights
+  // Per-stitch yarn tone (hand-dyed lots) and dye fading (reds → brown) over the strip.
+  col = col.mul(hashf(cell.x.add(cell.y.mul(7919)), c.seed + 2).mul(0.16).add(0.92));
+  const fade = fbm01(c.uv, c.cells(0.15), 3, c.seed + 3).mul(c.num('fade', 0.4));
+  col = mix(col, col.mul(vec3(0.85, 1.25, 1.2)).add(vec3(0.015, 0.012, 0.008)), fade);
+  // Stitch relief: a tuft along the (0,0)→(1,1) diagonal, twisted plies, dark canvas at the open corners.
+  const dDiag = abs(f.x.sub(f.y)).mul(0.7071);
+  const tuft = float(1).sub(smoothstep(0.22, 0.42, dDiag));
+  const ply = sin(f.x.add(f.y).mul(9.42).add(f.x.sub(f.y).mul(6))).mul(0.5).add(0.5);
+  const h = tuft.mul(ply.mul(0.25).add(0.75));
+  const gap = float(1).sub(tuft).mul(smoothstep(0.38, 0.5, dDiag));
+  let alb: N = col.mul(h.mul(0.35).add(0.75)).mul(fuzz(c, c.seed + 4).mul(0.08).add(1));
+  alb = mix(alb, vec3(0.09, 0.075, 0.055), gap.mul(0.7));
+  const dust = c.num('dust', 0.4);
+  alb = mix(alb, vec3(0.34, 0.32, 0.28), h.mul(fbm01(c.uv, c.cells(0.1), 3, c.seed + 5)).mul(dust * 0.25).clamp(0, 1));
+  return { albedo: alb, roughness: float(0.88).add(gap.mul(0.07)).add(dust * 0.04), height: h.mul(0.85).add(0.1), heightDepthM: 0.0012, cavity: 0.55 };
+};
+
+/** Cloth materials whose generator differs from their family's. */
+export const CLOTH_BY_ID: Record<string, Generator> = { wool_needlepoint: needlepoint };
+
 export const CLOTH_GENERATORS: Partial<Record<MaterialFamily, Generator>> = {
   rug,
   fabric,

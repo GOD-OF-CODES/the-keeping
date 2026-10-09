@@ -63,7 +63,17 @@ const enamel: Generator = (c) => {
   // marks, fine crazing, grime in the crazing.
   const chip = chipMask(c, c.num('chips', 0.4) * 0.12, 0.035, c.seed);
   const halo = chipMask(c, c.num('chips', 0.4) * 0.2, 0.035, c.seed).sub(chip).clamp(0, 1); // rust bleeding around
-  const base = c3(c.col('base', [0.6, 0.6, 0.55])).mul(fbm(c.uv, c.cells(0.2), 3, c.seed + 1).mul(0.03).add(1));
+  let base: N = c3(c.col('base', [0.6, 0.6, 0.55])).mul(fbm(c.uv, c.cells(0.2), 3, c.seed + 1).mul(0.03).add(1));
+  const mottle = c.num('mottle', 0);
+  if (mottle > 0) {
+    // Round E: grey-and-white mottled porcelain (1920s–30s ranges): a warped dark ground (≈ 0.12) with white
+    // splashes (≈ 0.55) 3–15 mm and fine flecks, all under the glass-smooth top coat.
+    const wuv = c.uv.add(vec2(fbm(c.uv, c.cells(0.02), 3, c.seed + 20), fbm(c.uv, c.cells(0.02), 3, c.seed + 21)).mul(0.25 / c.cells(0.02)));
+    const sp = fbm01(wuv, c.cells(0.012), 4, c.seed + 22);
+    const fleck = dots(c.uv, c.cells(0.0025), 0.3, 0.35, c.seed + 23).mask;
+    const white = smoothstep(0.5, 0.56, sp).add(fleck.mul(0.7)).clamp(0, 1);
+    base = mix(base, mix(c3(c.col('dark', [0.11, 0.115, 0.125])), c3(c.col('light', [0.55, 0.56, 0.57])), white), mottle);
+  }
   const chipC = mix(c3(c.col('chipColor', [0.03, 0.03, 0.03])), vec3(0.12, 0.05, 0.02), fbm01(c.uv, c.cells(0.005), 3, c.seed + 2));
   const ringN = fbm01(c.uv, c.cells(0.3), 4, c.seed + 3);
   const ringT = coverThreshold(c.num('rustRings', 0.3) * 0.5);
@@ -162,6 +172,76 @@ const carPaint: Generator = (c) => {
   void metal;
   void vec2;
   return { albedo: alb, roughness: rough, height, heightDepthM: 0.0003, cavity: 0.2 };
+};
+
+const steel: Generator = (c) => {
+  // Hand-forged / ground carbon steel (round E, R3): steel_forged (hammer head, shears) and steel_cleaver. Fresh-ground
+  // steel F0 ≈ 0.56 (Gulbrandsen); decades of handling leave a grey-brown oxide/oil patina (≈ 0.25–0.35, rough
+  // 0.35–0.5) that the grind lines still cut through, pinprick pits with rust haloes, and orange rust blooms where
+  // water sat. Grind lines run along u (the blade / head axis on our UVs), capped at the texel Nyquist limit.
+  const across = Math.min(c.cells(0.0006), Math.round(c.size * 0.5));
+  const grind = gn(c.uv, [c.cells(0.12), across], c.seed).mul(0.5).add(gn(c.uv, [c.cells(0.04), Math.round(across / 2)], c.seed + 1).mul(0.5));
+  const grindAmt = c.num('grind', 0.6);
+  const patN = fbm01(c.uv, c.cells(0.06), 4, c.seed + 2);
+  const patina = smoothstep(0.25, 0.8, patN).mul(c.num('patina', 0.5) * 1.4).clamp(0, 1);
+  const pitD = c.num('pitting', 0.3);
+  const pit = dots(c.uv, c.cells(0.003), 0.2, pitD * 0.3, c.seed + 3);
+  const haloM = dots(c.uv, c.cells(0.003), 0.5, pitD * 0.3, c.seed + 3).mask.sub(pit.mask).clamp(0, 1);
+  const rustM = grunge(c, 0.03, c.num('rustSpots', 0.2) * 0.25, c.seed + 4, 0.9);
+  const r = rustColor(c, [0.2, 0.08, 0.03], c.seed + 5);
+  const bright = vec3(0.55, 0.55, 0.54).mul(grind.mul(0.08 * grindAmt).add(1));
+  const oxide = vec3(0.24, 0.22, 0.2).mul(fbm01(c.uv, c.cells(0.01), 3, c.seed + 6).mul(0.3).add(0.85));
+  let alb: N = mix(bright, oxide, patina.mul(0.85));
+  alb = mix(alb, alb.mul(vec3(0.75, 0.6, 0.45)), haloM.mul(0.6));
+  alb = mix(alb, r.alb, max(rustM, pit.mask).mul(0.9));
+  const metal = float(1).sub(max(rustM, pit.mask).mul(0.95)).sub(patina.mul(0.1));
+  const rough = float(0.22).add(abs(grind).mul(0.08 * grindAmt)).add(patina.mul(0.2)).add(haloM.mul(0.12)).add(rustM.mul(0.6));
+  const height = float(0.6).add(grind.mul(0.04 * grindAmt)).sub(pit.mask.mul(0.4)).add(rustM.mul(r.h).mul(0.25));
+  return { albedo: alb, roughness: rough, height, heightDepthM: 0.0003, cavity: 0.35, extra: metal };
+};
+
+const paintedSteel: Generator = (c) => {
+  // Painted sheet steel (round E, R3: the jerry cans). Air-dried alkyd enamel over red-oxide primer on pressed steel:
+  // chalked (oxidised, sun side lighter + desaturated), orange-peel, fine scuffs through to primer, small chips through
+  // to dark steel with rust haloes, rust runs below the chips (gravity along −v), dull fuel/oil stains. The prop's
+  // COLOR_0 wear adds the edge chips / polished handles / seam rust on top (wear-math painted_steel).
+  const paint = c3(c.col('base', [0.3, 0.035, 0.022]));
+  const chalk = fbm01(c.uv, c.cells(0.25), 4, c.seed).mul(c.num('chalking', 0.4));
+  let alb: N = mix(paint, paint.mul(1.25).add(vec3(0.035, 0.03, 0.03)), chalk);
+  alb = alb.mul(fbm01(c.uv, c.cells(0.02), 3, c.seed + 1).mul(0.12).add(0.94));
+  const peel = gn(c.uv, c.cells(0.002), c.seed + 2); // orange-peel ≈ 2 mm
+  // Scuffs: short straight scratches at random angles (two rotated line fields), through the top coat to primer.
+  const sc1 = lines(c.uv, [c.cells(0.08), c.cells(0.004)], 0.025, c.seed + 3);
+  const sc2 = lines(rot45(c.uv), [c.cells(0.06), c.cells(0.005)], 0.025, c.seed + 4);
+  const scuffMask = grunge(c, 0.08, c.num('scuffs', 0.5) * 0.5, c.seed + 5, 0.6);
+  const scuff = max(sc1, sc2).mul(scuffMask);
+  const primer = vec3(0.2, 0.075, 0.042);
+  alb = mix(alb, primer, scuff.mul(0.8));
+  // Chips to steel with a rust halo, and rust runs dripping below them.
+  const chip = chipMask(c, c.num('chips', 0.25) * 0.1, 0.004, c.seed + 6);
+  const halo = chipMask(c, c.num('chips', 0.25) * 0.18, 0.004, c.seed + 6).sub(chip).clamp(0, 1);
+  const r = rustColor(c, [0.2, 0.075, 0.03], c.seed + 7);
+  const runN = fbm01(c.uv, [c.cells(0.012), c.cells(0.25)], 4, c.seed + 8);
+  const runs = smoothstep(0.62, 0.8, runN).mul(grunge(c, 0.12, c.num('rustRuns', 0.3) * 0.5, c.seed + 9, 0.5));
+  alb = mix(alb, alb.mul(vec3(0.7, 0.5, 0.35)).add(vec3(0.03, 0.012, 0.004)), runs.mul(0.7));
+  alb = mix(alb, mix(r.alb, primer, 0.3), halo.mul(0.85));
+  const steelC = vec3(0.1, 0.1, 0.1);
+  alb = mix(alb, mix(steelC, r.alb, fbm01(c.uv, c.cells(0.003), 2, c.seed + 10)), chip);
+  // Fuel / oil stains: darker, glossier tide-free blotches.
+  const oil = grunge(c, 0.1, c.num('stains', 0.2) * 0.3, c.seed + 11, 0.3);
+  alb = alb.mul(float(1).sub(oil.mul(0.3)));
+  const metal = chip.mul(fbm01(c.uv, c.cells(0.003), 2, c.seed + 10).oneMinus()).mul(0.8);
+  const rough = float(c.spec.roughness).add(chalk.mul(0.2)).sub(oil.mul(0.2)).add(scuff.mul(0.15)).add(halo.mul(0.25)).add(runs.mul(0.1)).add(chip.mul(0.2)).clamp(0.05, 1);
+  const height = float(0.7).add(peel.mul(0.03)).sub(scuff.mul(0.15)).sub(chip.mul(0.55)).add(halo.mul(r.h).mul(0.1));
+  return { albedo: alb, roughness: rough, height, heightDepthM: 0.0002, cavity: 0.3, extra: metal };
+};
+
+/** Metal materials whose generator differs from their family's. */
+export const METAL_BY_ID: Record<string, Generator> = {
+  steel_cleaver: steel,
+  steel_forged: steel,
+  paint_steel_can: paintedSteel,
+  paint_steel_sign: paintedSteel,
 };
 
 export const METAL_GENERATORS: Partial<Record<MaterialFamily, Generator>> = {

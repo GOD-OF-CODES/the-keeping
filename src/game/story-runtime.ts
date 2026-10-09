@@ -97,14 +97,13 @@ export async function createStoryRuntime(d: StoryDeps) {
     // gloves on the wheel). Two fixed LightsNodes, switched at the mount (both warmed at load: rc9-road step).
     const house = level.houseLights?.length ? level.houseLights : level.probeLights;
     const armHouse = lightsOf([...house.filter((l) => l !== rig.flashlight.light), ...flickerLights]);
-    for (const m of armsC.materials) m.lightsNode = armHouse;
+    // runtime lane E (item 3, surgical): a fixed material set per LightsNode (FpArms.setLightSets) — the old
+    // lightsNode switch + needsUpdate rebuilt the arms' shaders at C0's first live cut (0.17–0.42 s)
+    arms!.setLightSets(armHouse, armLights);
     setArmsCar = (car: boolean) => {
       if (car === armsCar) return;
       armsCar = car;
-      for (const m of armsC.materials) {
-        m.lightsNode = car ? armLights : armHouse;
-        m.needsUpdate = true;
-      }
+      arms!.useCarLights(car);
     };
   }
   if (ada) {
@@ -668,6 +667,9 @@ export async function createStoryRuntime(d: StoryDeps) {
     harlan?.update(cdt);
     characters.update();
     setArmsCar(!!fxw.mounted?.());
+    // runtime review: in the driver's POV the gloves ride the car (stay on the wheel while the head turns) — FpArms.anchorTo
+    const da = fxw.driverAnchor?.() ?? null;
+    arms?.anchorTo(da ? da.obj : null, da ? da.eye : undefined);
     if (arms) arms.update(cdt, rig.flashlight.light, rig.flashlight.beam, rig.on, rig.on ? rig.flashlight.light.intensity / rig.flashlight.intensity : 0);
     for (let i = hintMarkers.length - 1; i >= 0; i--) {
       const h = hintMarkers[i];

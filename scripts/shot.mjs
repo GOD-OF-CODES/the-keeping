@@ -266,7 +266,9 @@ const report = {
 };
 let server, chrome, cdp, sessionId;
 let exitCode = 0;
-const deadline = setTimeout(() => { console.error('[shot] TIMEOUT'); cleanup().then(() => process.exit(2)); }, TIMEOUT_MS);
+// --timeout counts from the moment this run holds the Chrome lock (queue waits behind other lanes don't eat it)
+const onTimeout = () => { console.error('[shot] TIMEOUT'); cleanup().then(() => process.exit(2)); };
+let deadline = setTimeout(onTimeout, TIMEOUT_MS + 6 * 3600 * 1000);
 
 async function cleanup() {
   clearTimeout(deadline);
@@ -409,6 +411,7 @@ try {
 
 try {
   await acquireLock();
+  clearTimeout(deadline); deadline = setTimeout(onTimeout, TIMEOUT_MS);
   server = await startServer();
   for (let attempt = 1; ; attempt++) {
     try {

@@ -508,7 +508,7 @@ def chair_sacks(p, rng):
         part.add(sphere(0.045, 12, 8), sack.replace('@2s', ''), T((0.08, -0.05, 0.52), (0, 0, 0), (1, 1, 0.8)))
     if p.get('scissors', True):
         from .small_items import shears_parts
-        shears_parts(part, rng, T((-0.09, -0.06, 0.492), (0, 0, 0.6)), 'cast_iron')
+        shears_parts(part, rng, T((-0.09, -0.06, 0.492), (0, 0, 0.6)), 'steel_forged', 'cast_iron')
     return [part]
 
 

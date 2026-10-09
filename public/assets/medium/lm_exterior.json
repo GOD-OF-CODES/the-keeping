@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.00633,
-    "p99": 0.00917,
-    "max": 117.68157,
-    "coverage": 0.393
+    "mean": 0.00744,
+    "p99": 0.00919,
+    "max": 180.11037,
+    "coverage": 0.3973
   },
   "file": "lm_exterior.klm"
 }

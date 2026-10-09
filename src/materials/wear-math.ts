@@ -136,11 +136,14 @@ export const WEAR_RULES: Record<string, WearRule> = {
   }),
   // Painted sheet steel (car bodies, jerry cans): chip to red-oxide primer (0.30, 0.12, 0.07) / 0.7, then bare steel
   // 0.5 / 0.4 / metal 1 above 0.85; handles polished to bare steel 0.3; rust in seams.
+  // Round E (look round 2): the first numbers read as pale pink edges on the jerry cans — red-oxide primer is a dark
+  // brick (Fe2O3 pigment in oil ≈ 0.15, 0.055, 0.03 linear) and bare steel on a 30-year-old can is a dull grey-brown
+  // (oxide film ≈ 0.22 / 0.5), polished only where hands grip (0.35, rough 0.3).
   painted_steel: base('painted_steel', {
     chipFreq: 160,
-    edge: L({ rgb: [0.3, 0.12, 0.07], abs: 1, rough: 0.7, rAbs: 1 }),
-    cov2: 0.72, edge2: L({ rgb: [0.5, 0.5, 0.5], abs: 1, rough: 0.4, rAbs: 1, metal: 1, mAbs: 1 }),
-    handled: L({ rgb: [0.5, 0.5, 0.5], abs: 0.7, rough: 0.3, rAbs: 1, metal: 1, mAbs: 0.7 }),
+    edge: L({ rgb: [0.15, 0.055, 0.03], abs: 1, rough: 0.7, rAbs: 1 }),
+    cov2: 0.72, edge2: L({ rgb: [0.22, 0.2, 0.18], abs: 1, rough: 0.5, rAbs: 1, metal: 1, mAbs: 1 }),
+    handled: L({ rgb: [0.35, 0.34, 0.33], abs: 0.7, rough: 0.3, rAbs: 1, metal: 1, mAbs: 0.7 }),
     cavAmt: 1, cavity: RUST, cellular: true,
   }),
   // Leather: scuffed edges lighter ×1.35, rough +0.15, 30 % desaturated; handled darker ×0.75 glossier 0.35.
@@ -157,6 +160,17 @@ export const WEAR_RULES: Record<string, WearRule> = {
     edge: L({ mul: [1.08, 1.08, 1.08], rough: 1, rAbs: 1, desat: 0.15 }),
     handled: L({ mul: [0.85, 0.85, 0.85], dRough: -0.2 }),
     cavAmt: 1, cavity: L({ mul: [0.72, 0.62, 0.48] }),
+    dustScale: 1.3, cap: 0.85,
+  }),
+  // Props AD review (round E): the wedding gown has stood on a board floor for ~30 years — the hem (wear.py
+  // FLOOR_GRIME band) and the deep folds carry floor dirt and dust wicked into the weave. Soiled ivory satin measures
+  // ≈ 0.25–0.3 albedo against 0.55 clean, i.e. ×0.48/0.42/0.33 (warm grey-brown); the generic fabric grime (×0.72)
+  // read as only a ≈ 15 % gradient at 1–2 m (scratch/pe-review/hemcrop*.jpg).
+  fabric_soiled: base('fabric', {
+    edgeWidth: 0.15, chipFreq: 120,
+    edge: L({ mul: [1.08, 1.08, 1.08], rough: 1, rAbs: 1, desat: 0.15 }),
+    handled: L({ mul: [0.85, 0.85, 0.85], dRough: -0.2 }),
+    cavAmt: 1, cavity: L({ mul: [0.48, 0.42, 0.33], dRough: 0.15 }),
     dustScale: 1.3, cap: 0.85,
   }),
   // Paper: edge soil / foxing ×0.88 tinted (0.95, 0.88, 0.75); thumb soil ×0.8 grey; no dust (read while held).
@@ -186,6 +200,8 @@ const FAMILY_RULE: Partial<Record<MaterialFamily, string>> = {
 /** Spec ids that override their family's rule. */
 const ID_RULE: Record<string, string | null> = {
   wood_raw_plank: 'raw_wood', plywood_weathered: 'raw_wood', floor_bare: 'raw_wood', stair_rough: 'raw_wood',
+  paint_steel_can: 'painted_steel', paint_steel_sign: 'painted_steel', wood_weathered_post: 'raw_wood',
+  wedding_satin: 'fabric_soiled',
   styrofoam: null, plastic_cluster: null, plastic_wheel_tan: null,
 };
 

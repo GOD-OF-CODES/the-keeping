@@ -40,11 +40,14 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 // Bloom high pass with a saturating excess (see the bloom call in the chain builder): same smoothstep gate as r186's
 // luminosityHighPass, but the luminance above threshold T is compressed to e / (1 + e / (GLARE_SAT · T)).
 const GLARE_SAT = 24;
+/** Runtime E review: fraction of the threshold itself forwarded to the glare (LOOK.glareBase; 1 = r186 stock / round D,
+ *  0 = only the light ABOVE the threshold scatters). Live uniform, synced by atmosphere.ts. */
+export const GLARE_BASE = uniform(1);
 const glareHighPass = Fn(({ input, threshold, smoothWidth }: any) => {
   const v = luminance(input.rgb);
   const alpha = smoothstep(threshold, threshold.add(smoothWidth), v);
   const e = v.sub(threshold).max(0);
-  const target = threshold.add(e.div(e.div(threshold.mul(GLARE_SAT)).add(1)));
+  const target = threshold.mul(GLARE_BASE).add(e.div(e.div(threshold.mul(GLARE_SAT)).add(1)));
   const k = target.div(v.max(1e-6));
   return mix(vec4(0), vec4(input.rgb.mul(k), input.a), alpha);
 });
@@ -74,6 +77,8 @@ export interface Pipeline {
     vignette: any;
     chromaticAberration: any;
     bloomStrength: any;
+    /** Glare high-pass threshold in EXPOSED (display) units — LOOK.bloomThreshold. */
+    bloomThreshold: any;
     /** Scene grade (HDR, before tone mapping): colour multiplier (C6/B12 blue hour, dawn) … */
     tint: any;
     /** … and saturation (1 = unchanged). */
@@ -220,6 +225,7 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
     vignette: uniform(preset.post.vignette),
     chromaticAberration: uniform(preset.post.chromaticAberration),
     bloomStrength: uniform(0.22),
+    bloomThreshold: uniform(1.5),
     tint: uniform(new THREE.Color(1, 1, 1)),
     saturation: uniform(1),
     whiteBalance: uniform(new THREE.Color(1, 1, 1)),
@@ -279,7 +285,12 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   }
 
   // ---- Post pipeline (Medium / Max) ----
-  const rp = new THREE.RenderPipeline(renderer);
+  // runtime lane E (item 3): one RenderPipeline per chain shape. A single pipeline whose outputNode was swapped
+  // (rp.needsUpdate → RenderPipeline._updateContext → quad material needsUpdate) re-built the whole post graph at every
+  // switch — the C0 12.5 s first-DOF hitch (0.2 s Medium / 0.4 s Max). Each chain keeps its own quad material now, so a
+  // cut only picks which pipeline renders; the scene pass / TAAU / bloom nodes are shared.
+  const rps = new Map<string, any>();
+  let rp: any = null;
   const scenePass = pass(scene, camera);
   scenePass.setMRT(mrt({ output, velocity }));
   let scale = preset.sceneScale;
@@ -372,7 +383,7 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
       // saturates, the scattered light stops growing linearly. The excess e above the threshold is soft-saturated,
       // e' = e / (1 + e / (K·T)), K = 24: a candle flame (e ≈ 2–5 T) keeps ≥ 83 % of its glare, a 10³ T lamp is capped ~24 T.
       if (preset.post.bloom) {
-        const bl = bloom(aa, uniforms.bloomStrength, 0.35, float(1.5).div(uniforms.exposure.max(1e-3)));
+        const bl = bloom(aa, uniforms.bloomStrength, 0.35, uniforms.bloomThreshold.div(uniforms.exposure.max(1e-3)));
         bl.highPassFn = glareHighPass;
         hdr = hdr.add(bl);
       }
@@ -383,9 +394,15 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
     }
     if (key === current) return;
     current = key;
-    rp.outputColorTransform = false;
-    rp.outputNode = out;
-    rp.needsUpdate = true;
+    let next = rps.get(key);
+    if (!next) {
+      next = new THREE.RenderPipeline(renderer);
+      next.outputColorTransform = false;
+      next.outputNode = out;
+      next.needsUpdate = true;
+      rps.set(key, next);
+    }
+    rp = next;
   }
   build(null);
 
@@ -403,6 +420,8 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
     getScale: () => scale,
     setCutscene: (fx) => build(fx),
     compileView: passCompiler(renderer, scene, camera, prePass ? [prePass, scenePass] : [scenePass], () => rp.render(), taauNode._originalProjectionMatrix), // PERF lane (P0-1)
-    dispose: () => rp.dispose(),
+    dispose: () => {
+      for (const p of rps.values()) p.dispose();
+    },
   };
 }

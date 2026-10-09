@@ -31,8 +31,8 @@ test('every material family used by the spec has a dedicated generator', () => {
   assert.match(libSrc, /wall_tally:\s*wallTally/);
 });
 
-test('spec sanity: 87 materials, unique ids, avgAlbedo in (0,1), tileMetres > 0', () => {
-  assert.equal(MATERIAL_SPECS.length, 87);
+test('spec sanity: 94 materials, unique ids, avgAlbedo in (0,1), tileMetres > 0', () => {
+  assert.equal(MATERIAL_SPECS.length, 94);
   assert.equal(new Set(MATERIAL_SPECS.map((m) => m.id)).size, MATERIAL_SPECS.length);
   for (const m of MATERIAL_SPECS) {
     assert.ok(m.tileMetres > 0, m.id);
@@ -64,7 +64,7 @@ test('albedo check math: tolerance, floor for near-black, gain clamps', () => {
 
 test('GPU memory of the baked maps per preset (RGBA8 × 2 with mips)', () => {
   const baked = MATERIAL_SPECS.filter((m) => m.source === 'generated');
-  const mb = (id: 'low' | 'medium' | 'max') => baked.reduce((a, m) => a + bakedBytes(m.hero ? PRESETS[id].textures.heroSize : PRESETS[id].textures.baseSize), 0) / 1048576;
+  const mb = (id: 'low' | 'medium' | 'max') => baked.reduce((a, m) => a + bakedBytes(Math.min(m.hero ? PRESETS[id].textures.heroSize : PRESETS[id].textures.baseSize, Number((m.params as Record<string, unknown>).maxSize ?? 0) || 1e9)), 0) / 1048576;
   const low = mb('low');
   const med = mb('medium');
   const max = mb('max');

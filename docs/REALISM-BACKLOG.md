@@ -5,6 +5,128 @@ What I looked at: the QA hero shots (`scratch/qa/*`, 640–800 px copies in `scr
 shots of my own: Medium `scratch/ad/med-0{1..4}-*.jpg`, Max `scratch/ad/max-0{1..5}-*.jpg`, with the scenarios in
 `scratch/ad/look.mjs` and `look2.mjs` (each has per-frame luminance stats in its report). 0 console errors in both runs.
 
+## Round E — AD + perf review of the runtime lane (2026-10-09; log in docs/STATUS-runtime-e.md "Review")
+
+Judged on mains, Blender not running (logged per run; fileproviderd 10–120 % CPU at times), Medium and Max WebGPU,
+HEAD f93285d (`scratch/dist-re-base`) vs the builder's dist (`scratch/dist-re-review`) vs the review's final dist
+(`scratch/dist-re-final`, npm run build). Frames `scratch/rer2/` (grids gF1/gF2 close-ups, gL1/gL2 lightning,
+gS1–gS3 glare), `scratch/rer/rv*`.
+
+### Verdict
+Still not photographic. Torch close-ups improved (the glare halo no longer veils the lit prop) but most of the
+remaining "CG" read is geometry/material (C0 cone-stack pines, smooth dress bell, flat armoire louvres) and the
+Max budget, which this round did not fix.
+
+### Fixed in this review
+- **Torch close-ups washed out (props AD top finding).** Not the meter: the centre-weighted p98 at the 13 close-ups
+  is ≤ 0.8× display white at exposure 0.25 (sw3), so they are not clipped; lowering the 0.25 floor only turned a white
+  dress mid-grey (sw1). The veil was the glare high pass forwarding threshold + excess (a cloth crossing T in the
+  2 kcd core jumped from 0 to ≥ T of glare — a disc-shaped onset). Now only the soft-saturated EXCESS scatters
+  (`LOOK.glareBase` 0, `pipeline.ts GLARE_BASE`) with `bloomThreshold` 2 (exposed units): halo ring round the core
+  smaller, fold/can edges crisper, candle flame keeps its halo (sg1, fclose-med). A highlight-protect cap
+  (`hpPct/hpWhite/hpFloor`) caps exposure when the centre p98 would exceed 3× white; it binds in none of the 15 views.
+- **Lightning was an overcast-day wash** (shadows ≈ ½ the lit level). `lightningPeak` 0.5 → 0.75, `flashSky` 5 → 2.5:
+  same total flash, 4:1 lit:shadow, the sky still flashes +1.3 EV (lt1, gL1/gL2).
+- **C1 60.5 draws**: the 8 interior doors (+ boards) are culled with the interior props while the opening holds the
+  camera (frame diff = noise): Medium 432 → ≈ 400, Max 768 → 702.
+
+### Confirmed from the builder (measured here)
+- C0 first-DOF hitch (item 3) and score_reveal hitch (item 5): Medium base 183 / 133 ms → current 16.8 ms worst.
+- Armoire slat view (item 9) on the SETTLED frame: the hall reads through the gaps.
+- Item 4 claim "C1 60.5 = 371 draws" was a frustum MESH count; renderer.info draws were 432 (Medium) / 768 (Max).
+
+### Still wrong — ranked (runtime lane unless noted)
+1. **Max over budget in the opening and the U1 armoire view**: C1 60.5 702 draws / ≈ 2.4 M tris, 39–50 fps;
+   u1-armoire ≈ 800 draws, 44 fps (Max ruling ≤ 500 / 2 M, ≥ 45 fps). Max ≈ 1.6× Medium per room → shadow/context
+   passes. Next: per-pass draw breakdown, shadow-caster culling per light.
+2. **Max C0 hitch cluster 21.75–22.65 s** (9 frames > 50 ms, worst 533 ms; crane shot as the car passes beneath) on
+   a fresh-profile run of the builder dist. Stepped on the final dist the window has 0 node builds, 0 new programs or
+   textures (c0b-max2) → not a missing warm-up; suspects: Metal compiling at first draw on a cold cache, or memory
+   pressure (Max holds 1.79 GB of GPU resources, 1.66 GB textures, on an 8 GB M1).
+   Final dist (pfin-max): sustained 83–167 ms frames 20.63–21.97 s (worst 717 ms) right after the 20.0 title card +
+   score_reveal cue, clean when stepped → real-time only (audio/main thread at the cue or DOM cards over a Max canvas).
+3. ~~Medium GPU frame +1–10 ms vs HEAD~~ — not a regression: final dist and the runtime-only build match HEAD
+   (gpu.mjs rep 2: 15.7/11.2/12.5/9.8 vs 16.1/10.7/12.3/10.1 ms); the earlier excess tracked machine load.
+4. **C0 forest (props/Blender, ruling g)**: cone-stack pines and a blurred billboard read as CG in every flash frame.
+5. **Ada in the torch core** at 2.2 m: the exposure now drops to 0.92 (was ≈ 4) without blacking the hall, but she still
+   reads as a pale featureless white form — skin/hair shading (characters) is the next lever, judged at 1920 px.
+6. **Torch-view gloves** are a physically correct near-black silhouette (0.2–0.4 lux bounce). No fake rim light.
+7. **Armoire louvres** read as flat horizontal boards — no slat angle (props lane geometry).
+8. **Max volumetric beam**: verified harmless (on/off identical at the close-ups); the soft torch pool is the
+   spill shelf itself. Moonlit yard/road read as night, never pitch-black once adapted (tauBrighten 6 s).
+9. **Dress** reads as a smooth bell, no lace/seams (props lane); **e1 sign post** clips to a pale streak at 0.9 m.
+
+## Round D — AD + perf review of the runtime lane (2026-10-09; log in docs/STATUS-runtime-d.md "Review")
+
+Judged on mains, Medium/WebGPU, against a real photograph of a rainy rural night drive from a 1980s sedan (C0/C1) and
+of a 1990s torch in a dark farmhouse (house views). Builds `scratch/dist-rd-review` (tree as found) and
+`scratch/dist-rd-review2` (+ the arms fix). Frames: `scratch/rd-review/{op,hs,rd,arm,bm,tc,tc2}/`, sheets
+`scratch/rd-review/s*.jpg`. 0 console errors in every run.
+
+### Verdict
+Not photographic yet. The opening's best frames (C1 34.4 truck, C1 60.5/61.8 gate, the C1 13.5 cluster) pass as
+stills; the aerial (C0 4.5/9.25), the forest close-ups (C0 15.6, C1 41) and the lit cabin (C1 20/24.5/63) read as CG.
+In the house the landing candle passes; the torch does not throw, so Ada at 6 m is never in a hot spot.
+
+### Fixed in this review
+- **Gloves left the wheel whenever the driver's head turned (C1 3.4–6.6, 17.6–30.2, 43.4–50.4).** Cause: the FP arms
+  ride the camera rig; the car clips are authored in the eye frame of `clips_arms.py` (car − EYE, car axes). At C1 20
+  the right glove sat on the horn pad and the left hung off the column. Fix: `FpArms.anchorTo` puts the arms root at
+  DRIVER_EYE in the mounted interior while a POV shot runs (`opening.ts driverAnchor`, 2-line hook in
+  story-runtime). Verified `arm/c1-20.jpg`: both gloves on the rim at 10-and-2 while the view pans to the knob/cup.
+
+- **The torch had no throw (house, every torch view; blocks #17).** `LOOK.torchCd` 120 cd with a 16 cd spill shelf
+  over a 45° cone (21 lm) put 2.8 lux on the U1 end wall at 6.5 m: Ada at 6 m was never in a hot spot. CLAUDE.md
+  sets the 2-cell D krypton torch at ≈ 27 lm, 2–3 kcd peak, hot centre + soft spill. **Item 11's 60–120 cd ruling is
+  reversed**: it was set to stop near-wall clipping before auto-exposure (item 4) existed. Near-wall arithmetic:
+  at 0.6 m the old 16 cd shelf put ≈ 44 lux on the wall and the new 7 cd shelf puts ≈ 19 lux, while the exposure was
+  already at its 0.25 floor there, so readability at pickup distance does not get worse. What changes is the core: a
+  ≈ 6 cm hard-clipped dot instead of an ≈ 11 cm one. Not verified: Max (volumetric beam stub) and the exterior torch
+  in rain.
+  New profile 2000 cd, core HWHM 2.9°, spill 7 cd, corona 1.6 cd = 30.9 lm (beamFlux). A/B in one session
+  (`tc/`, `tc2/`, sheet `sTC2.jpg`): at equal exposure the end wall gets a small hot disc where 120 cd showed none;
+  near the floor it is a clipped hot disc in a soft dim spill, and the meter drops about 1 EV, like a real photo. The
+  warm ceiling in the hall is the landing candle's bake on 0.6-albedo plaster (the same with both profiles), not
+  torch spill.
+
+### Corrected diagnosis
+- **C0 26.5 "pale road" is not the asphalt albedo** (round D builder request #1 withdrawn). Forcing a constant 0.04
+  albedo made the road region 7 % brighter (sRGB 89 → 95): the generator's effective albedo is already ≈ 0.04. The
+  exposure is the cue's fixed 1.0 (auto would give ≈ 0.7). A low beam puts 5–12 lux on the road 5–10 m ahead, so a
+  mid-grey road is what a night photograph shows. What reads "dry" is the texture: a smooth uniform grey with big
+  black puddle blotches. Wet asphalt shows aggregate sparkle (each wet stone a glint under the beam) and rain-ring
+  ripples in the puddles.
+
+### Ranked remainder
+1. **C0 aerial / flash (C0 4.5, 9.25, 15.6; lane A + runtime).** The canopy is an egg-carton field of identical
+   smooth cones. The 9.2 flash (peak 0.72 at 9.35 s, `rd/c0-flash.jpg`) is a flat blue-grey wash with no modelling
+   or shadows, which CLAUDE.md forbids. The blanket ends in a visible seam band a third of the way down, then a
+   flat dark plane runs to a ruler-straight horizon, so the §11 aerial-gap check FAILS. Fixes: varied crown
+   silhouettes plus per-instance scale and lean (lane A); for the flash, a directional term from the stroke azimuth
+   on the canopy material with N·L and self-shadowing from the crown's height field; widen the blanket to ±400 m
+   or add a ridge-line skirt.
+2. **Lit cabin reads as clay (C1 20, 24.5, 63; props/lane A).** The tan vinyl (0.28) has mm-scale grain but no
+   mid-frequency life: no sweat-darkened wheel rim, no dust on the dash top, no sun-faded bolsters, no seam welts
+   catching the dome. The A-pillar trim is visibly faceted. The C1 24.5 map's "48" is not in view or legible.
+   Under the dome the gloves read as tanned skin (sRGB 161/131/95 next to vinyl 214/197/179, effective albedo
+   ≈ 0.15 vs `leather_worn` 0.035). Check the atlas glove albedo (≈ 0.067 linear) and the GGX/env lift on Medium.
+3. **C0 15.6 / C1 41 forest close-ups (lane A).** The pine crowns are stacked smooth cones or flat cards. At C1 41
+   the trunks are evenly lit orange from the ground up (no beam fall-off with height or distance, no bark relief).
+4. **C0 26.5 wet road texture (props: asphalt generator).** See "Corrected diagnosis": add aggregate sparkle and
+   rain rings. Rain streaks are plausible beam-lit drops but too uniform in length and brightness.
+5. **Armoire slat view (U1, `hs/armoire-slats.jpg`).** Near-black horizontal bars fill the frame with nothing of the
+   hall between them. Expected: thin bright slivers of the candle-lit hall through each gap. Check the hide eye
+   depth vs the louvre gap and LOUVRE_PITCH, and whether the slat backs get the torch.
+6. **First-person gloves in torch views.** They are two featureless black blobs centre-bottom: no rim light from the
+   spill and no worn-leather sheen on Medium (the Charlie sheen is Max only).
+7. **#17 Ada skin chalk:** judgeable only now that the torch throws. The next pass needs an Ada-in-hot-spot frame
+   with the brain frozen (`tc.mjs` shows how to set the torch; freezing via `brain.update` override breaks the
+   director).
+8. **Perf (builder numbers, not re-measured: a props Blender ran during this whole review).** Parlor +2.5–3 ms over
+   pre-round-B (target +1.5) needs a ruling on the lightning shadow 2048 → 1024 on Medium. C1 60.5 / 61.8 draw
+   ≈ 498 / 413 calls (> 400). C0 has a 0.2–0.4 s first-DOF-switch hitch. Medium loads took 103–254 s with Blender
+   running (warm rc9 28 s, car-set 18 s), so the finish-line target of < 15 s warm load is far off.
+
 ## Round 3 — AD review of the runtime realism round (2026-10-08; log in docs/STATUS-r3-review.md)
 
 Reviewer: AD. Builds: `scratch/dist-r3-base` (HEAD e2a888a), `scratch/dist-r3-headdata` (HEAD code + the current

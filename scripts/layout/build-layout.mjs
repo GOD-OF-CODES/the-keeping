@@ -318,9 +318,9 @@ const path = (pts) => pts.map((q) => q.map(r3).join(',')).join(';');
 const zG = EG, zU = EU;
 
 // EXT1 — road & ROOMS sign
-p('P_SIGN', 'sign_post', 'EXT1', [-1.8, -28.6, 0], faceYaw(1, -1), { params: { text: "STROUD'S GAS & FEED", gasPaintedOut: true, board: 'ROOMS', vacancyPlate: true, mat: 'wood_raw_plank', plateMat: 'zinc_galvanized' }, collider: 'mesh' });
+p('P_SIGN', 'sign_post', 'EXT1', [-1.8, -28.6, 0], faceYaw(1, -1), { params: { text: "STROUD'S GAS & FEED", gasPaintedOut: true, board: 'ROOMS', vacancyPlate: true, mat: 'wood_weathered_post', plateMat: 'paint_steel_sign' }, collider: 'mesh' });
 p('P_SIGN_LANTERN', 'sign_lantern', 'EXT1', [-1.8, -28.45, 2.05], faceYaw(1, -1), { params: { box: 'tin', mat: 'zinc_galvanized', lit: true }, lighting: 'dynamic', collider: 'none' });
-p('P_VACANCY_PLATE', 'vacancy_plate', 'EXT1', [-1.8, -28.62, 1.75], faceYaw(1, -1), { params: { text: 'VACANCY', mat: 'zinc_galvanized', swing: true }, lighting: 'dynamic', collider: 'none' });
+p('P_VACANCY_PLATE', 'vacancy_plate', 'EXT1', [-1.8, -28.62, 1.75], faceYaw(1, -1), { params: { text: 'VACANCY', mat: 'paint_steel_sign', swing: true }, lighting: 'dynamic', collider: 'none' });
 p('P_MAILBOX', 'mailbox', 'EXT1', [4.4, -28.7, 0], FACE.S, { params: { name: 'STROUD', mat: 'rust' } });
 p('P_FENCE_W', 'fence_run', 'EXT1', [-9.8, -28.25, 0], 0, { params: { length: 20.4, postSpacing: 2.4, style: 'post_and_wire' }, collider: 'box' });
 p('P_FENCE_E', 'fence_run', 'EXT1', [11.6, -28.25, 0], 0, { params: { length: 16.8, postSpacing: 2.4, style: 'post_and_wire' } });
@@ -402,24 +402,32 @@ p('P_STOOL', 'stool', 'G2', [5.3, 0.75, zG], 0.3, { params: { mat: 'wood_raw_pla
 p('P_WHETSTONE', 'whetstone', 'G2', [5.3, 0.75, zG + 0.55], 0.3, { params: { mat: 'stone_foundation' }, lighting: 'dynamic', collider: 'none' });
 p('P_SPRING_BELL', 'spring_bell', 'G2', [3.85, 1.45, zG + 2.8], FACE.E, { params: { mat: 'brass_tarnished', ringsFor: 'P_BELL_KNOB,P_BELL_PULL' }, lighting: 'dynamic', collider: 'none' });
 p('P_CLEAT', 'rope_cleat', 'G2', [3.8, 1.9, zG + 1.6], FACE.E, { params: { mat: 'cast_iron' }, collider: 'none' });
-p('P_CLEAVER', 'hog_cleaver', 'G2', [5.95, 3.95, zG + 0.83], 1.2, { params: { mat: 'rust', handleMat: 'wood_furniture_dark' }, lighting: 'dynamic', collider: 'none' });
+p('P_CLEAVER', 'hog_cleaver', 'G2', [5.95, 3.95, zG + 0.83], 1.2, { params: { mat: 'steel_cleaver', handleMat: 'wood_furniture_dark' }, lighting: 'dynamic', collider: 'none' });
 p('P_PARLOR_RUG', 'rag_rug', 'G2', [7.2, 4.4, zG], 0.2, { params: { mat: 'rag_rug', w: 1.6, d: 1.1 }, collider: 'none' });
 
 // G3 — kitchen
 p('P_HATCH', 'cistern_hatch', 'G3', [5.5, 8.2, zG], 0.08, { params: { size: 0.9, padlock: 'outside', splintered: 'upward', seep: true, mat: 'wood_raw_plank', hardwareMat: 'cast_iron' }, collider: 'none', interaction: 'listen_hatch', ms: 'M2' });
-p('P_STOVE', 'iron_stove', 'G3', [7.4, 6.55, zG], FACE.N, { params: { mat: 'cast_iron', doorMat: 'enamel_chipped', cold: true, pipeTo: 'chimney' }, collider: 'box', ms: 'M2' });
+p('P_STOVE', 'iron_stove', 'G3', [7.4, 6.55, zG], FACE.N, { params: { mat: 'cast_iron', doorMat: 'enamel_stove', cold: true, pipeTo: 'chimney' }, collider: 'box', ms: 'M2' });
 p('P_PUMP_SINK', 'pump_sink', 'G3', [8.4, 8.4, zG], FACE.W, { params: { mat: 'enamel_chipped', pumpMat: 'cast_iron', splashbackMat: 'tile_kitchen', drips: true }, collider: 'box', ms: 'M2' });
-p('P_KITCHEN_TABLE', 'kitchen_table', 'G3', [7.2, 9.5, zG], 0, { params: { length: 1.3, width: 0.8, mat: 'wood_raw_plank' }, collider: 'box', ms: 'M2' });
-p('P_KITCHEN_CHAIR_1', 'kitchen_chair', 'G3', [6.5, 9.55, zG], FACE.E, { params: { mat: 'wood_furniture_dark' }, ms: 'M2' });
-p('P_KITCHEN_CHAIR_2', 'kitchen_chair', 'G3', [7.95, 9.35, zG], FACE.W + 0.4, { params: { mat: 'wood_furniture_dark', tipped: true }, ms: 'M2' });
-p('P_CANDLE_KITCHEN', 'candle', 'G3', [7.35, 9.6, zG + 0.78], 0, { params: { holder: 'bottle', height: 0.06, mat: 'wax_candle', guttering: true }, lighting: 'dynamic', collider: 'none', ms: 'M2' });
+// Ruling (d) 2026-10-09 (props lane E, capsule clearance map scratch/pe/lane.log): at x 7.2 the table's corner left
+// 0.31 m to the pump sink — the back-stair route into the kitchen was closed. Table, its candle + light and chair 1 move
+// 0.6 m west: table east edge 7.25 → 0.875 m clear to the sink front (8.125).
+p('P_KITCHEN_TABLE', 'kitchen_table', 'G3', [6.6, 9.5, zG], 0, { params: { length: 1.3, width: 0.8, mat: 'wood_raw_plank' }, collider: 'box', ms: 'M2' });
+p('P_KITCHEN_CHAIR_1', 'kitchen_chair', 'G3', [5.9, 9.55, zG], FACE.E, { params: { mat: 'wood_furniture_dark' }, ms: 'M2' });
+// Ruling (d) 2026-10-09: the tipped chair lies north of the table (back toward the west, legs toward the door), out of
+// the back-stair lane (measured capsule-blocked span ≈ origin −1.15 … +0.45 m in x).
+p('P_KITCHEN_CHAIR_2', 'kitchen_chair', 'G3', [6.95, 10.3, zG], FACE.E + 0.12, { params: { mat: 'wood_furniture_dark', tipped: true }, ms: 'M2' });
+p('P_CANDLE_KITCHEN', 'candle', 'G3', [6.75, 9.6, zG + 0.78], 0, { params: { holder: 'bottle', height: 0.06, mat: 'wax_candle', guttering: true }, lighting: 'dynamic', collider: 'none', ms: 'M2' });
 p('P_CAN_SHELF', 'can_shelf', 'G3', [4.0, 7.62, zG], FACE.E, { params: { length: 2.5, mat: 'wood_raw_plank' }, collider: 'box', ms: 'M2' });
 const PLATES = ['DRIFTER', 'OKB 441', 'D. PRUITT', '7L 2290', 'HYX 904', 'CARVEL 12', '3M-7718', 'TNR 506', 'KJ 3395', 'WRD 118', 'LBE 260', 'RVX-318'];
 PLATES.forEach((plate, i) => p(`P_JERRY_${String(i + 1).padStart(2, '0')}`, 'jerry_can', 'G3', [3.98, 6.5 + i * 0.205, zG], FACE.E, {
-  params: { plate, full: i < 11, chalk: true, mat: 'rust' }, lighting: 'dynamic', collider: 'box', ms: 'M2',
+  params: { plate, full: i < 11, chalk: true, mat: 'paint_steel_can' }, lighting: 'dynamic', collider: 'box', ms: 'M2',
   interaction: i === 11 ? 'read_can_plate' : i === 9 ? 'take_can' : undefined,
 }));
-p('P_BRICKED_DOOR', 'bricked_doorway', 'G3', [8.72, 10.0, zG], FACE.W, { params: { width: 0.9, height: 2.1, mat: 'brick_infill', frameMat: 'door_painted' }, collider: 'none', ms: 'M2' });
+// Round E: the bricked doorway moved 0.4 m south (y 9.15–10.05, clear of the sink ≤ 8.95) so it no longer crowds the
+// back-stair door mouth visually (it has no collider; the 0.62 m door-mouth pinch is the open leaf vs the east jamb,
+// by design — blender/house/collision.py JAMB_CLEAR).
+p('P_BRICKED_DOOR', 'bricked_doorway', 'G3', [8.72, 9.6, zG], FACE.W, { params: { width: 0.9, height: 2.1, mat: 'brick_infill', frameMat: 'door_painted' }, collider: 'none', ms: 'M2' });
 p('P_CEILING_DRIP', 'fx_drip_emitter', 'G3', [6.4, 7.6, zG + CEIL_G], 0, { params: { mode: 'ceiling_beads', followsAdaOnFloorAbove: true, area: '4.2,6.4,8.6,9.0' }, lighting: 'dynamic', collider: 'none', ms: 'M2' });
 
 // CLOSET + back passage
@@ -444,12 +452,12 @@ p('P_BED', 'iron_bed', 'U2', [7.6, 3.5, zU], FACE.S, { params: { width: 1.4, len
 p('P_NIGHTSTAND', 'nightstand', 'U2', [6.55, 4.22, zU], FACE.S, { params: { mat: 'wood_furniture_dark' }, ms: 'M1' });
 p('P_LEDGER', 'ledger_book', 'U2', [6.5, 4.15, zU + 0.66], 0.25, { params: { pages: 3, mat: 'paper_aged', coverMat: 'leather_worn' }, lighting: 'dynamic', collider: 'none', interaction: 'read_ledger', ms: 'M2' });
 p('P_KEROSENE_LAMP', 'kerosene_lamp', 'U2', [6.66, 4.33, zU + 0.66], 0, { params: { wick: 'low', mat: 'glass_grimy', burnerMat: 'brass_tarnished' }, lighting: 'dynamic', collider: 'none', ms: 'M1' });
-p('P_BELL_PULL', 'bell_pull_embroidered', 'U2', [6.1, 4.46, zU + 0.95], FACE.S, { params: { length: 1.2, mat: 'rag_rug', tasselMat: 'brass_tarnished' }, lighting: 'dynamic', collider: 'none', interaction: 'pull_bell', ms: 'M2' });
+p('P_BELL_PULL', 'bell_pull_embroidered', 'U2', [6.1, 4.46, zU + 0.95], FACE.S, { params: { length: 1.2, mat: 'wool_needlepoint', tasselMat: 'brass_tarnished' }, lighting: 'dynamic', collider: 'none', interaction: 'pull_bell', ms: 'M2' });
 p('P_COAT_WARDROBE', 'slatted_cabinet', 'U2', [4.07, 1.9, zU], FACE.E, { params: { variant: 'wardrobe_coats', width: 1.1, depth: 0.62, height: 2.05, contents: 'coats,handbag,trucker_cap', mat: 'wood_furniture_dark', coatMat: 'wool_coats' }, collider: 'mesh', interaction: 'hide', ms: 'M2' });
 p('P_SACK_CHAIR', 'chair_sacks', 'U2', [8.05, 0.75, zU], faceYaw(-1, 1), { params: { mat: 'wood_furniture_dark', sackMat: 'burlap_sack', twine: true, scissors: true }, ms: 'M2' });
 p('P_WASHSTAND', 'washstand', 'U2', [6.3, 0.28, zU], FACE.N, { params: { mat: 'wood_furniture_dark', bowlMat: 'enamel_chipped' }, ms: 'M2' });
 p('P_MIRROR_WASHSTAND', 'mirror_crepe', 'U2', [6.3, 0.05, zU + 1.05], FACE.N, { params: { style: 'washstand', mat: 'crepe_black', frameMat: 'wood_furniture_dark' }, collider: 'none', ms: 'M2' });
-p('P_HAMMER', 'claw_hammer', 'U2', [8.7, 1.15, zU + 0.87], 0.3, { params: { mat: 'cast_iron', handleMat: 'wood_furniture_dark' }, lighting: 'dynamic', collider: 'none', interaction: 'take_hammer', ms: 'M2' });
+p('P_HAMMER', 'claw_hammer', 'U2', [8.7, 1.15, zU + 0.87], 0.3, { params: { mat: 'steel_forged', handleMat: 'hickory_handle' }, lighting: 'dynamic', collider: 'none', interaction: 'take_hammer', ms: 'M2' });
 p('P_NAIL_CAN', 'nail_can', 'U2', [8.7, 1.5, zU + 0.87], 0, { params: { mat: 'zinc_galvanized', contents: 'square_nails' }, lighting: 'dynamic', collider: 'none', ms: 'M2' });
 p('P_GRATE', 'floor_register', 'U2', [6.0, 3.2, zU], 0, { params: { size: 0.6, mat: 'cast_iron', hole: GRATE.join(',') }, collider: 'none', interaction: 'peek_grate', ms: 'M1' });
 p('P_BED_RUG', 'rag_rug', 'U2', [6.4, 2.2, zU], 0.1, { params: { mat: 'rag_rug', w: 1.2, d: 0.8 }, collider: 'none', ms: 'M2' });
@@ -459,7 +467,7 @@ p('P_DRESS', 'dress_dummy', 'U3', [8.15, 7.2, zU], FACE.W, { params: { state: 'i
 p('P_LOCKET', 'locket', 'U3', [8.15, 7.0, zU + 0.12], 0, { params: { engraving: 'A. from H. 1968', open: false, mat: 'brass_tarnished', photoMat: 'photo_print', inHem: true }, lighting: 'dynamic', collider: 'none', interaction: 'take_locket', ms: 'M2' });
 p('P_TICKET', 'bus_ticket', 'U3', [8.1, 7.0, zU + 0.12], 0, { params: { text: 'CARVEL 6:10, TUE OCT 12 1976', mat: 'paper_aged', inHem: true }, lighting: 'dynamic', collider: 'none', interaction: 'read_ticket', ms: 'M2' });
 p('P_SEW_BASKET', 'sewing_basket', 'U3', [7.25, 8.3, zU], 0.4, { params: { mat: 'wood_raw_plank' }, collider: 'none', ms: 'M2' });
-p('P_SHEARS', 'sewing_shears', 'U3', [7.2, 8.28, zU + 0.24], 0.9, { params: { mat: 'cast_iron' }, lighting: 'dynamic', collider: 'none', interaction: 'take_shears', ms: 'M2' });
+p('P_SHEARS', 'sewing_shears', 'U3', [7.2, 8.28, zU + 0.24], 0.9, { params: { mat: 'steel_forged', bowMat: 'cast_iron' }, lighting: 'dynamic', collider: 'none', interaction: 'take_shears', ms: 'M2' });
 p('P_LETTER', 'letter', 'U3', [7.3, 8.33, zU + 0.24], 0.2, { params: { mat: 'paper_aged', unsent: true }, lighting: 'dynamic', collider: 'none', interaction: 'read_letter', ms: 'M2' });
 p('P_SHEET_CHAIR', 'dust_sheet_proxy', 'U3', [4.6, 5.4, zU], 0.5, { params: { shape: 'chair', mat: 'dust_sheet' }, ms: 'M2' });
 p('P_SHEET_TREADLE', 'dust_sheet_proxy', 'U3', [6.3, 5.15, zU], FACE.N, { params: { shape: 'treadle_machine', mat: 'dust_sheet' }, ms: 'M2' });
@@ -510,7 +518,7 @@ const lights = [
   { id: 'L_CANDLE_TABLE', room: 'G2', role: 'candle', type: 'point', pos: [5.6, 2.3, zG + 0.98], watts: 12, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   { id: 'L_CANDLE_MANTEL', room: 'G2', role: 'candle', type: 'point', pos: [8.6, 3.4, zG + 1.44], watts: 10, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   { id: 'L_CANDLE_SILL', room: 'G2', role: 'candle', type: 'point', pos: [5.0, 0.18, zG + 0.9], watts: 10, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
-  { id: 'L_CANDLE_KITCHEN', room: 'G3', role: 'candle', type: 'point', pos: [7.35, 9.6, zG + 0.86], watts: 6, kelvin: 1800, radius: 0.01, mode: 'bake_flicker' },
+  { id: 'L_CANDLE_KITCHEN', room: 'G3', role: 'candle', type: 'point', pos: [6.75, 9.6, zG + 0.86], watts: 6, kelvin: 1800, radius: 0.01, mode: 'bake_flicker' },
   { id: 'L_CANDLE_LANDING', room: 'U1', role: 'candle', type: 'point', pos: [1.2, 4.6, zU + 1.33], watts: 12, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   { id: 'L_LAMP_U2', room: 'U2', role: 'lamp', type: 'point', pos: [6.66, 4.33, zU + 0.86], watts: 60, kelvin: 2100, radius: 0.02, mode: 'bake_flicker' },
   // Opening (docs/C1-OPENING.md §5.1, lead-approved 2026-10-08). Headlights: 1980s 4x6 in H4656-class halogen low beam,

@@ -230,7 +230,7 @@ export const MATERIALS = [
   }),
   m('crepe_black', 'crepe', {
     albedo: [0.015, 0.014, 0.014], rough: 0.9, tile: 0.2,
-    params: { crinkle: 0.8, dustOnTop: 0.4, fade: 0.2, seed: 84 },
+    params: { maxSize: 512, crinkle: 0.8, dustOnTop: 0.4, fade: 0.2, seed: 84 },
     notes: 'Mourning crepe over every mirror.',
   }),
   m('burlap_sack', 'burlap', {
@@ -269,7 +269,7 @@ export const MATERIALS = [
   }),
   m('leather_worn', 'leather', {
     albedo: [0.035, 0.022, 0.015], rough: 0.55, tile: 0.2,
-    params: { grain: 0.5, creases: 0.6, wear: 0.5, seed: 92 },
+    params: { maxSize: 512, grain: 0.5, creases: 0.6, wear: 0.5, seed: 92 },
     notes: 'Driving gloves, handbag, bell-pull backing, ledger binding.',
   }),
 
@@ -303,6 +303,42 @@ export const MATERIALS = [
     albedo: [0.3, 0.3, 0.29], rough: 0.45, metal: 1, tile: 0.3, source: 'baked_unique',
     params: { pitting: 0.7, rustSpots: 0.55, honedEdge: 0.8, seed: 106 },
     notes: 'Hog-cleaver blade: carbon steel, pitted, rust blooms, bright honed edge.',
+  }),
+  // ---------- round E (R3, approved 2026-10-08): handheld story props ----------
+  m('steel_forged', 'chrome', {
+    albedo: [0.4, 0.39, 0.38], rough: 0.32, metal: 1, tile: 0.15,
+    params: { maxSize: 512, grind: 0.7, patina: 0.45, pitting: 0.25, rustSpots: 0.15, seed: 160 },
+    notes: 'Hammer head + sewing-shear blades: forged/ground carbon steel, F0 0.56 fresh (Gulbrandsen) under a grey-brown handling patina (0.25), rough 0.2-0.45.',
+  }),
+  m('hickory_handle', 'wood_bare', {
+    albedo: [0.3, 0.19, 0.095], rough: 0.5, tile: 0.4,
+    params: { maxSize: 512, species: 'hickory', boardWidth: 0.05, boardLengthMin: 0.4, boardLengthMax: 0.4, baseColor: [0.36, 0.23, 0.115], grainContrast: 0.45, varnish: 0.35, varnishWear: 0.55, seed: 161 },
+    notes: 'Claw-hammer handle: hickory (light tan, ρ 0.35-0.45 sRGB-ish → linear ≈ 0.3), worn factory lacquer, hand-oiled grip.',
+  }),
+  m('paint_steel_can', 'enamel', {
+    albedo: [0.13, 0.024, 0.017], rough: 0.55, metal: 0.05, tile: 0.5,
+    params: { base: [0.17, 0.022, 0.016], chalking: 0.45, scuffs: 0.55, chips: 0.3, rustRuns: 0.35, stains: 0.25, seed: 162 },
+    notes: 'Jerry cans: aged, dirt-dulled oxide-red alkyd enamel (≈ sRGB 115/40/34 — a 30-year-old can, not showroom red) over red-oxide primer on pressed sheet steel; chalked, scuffed, chipped (wear rule painted_steel).',
+  }),
+  m('enamel_stove', 'enamel', {
+    albedo: [0.27, 0.275, 0.285], rough: 0.15, tile: 0.4,
+    params: { maxSize: 512, mottle: 1, dark: [0.11, 0.115, 0.125], light: [0.55, 0.56, 0.57], chips: 0.8, rustRings: 0.25, seed: 164 },
+    notes: 'Iron-stove oven-door panel: grey-and-white mottled porcelain enamel, chipped to black iron at the rim with rust haloes.',
+  }),
+  m('wood_weathered_post', 'wood_bare', {
+    albedo: [0.13, 0.12, 0.105], rough: 0.7, tile: 1.2, wet: 0.25,
+    params: { species: 'pine', boardWidth: 0.14, boardLengthMin: 4, boardLengthMax: 4, baseColor: [0.2, 0.15, 0.1], greyed: 0.85, grainContrast: 0.7, checks: 0.7, mildew: 0.5, dirtInGaps: 0.8, gapDepth: 0.003, seed: 165 },
+    notes: 'Roadside sign post + sign planks: 40-year exterior cedar/pine, silver-grey UV weathering (wet: ×0.6 albedo), season checks, mildew streaks.',
+  }),
+  m('paint_steel_sign', 'enamel', {
+    albedo: [0.42, 0.4, 0.33], rough: 0.5, metal: 0.05, tile: 0.5,
+    params: { base: [0.58, 0.55, 0.45], chalking: 0.5, scuffs: 0.35, chips: 0.6, rustRuns: 0.7, stains: 0.15, seed: 166 },
+    notes: 'VACANCY plate: cream sign enamel on tinplate, chalked, chipped to rusty steel at the folded hems, rust runs from the hook holes.',
+  }),
+  m('wool_needlepoint', 'fabric', {
+    albedo: [0.12, 0.05, 0.035], rough: 0.9, tile: 0.3,
+    params: { maxSize: 512, fade: 0.45, dust: 0.4, seed: 163 },
+    notes: 'Bell pull: Berlin wool-work tent stitch on 10-count canvas, claret ground with a faded floral motif.',
   }),
   m('coat_rain_dark', 'fabric', {
     albedo: [0.04, 0.04, 0.045], rough: 0.8, tile: 0.3, wet: 0.7, source: 'baked_unique',
@@ -361,7 +397,7 @@ export const MATERIALS = [
   // ---------- small props ----------
   m('wax_candle', 'wax', {
     albedo: [0.62, 0.57, 0.44], rough: 0.4, tile: 0.2,
-    params: { sss: 0.6, drips: 0.8, soot: 0.3, seed: 121 },
+    params: { maxSize: 512, sss: 0.6, drips: 0.8, soot: 0.3, seed: 121 },
   }),
   m('paper_aged', 'paper', {
     albedo: [0.55, 0.48, 0.35], rough: 0.9, tile: 0.3,
@@ -370,12 +406,12 @@ export const MATERIALS = [
   }),
   m('wick_cotton', 'rope', {
     albedo: [0.3, 0.27, 0.22], rough: 0.95, tile: 0.05,
-    params: { strands: 12, twist: 0.2, fuzz: 0.8, grime: 0.4, charredTip: 0.9, seed: 125 },
+    params: { maxSize: 256, strands: 12, twist: 0.2, fuzz: 0.8, grime: 0.4, charredTip: 0.9, seed: 125 },
     notes: 'Flat woven kerosene-lamp wick (charred at the tip) and candle wicks.',
   }),
   m('rope_hemp', 'rope', {
     albedo: [0.28, 0.22, 0.14], rough: 0.9, tile: 0.15,
-    params: { strands: 3, twist: 0.8, fuzz: 0.5, grime: 0.5, seed: 123 },
+    params: { maxSize: 512, strands: 3, twist: 0.8, fuzz: 0.5, grime: 0.5, seed: 123 },
     notes: 'The door rope, the bell wire uses cast_iron.',
   }),
   m('photo_print', 'paper', {
@@ -401,7 +437,7 @@ export const MATERIALS = [
   }),
   m('styrofoam', 'paper', {
     albedo: [0.72, 0.7, 0.64], rough: 0.5, tile: 0.1,
-    params: { beads: 0.8, coffeeStain: 0.5, foxing: 0.0, seed: 143 },
+    params: { maxSize: 512, beads: 0.8, coffeeStain: 0.5, foxing: 0.0, seed: 143 },
     notes: 'Gas-station 12 oz foam coffee cup and its sip lid.',
   }),
   m('plastic_cluster', 'rubber', {

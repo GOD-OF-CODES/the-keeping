@@ -160,7 +160,8 @@ const revealHit: Recipe = {
   variants: 2,
   stereo: true,
   level: 0.85,
-  preload: false,
+  // runtime lane E (ROADMAP runtime-D ruling e): pre-rendered with the banks during loading — lazily synthesised at
+  // its first cue (C0 20.0 s) it cost a 120–170 ms frame hitch mid-cinematic.
   gen: (sr, rng) => stinger(sr, rng, 0.05, 0.8),
 };
 

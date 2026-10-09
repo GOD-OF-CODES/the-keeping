@@ -16,7 +16,7 @@
 //  - albedo gain from the baker's measurement (matches spec.avgAlbedo, the Blender bounce colour).
 
 import * as THREE from 'three/webgpu';
-import { float, mix, mx_fractal_noise_float, mx_noise_float, normalMap, normalWorld, positionLocal, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';
+import { BRDF_Lambert, diffuseColor, float, mix, mx_fractal_noise_float, mx_noise_float, normalMap, normalView, normalWorld, positionLocal, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';
 import type { MaterialSpec } from '../shared/material-types.ts';
 import type { PresetConfig } from '../render/presets.ts';
 import { LightmapMaterial, type LightmapOptions } from '../render/lightmap-material.ts';
@@ -44,6 +44,41 @@ export const materialUniforms = {
 };
 
 const FABRIC = new Set(['rug', 'fabric', 'crepe', 'burlap', 'flannel', 'nightgown']);
+
+/**
+ * Candle wax translucency (round E, item 6c). Paraffin/tallow scatters light with a mean free path of millimetres, so a
+ * candle under its own flame is lit through its top: the sides glow where N·L ≈ 0 instead of going black. A
+ * wrapped-diffuse subsurface term per direct light (no textures, no extra samplers): the diffuse lobe uses
+ * (N·L + w)/(1 + w) instead of N·L, the extra part tinted by the wax colour once more (light that travelled through
+ * the wax picks up its yellow twice). w = spec `sss` (wax_candle 0.6). Point lights only matter here (the candle's
+ * own flame light), so the inverse-square falloff makes the top of the stick glow and the base stay dim.
+ */
+class WaxLightingModel extends (THREE as any).PhysicalLightingModel {
+  wrap: number;
+  constructor(wrap: number) {
+    super();
+    this.wrap = wrap;
+  }
+  direct(args: any, builder: any): void {
+    super.direct(args, builder);
+    const { lightDirection, lightColor, reflectedLight } = args;
+    const nl = normalView.dot(lightDirection);
+    const w = this.wrap;
+    const extra = nl.add(w).div(1 + w).clamp(0, 1).sub(nl.clamp(0, 1)).clamp(0, 1);
+    const tint = diffuseColor.rgb.div(diffuseColor.rgb.dot(vec3(0.2126, 0.7152, 0.0722)).max(1e-3)).clamp(0, 1.6);
+    reflectedLight.directDiffuse.addAssign(extra.mul(lightColor).mul(BRDF_Lambert({ diffuseColor: diffuseColor.rgb })).mul(tint));
+  }
+}
+class WaxNodeMaterial extends (THREE as any).MeshStandardNodeMaterial {
+  wrap: number;
+  constructor(params: Record<string, unknown>) {
+    super(params);
+    this.wrap = 0.6;
+  }
+  setupLightingModel(): any {
+    return new WaxLightingModel(this.wrap);
+  }
+}
 const DUST_RGB: [number, number, number] = [0.3, 0.285, 0.26];
 /**
  * Families whose generators have a gravity direction (rising damp, scuffs low on the wainscot, the tally's top
@@ -90,7 +125,10 @@ export function createSurfaceMaterial(spec: MaterialSpec, baked: BakedMaterial |
   let m: any;
   if (o.lightmap) m = new LightmapMaterial(params, o.lightmap);
   else if (wantsClearcoat || wantsSheen) m = new THREE.MeshPhysicalNodeMaterial(params);
-  else m = new THREE.MeshStandardNodeMaterial(params);
+  else if (spec.family === 'wax' && Number((spec.params as Record<string, unknown>).sss ?? 0) > 0) {
+    m = new WaxNodeMaterial(params);
+    m.wrap = Number((spec.params as Record<string, unknown>).sss);
+  } else m = new THREE.MeshStandardNodeMaterial(params);
   m.userData.material_id = spec.id;
 
   const src = o.source;

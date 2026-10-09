@@ -509,6 +509,7 @@ class Part:
         self.origin = Matrix.Identity(4)   # node transform relative to its parent (pivot for moving parts)
         self.subsurf = 0                     # Catmull-Clark levels applied at build (car body panels)
         self.sharp_angle = None              # override build()'s auto-sharp angle (trees: smooth thin tubes)
+        self.no_sharp = False                # round E: cloth — never split normals by angle (keeps wear finishing)
 
     def add(self, bm, mat, m=None, smooth=True, grain=None, uv_scale=1.0, face_mats=None):
         """Add a bmesh (freed afterwards). face_mats: optional per-face material ids (bm.faces order) for one
@@ -640,7 +641,8 @@ class Part:
         if finish and wear.LOOPS and wear.CURRENT_TYPE in wear.LOOP_TYPES and not self.subsurf and len(skip) < len(self.mats):
             wear.support_loops(me, wear.loop_width(self.verts), skip)
         try:
-            me.set_sharp_from_angle(angle=math.radians(self.sharp_angle or sharp_angle))
+            if not self.no_sharp:
+                me.set_sharp_from_angle(angle=math.radians(self.sharp_angle or sharp_angle))
         except Exception:
             pass
         for mid in self.mats:
@@ -722,7 +724,7 @@ def decal(part, name, w, h, m, text, mat='paper_aged', style='painted', extra=No
     return d
 
 
-GRIME = False   # PROPS-FINISH §4: off until the runtime 'grime' decal case + the grime_decal spec land (lead R1/R3)
+GRIME = True    # PROPS-FINISH §4 + ruling (h) 2026-10-09: on (runtime decals.ts 'grime' + grime_decal spec are live)
 
 
 def grime(part, quads):

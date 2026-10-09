@@ -28,6 +28,9 @@ from props import kit, registry, wear
 from props import lightmap as plm
 
 TIERS = ('low', 'medium', 'max')
+# Low keeps the grime decal quads only while the Low download budget allows (ruling (h): drop them first).
+LOW_WEAR_DROP = {'dress_dummy'}   # ruling (h) second lever: the dress_dummy mask goes from Low after the grime decals
+LOW_GRIME = False   # round E: Low over budget by ~0.24 MB → grime decals dropped from Low first (ruling h)
 ARGS = job_args()
 # --export-dir <scratch dir>: write GLBs/report there only (never public/assets or .cache/props) — measurement runs
 EXPORT_DIR = (REPO / ARGS['export_dir']) if isinstance(ARGS.get('export_dir'), str) else None
@@ -168,7 +171,7 @@ def low_dissolve_loops(objs):
         root = o
         while root.parent is not None:
             root = root.parent
-        if root.get('prop_type') in wear.HERO:
+        if root.get('prop_type') in wear.HERO and root.get('prop_type') not in LOW_WEAR_DROP:
             continue
         done.add(o.data.name)
         me = o.data
@@ -299,7 +302,8 @@ def main():
         if ARGS.get('low_dissolve'):
             report['low_dissolve'] = low_dissolve_loops([o for g in by_ms.values() for grp in g for o in grp])
         for ms, groups in sorted(by_ms.items()):
-            objs = [o for g in groups for o in g]
+            # ruling (h) 2026-10-09: on Low the grime decals go first when the 27 MB budget is tight (LOW_GRIME)
+            objs = [o for g in groups for o in g if LOW_GRIME or o.get('decal') != 'grime']
             name = f'props_{ms.lower()}.glb'
             p = stage / f'low_{name}'
             size = gexport.export_glb(p, objs, preset='static', **WEAR_EXPORT)

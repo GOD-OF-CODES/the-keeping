@@ -13,7 +13,7 @@
 // plus contact (the chase grab; an UNAWARE bump starts a fast LOOK first and only a bump during sight catches — #67). The only exception is SCRIPTED B04 (DESIGN: she is *held* 2–4 m behind).
 
 import type { LevelLayout, LightDef, P3 } from '../shared/layout-types.ts';
-import { AiGraph, dist3, dist2 } from './graph.ts';
+import { AiGraph, dist3, dist2, lerp3 } from './graph.ts';
 import { Nav } from './nav.ts';
 import { SeededRng } from './rng.ts';
 import { beamNear, beamTouches, flamesOf, hearingMargin, isPlayerLit, lureDuration, resolvePriority, seesLocket, seesPlayer, stairPortals, ThunderMask, type HearingContext } from './senses.ts';
@@ -93,6 +93,8 @@ interface InvLayer {
   /** Where the current route was planned to: a new stimulus re-plans only once it is > stimulusReplanM from HERE
    *  (not from the last stimulus — a creeping source, e.g. footsteps < 1 m apart, must still pull her along). */
   planPos?: P3;
+  /** Round E: where the arrival LOOK faces (a beam holder she walked toward); default = toward `pos`. */
+  lookAt?: P3;
 }
 
 interface SearchLayer {
@@ -144,6 +146,8 @@ interface RoutineLayer {
   t: number;
   dur: number;
   vigilVoiced: boolean;
+  /** Consecutive legs skipped by the post-death away rule (optional: older saves). */
+  skipped?: number;
 }
 
 export interface AdaSnapshot {
@@ -171,6 +175,8 @@ export interface AdaSnapshot {
   graceT: number;
   /** Optional for saves made before difficulty tuning 2026-10-08. */
   calmUntil?: number;
+  /** Optional (round E): last beam LOOK that saw nothing. */
+  beamMissT?: number;
   seenAcc?: number;
   thunder: { from: number; to: number }[];
   firstHideDone: boolean;
@@ -256,6 +262,10 @@ export class AdaBrain {
   assist = { slow: false, finaleWait: false };
   /** Time grace started (−∞ = none). */
   graceT = -Infinity;
+  /** Respawn fairness (round E ruling b): the player's position as of the last update (routine legs keep away from it
+   *  for grace.awayS) and the time a held routine re-plans. */
+  private playerPos: P3 | null = null;
+  private awayHoldT = -Infinity;
   /** Post-cutscene calm (difficulty 2026-10-08): she perceives nothing until this time. */
   calmUntil = -Infinity;
   /** Continuous time the player has been in her sight while not chasing (the notice dwell). */
@@ -266,6 +276,8 @@ export class AdaBrain {
   private pantTick = 0;
   private lastGurgleT = -Infinity;
   private beamCooldownT = -Infinity;
+  /** Round E (B11 'let her look' stall): when a beam LOOK last ended without seeing the holder (−∞ = never). */
+  private beamMissT = -Infinity;
   private noiseQueue: NoiseInput[] = [];
   private prevHidden: string | null = null;
   private nextId = 1;
@@ -482,6 +494,35 @@ export class AdaBrain {
     return this.t - this.graceT < TUNING.grace.patrolOnlyS;
   }
 
+  /** Respawn fairness (round E ruling b): after a death her routine legs keep away from the player for grace.awayS. */
+  get awayActive(): boolean {
+    return this.t - this.graceT < TUNING.grace.awayS;
+  }
+
+  /**
+   * True when the A* route from where she stands to `nodeId` keeps ≥ grace.awayM from the player on the same floor
+   * (samples every 0.25 m; a sample on another floor — |dz| > 2 m — is clear: floors block sight and contact).
+   */
+  private legClearOfPlayer(nodeId: string): boolean {
+    const pp = this.playerPos;
+    if (!pp) return true;
+    const R = TUNING.grace.awayM;
+    const near = (q: P3) => Math.abs(q[2] - pp[2]) <= 2 && dist2(q, pp) < R;
+    const start = this.nav.atNode && dist3(this.nav.pos, this.g.node(this.nav.atNode).pos) < 0.05 ? this.nav.atNode : this.g.nearestNode(this.nav.pos)?.id;
+    if (!start) return true;
+    const path = this.g.path(start, nodeId, this.doors);
+    if (!path) return true; // unreachable: the caller's own skip handles it
+    const pts: P3[] = [this.nav.pos, ...path.nodes.map((id) => this.g.node(id).pos)];
+    if (near(pts[0])) return false;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const n = Math.max(1, Math.ceil(dist3(a, b) / 0.25));
+      for (let k = 1; k <= n; k++) if (near(lerp3(a, b, k / n))) return false;
+    }
+    return true;
+  }
+
   get state(): AdaState {
     return this.display;
   }
@@ -526,6 +567,7 @@ export class AdaBrain {
 
   update(dt: number, player: PlayerView): AdaOutput {
     this.t += dt;
+    this.playerPos = player.pos;
     this.tells = { dripRate: 0.8, dripStopped: false, crack: false, gurgle: false, loop: null, lookWindup: this.windup(false) };
     this.thunder.prune(this.t);
     if (this.pendingRelocate) this.relocate(this.pendingRelocate, false);
@@ -690,10 +732,20 @@ export class AdaBrain {
     if (canReact && !this.chase && p.beam.on) {
       if (!this.look && beamTouches(p.beam, this.chest(), TUNING.light.bodyRadius, this.world.lineOfSight)) {
         if (this.scripted) this.endScripted();
-        // toward the holder: the lens sits ~0.5 m ahead of the eye. Fast wind-up only when lit up close (difficulty
-        // 2026-10-08: lighting her face up close is a clear mistake; a sweep across the room is a normal LOOK).
-        const close = dist3(this.chest(), p.eye) <= TUNING.look.fastBeamM;
-        this.startLook('beam', this.yawTo(p.eye), close, null, 0);
+        // round E (B11 'let her look' stall): the beam reaches her body but her eyes cannot reach the holder (the main
+        // stair's balustrade / soffit between them) — a look from where she stands found nothing last time, so she
+        // walks toward the light instead of looking again from the same spot forever. The investigate LOOK on
+        // arrival (head lifted) is what sees the player — or, in the finale, the locket.
+        if (!this.scripted && this.t - this.beamMissT < TUNING.light.beamRepeatS) {
+          // one walk (the beam on her meanwhile doesn't re-aim it); on arrival she looks at the light's source
+          if (!this.inv) this.comeToLook(p);
+        }
+        else {
+          // toward the holder: the lens sits ~0.5 m ahead of the eye. Fast wind-up only when lit up close (difficulty
+          // 2026-10-08: lighting her face up close is a clear mistake; a sweep across the room is a normal LOOK).
+          const close = dist3(this.chest(), p.eye) <= TUNING.look.fastBeamM;
+          this.startLook('beam', this.yawTo(p.eye), close, null, 0);
+        }
       } else if (!this.look && !this.scripted && this.t >= this.beamCooldownT && beamNear(p.beam, this.nav.pos, this.world.lineOfSight, this.chest())) {
         this.beamCooldownT = this.t + TUNING.light.beamInvestigateCooldownS;
         const hit = p.beam.hit!;
@@ -813,7 +865,29 @@ export class AdaBrain {
       if (this.scripted.mode !== 'dress') return;
       this.endScripted();
     }
+    // round E (careless gate, forgiving ruling): a FIRST sighting beyond sight.chaseM (a lit player across the hall, or
+    // one walking through her patrol at mid range) is a near miss, not a death sentence — she drops the look and comes
+    // to where she saw you (INVESTIGATE, arrival LOOK facing you). Seen again within chaseM, or close, she chases.
+    if (dist3(this.eye(), p.eye) > TUNING.sight.chaseM) {
+      this.look = null;
+      this.seenAcc = 0;
+      this.beamMissT = this.t; // a torch still on her while she walks over must not pin her in another look (B11 rule)
+      this.comeToLook(p);
+      return;
+    }
     this.startChase(p.pos, p.room);
+  }
+
+  /** Round E: INVESTIGATE toward the player, to a spot 2.5 m short of him (the arrival LOOK, facing him, is within
+   *  locket and close-sight range; walking all the way would end in a bump). */
+  private comeToLook(p: PlayerView): void {
+    const dx = this.nav.pos[0] - p.pos[0];
+    const dy = this.nav.pos[1] - p.pos[1];
+    const d = Math.hypot(dx, dy);
+    const k = d > 2.5 ? 2.5 / d : 0;
+    const at: P3 = [p.pos[0] + dx * k, p.pos[1] + dy * k, p.pos[2]];
+    this.stimulus(at, this.g.roomAt(at) ?? p.room ?? this.nav.room, 0.3);
+    if (this.inv) this.inv.lookAt = [...p.eye] as P3;
   }
 
   private startChase(target: P3, room: string | null, hideId: string | null = null): void {
@@ -940,6 +1014,8 @@ export class AdaBrain {
   }
 
   private lookDone(L: LookLayer): void {
+    // a beam look that ran its course saw nothing (seeing the holder starts a chase and drops the look)
+    if (L.reason === 'beam') this.beamMissT = this.t;
     if (L.reason === 'investigate' && this.inv && this.inv.id === L.owner) this.inv = null;
     if (L.reason === 'hide') {
       if (this.inv && this.inv.id === L.owner) this.inv = null;
@@ -1077,7 +1153,7 @@ export class AdaBrain {
           this.nav.toNode(`inv-hc:${I.id}`, hc.node, this.doors);
         } else {
           I.phase = 'wait_look';
-          this.startLook('investigate', dist2(I.pos, this.nav.pos) > 0.3 ? this.yawTo(I.pos) : this.nav.facing, false, null, I.id);
+          this.startLook('investigate', I.lookAt ? this.yawTo(I.lookAt) : dist2(I.pos, this.nav.pos) > 0.3 ? this.yawTo(I.pos) : this.nav.facing, false, null, I.id);
         }
       }
       return [TUNING.speed.investigate, 'walk', 'go', 'INVESTIGATE'];
@@ -1330,10 +1406,13 @@ export class AdaBrain {
     }
     gap += dist3(prev, p.pos);
     S.stillT = p.speed < B.stillSpeed ? S.stillT + dt : 0;
+    // round E (measured C2 → B04 handover: a frozen player released 1.47 m from her was grabbed 5.17 s after control
+    // returned): the still-player rush waits out the 6 s post-cutscene calm too
+    const rush = S.stillT > B.stillS && !this.calmActive;
     let speed: number;
-    if (S.stillT > B.stillS) speed = TUNING.speed.chase;
+    if (rush) speed = TUNING.speed.chase;
     else speed = Math.max(0, Math.min(B.maxSpeed, p.speed + 1.5 * (gap - (B.minGap + B.maxGap) / 2)));
-    if (S.stillT <= B.stillS && gap < B.minGap) speed = 0;
+    if (!rush && gap < B.minGap) speed = 0;
     // walk the trail
     let budget = speed * dt;
     const start: P3 = [...this.nav.pos] as P3;
@@ -1351,7 +1430,7 @@ export class AdaBrain {
         budget = 0;
       }
     }
-    if (budget > 0 && S.stillT > B.stillS) {
+    if (budget > 0 && rush) {
       const d = dist3(this.nav.pos, p.pos);
       const k = Math.min(1, budget / (d || 1));
       this.nav.pos = [this.nav.pos[0] + (p.pos[0] - this.nav.pos[0]) * k, this.nav.pos[1] + (p.pos[1] - this.nav.pos[1]) * k, this.nav.pos[2] + (p.pos[2] - this.nav.pos[2]) * k];
@@ -1362,7 +1441,7 @@ export class AdaBrain {
     if (Math.hypot(mv[0], mv[1]) > 1e-4) this.nav.facing = Math.atan2(mv[1], mv[0]);
     this.nav.atNode = null;
     this.nav.onEdge = null;
-    if (S.stillT > B.stillS && dist2(this.nav.pos, p.pos) <= TUNING.chase.catchDist && Math.abs(this.nav.pos[2] - p.pos[2]) < 1.2) {
+    if (rush && dist2(this.nav.pos, p.pos) <= TUNING.chase.catchDist && Math.abs(this.nav.pos[2] - p.pos[2]) < 1.2) {
       this.scripted = null;
       this.doCatch('scripted');
       return [0, 'catch_grab', 'grab', 'CATCH'];
@@ -1539,6 +1618,12 @@ export class AdaBrain {
     const R = this.routine;
     const def = ROUTINES[R.kind];
     const speed = TUNING.speed.patrol * this.speedMul();
+    // respawn fairness (round E ruling b): for grace.awayS after a death she only takes legs that keep grace.awayM
+    // from the player; when none does she holds where she is (scraping if at her vigil) and re-plans every 1.5 s
+    const away = this.awayActive;
+    if (away && this.t < this.awayHoldT) return this.holdAway();
+    if (R.mode === 'vigil' && def.vigil && !this.patrolOnly && away && this.nav.goalKey !== `vigil:${def.vigil}` && !this.atVigil() && !this.legClearOfPlayer(def.vigil))
+      R.mode = 'patrol';
     if (R.mode === 'vigil' && def.vigil && !this.patrolOnly) {
       this.nav.toNode(`vigil:${def.vigil}`, def.vigil, this.doors);
       const arrived = this.nav.follow(dt, speed, this.doors, this.t, this.events);
@@ -1573,7 +1658,21 @@ export class AdaBrain {
       return [0, 'idle', 'lap_end', 'PATROL'];
     }
     const wp = lap[R.idx];
-    const ok = this.nav.toNode(`patrol:${R.kind}:${R.lap}:${R.idx}`, wp, this.doors);
+    const legKey = `patrol:${R.kind}:${R.lap}:${R.idx}`;
+    if (away && this.nav.goalKey !== legKey && !this.legClearOfPlayer(wp)) {
+      R.idx++;
+      R.skipped = (R.skipped ?? 0) + 1;
+      // a whole cycle of laps without a clear leg: hold
+      const total = def.laps.reduce((n, l) => n + l.length, 0);
+      if (R.skipped >= total) {
+        R.skipped = 0;
+        this.awayHoldT = this.t + 1.5;
+        return this.holdAway();
+      }
+      return [0, 'idle', 'away_skip', 'PATROL'];
+    }
+    R.skipped = 0;
+    const ok = this.nav.toNode(legKey, wp, this.doors);
     if (!ok) {
       R.idx++; // unreachable waypoint (locked door): skip it
       return [0, 'idle', 'skip', 'PATROL'];
@@ -1589,6 +1688,18 @@ export class AdaBrain {
       }
     }
     return [speed, 'walk', `to:${wp}`, 'PATROL'];
+  }
+
+  /** Held during the post-death away window: stand still; at her vigil node the scrape loop says she is still there. */
+  private holdAway(): [number, AdaAnim, string, AdaState] {
+    this.nav.stop();
+    this.nav.goalKey = '';
+    const v = ROUTINES[this.routine.kind].vigil;
+    if (v && this.nav.atNode === v) {
+      this.nav.facing = this.g.node(v).lookYaw ?? this.nav.facing;
+      return [0, 'vigil_scrape', 'away_hold', 'VIGIL'];
+    }
+    return [0, 'idle', 'away_hold', 'PATROL'];
   }
 
   private noteDoorEvents(): void {
@@ -1626,6 +1737,7 @@ export class AdaBrain {
       assist: { ...this.assist },
       graceT: Number.isFinite(this.graceT) ? this.graceT : -1e9,
       calmUntil: Number.isFinite(this.calmUntil) ? this.calmUntil : -1e9,
+      beamMissT: Number.isFinite(this.beamMissT) ? this.beamMissT : -1e9,
       seenAcc: this.seenAcc,
       thunder: c(this.thunder.windows),
       firstHideDone: this.hides.firstHideDone,
@@ -1660,6 +1772,7 @@ export class AdaBrain {
     this.assist = { ...s.assist };
     this.graceT = s.graceT;
     this.calmUntil = s.calmUntil ?? -Infinity;
+    this.beamMissT = s.beamMissT ?? -Infinity;
     this.seenAcc = s.seenAcc ?? 0;
     this.thunder.windows = c(s.thunder);
     this.hides.firstHideDone = s.firstHideDone;

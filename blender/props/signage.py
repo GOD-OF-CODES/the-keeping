@@ -4,7 +4,7 @@ import math
 
 from mathutils import Vector
 
-from .kit import (Part, T, anchor, bisect, box, cyl, decal, extrude, fillet, jitter, lathe, plane, prop,
+from .kit import (Part, T, anchor, bisect, box, cyl, decal, extrude, fillet, grime, jitter, lathe, plane, prop,
                   rect_section, sag, sphere, tube, rot_to)
 
 
@@ -54,11 +54,18 @@ def sign_post(p, rng):
     part.add(box(0.5, 0.03, 0.09, 0.004, 2), mat, T((0, -ps / 2 - 0.015, zc - 0.2)))
     face_y = yb - st / 2
     plank_board(part, rng, sw, sh, st, mat, 4, T((0, face_y, zc)))
+    runs = []
     for bx in (-0.55, 0.55):     # 3/8" carriage bolts through each plank into the battens (Ø 22 mm domes), rust-streaked
         for k in range(4):
             zb = zc + (k - 1.5) * sh / 4 + rng.j(0.01)
+            xb = bx + rng.j(0.008)
             part.add(lathe([(0.011, 0.0), (0.0095, 0.003), (0.006, 0.0052), (0.0, 0.006)], n=16), 'rust',
-                     T((bx + rng.j(0.008), face_y - st / 2 + 0.0005, zb), (math.pi / 2, 0, 0)))
+                     T((xb, face_y - st / 2 + 0.0005, zb), (math.pi / 2, 0, 0)))
+            # Round E (audit #5): rust run under each bolt, 8–14 mm wide, down to the plank below (≤ one plank)
+            ln = rng.u(0.1, sh / 4 + 0.02)
+            runs.append((6 + (k + (bx > 0)) % 2, 400 + len(runs), (xb, face_y - st / 2 - 0.0045, zb - 0.006 - ln / 2),
+                         (0, 0, 0), rng.u(0.008, 0.014), ln))
+    grime(part, runs)
     # moulding frame round the sign face
     fy = face_y - st / 2 - 0.009
     for zz in (sh / 2 + 0.01, -sh / 2 - 0.01):
@@ -134,6 +141,8 @@ def vacancy_plate(p, rng):
     part.add(tube([(-0.21, 0, 0.0), (0.21, 0, 0.0)], 0.004, sides=8), 'rust')   # hanger rod = the swing pivot
     decal(part, 'vacancy_plate.face', w - 0.03, h - 0.03, T((0, -0.0015, zt - h / 2)), p.get('text', 'VACANCY'),
           style='stencil', extra={'text_param': 'text'})
+    grime(part, [(6 + k, 420 + k, (sx, -0.0022, zt - 0.012 - 0.04), (0, 0, 0), 0.011, 0.075)   # rust from the hook holes
+                 for k, sx in enumerate((-0.17, 0.17))])
     part.extras.update({'pivot_at': 'hang_point', 'swing_axis': [1, 0, 0]})
     return [part]
 

@@ -13,7 +13,7 @@
 //     probe-lit materials see the flashlight, the grids and the lightning lights.
 
 import { installTreeLod } from './tree-lod.ts';
-import { shareInstancePrograms } from './instance-buckets.ts';
+import { geometryInstancing, shareInstancePrograms } from './instance-buckets.ts';
 import * as THREE from 'three/webgpu';
 import { lights } from 'three/tsl';
 import type { GameContext } from '../game/context.ts';
@@ -455,7 +455,7 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
       bb.setFromObject(root2).expandByScalar(0.15);
       if (interactAt.some((v) => bb.containsPoint(v))) kind = 'mesh';
     }
-    colliderSources.push(...propColliderMeshes(root2, kind));
+    colliderSources.push(...propColliderMeshes(root2, kind, kind !== p.collider)); // gameplay-e: interactable-bearing props stay exact when heavy
   }
   const collision = new WorldCollision(colliderSources);
   doors.attachCollision(collision);
@@ -478,8 +478,11 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
 
   const level = new Level({ layout, index, root, roomGroups, alwaysGroup, doors, collision, lights: runtimeLights, props, scene });
   installTreeLod((id) => props.get(id) ?? null); // runtime lane D item 4: hero-tree far LOD (drawRange prefix)
+  // runtime lane E (load time): instance matrices as geometry attributes → one node build per material, not per chunk
+  // (?geoinst=0 = the round-D path for A/B)
+  const geoInst = new URLSearchParams(globalThis.location?.search ?? '').get('geoinst') === '0' ? { meshes: 0, geometries: 0 } : geometryInstancing(root);
   const inst = shareInstancePrograms(root); // runtime lane D (fz3): one vertex program per material, not per instanced mesh
-  console.info(`[level] instanced meshes on the attribute path: ${inst.meshes} (${inst.counts} distinct counts)`);
+  console.info(`[level] geometry-instanced meshes: ${geoInst.meshes}; instanced meshes on the attribute path: ${inst.meshes} (${inst.counts} distinct counts)`);
   level.lightmapped.push(...bound.lightmapped);
   const lmSet = new Set(bound.lightmapped);
   level.probeLit.push(...bound.materials.filter((m) => !lmSet.has(m)), ...doorBound.materials);

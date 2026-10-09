@@ -60,6 +60,12 @@ HERO = ['letter', 'locket', 'ledger_book', 'guest_book', 'bus_ticket', 'sewing_s
 # bricked_doorway 12 k -> 45 k): only the handled HERO props get them; the rest bake masks on their own topology
 LOOP_TYPES = set(HERO) - {'sedan_interior', 'dress_dummy'}   # car: 60k -> 97k tris with loops; cloth: no edges
 NO_MASK_FAMILIES = {'glass', 'skin', 'hair'}
+# Floor-contact grime (props AD review, round E): what stands on a floor for decades darkens in a band at the bottom
+# — a long skirt hem that has touched a dusty board floor carries a grey-brown dirt band ≈ 5–15 cm deep (the hem
+# drags, wicks floor dust and mop water); written into G (cavity → the family's grime layer). (band height m, amount)
+# by type; z is the part-local vertex z (dress parts are built in root space, floor = 0). dress_dummy only: its mask is dropped on Low (ruling h), so
+# the Low budget is untouched.
+FLOOR_GRIME = {'dress_dummy': (0.25, 1.0)}
 NEAR_STEPS = 3     # edge hops from a real face within which convex curvature counts as a bevel
 BIG_FACE = 0.004   # 2A/P (m) above which a face is a 'face', not an edge strip
 _FAMILY = None
@@ -238,6 +244,7 @@ def bake(ob, scalars, anchors, skip_mats=()):
                 onface[v.index] = True
     R, G, B, A = [0.0] * nv, [0.0] * nv, [0.0] * nv, [0.0] * nv
     up = Vector((0, 0, 1))
+    fg = FLOOR_GRIME.get(CURRENT_TYPE)
     for v in bm.verts:
         i = v.index
         if not masked[i]:
@@ -276,6 +283,8 @@ def bake(ob, scalars, anchors, skip_mats=()):
                 dust *= 0.15
         R[i] = E[i] * es * (1.0 - prot)
         G[i] = min(1.0, cav * cs + soot)
+        if fg:
+            G[i] = max(G[i], fg[1] * (1.0 - _smooth(0.0, fg[0], v.co.z)))
         B[i] = hand * us
         A[i] = dust * (1.0 - hand) * ds * (1.0 - prot)
     bm.free()

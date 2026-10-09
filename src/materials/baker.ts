@@ -99,7 +99,11 @@ function yieldTask(): Promise<void> {
 const MEASURE = 16;
 
 export function textureSizeFor(spec: MaterialSpec, preset: PresetConfig): number {
-  return spec.hero ? preset.textures.heroSize : preset.textures.baseSize;
+  const size = spec.hero ? preset.textures.heroSize : preset.textures.baseSize;
+  // Optional spec cap (round E): small hand-prop tiles (0.15–0.5 m) reach < 1 mm/texel at 512 — finer than any pixel
+  // they cover at play distance — so they never take a 1024² Max slot.
+  const cap = Number((spec.params as Record<string, unknown>).maxSize ?? 0);
+  return cap > 0 ? Math.min(size, cap) : size;
 }
 
 export class MaterialBaker {

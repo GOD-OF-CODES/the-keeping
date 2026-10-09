@@ -59,7 +59,21 @@ export function createCorridorCuller(root: any) {
   const chunks: Chunk[] = [];
   root?.traverse((n: any) => {
     const e = n.userData ?? {};
+    // runtime lane E (item 7): the road, verges and canopy blanket receive the lightning's tree shadows
+    if (e.corridor)
+      n.traverse((m: any) => {
+        if (m.isMesh) m.receiveShadow = true;
+      });
     if (!e.corridor || e.chunk === undefined || !Array.isArray(e.s_range)) return;
+    // runtime lane E (item 7): the pines and snags cast into the lightning's directional shadow (drawn once per strike,
+    // atmosphere.ts) and receive it — C0's aerial flash had no tree shadow at all (a flat sky-coloured wash). L2 crown
+    // cards (far / aerial fill) neither cast nor receive.
+    const lodTag = String(e.lod ?? 'L1');
+    n.traverse((m: any) => {
+      if (!m.isMesh) return;
+      m.receiveShadow = true;
+      if (lodTag !== 'L2') m.castShadow = true;
+    });
     const [s0, s1] = e.s_range as [number, number];
     const [x, y] = roadFrame((s0 + s1) / 2);
     chunks.push({ node: n, lod: String(e.lod ?? 'L1'), s0, s1, mid: [x, y] });

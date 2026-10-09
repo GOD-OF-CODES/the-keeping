@@ -4,10 +4,10 @@ import math
 
 from mathutils import Vector
 
-from .kit import (Part, T, anchor, box, cyl, extrude, fillet, jitter, lathe, nail_head, prop, rect_section, screw_head, sphere, tube)
+from .kit import (Part, T, anchor, box, cyl, extrude, fillet, grime, jitter, lathe, nail_head, prop, rect_section, screw_head, sphere, tube)
 
 
-@prop('iron_stove', budget=14000)
+@prop('iron_stove', budget=16000)
 def iron_stove(p, rng):
     """Farm wood range (~1930s): cast body on short cabriole legs, 6 lidded cooking holes, oven door with an
     enamel panel, firebox door, nickel towel rail, high warming closet, stovepipe with damper rising to the flue."""
@@ -31,7 +31,26 @@ def iron_stove(p, rng):
     # oven door (right) with enamel panel, firebox door (left), ash drawer
     od = Part('iron_stove.oven_door', rng)
     od.add(box(0.5, 0.03, 0.42, 0.01, 2), mat, T((0.25, -0.015, 0)))
-    od.add(box(0.36, 0.01, 0.28, 0.008, 2), enamel, T((0.25, -0.034, 0)))
+    # Round E (audit #5): a pillowed porcelain panel (≈ 3 mm crown, as fired enamel on pressed steel) in a cast bead
+    # frame, held by 4 domed nickel screws; rust runs from the screws, oily finger grime by the handle.
+    pn = box(0.36, 0.01, 0.28, 0.004, 2, cuts={0: 10, 2: 8})
+    for v in pn.verts:
+        if v.co.y < -0.004:
+            ku = max(0.0, math.cos(math.pi * v.co.x / 0.36)) ** 0.6
+            kv = max(0.0, math.cos(math.pi * v.co.z / 0.28)) ** 0.6
+            v.co.y -= 0.003 * ku * kv
+    od.add(pn, enamel, T((0.25, -0.034, 0)))
+    rim = [(0.25 + x, -0.04, z) for x, z in ((0.0, -0.146), (0.186, -0.146), (0.186, 0.146), (-0.186, 0.146),
+                                               (-0.186, -0.146), (0.0, -0.146))]
+    od.add(tube(fillet(rim, 0.012, 3)[:-1], 0.006, sides=8, closed=True), mat)
+    for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        od.add(lathe([(0.0045, 0.0), (0.0042, 0.0008), (0.003, 0.0016), (0.0, 0.0019)], n=12), 'chrome_pitted',
+               T((0.25 + sx * 0.163, -0.039, sz * 0.123), (math.pi / 2, 0, 0)))
+    grime(od, [(6, 300, (0.25 - 0.163, -0.0401, 0.123 - 0.045), (0, 0, 0), 0.012, 0.085),     # top screws: long runs
+               (7, 301, (0.25 + 0.163, -0.0401, 0.123 - 0.035), (0, 0, 0), 0.011, 0.065),
+               (6, 302, (0.25 - 0.163, -0.0401, -0.123 - 0.008), (0, 0, 0), 0.01, 0.018),     # bottom: short, to the rim
+               (7, 303, (0.25 + 0.163, -0.0401, -0.123 - 0.008), (0, 0, 0), 0.01, 0.018),
+               (9, 310, (0.47, -0.0303, 0.0), (0, 0, 0), 0.05, 0.13)])
     od.add(tube([(0.44, -0.05, -0.08), (0.44, -0.07, 0.0), (0.44, -0.05, 0.08)], 0.008, sides=8), 'chrome_pitted')
     od.extras = {'part': 'oven_door', 'hinge_axis': [0, 0, 1]}
     part.children.append((od, T((-0.05, -D / 2, lh + 0.32))))

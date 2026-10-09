@@ -3,7 +3,8 @@
 // Intensity convention: runtime candela = Blender W / (4π) (CLAUDE.md light units).
 
 import * as THREE from 'three/webgpu';
-import { Fn, If, abs, dot, float, max, mx_noise_float, normalView, positionGeometry, positionViewDirection, positionWorld, smoothstep, uniform, vec3 } from 'three/tsl';
+import { Fn, If, Loop, cameraPosition, dot, float, length, max, mx_noise_float, positionWorld, smoothstep, uniform, vec3 } from 'three/tsl';
+import { SKY_U } from '../world/atmosphere.ts';
 import type { PresetConfig } from './presets.ts';
 import { kelvinToLinearRGB } from '../world/lights.ts';
 
@@ -17,7 +18,8 @@ import { kelvinToLinearRGB } from '../world/lights.ts';
  * with a hotspot 2× its spill: a flat near-white disc with black 20 cm outside it. The AD's 60 cd / 0.9 / 0.12 inside
  * the old cone integrates to only 2.3 lm, so the shelf and the wider cone carry the 15–25 lm a 2-D-cell bulb
  * (≈ 1.2 W PR2) puts out; peak 120 cd is the lower end of real 2-D incandescent torches (100–1000 cd).
- * Every term is a uniform (look API torchCore/torchSigma2/torchSpill/torchShelf/torchTail). */
+ * Every term is a uniform (look API torchCore/torchSigma2/torchSpill/torchShelf/torchTail).
+ * SUPERSEDED (runtime AD review, round D): the live profile is LOOK.torch* in look.ts — 2000 cd / 30.9 lm (CLAUDE.md). */
 export const uTorchCore = uniform(0.87);
 export const uTorchSigma2 = uniform(0.012);
 export const uTorchSpill = uniform(0.13);
@@ -105,16 +107,68 @@ export function createFlashlight(camera: any, preset: PresetConfig): Flashlight 
 
   let beam: any = null;
   if (preset.post.volumetricBeam) {
-    const len = 5;
-    const geo = new THREE.ConeGeometry(Math.tan(light.angle * 0.5) * len, len, 32, 1, true);
+    // runtime lane E (item 10): single-scattering beam, replacing the round-2 stub (a uniform additive glow over the
+    // whole 45° cone, blind to the 2000 cd / 2.9° HWHM core). Each pixel of the cone's far wall marches 12 steps along
+    // its view ray, from the eye to the cone's far wall (depth-tested), summing the torch's in-scattered light:
+    //   L = σs · Σ I(θ)/d² · p(cos) · Δt      (nits: σs 1/m · cd/m² · 1/sr · m)
+    // I(θ) = the same cookie profile the spot uses (core gaussian + spill shelf + tail, look.ts torch*), d = distance
+    // from the lens, p = Henyey–Greenstein g 0.6 (mist / drizzle droplets are strongly forward-scattering: looking
+    // along your own beam you see their weak back-scatter — a faint shaft round the core, never a laser rod);
+    // σs = the scene's fog extinction outdoors (SKY_U.fogSigma ≈ 0.01 /m in this rain), 4e-4 /m indoors (dusty air).
+    const len = 14;
+    const geo = new THREE.ConeGeometry(Math.tan(light.angle * 0.5) * len * 1.05, len, 32, 1, true);
     geo.translate(0, -len / 2, 0);
     geo.rotateX(-Math.PI / 2); // apex at origin, pointing -z
-    const uBeam = uniform(0.05);
-    const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
-    const along = positionGeometry.z.negate().div(len); // 0 at the lens, 1 at the far end
-    const soft = abs(dot(normalView, positionViewDirection)).pow(2); // fade the silhouette edges
-    const fall = float(1).sub(along).pow(1.6).mul(smoothstep(0.0, 0.08, along));
-    mat.colorNode = vec3(1, 0.95, 0.85).mul(fall.mul(soft).mul(uBeam));
+    const uAxis = uniform(new THREE.Vector3(0, 0, -1));
+    const uCd = uniform(0);
+    const uTanA = uniform(1);
+    const uCol = uniform(new THREE.Color(kc[0], kc[1], kc[2]));
+    const _q = new THREE.Vector3();
+    uAxis.onRenderUpdate(() => {
+      light.getWorldPosition(_q);
+      uAxis.value.setFromMatrixPosition(light.target.matrixWorld).sub(_q).normalize();
+      return uAxis.value;
+    });
+    uCd.onRenderUpdate(() => light.intensity);
+    uTanA.onRenderUpdate(() => Math.tan(light.angle));
+    const N = 12;
+    const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: true, side: THREE.BackSide, blending: THREE.AdditiveBlending });
+    mat.colorNode = Fn(() => {
+      const toP = positionWorld.sub(cameraPosition);
+      const tBack = length(toP);
+      const rd = toP.div(tBack);
+      // beamab3: reading viewportDepthTexture inside the MRT scene pass forces a framebuffer copy that split the pass
+      // and lost the opaque frame (black). The cone is depth-TESTED instead: where a surface is nearer than the cone's
+      // far wall the pixel is not drawn — the shaft simply ends where the beam meets the world (a hit within the
+      // 14 m cone hides the glow in front of it, an acceptable loss: there the lit surface dominates).
+      const dt = tBack.div(N);
+      const sigma = max(SKY_U.fogSigma, 4e-4);
+      const acc = float(0).toVar();
+      Loop(N, ({ i }: any) => {
+        const x = cameraPosition.add(rd.mul(float(i).add(0.5).mul(dt)));
+        const v = x.sub(uTorchPos);
+        // near field: a 5 cm reflector only forms its 2000 cd beam beyond ≈ I·A/Φcore = 2000 · 0.002 / 25 ≈ 0.16 m²
+        // (d ≈ 0.4 m); inside that the column's illuminance is bounded by Φ/A ≈ 12.5 klux, not I/d² (beamab: the
+        // unclamped 1/d² beside the lens read 75 nits and blacked the frame through the exposure meter)
+        const d2 = dot(v, v).max(0.16);
+        const s = dot(v, uAxis);
+        If(s.greaterThan(0.01), () => {
+          const r = length(v.sub(uAxis.mul(s))).div(s).div(uTanA);
+          const core = r.mul(r).div(uTorchSigma2).negate().exp().mul(uTorchCore);
+          const spill = float(1).sub(smoothstep(uTorchShelf, 0.95, r)).mul(uTorchSpill);
+          const tail = float(1).sub(smoothstep(0.6, 1.0, r)).mul(uTorchTail);
+          const prof = core.add(spill).add(tail);
+          // scattering angle: light travels along v̂, leaves toward the eye along −rd
+          const c = dot(v, rd).negate().div(d2.sqrt());
+          const g = 0.6;
+          const phase = float((1 - g * g) / (4 * Math.PI)).div(float(1 + g * g).sub(c.mul(2 * g)).pow(1.5));
+          acc.addAssign(prof.mul(phase).div(d2));
+        });
+      });
+      // beamab2 (Max, road): one NaN pixel here spread through bloom/TAAU and blacked the whole frame — clamp to a
+      // finite, physically generous ceiling (≈ 4 nits: the near-lens column in thick mist)
+      return vec3(uCol).mul(max(acc.mul(dt).mul(sigma).mul(uCd).mul(uTorchLit), 0).min(4));
+    })();
     beam = new THREE.Mesh(geo, mat);
     beam.position.copy(light.position);
     beam.lookAt(light.target.position);
@@ -122,7 +176,7 @@ export function createFlashlight(camera: any, preset: PresetConfig): Flashlight 
     beam.castShadow = false;
     beam.receiveShadow = false;
     beam.frustumCulled = false;
-    beam.name = 'flashlight-beam-stub';
+    beam.name = 'flashlight-beam';
     camera.add(beam);
   }
 

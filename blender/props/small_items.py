@@ -4,7 +4,7 @@ import math
 
 from mathutils import Vector
 
-from .kit import (Part, T, anchor, bisect, box, cyl, decal, extrude, fillet, jitter, lathe, plane, prop,
+from .kit import (Part, T, anchor, bisect, box, cyl, decal, extrude, fillet, grime, jitter, lathe, plane, prop,
                   rect_section, sag, sphere, tube)
 
 
@@ -375,14 +375,17 @@ def jerry_can(p, rng):
     part.apply(T((0, 0, 0), (0, 0, math.pi / 2)))
     decal(part, 'jerry_can.chalk', 0.13, 0.07, T((0, -W / 2 - 0.004, H * 0.6)), str(p.get('plate', '')),
           mat='paper_aged', style='chalk', extra={'text_param': 'plate'})
+    # Round E: the rust/fuel ring the can has left on the boards (atlas cell 8), peeking 1–2 cm out from under it
+    grime(part, [(8, rng.randint(0, 99), (rng.j(0.012), rng.j(0.015), 0.0004), (-math.pi / 2, 0, 0), 0.185, 0.36)])
     part.extras['full'] = bool(p.get('full', True))
     return [part]
 
 
-def shears_parts(part, rng, m, mat='cast_iron'):
+def shears_parts(part, rng, m, mat='cast_iron', bow_mat=None):
     """8-inch dressmaker's shears lying flat (blade 130 mm, overall ~230 mm): two curved blades ground to a fine
     edge (6 mm bevel), a domed pivot screw Ø 8 mm with a 1.2 mm slot, offset bows (large 60 x 28, small 44 x 24 mm
-    outside). PROPS-FINISH §3.2 #6."""
+    outside). PROPS-FINISH §3.2 #6. Round E: bows + shanks in `bow_mat` (black japanned iron), blades/pivot in `mat`."""
+    bow_mat = bow_mat or mat
     for s, dz in ((1, 0.0), (-1, 0.0032)):
         spine = [(0.0, 0.0095), (0.04, 0.0092), (0.08, 0.0075), (0.115, 0.0048), (0.135, 0.0018), (0.141, 0.0)]
         edge = [(0.135, -0.0015), (0.1, -0.0022), (0.06, -0.003), (0.02, -0.0038), (0.0, -0.004)]
@@ -399,10 +402,10 @@ def shears_parts(part, rng, m, mat='cast_iron'):
         rx, ry = (0.03, 0.014) if s > 0 else (0.022, 0.012)
         loop = [(bow_c[0] + rx * math.cos(a), bow_c[1] + ry * math.sin(a), dz + 0.0015) for a in
                 [math.tau * k / 24 for k in range(24)]]
-        part.add(tube(loop, 0.004, section=rect_section(0.008, 0.004, 0.0015, 3), closed=True), mat, m)
+        part.add(tube(loop, 0.004, section=rect_section(0.008, 0.004, 0.0015, 3), closed=True), bow_mat, m)
         part.add(tube([(0.0, 0.002 * s, dz + 0.0015), (-0.02, 0.004 * s, dz + 0.0015),
                        (bow_c[0] + rx * 0.8, bow_c[1] - s * ry * 0.3, dz + 0.0015)],
-                      0.004, section=rect_section(0.007, 0.004, 0.0015, 3)), mat, m)
+                      0.004, section=rect_section(0.007, 0.004, 0.0015, 3)), bow_mat, m)
     part.add(cyl(0.004, 0.0072, n=24), mat, m @ T((0, 0.002, -0.0005)))
     dome = [(0.0045, 0.0), (0.0042, 0.0006), (0.0032, 0.0011), (0.0, 0.0013)]
     for side in (0, 1):      # domed screw head split by a 1.2 mm slot (two half-domes)
@@ -414,7 +417,7 @@ def shears_parts(part, rng, m, mat='cast_iron'):
 @prop('sewing_shears', budget=3000)
 def sewing_shears(p, rng):
     part = Part('sewing_shears', rng)
-    shears_parts(part, rng, T((0.03, 0, 0)), p.get('mat', 'cast_iron'))
+    shears_parts(part, rng, T((0.03, 0, 0)), p.get('mat', 'cast_iron'), p.get('bowMat'))
     anchor(part, 'wear_handle', (-0.04, 0.022, 0.002), {'r': 0.03})    # large bow (fingers)
     anchor(part, 'wear_handle', (-0.04, -0.018, 0.005), {'r': 0.025})  # small bow (thumb)
     anchor(part, 'wear_handle', (0.03, 0.002, 0.006), {'r': 0.008})    # pivot

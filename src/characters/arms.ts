@@ -5,7 +5,7 @@
 // hide push, freeze) crossfaded back to idle, breath-hold loop while Space is held.
 
 import * as THREE from 'three/webgpu';
-import { mix, normalWorld, reflectVector, roughness, smoothstep } from 'three/tsl';
+import { float, mix, normalView, normalWorld, positionViewDirection, reflectVector, roughness, smoothstep, vec3 } from 'three/tsl';
 import type { LoadedCharacter } from './loader.ts';
 import { TORCH_POOL, torchPoolRadiance } from '../render/flashlight-bounce.ts';
 import { SKY_U, skyIrradiance, skyRadiance } from '../world/atmosphere.ts';
@@ -18,6 +18,8 @@ import { SKY_U, skyIrradiance, skyRadiance } from '../world/atmosphere.ts';
  * grid (inside it the grid lights them, as before), plus indoors the torch's interreflected fill (TORCH_POOL.fill). Candles / lamps / probes stay in the LightsNode (story-runtime).
  */
 class ArmsEnvNode extends (THREE as any).LightingNode {
+  /** runtime lane E (item 6): an environment-only sheen for the glove leather where the Charlie lobe is off (Medium). */
+  sheen = false;
   setup(builder: any): void {
     const ctx = builder.context;
     const a2 = roughness.mul(roughness);
@@ -27,8 +29,18 @@ class ArmsEnvNode extends (THREE as any).LightingNode {
     // the room's interreflected field is (near) isotropic: it lights the diffuse (E) AND is what the glossy leather /
     // snaps / barrel reflect wherever the pool isn't in their lobe (L = E/π) — the worn edges' sheen in torch views
     const fill = TORCH_POOL.fill.mul(TORCH_POOL.gain).mul(SKY_U.outside.oneMinus());
-    ctx.radiance.addAssign(torchPoolRadiance().add(sky).add(fill.mul(1 / Math.PI)));
+    const env = torchPoolRadiance().add(sky).add(fill.mul(1 / Math.PI));
+    ctx.radiance.addAssign(env);
     ctx.irradiance.addAssign(skyIrradiance(normalWorld).mul(SKY_U.beyondGrid).add(fill));
+    if (this.sheen && ctx.reflectedLight) {
+      // napped / oiled hide back-scatters at grazing angles (the Charlie sheen of Max, sheenColor 0.16/0.14/0.12,
+      // roughness 0.5): its directional albedo rises ≈ (1 − n·v)³ toward the silhouette. Environment only — no
+      // per-light cost — lit by what the leather sees: the torch pool, the room's fill, the sky. Creases and worn
+      // knuckles (normal map) catch it, so the glove's form reads against the dark instead of a flat blob.
+      const nv = normalView.dot(positionViewDirection).abs().clamp(0, 1);
+      const rim = float(1).sub(nv).pow(3);
+      ctx.reflectedLight.indirectSpecular.addAssign(vec3(0.16, 0.14, 0.12).mul(env.add(fill.mul(1 / Math.PI))).mul(rim));
+    }
   }
 }
 
@@ -59,8 +71,15 @@ export class FpArms {
       m.receiveShadow = false;
       m.renderOrder = 5;
     }
-    const env = () => new ArmsEnvNode();
-    for (const m of c.materials) if (!m.isMeshBasicNodeMaterial) m.setupEnvironment = env;
+    for (const m of c.materials) {
+      if (m.isMeshBasicNodeMaterial) continue;
+      const glove = String(m.userData?.material_id) === 'leather_worn' && !(m.sheen > 0);
+      m.setupEnvironment = () => {
+        const n = new ArmsEnvNode();
+        n.sheen = glove;
+        return n;
+      };
+    }
     parent.add(c.root);
     this.mixer = new THREE.AnimationMixer(c.root);
     this.mixer.addEventListener('finished', (e: any) => {
@@ -91,6 +110,69 @@ export class FpArms {
           this.beamAxis.set(...ax);
         }
       }
+    }
+  }
+
+  private anchor: any = null;
+
+  /**
+   * Review fix (C1 driver POV): the car clips (arms_wheel, knob, stalk, radio, map) are authored in the eye frame of
+   * blender/anim/clips_arms.py — car − EYE with the CAR's axes. Riding the camera rig, the gloves turned with every
+   * head turn (radio glance, dome knob, passenger seat, visor, the 48 sign) and left the rim: at C1 20 the right glove
+   * sat on the horn pad and the left hung off the column. With `obj` (the mounted interior, local = car space as
+   * (x, z, −y)) the root is fixed at the driver's eye in the car frame, so the hands stay on the wheel while the head
+   * turns, as a driver's do. null = back on the rig (walking play).
+   */
+  anchorTo(obj: any | null, eye: readonly [number, number, number] = [0, 0, 0]): void {
+    const root = this.c.root;
+    if (obj === this.anchor) return;
+    this.anchor = obj;
+    if (obj) {
+      obj.add(root);
+      root.position.set(eye[0], eye[2], -eye[1]);
+      root.quaternion.identity();
+    } else {
+      this.parent.add(root);
+      root.position.set(0, 0, 0);
+      root.quaternion.identity();
+    }
+    root.updateMatrixWorld(true);
+  }
+
+  private lightSets: { house: Map<any, any>; car: Map<any, any> } | null = null;
+  private carLights = false;
+
+  /**
+   * runtime lane E (item 3): two FIXED material sets — one per LightsNode — instead of switching material.lightsNode
+   * (+ needsUpdate) at the car mount. The switch rebuilt all 7 arm shaders at C0's first live cut (12.5 s: 0.17 s
+   * Medium / 0.42 s Max, scratch/re/cut3). A render object is keyed by its material, so with a set per light list both
+   * are built once (the load warm-up draws both) and the mount only swaps mesh.material.
+   */
+  setLightSets(house: any, car: any): void {
+    const hm = new Map<any, any>();
+    const cm = new Map<any, any>();
+    for (const m of this.c.materials) {
+      m.lightsNode = house;
+      const alt = m.clone();
+      // instance overrides (setupEnvironment, lighting model hooks) are not part of Material.copy
+      for (const k of Object.keys(m)) if (typeof m[k] === 'function') alt[k] = m[k];
+      alt.userData = m.userData;
+      alt.lightsNode = car;
+      hm.set(alt, m);
+      cm.set(m, alt);
+    }
+    this.lightSets = { house: hm, car: cm };
+    this.carLights = false;
+  }
+
+  /** Swaps every arm mesh to the car-light (true) or house-light (false) material set. */
+  useCarLights(on: boolean): void {
+    if (!this.lightSets || on === this.carLights) return;
+    this.carLights = on;
+    const map = on ? this.lightSets.car : this.lightSets.house;
+    for (const mesh of this.c.meshes) {
+      const next = map.get(mesh.material);
+      if (next) mesh.material = next;
     }
   }
 

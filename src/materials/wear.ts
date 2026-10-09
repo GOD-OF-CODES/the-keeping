@@ -79,8 +79,13 @@ export function applyWear(spec: MaterialSpec, rule: WearRule, albedo0: N, rough0
   let albedo = albedo0;
   let rough = rough0;
   let metal = metal0;
+  // Round E (6a): wear is never uniform on a real object — some runs of an arris are rubbed through, the next 10 cm
+  // barely touched. A slow object-space field (≈ 2.5 /m, 2 octaves; Low reuses n2) scales the edge/cavity masks
+  // 0.6–1.4× so worn stretches read as worn at 1–3 m instead of a thin even line (mean unchanged).
+  const macro = o.cheap ? n2 : mx_fractal_noise_float(P.mul(2.5), 2, 2, 0.5).mul(0.5).add(0.5);
+  const mk = macro.mul(0.8).add(0.6);
   // ---- edge (chip / abrasion), deeper second layer, chip rim
-  const x = E.mul(n1.mul(0.45).add(0.55));
+  const x = E.mul(mk).mul(n1.mul(0.45).add(0.55));
   const cov = uf(rule.edgeCov);
   const w = uf(rule.edgeWidth);
   const edge = smoothstep(cov.sub(w), cov.add(w), x);
@@ -100,7 +105,7 @@ export function applyWear(spec: MaterialSpec, rule: WearRule, albedo0: N, rough0
   // ---- cavity (grime, tarnish, rust bloom)
   if (rule.cavAmt > 0) {
     const brk = rule.cellular && !o.cheap ? float(1).sub(mx_worley_noise_float(P.mul(90)).clamp(0, 1)).mul(0.6).add(n2.mul(0.4)) : n2;
-    const cav = smoothstep(0.3, 0.7, C.mul(brk.mul(0.6).add(0.6))).mul(uf(rule.cavAmt));
+    const cav = smoothstep(0.3, 0.7, C.mul(mk).mul(brk.mul(0.6).add(0.6))).mul(uf(rule.cavAmt));
     r = layer(r.albedo, r.rough, r.metal, rule.cavity, cav);
   }
   albedo = r.albedo;

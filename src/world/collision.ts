@@ -19,6 +19,11 @@ export { Capsule };
 
 export const FLOOR_NORMAL_Y = 0.6;
 const PROP_TRI_LIMIT = 9000;
+/** Round E (B09 'hem' stall on Medium): a `box` prop forced to exact triangles because an interactable sits inside it
+ *  (level.ts) must stay exact even when heavy — the round-E dress_dummy is 22.5 k tris on Medium, and its per-mesh
+ *  oriented boxes (the slid-off dust sheet's bounds: a solid 1.6 m block beside the form) walled the player off the
+ *  hem and, after a teleport, stood them on top of it. Blender budgets props at ≤ 26 k tris. */
+export const INTERACT_PROP_TRI_LIMIT = 30000;
 
 export interface DynamicBlocker {
   /** World → blocker-local transform source (the hinge group). */
@@ -290,7 +295,7 @@ class GroundSplitOctree {
  * Collider meshes for a placed prop root (already positioned in the world). Returns meshes in WORLD space
  * (geometry baked with matrixWorld) so they can be added to the collision build group directly.
  */
-export function propColliderMeshes(root: any, kind: 'box' | 'mesh' = 'mesh'): any[] {
+export function propColliderMeshes(root: any, kind: 'box' | 'mesh' = 'mesh', interact = false): any[] {
   const out: any[] = [];
   root.updateMatrixWorld(true);
   const proxies: any[] = [];
@@ -313,7 +318,7 @@ export function propColliderMeshes(root: any, kind: 'box' | 'mesh' = 'mesh'): an
   }
   let tris = 0;
   for (const m of meshes) tris += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
-  if (kind === 'mesh' && tris <= PROP_TRI_LIMIT) {
+  if (kind === 'mesh' && tris <= (interact ? INTERACT_PROP_TRI_LIMIT : PROP_TRI_LIMIT)) {
     for (const m of meshes) out.push(bake(m));
     return out;
   }

@@ -98,6 +98,7 @@ export class SkySpecularNode extends (THREE as any).LightingNode {
 import { whiteBalanceGain } from '../render/camera-fx.ts';
 import { kelvinToLinearRGB } from './lights.ts';
 import type { Pipeline } from '../render/pipeline.ts';
+import { GLARE_BASE } from '../render/pipeline.ts';
 
 /** Eye height above the ground for the background's ground/treeline geometry (m). */
 const EYE = 1.65;
@@ -140,6 +141,7 @@ export class Atmosphere {
   private outside = true;
   private readonly baseDir = new THREE.Vector3();
   private readonly tmp = new THREE.Vector3();
+  private readonly fwd = new THREE.Vector3();
   private readonly camPos = new THREE.Vector3();
   private readonly u = SKY_U;
   private readonly skyRGB: [number, number, number];
@@ -198,8 +200,40 @@ export class Atmosphere {
     const az = ((Math.random() * 2 - 1) * LOOK.flashAzimuthJitter * Math.PI) / 180;
     this.tmp.copy(this.baseDir).applyAxisAngle(THREE.Object3D.DEFAULT_UP, az);
     this.o.camera.getWorldPosition(this.camPos);
-    d.target.position.copy(this.camPos);
-    d.position.copy(this.camPos).addScaledVector(this.tmp, 100);
+    // (also on County Road 9 at ground level — world x > 60 is the road set, far from the house's window spots,
+    // whose fixed directions the yard's flashes must keep matching)
+    if (this.camPos.y > 15 || this.camPos.x > 60) {
+      // runtime lane E (item 7): seen from the C0 aerial a stroke over the forest lights the canopy from the SIDE —
+      // the channel stands a few km off at 1–3 km height, ≈ 25–40° above the horizon, 50–90° off the view axis — so
+      // the crowns are modelled (lit flank, rim, shadowed flank) and their shadows run long across the road.
+      this.o.camera.getWorldDirection(this.fwd);
+      const view = Math.atan2(this.fwd.x, this.fwd.z);
+      const side = (Math.random() < 0.5 ? -1 : 1) * ((50 + Math.random() * 40) * Math.PI) / 180;
+      const el = ((25 + Math.random() * 15) * Math.PI) / 180;
+      this.tmp.set(Math.sin(view + side) * Math.cos(el), Math.sin(el), Math.cos(view + side) * Math.cos(el));
+    }
+    // runtime lane E (item 7): fit the 2048² map to what the camera sees. A ±30 m box around the eye left C0's aerial
+    // (52–62 m up, looking 100s of m down the road) with no lightning shadow at all — a flat sky-coloured wash on the
+    // canopy. Aerial: a ±110 m box centred ≈ 110 m ahead on the ground (10.7 cm texels: crown-scale shadows); at
+    // eye level ±35 m, 20 m ahead (the near road and the tree trunks' hard shadows).
+    const aerial = this.camPos.y > 15;
+    const half = aerial ? 110 : 35;
+    this.o.camera.getWorldDirection(this.fwd);
+    this.fwd.y = 0;
+    if (this.fwd.lengthSq() < 1e-6) this.fwd.set(0, 0, -1);
+    this.fwd.normalize();
+    const sc = d.shadow.camera;
+    if (sc.right !== half) {
+      sc.left = -half;
+      sc.right = half;
+      sc.top = half;
+      sc.bottom = -half;
+      sc.far = aerial ? 320 : 220;
+      sc.updateProjectionMatrix();
+    }
+    d.target.position.copy(this.camPos).addScaledVector(this.fwd, aerial ? 110 : 20);
+    if (aerial) d.target.position.y = 0;
+    d.position.copy(d.target.position).addScaledVector(this.tmp, aerial ? 160 : 100);
     d.target.updateMatrixWorld();
     d.updateMatrixWorld();
     d.shadow.needsUpdate = true;
@@ -266,6 +300,8 @@ export class Atmosphere {
     un.sharpness.value = LOOK.sharpen;
     un.vignette.value = LOOK.vignette;
     un.bloomStrength.value = LOOK.bloom;
+    if (un.bloomThreshold) un.bloomThreshold.value = LOOK.bloomThreshold;
+    GLARE_BASE.value = LOOK.glareBase;
     // white balance (item 14): mired blend (perceptually even) toward the zone's kelvin
     const target = 1e6 / (outside ? LOOK.wbOutdoorK : LOOK.wbIndoorK);
     this.mired += (target - this.mired) * (dt > 0 ? 1 - Math.exp(-dt / Math.max(1e-3, LOOK.wbTau)) : 0);

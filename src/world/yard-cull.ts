@@ -25,7 +25,11 @@ export function createYardCull(root: any, housePlan: [number, number], interior:
     nodes = [];
     root?.updateMatrixWorld?.(true);
     root?.traverse((o: any) => {
-      if (interior.has(o.name)) {
+      // runtime E review (c1dc: C1 60.5 = 432 renderer draws on Medium, 36 of them the 9 doors): the 8 interior doors
+      // and their boards sit behind walls / unlit windows from the road like the interior props; only D_FRONT faces out.
+      const ud = o.userData;
+      const interiorDoor = (ud?.kind === 'door' || ud?.kind === 'door_board') && ud.doorId && ud.doorId !== 'D_FRONT';
+      if (interior.has(o.name) || interiorDoor) {
         nodes!.push({ n: o, c: null, r: -1 });
         return;
       }
@@ -44,9 +48,33 @@ export function createYardCull(root: any, housePlan: [number, number], interior:
       nodes!.push({ n: o, c, r });
     });
   };
+  // runtime lane E (item 4, ruling b): County Road 9's set (corridor chunks, road dressing, truck) is occluded by the yard
+  // treeline + fog once the opening camera is at the house: hiding it at C1 58 / 60.5 / 61.8 changes the frame by
+  // 2.2 / 0.6 / 0.7 mean (8-bit, 160 px) against a frame-to-frame noise of 1.6 / 0.6 / 0.9 (scratch/re/occ2), while at
+  // 55 s (camera 76 m out) it is visible (4.6). The room group's `visible` is masked through an accessor so the level's
+  // own room culling keeps writing its value underneath.
+  let rc9: any = null;
+  let rc9Off = false;
+  const rc9Mask = (off: boolean) => {
+    if (!rc9) {
+      rc9 = root?.getObjectByName?.('room_RC9') ?? null;
+      if (!rc9) return;
+      let base = rc9.visible;
+      Object.defineProperty(rc9, 'visible', {
+        configurable: true,
+        enumerable: true,
+        get: () => base && !rc9Off,
+        set: (v: boolean) => {
+          base = v;
+        },
+      });
+    }
+    rc9Off = off;
+  };
   const restore = () => {
     for (const n of hidden) n.visible = true;
     hidden.clear();
+    rc9Mask(false);
   };
   return {
     /** camPos: world position; active: the opening holds the camera on the road. */
@@ -61,6 +89,7 @@ export function createYardCull(root: any, housePlan: [number, number], interior:
       // enters the house, so the interior props stay hidden for as long as it holds the camera — also at the gate
       // (windows unlit, shutters nailed: dr.mjs frame shows no interior pixel). Yard dressing keeps the distance rule.
       const nearHouse = dHouse < NEAR_HOUSE_M;
+      rc9Mask(nearHouse);
       for (const e of nodes!) {
         const far = e.r < 0 ? opening || !nearHouse : !nearHouse && e.c.distanceTo(camPos) - e.r > FAR_M;
         if (far && e.n.visible) {

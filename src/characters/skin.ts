@@ -60,11 +60,20 @@ const strandTangent = Fn(() => {
  * over-counts ~40× and, with a coaxial torch (H ≈ V ⟂ every strand), lit the whole head white. Wet hair: R
  * roughness 0.3 (water-smoothed cuticle), TRT wider. Diffuse: a soft wrap (strands are cylinders).
  */
-export const HAIR = { rR: uniform(0.3), rTRT: uniform(0.45), shiftR: uniform(-0.07), shiftTRT: uniform(0.14), tt: uniform(1), spec: uniform(0.5) };
+// runtime lane E (item 8): rR 0.3 → 0.22 — a water film over the cuticle narrows the R lobe toward β ≈ 5° (Marschner 2003: 5–10°)
+export const HAIR = { rR: uniform(0.22), rTRT: uniform(0.45), shiftR: uniform(-0.07), shiftTRT: uniform(0.14), tt: uniform(1), spec: uniform(0.5) };
 
 /** The strand tangent as a fragment property: assigned once in setupVariants (top level of the fragment stage —
  *  WGSL needs derivatives in uniform control flow), read by every light's direct(). */
 const hairT = property('vec3', 'HairT');
+/** runtime lane E (item 8): per-strand longitudinal shift jitter (rad-ish, in the lobe's sin units). One card carries
+ *  ~60 strands across u; real fibres' cuticle tilt and clumping vary strand to strand, which breaks the R highlight of a
+ *  bowed wet crown under a coaxial torch into strands — a single tangent per card made it one glowing disc. */
+const hairJ = property('float', 'HairJ');
+const strandJitter = Fn(() => {
+  const k = uv().x.mul(60).floor();
+  return k.mul(12.9898).sin().mul(43758.5453).fract().sub(0.5).mul(0.12);
+});
 
 export class HairLightingModel extends (THREE as any).PhysicalLightingModel {
   direct(input: any, builder: any): void {
@@ -89,11 +98,11 @@ export class HairLightingModel extends (THREE as any).PhysicalLightingModel {
     const bT = HAIR.rTRT.mul(HAIR.rTRT).max(0.004);
     const VoL = V.dot(L);
     // R: off the cuticle, untinted
-    const R = g(bR.mul(Math.SQRT2).mul(cosHalfPhi).max(0.004), sinL.add(sinV).sub(HAIR.shiftR)).mul(cosHalfPhi.mul(0.25)).mul(fres(VoL.mul(0.5).add(0.5).clamp(0, 1).sqrt()));
+    const R = g(bR.mul(Math.SQRT2).mul(cosHalfPhi).max(0.004), sinL.add(sinV).sub(HAIR.shiftR.add(hairJ))).mul(cosHalfPhi.mul(0.25)).mul(fres(VoL.mul(0.5).add(0.5).clamp(0, 1).sqrt()));
     // TRT: in through the cortex, off the back wall, out — tinted by the absorption
     const fT = fres(cosThD.mul(0.5));
     const absorb = pow(diffuseColor.rgb.max(1e-4), float(0.8).div(cosThD));
-    const TRT = g(bT, sinL.add(sinV).sub(HAIR.shiftTRT)).mul(cosPhi.mul(17).sub(16.78).exp()).mul(float(1).sub(fT).pow(2).mul(fT)).mul(absorb);
+    const TRT = g(bT, sinL.add(sinV).sub(HAIR.shiftTRT.add(hairJ.mul(1.5)))).mul(cosPhi.mul(17).sub(16.78).exp()).mul(float(1).sub(fT).pow(2).mul(fT)).mul(absorb);
     // TT: straight through the strand toward the eye — only when lit from behind (the rim glow of back-lit wet hair)
     const h = cosHalfPhi.mul(cosPhi.mul(-0.8).add(0.6).mul(1 / 1.55).add(1));
     const fTT = fres(cosThD.mul(float(1).sub(h.mul(h)).clamp(0, 1).sqrt()));
@@ -140,7 +149,11 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
     const p = new THREE.MeshPhysicalNodeMaterial();
     p.name = m.name;
     p.userData = m.userData;
-    p.colorNode = m.colorNode;
+    // runtime lane E (item 6): the arms atlas paints the gloves at a mean linear albedo of 0.070 / 0.038 / 0.022
+    // (scratch/re: brown texels of public/assets/medium/arms_albedo.webp) — 2× material-spec leather_worn
+    // (0.035 / 0.022 / 0.015: dark brown driving-glove leather). Under the 2700 K dome, with the eye adapted to the
+    // cream cabin, that read as a tanned bare hand (C1 20.5). Calibrated to the spec, like every generated material.
+    p.colorNode = m.colorNode ? m.colorNode.mul(vec3(0.035 / 0.0704, 0.022 / 0.0376, 0.015 / 0.0217)) : m.colorNode;
     p.roughnessNode = m.roughnessNode;
     p.normalMap = m.normalMap;
     p.normalScale = m.normalScale;
@@ -164,6 +177,7 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
     m.setupVariants = function (this: any, builder: any) {
       base.call(this, builder);
       hairT.assign(strandTangent());
+      hairJ.assign(strandJitter());
     };
   }
   return m;

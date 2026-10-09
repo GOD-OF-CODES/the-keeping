@@ -377,6 +377,18 @@ face up close). Numbers in `src/ai/tuning.ts` (CONTRACT-CHANGES #52–56): sight
 she must hold you in sight 0.6 s before a chase (instant within 2.5 m); LOOK wind-up 1.8 s (beam on her within 4 m:
 1.0 s; slat looks 1.2 s); chase bursts 3.0 m/s, lost after 2.5 s, abandoned after 10 s, caught within 0.8 m; the slow
 assist starts at the first death; no detection for 6 s after any cutscene. Every tell is unchanged.
+- *Bump (CONTRACT #67b, round D):* walking into her while she is not looking at you is not a catch: she stops and
+  starts a 1 s LOOK (head-crack tell); only contact during that look, or the chase grab, catches.
+- *Respawn fairness (round E, ruling b; #69):* for 75 s after a death she keeps every patrol / vigil leg ≥ 4.5 m from
+  the player on the same floor (she holds, scraping at her vigil, when no leg clears); an idle player survives ≥ 60 s
+  at every checkpoint. Reacting to light, noise (after the 10 s patrol-only window) and contact is unchanged.
+- *Body (round E, ruling c; #69):* the player steps up at most 0.27 m above the floor under them (real risers 0.25 m):
+  stairs yes; chairs, tables and sinks are not climbable.
+- *Light she can't see past (round E; #70):* if a beam look at her finds nobody (her eyes can't reach the holder, e.g.
+  from the main stair), a beam on her again within 12 s makes her walk toward the light and look at it from 2.5 m.
+- *Seen from afar (round E; #78):* the first time she sees you farther than 5 m, she comes to look: she walks to
+  2.5 m short of where you stood and looks straight at you. Seen again within 5 m, she chases.
+- *C2 → B04 (round E; #74):* the still-player rush waits out the 6 s post-cutscene calm (measured grab was 5.2 s).
 
 ## Obstacles & puzzles
 

@@ -1157,6 +1157,7 @@
    "id": "crepe_black",
    "family": "crepe",
    "params": {
+    "maxSize": 512,
     "crinkle": 0.8,
     "dustOnTop": 0.4,
     "fade": 0.2,
@@ -1358,6 +1359,7 @@
    "id": "leather_worn",
    "family": "leather",
    "params": {
+    "maxSize": 512,
     "grain": 0.5,
     "creases": 0.6,
     "wear": 0.5,
@@ -1519,6 +1521,209 @@
    "wetness": 0,
    "source": "baked_unique",
    "notes": "Hog-cleaver blade: carbon steel, pitted, rust blooms, bright honed edge."
+  },
+  {
+   "id": "steel_forged",
+   "family": "chrome",
+   "params": {
+    "maxSize": 512,
+    "grind": 0.7,
+    "patina": 0.45,
+    "pitting": 0.25,
+    "rustSpots": 0.15,
+    "seed": 160
+   },
+   "avgAlbedo": [
+    0.4,
+    0.39,
+    0.38
+   ],
+   "roughness": 0.32,
+   "metalness": 1,
+   "tileMetres": 0.15,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Hammer head + sewing-shear blades: forged/ground carbon steel, F0 0.56 fresh (Gulbrandsen) under a grey-brown handling patina (0.25), rough 0.2-0.45."
+  },
+  {
+   "id": "hickory_handle",
+   "family": "wood_bare",
+   "params": {
+    "maxSize": 512,
+    "species": "hickory",
+    "boardWidth": 0.05,
+    "boardLengthMin": 0.4,
+    "boardLengthMax": 0.4,
+    "baseColor": [
+     0.36,
+     0.23,
+     0.115
+    ],
+    "grainContrast": 0.45,
+    "varnish": 0.35,
+    "varnishWear": 0.55,
+    "seed": 161
+   },
+   "avgAlbedo": [
+    0.3,
+    0.19,
+    0.095
+   ],
+   "roughness": 0.5,
+   "metalness": 0,
+   "tileMetres": 0.4,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Claw-hammer handle: hickory (light tan, ρ 0.35-0.45 sRGB-ish → linear ≈ 0.3), worn factory lacquer, hand-oiled grip."
+  },
+  {
+   "id": "paint_steel_can",
+   "family": "enamel",
+   "params": {
+    "base": [
+     0.17,
+     0.022,
+     0.016
+    ],
+    "chalking": 0.45,
+    "scuffs": 0.55,
+    "chips": 0.3,
+    "rustRuns": 0.35,
+    "stains": 0.25,
+    "seed": 162
+   },
+   "avgAlbedo": [
+    0.13,
+    0.024,
+    0.017
+   ],
+   "roughness": 0.55,
+   "metalness": 0.05,
+   "tileMetres": 0.5,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Jerry cans: aged, dirt-dulled oxide-red alkyd enamel (≈ sRGB 115/40/34 — a 30-year-old can, not showroom red) over red-oxide primer on pressed sheet steel; chalked, scuffed, chipped (wear rule painted_steel)."
+  },
+  {
+   "id": "enamel_stove",
+   "family": "enamel",
+   "params": {
+    "maxSize": 512,
+    "mottle": 1,
+    "dark": [
+     0.11,
+     0.115,
+     0.125
+    ],
+    "light": [
+     0.55,
+     0.56,
+     0.57
+    ],
+    "chips": 0.8,
+    "rustRings": 0.25,
+    "seed": 164
+   },
+   "avgAlbedo": [
+    0.27,
+    0.275,
+    0.285
+   ],
+   "roughness": 0.15,
+   "metalness": 0,
+   "tileMetres": 0.4,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Iron-stove oven-door panel: grey-and-white mottled porcelain enamel, chipped to black iron at the rim with rust haloes."
+  },
+  {
+   "id": "wood_weathered_post",
+   "family": "wood_bare",
+   "params": {
+    "species": "pine",
+    "boardWidth": 0.14,
+    "boardLengthMin": 4,
+    "boardLengthMax": 4,
+    "baseColor": [
+     0.2,
+     0.15,
+     0.1
+    ],
+    "greyed": 0.85,
+    "grainContrast": 0.7,
+    "checks": 0.7,
+    "mildew": 0.5,
+    "dirtInGaps": 0.8,
+    "gapDepth": 0.003,
+    "seed": 165
+   },
+   "avgAlbedo": [
+    0.13,
+    0.12,
+    0.105
+   ],
+   "roughness": 0.7,
+   "metalness": 0,
+   "tileMetres": 1.2,
+   "hero": false,
+   "wetness": 0.25,
+   "source": "generated",
+   "notes": "Roadside sign post + sign planks: 40-year exterior cedar/pine, silver-grey UV weathering (wet: ×0.6 albedo), season checks, mildew streaks."
+  },
+  {
+   "id": "paint_steel_sign",
+   "family": "enamel",
+   "params": {
+    "base": [
+     0.58,
+     0.55,
+     0.45
+    ],
+    "chalking": 0.5,
+    "scuffs": 0.35,
+    "chips": 0.6,
+    "rustRuns": 0.7,
+    "stains": 0.15,
+    "seed": 166
+   },
+   "avgAlbedo": [
+    0.42,
+    0.4,
+    0.33
+   ],
+   "roughness": 0.5,
+   "metalness": 0.05,
+   "tileMetres": 0.5,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "VACANCY plate: cream sign enamel on tinplate, chalked, chipped to rusty steel at the folded hems, rust runs from the hook holes."
+  },
+  {
+   "id": "wool_needlepoint",
+   "family": "fabric",
+   "params": {
+    "maxSize": 512,
+    "fade": 0.45,
+    "dust": 0.4,
+    "seed": 163
+   },
+   "avgAlbedo": [
+    0.12,
+    0.05,
+    0.035
+   ],
+   "roughness": 0.9,
+   "metalness": 0,
+   "tileMetres": 0.3,
+   "hero": false,
+   "wetness": 0,
+   "source": "generated",
+   "notes": "Bell pull: Berlin wool-work tent stitch on 10-count canvas, claret ground with a faded floral motif."
   },
   {
    "id": "coat_rain_dark",
@@ -1760,6 +1965,7 @@
    "id": "wax_candle",
    "family": "wax",
    "params": {
+    "maxSize": 512,
     "sss": 0.6,
     "drips": 0.8,
     "soot": 0.3,
@@ -1808,6 +2014,7 @@
    "id": "wick_cotton",
    "family": "rope",
    "params": {
+    "maxSize": 256,
     "strands": 12,
     "twist": 0.2,
     "fuzz": 0.8,
@@ -1832,6 +2039,7 @@
    "id": "rope_hemp",
    "family": "rope",
    "params": {
+    "maxSize": 512,
     "strands": 3,
     "twist": 0.8,
     "fuzz": 0.5,
@@ -1950,6 +2158,7 @@
    "id": "styrofoam",
    "family": "paper",
    "params": {
+    "maxSize": 512,
     "beads": 0.8,
     "coffeeStain": 0.5,
     "foxing": 0,

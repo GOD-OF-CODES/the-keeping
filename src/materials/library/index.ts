@@ -7,8 +7,8 @@ import { genericGenerator } from './common.ts';
 import { WOOD_GENERATORS } from './wood.ts';
 import { WALL_BY_ID, WALL_GENERATORS } from './walls.ts';
 import { GROUND_GENERATORS } from './ground.ts';
-import { METAL_GENERATORS } from './metal.ts';
-import { CLOTH_GENERATORS } from './cloth.ts';
+import { METAL_BY_ID, METAL_GENERATORS } from './metal.ts';
+import { CLOTH_BY_ID, CLOTH_GENERATORS } from './cloth.ts';
 import { MISC_GENERATORS } from './misc.ts';
 import { OPENING_BY_ID } from './opening.ts';
 
@@ -22,7 +22,7 @@ const REGISTRY: Partial<Record<MaterialFamily, Generator>> = {
 };
 
 /** Material ids with a dedicated generator that differs from their family's (e.g. wall_tally). */
-const BY_ID: Record<string, Generator> = { ...WALL_BY_ID, ...OPENING_BY_ID };
+const BY_ID: Record<string, Generator> = { ...WALL_BY_ID, ...METAL_BY_ID, ...CLOTH_BY_ID, ...OPENING_BY_ID };
 
 export function registerFamily(f: MaterialFamily, g: Generator): void {
   REGISTRY[f] = g;

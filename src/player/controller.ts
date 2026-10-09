@@ -14,6 +14,10 @@ import { CROUCH_EYE_HEIGHT, EYE_HEIGHT, type RoomIndex } from '../world/rooms.ts
 import { SURFACE_STEP } from '../audio/synth/footsteps.ts';
 
 export const SPEED = { walk: 1.6, run: 3.6, crouch: 0.9 } as const;
+/** Stamina (user, 2026-10-09: "increase the stamina its too low"). 3.6 m/s is a jog an adult holds for minutes, so a
+ *  full bar lasts 25 s of running — well past her 10 s chase give-up (src/ai/tuning.ts chase.giveUpS); it refills in
+ *  12 s walking / 7 s standing, and after running dry the run unlocks again at 15 %. Panting after a run is kept. */
+export const STAMINA = { runS: 25, refillWalkS: 12, refillStillS: 7, unlockAt: 0.15 } as const;
 export const BREATH_HOLD_MAX = 7;
 
 const RADIUS = 0.27;
@@ -25,6 +29,8 @@ const STEP_UP = 0.32;
  *  risers 0.25 m, UK/US building codes max ≈ 0.20–0.22 m; 0.27 m leaves 2 cm for the riser's mesh tolerance). A chair
  *  seat (0.45 m) or a table (0.75 m) is never a step. STEP_UP stays the TRIAL lift (it must clear the nosing edge). */
 export const STEP_MAX = 0.27;
+/** How far ahead of the capsule centre (move direction) the step cap also looks for the floor it stands on. */
+const DATUM_AHEAD = 0.12;
 const STEP_LIFTS = [STEP_UP, STEP_UP / 2, STEP_UP / 4] as const;
 const SNAP_DOWN = 0.38;
 
@@ -110,6 +116,8 @@ export class PlayerController {
   private lastCreaker: string | null = null;
   private lastStair = -1;
   private runLocked = false;
+  /** Plan rects of the layout's stairs (straight flights and ST_BACK's winder square + flight), lazily built. */
+  private stairRects: Array<{ r: [number, number, number, number]; z: (x: number, y: number) => number }> | null = null;
   private readonly lastSafe = new THREE.Vector3();
   private safeT = 0;
   /** Scratch capsules (step-up / snap-down / headroom): no per-frame allocation. */
@@ -205,16 +213,16 @@ export class PlayerController {
     const crouchTarget = wantCrouch ? 1 : this.crouch < 1e-3 || this.headroomFor(HEIGHT) ? 0 : this.crouch;
     this.crouch += (crouchTarget - this.crouch) * Math.min(1, dt * 8);
     if (this.stamina <= 0.02) this.runLocked = true;
-    if (this.stamina > 0.3) this.runLocked = false;
+    if (this.stamina > STAMINA.unlockAt) this.runLocked = false;
     const running = shift && moving && f > 0 && this.crouch < 0.3 && !this.runLocked;
     this.runningNow = running;
     const target = !moving ? 0 : this.crouch > 0.5 ? SPEED.crouch : running ? SPEED.run : SPEED.walk;
     // ---- stamina / breath
     if (running) {
-      this.stamina = Math.max(0, this.stamina - dt / 8);
+      this.stamina = Math.max(0, this.stamina - dt / STAMINA.runS);
       this.runTime += dt;
     } else {
-      this.stamina = Math.min(1, this.stamina + dt / (moving ? 14 : 9));
+      this.stamina = Math.min(1, this.stamina + dt / (moving ? STAMINA.refillWalkS : STAMINA.refillStillS));
       if (this.runTime > 1.5) this.pantT = Math.max(this.pantT, Math.min(10, this.runTime * 0.9));
       this.runTime = 0;
     }
@@ -284,8 +292,29 @@ export class PlayerController {
     // round E (c): the floor straight under the capsule centre before this move is the step cap's datum (a sphere
     // riding up a 0.3 m edge keeps its centre over the lower floor until it is on top, so the cap sees the full rise)
     let under = NaN;
-    const floorUnder = () => (Number.isNaN(under) ? (under = this.world.collision.floorBelow(start.x, start.y, start.z, 1.2) ?? start.y - RADIUS) : under);
-    if (c.start.y > start.y && c.start.y - RADIUS - floorUnder() > STEP_MAX) {
+    // reviewer round E: ST_BACK's treads are 0.25 m deep, less than the capsule radius, so with its front against the
+    // next riser the centre still hangs over the tread BELOW the one the feet stand on, and the cap counted every
+    // second riser as a 0.5 m step (the back stair could not be climbed). The floor a little ahead of the centre (in the
+    // move direction) also counts as the datum — but only when it is not above the feet, i.e. it is the surface the
+    // capsule already stands on, never the step or edge it is trying to get onto (a box edge stays a wall).
+    const floorUnder = () => {
+      if (!Number.isNaN(under)) return under;
+      const col = this.world.collision;
+      under = col.floorBelow(start.x, start.y, start.z, 1.2) ?? start.y - RADIUS;
+      const hm = Math.hypot(move.x, move.z);
+      if (hm > 1e-6) {
+        const k = DATUM_AHEAD / hm;
+        const ahead = col.floorBelow(start.x + move.x * k, start.y, start.z + move.z * k, 1.2);
+        if (ahead != null && ahead > under && ahead <= start.y - RADIUS + 0.001) under = ahead;
+      }
+      return under;
+    };
+    // reviewer round E: the cap is for furniture. Designed stairs (0.22 / 0.25 m risers, ST_BACK's 0.25 m going and
+    // its kite winder whose inner end is narrower than the capsule) are exempt — on them the old step-up applies.
+    const hm0 = Math.hypot(move.x, move.z) || 1;
+    const feet0 = start.y - RADIUS;
+    const onStairs = this.onStairs(start.x, -start.z, feet0) || this.onStairs(start.x + (move.x / hm0) * 0.3, -(start.z + (move.z / hm0) * 0.3), feet0);
+    if (!onStairs && c.start.y > start.y && c.start.y - RADIUS - floorUnder() > STEP_MAX) {
       // resolve()'s slope push lifted us up an edge (aggregate floor+riser normal): a wall, not a ramp
       c.translate(_t.set(start.x - c.start.x, start.y - c.start.y, start.z - c.start.z));
       vel.x = 0;
@@ -312,7 +341,7 @@ export class PlayerController {
           this.blocked.copy(c);
           c.copy(trial);
           // round E (c): the landing (or the edge rest on the way up) may sit at most STEP_MAX above the last floor
-          if (this.snapDown(lift + 0.05) && c.start.y > start.y + 1e-3 && c.start.y - RADIUS - floorUnder() <= STEP_MAX) {
+          if (this.snapDown(lift + 0.05) && c.start.y > start.y + 1e-3 && (onStairs || c.start.y - RADIUS - floorUnder() <= STEP_MAX)) {
             // we stepped, we did not hit a wall: keep the walking speed the riser contact had cancelled
             onFloor = true;
             vel.x = vx0;
@@ -381,6 +410,40 @@ export class PlayerController {
     if (lo <= 0) return false; // already touching: nothing to settle onto
     c.translate(_t.set(0, -lo, 0));
     return true;
+  }
+
+  /** Plan (x, y, feetZ) on a layout stair: inside its footprint (incl. 0.3 m before the first riser / past the last)
+   *  AND within 0.5 m of the tread height there — so the closet under ST_MAIN and the gallery above it stay capped. */
+  private onStairs(x: number, y: number, feetZ: number): boolean {
+    if (!this.stairRects) {
+      const lay = (this.world.index as { layout?: { stairs?: any[]; floors?: any[] } } | undefined)?.layout;
+      const stairs = Array.isArray(lay?.stairs) ? lay!.stairs! : [];
+      const elev = (id: string): number => (Array.isArray(lay?.floors) ? lay!.floors!.find((f: any) => f.id === id)?.elevation : 0) ?? 0;
+      const R: Array<{ r: [number, number, number, number]; z: (x: number, y: number) => number }> = [];
+      const cl = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
+      for (const s of stairs) {
+        const [sx, sy] = s.start as [number, number];
+        const e = elev(s.from);
+        const hw = s.width / 2 + 0.05;
+        const td = s.treadDepth, rh = s.riserHeight, n = s.risers - 1;
+        const run = n * td;
+        const step = (along: number): number => e + (along < 0 ? 0 : cl(Math.floor(along / td) + 1, 0, n)) * rh;
+        if (s.winder && s.direction === 'N') {
+          // square winder at the foot (three kites), then the flight turns west (left) or east (right)
+          R.push({ r: [sx - hw, sy - 0.3, sx + hw, sy + s.width + 0.05], z: (_x, yy) => e + cl(((yy - sy) / s.width) * 3, 0, 3) * rh });
+          const rest = (s.risers - 4) * td + 0.3;
+          const xa = sx - s.width / 2, xb = sx + s.width / 2;
+          if (s.winder.turn === 'left') R.push({ r: [xa - rest, sy - 0.05, xa, sy + s.width + 0.05], z: (xx) => e + cl(4 + Math.floor((xa - xx) / td), 4, n) * rh });
+          else R.push({ r: [xb, sy - 0.05, xb + rest, sy + s.width + 0.05], z: (xx) => e + cl(4 + Math.floor((xx - xb) / td), 4, n) * rh });
+        } else if (s.direction === 'N') R.push({ r: [sx - hw, sy - 0.3, sx + hw, sy + run + 0.3], z: (_x, yy) => step(yy - sy) });
+        else if (s.direction === 'S') R.push({ r: [sx - hw, sy - run - 0.3, sx + hw, sy + 0.3], z: (_x, yy) => step(sy - yy) });
+        else if (s.direction === 'E') R.push({ r: [sx - 0.3, sy - hw, sx + run + 0.3, sy + hw], z: (xx) => step(xx - sx) });
+        else R.push({ r: [sx - run - 0.3, sy - hw, sx + 0.3, sy + hw], z: (xx) => step(sx - xx) });
+      }
+      this.stairRects = R;
+    }
+    for (const { r, z } of this.stairRects) if (x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3] && Math.abs(feetZ - z(x, y)) <= 0.5) return true;
+    return false;
   }
 
   private headroomFor(height: number): boolean {

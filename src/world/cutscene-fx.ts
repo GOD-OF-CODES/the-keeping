@@ -982,8 +982,11 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     setWarm,
     /** Load warm-up: our sedan (interior mounted) + the truck parked on County Road 9 (returns a camera eye, world). */
     warmRoad: (on: boolean, s?: number) => opening.warmRoad(on, s),
-    /** The detailed interior is mounted in our sedan (C0 29 → C1): the FP arms then need the CAR light list. */
-    mounted: () => opening.mounted(),
+    /** The FP arms need the CAR light list: the interior is mounted in our sedan, or C0 runs (runtime lane E: the
+     *  switch rebuilds the arms' shaders, so it happens on C0's black date card, not at its first live cut). */
+    mounted: () => opening.armsCar(),
+    /** Driver POV in the mounted interior: the FP arms ride the car, not the turning head (FpArms.anchorTo). */
+    driverAnchor: () => opening.driverAnchor(),
     /** C7 dressing: the fresh tally column. */
     setSting(on: boolean) {
       tally.visible = on;

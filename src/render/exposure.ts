@@ -28,6 +28,8 @@ export interface MeterReading {
   target: number;
   /** Simulation time of the reading. */
   t: number;
+  /** log2 of the centre-weighted LOOK.hpPct percentile luminance (highlight protect). */
+  hp?: number;
 }
 
 /**
@@ -193,9 +195,12 @@ export class AutoExposure {
         let s = 0;
         let ws = 0;
         let lin = 0;
+        const hpAt = LOOK.hpPct * this.weightSum;
+        let hpLog = -20;
         for (let k = 0; k < n; k++) {
           const i = this.order[k];
           const w = this.weights[i];
+          if (cum < hpAt && cum + w >= hpAt) hpLog = vals[i];
           const a = Math.max(cum, lo);
           const b = Math.min(cum + w, hi);
           if (b > a) {
@@ -209,9 +214,16 @@ export class AutoExposure {
         // log mean (robust, Reinhard) blended with the log of the arithmetic mean (bright areas weigh more: a torch
         // hotspot or a lamp pulls the exposure down like a camera's averaging meter)
         const log2Avg = ws > 0 ? (s / ws) * (1 - LOOK.meterMeanMix) + Math.log2(Math.max(1e-9, lin / ws)) * LOOK.meterMeanMix : -20;
-        this.targetEV = clampEV(Math.log2(LOOK.key) - log2Avg);
+        // runtime E review — highlight protect: a camera operator / the eye stops down for what fills the centre; the
+        // centre-weighted LOOK.hpPct percentile may map to at most LOOK.hpWhite × display white (a torch core on a prop
+        // at 0.5–1.3 m stays a lit, textured surface instead of a clipped disc). 0 disables it.
+        // The cap applies AFTER the room clamp (the night key still keeps every room as before) with its own floor
+        // LOOK.hpFloor: target = max(hpFloor, min(clamp(key EV), hp EV)).
+        let target = clampEV(Math.log2(LOOK.key) - log2Avg);
+        if (LOOK.hpWhite > 0 && hpLog > -20 && EXPOSURE_CUE.min == null && EXPOSURE_CUE.max == null) target = Math.max(Math.log2(LOOK.hpFloor), Math.min(target, Math.log2(LOOK.hpWhite) - hpLog + LOOK.biasEV));
+        this.targetEV = target;
         this.haveTarget = true;
-        this.last = { log2Avg, target: Math.pow(2, this.targetEV), t: issuedAt };
+        this.last = { log2Avg, target: Math.pow(2, this.targetEV), t: issuedAt, hp: hpLog };
         if (this.snapAfter >= 0 && issuedAt > this.snapAfter) {
           this.ev = this.targetEV;
           this.snapAfter = -1;

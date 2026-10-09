@@ -16,6 +16,12 @@
 //
 // Asserts: beats arrive in order B01 … B13, every Director cutscene C1/C2/C3/C5/C6/C7 plays, and the run ends on the
 // title card. Records per-beat game + wall time, deaths, gates, hints and 8 hero screenshots.
+//
+// Gate modes (ROADMAP round E ruling a): STRICT is the default — any bot UNSTICK teleport fails the run (QA_STRICT=0 opts
+// out). QA_CARELESS=1: torch always on, never sneaks, runs away when chased, and in B05/B06/B09/B10 sweeps the lit beam
+// onto her body from 6–9.5 m (a short same-floor detour, ≤ 3 s of aiming per beat; asserted for B05 + one more
+// upstairs beat; caught at most once). QA_TORCH_ON=1: the stealth
+// route with the torch never switched off (informative).
 
 const PW = {
   gate: [1.8, -27.4, 0], drive: [1.8, -12, 0], drive_e: [8, -6, 0], car: [13.4, -1.6, 0], porch: [1.8, -1.5, 0],
@@ -27,8 +33,8 @@ const PW = {
   u_runner_s: [2.4, 1.9, 4.1], u_ddoor: [3.15, 0.8, 4.1], u2_hdoor: [4.4, 3.0, 4.1], u2_ddoor: [4.4, 0.8, 4.1],
   u2_mid: [5.6, 2.6, 4.1], u2_ledger: [6.3, 3.8, 4.1], u2_bell: [6.1, 4.0, 4.1], u2_hammer: [8.2, 1.3, 4.1],
   u2_coats: [4.75, 1.9, 4.1], u2_west: [5.2, 3.6, 4.1], u3_door: [4.3, 8.2, 4.1], u3_mid: [6.0, 6.2, 4.1], u3_letter: [7.0, 8.0, 4.1],
-  u3_dress: [7.7, 7.0, 4.1], u3_wardrobe: [5.0, 8.1, 4.1], u4t_top: [5.0, 9.8, 4.1], u4t_turn: [5.0, 11.2, 4.1],
-  u4_foot: [8.35, 11.35, 1.1], k_door: [8.45, 9.95, 0.6], k_north: [6.6, 10.3, 0.6], k_nw: [5.95, 9.7, 0.6], k_center: [6.3, 9.0, 0.6], k_cans: [4.4, 8.5, 0.6],
+  u3_dress: [7.4, 6.7, 4.1] /* round E: in front of the form, SW of the rebuilt (wider, exact-collider) skirt — 7.7,7.0 is against the cloth */, u3_wardrobe: [5.0, 8.1, 4.1], u4t_top: [5.0, 9.8, 4.1], u4t_turn: [5.0, 11.2, 4.1],
+  u4_foot: [8.35, 11.35, 1.1], k_door: [8.45, 9.95, 0.6], k_mid: [7.6, 9.75, 0.6], k_center: [6.3, 9.0, 0.6], k_cans: [4.4, 8.5, 0.6],
   k_west: [4.35, 9.95, 0.6], p_east: [3.2, 9.95, 0.6], p_door: [2.5, 9.55, 0.6],
 };
 const PE = [
@@ -36,7 +42,9 @@ const PE = [
   ['porch', 'hall_s', 'D_FRONT'], ['hall_s', 'threshold'], ['hall_s', 'stair_foot'], ['threshold', 'hall_mid'],
   ['stair_foot', 'hall_mid'], ['hall_mid', 'hall_n'], ['hall_n', 'hall_pdoor'], ['hall_pdoor', 'p_door', 'D_PASSAGE'],
   ['p_door', 'p_east'], ['p_east', 'k_west'], ['k_west', 'k_cans'], ['k_west', 'k_center'], ['k_cans', 'k_center'],
-  ['k_center', 'k_nw'], ['k_nw', 'k_north'], ['k_north', 'k_door'], ['k_door', 'u4_foot', 'D_BACKSTAIR'], ['u4_foot', 'u4t_turn'], ['u4t_turn', 'u4t_top'],
+  // round E (ruling d): with P_KITCHEN_CHAIR_2 out of the doorway lane the back-stair doorway opens straight into the
+  // kitchen (scripts/qa/backstair-lane.mjs: ≥ 0.98 m lane, door open) — no close-behind, no northern detour
+  ['k_center', 'k_mid'], ['k_mid', 'k_door'], ['k_door', 'u4_foot', 'D_BACKSTAIR'], ['u4_foot', 'u4t_turn'], ['u4t_turn', 'u4t_top'],
   ['u4t_top', 'u3_wardrobe', 'D_WARDROBE_BACK'], ['stair_foot', 'stair_top'], ['stair_top', 'u_landing'],
   ['u_landing', 'u_ada'], ['u_landing', 'u_runner_n'], ['u_ada', 'u_runner_n'], ['u_runner_n', 'u_armoire'],
   ['u_armoire', 'u_hdoor'], ['u_armoire', 'u_runner_s'], ['u_runner_s', 'u_ddoor'], ['u_hdoor', 'u2_hdoor', 'D_HARLAN'],
@@ -205,8 +213,33 @@ function installBot(cfg) {
     lastMoveT: 0,
     want: null,
     ended: false,
+    // round E (ruling a): careless glances — per beat, frames her body was in the lit beam at ≥ 6 m (+ nearest such range)
+    beamHits: {},
+    glance: null,
+    glanceT0: {},
+    aimAdaUntil: -1,
+    aimT: {},
+    flee: null,
   };
   window.__bot = bot;
+  // her own verdict that the beam is on her body: a beam LOOK started while the holder is ≥ 6 m away
+  {
+    const br = g.brain;
+    const o = br.startLook?.bind(br);
+    if (o)
+      br.startLook = (reason, ...rest) => {
+        if (reason === 'beam') {
+          const a = br.nav.pos;
+          const p = pos();
+          const dd = Math.hypot(a[0] - p[0], a[1] - p[1]);
+          const b = st().beat;
+          const h = (bot.beamHits[b] ??= { frames: 0, minD: 99 });
+          h.beamLooks = (h.beamLooks ?? 0) + (dd >= 6 ? 1 : 0);
+          h.beamLookD = Math.max(h.beamLookD ?? 0, +dd.toFixed(2));
+        }
+        return o(reason, ...rest);
+      };
+  }
 
   const interact = (id, action) => {
     const it = g.interact.items.find((i) => i.id === id);
@@ -248,7 +281,7 @@ function installBot(cfg) {
       bot.lastP = null;
       // gameplay review: off the back stair into the kitchen, close D_BACKSTAIR behind you — its open leaf (west jamb)
       // walls the doorway pocket off from the kitchen (table + tipped chair south, pump sink south-east)
-      if (prevName === 'k_door' && bot.lastDoor === 'D_BACKSTAIR' && bot.path[0] === 'k_north') {
+      if (cfg.closeBackstair && prevName === 'k_door' && bot.lastDoor === 'D_BACKSTAIR' && bot.path[0] === 'k_mid') {
         L('close D_BACKSTAIR behind');
         g.closeDoor('D_BACKSTAIR');
         bot.lastMoveT = bot.t + 1.5; // the leaf takes ~1.2 s to swing shut across the westward line
@@ -287,6 +320,58 @@ function installBot(cfg) {
   const go = (to, then, label = to, speed = 1.6) => ({ kind: 'go', to, then, label, speed });
   const wait = (label) => ({ kind: 'wait', label });
 
+  // round E (ruling a): the careless player sweeps the lit torch across her at mid range. In the glance beats, until
+  // the beam has been on her body (≥ 6 m) for 0.5 s, it walks to a waypoint on her floor 6–9.5 m from her with a
+  // clear line to her chest and points the torch at her (budget 60 s per beat; a beat with no such vantage — B10:
+  // the player is sealed in the kitchen side while she patrols upstairs — is reported, not faked).
+  const GLANCE_BEATS = ['B05', 'B06', 'B09', 'B10'];
+  const chestOf = (a) => [a[0], a[1], a[2] + 1.3];
+  const glanceDone = (b) => (bot.beamHits[b]?.frames ?? 0) >= 15 || (bot.beamHits[b]?.beamLooks ?? 0) >= 1;
+  // a careless player glances from where it already is, not on an expedition: the vantage is on its own floor, within
+  // 10 m of walking, and never through the wardrobe's back (a one-way push-through)
+  const routeLen = (r) => r.slice(1).reduce((n, k, i) => n + d2(PW[r[i]], PW[k]), 0);
+  const vantage = (ada) => {
+    const c = chestOf(ada.pos);
+    const me = pos();
+    if (Math.abs(ada.pos[2] - me[2]) > 1.2) return null;
+    let best = null;
+    for (const [k, w] of Object.entries(PW)) {
+      if (Math.abs(w[2] - me[2]) > 1.2) continue;
+      const d = d2(w, ada.pos);
+      if (d < 6.2 || d > 9.5) continue;
+      if (!g.brain.world.lineOfSight([w[0], w[1], w[2] + 1.55], c)) continue;
+      const r = route(nearestWp(), k);
+      if (!r || routeLen(r) > 10 || r.some((n, i) => i && ((n === 'u4t_top' && r[i - 1] === 'u3_wardrobe') || (n === 'u3_wardrobe' && r[i - 1] === 'u4t_top')))) continue;
+      const dm = routeLen(r);
+      if (!best || dm < best.dm) best = { k, dm };
+    }
+    return best?.k ?? null;
+  };
+  const carelessGlance = (b) => {
+    if (!cfg.careless || !GLANCE_BEATS.includes(b) || glanceDone(b) || hidden()) return null;
+    const ada = adaOut;
+    if (!ada?.visible || !ada.pos || ['CHASE', 'CATCH', 'SCRIPTED', 'LURED'].includes(ada.state)) return null;
+    bot.glanceT0[b] ??= bot.t;
+    if (bot.t - bot.glanceT0[b] > 60) return null;
+    // a sweep, not a stare: at most 3 s of aiming per beat, then it carries on with what it was doing
+    if ((bot.aimT[b] ?? 0) > 3) return null;
+    // already in the right spot (6–9.5 m, clear line): stop and put the beam on her now
+    {
+      const me = pos();
+      const d = d2(me, ada.pos);
+      if (Math.abs(ada.pos[2] - me[2]) < 1.2 && d >= 6.2 && d <= 9.5 && g.brain.world.lineOfSight([me[0], me[1], me[2] + 1.55], chestOf(ada.pos))) return wait('careless glance (aim)');
+    }
+    if (!bot.glance || bot.glance.beat !== b || bot.t > bot.glance.until) {
+      const k = vantage(ada);
+      bot.glance = { beat: b, k, until: bot.t + (k ? 8 : 2) };
+      L(`careless glance ${b}: ${k ? 'vantage ' + k : 'no vantage'} (she is ${ada.state} at ${ada.pos.map((v) => v.toFixed(1))})`);
+    }
+    if (!bot.glance?.k) return null;
+    return go(bot.glance.k, () => {
+      bot.aimAdaUntil = bot.t + 2;
+    }, 'careless glance');
+  };
+
   const decide = () => {
     const s = st();
     const b = s.beat;
@@ -294,6 +379,31 @@ function installBot(cfg) {
     if (s.dead || csActive()) return wait('cutscene');
     const ada = adaOut;
     const lured = ada?.state === 'LURED';
+    // round E: a chased player runs AWAY (not on along its errand into a dead-end room): the waypoint on her floor
+    // that is farthest from her, reachable, preferring ones not behind her (bot keeps the choice 3 s)
+    if (b !== 'B11' && ada?.state === 'CHASE' && ada.pos && !hidden() && Math.abs(ada.pos[2] - pos()[2]) < 1.2 && d2(ada.pos, pos()) < 8) {
+      if (!bot.flee || bot.t > bot.flee.until) {
+        const me = pos();
+        let best = null;
+        for (const [k, w] of Object.entries(PW)) {
+          if (Math.abs(w[2] - me[2]) > 1.2) continue;
+          const score = d2(w, ada.pos) - 0.3 * d2(w, me);
+          // never through her: the first leg must not head toward her
+          const r = route(nearestWp(), k);
+          if (!r || r.length < 2) continue;
+          const first = PW[r[1]];
+          if (d2(first, ada.pos) < d2(me, ada.pos) - 0.2) continue;
+          if (!best || score > best.score) best = { k, score };
+        }
+        bot.flee = best ? { k: best.k, until: bot.t + 3 } : null;
+        if (best) L(`flee → ${best.k} (she is ${d2(ada.pos, me).toFixed(1)} m away)`);
+      }
+      if (bot.flee) return go(bot.flee.k, undefined, 'flee', 3.6);
+    } else bot.flee = null;
+    {
+      const gl = carelessGlance(b);
+      if (gl) return gl;
+    }
     switch (b) {
       case 'B01':
         return wait('C1');
@@ -337,8 +447,13 @@ function installBot(cfg) {
         if (!f.dress_visit_done) return hidden() ? wait('dress visit') : go('u3_wardrobe', () => g.hides.enter('H_ADA_WARDROBE'), 'hide for the dress visit');
         // gameplay-d review: leave the way a player does — hold S in the wardrobe ("push through the back", m2-world.ts);
         // walking u3_wardrobe → u4t_top went through the wardrobe body (B09 unstick)
+        // careless: out of the wardrobe into the sewing room first and light her up as she walks off down the hall
+        if (cfg.careless && hidden() === 'H_ADA_WARDROBE' && !glanceDone('B09') && bot.t - (bot.glanceT0.B09 ??= bot.t) < 60) return wait('unhide');
         if (hidden() === 'H_ADA_WARDROBE') return wait('push through');
         if (hidden()) return wait('unhide');
+        // round E: still in the sewing room after the visit (e.g. respawned at CP6) — out through the wardrobe's back,
+        // as a player does (get in, push through), never by walking through the wardrobe body
+        if (g.room() === 'U3') return go('u3_wardrobe', () => g.hides.enter('H_ADA_WARDROBE'), 'into the wardrobe to leave');
         bot.locket = false;
         bot.beamOn = false;
         return go('u4_foot', undefined, 'servants stair');
@@ -436,6 +551,12 @@ function installBot(cfg) {
     if (bot.locket) bot.heldKeys.add('Mouse2');
 
     if (task.kind === 'wait') {
+      if (task.label === 'careless glance (aim)' && adaOut?.pos) {
+        bot.aimT[s.beat] = (bot.aimT[s.beat] ?? 0) + DT;
+        const p = pos();
+        const c = chestOf(adaOut.pos);
+        g.look(Math.atan2(c[1] - p[1], c[0] - p[0]), Math.atan2(c[2] - (p[2] + 1.55), d2(c, p)));
+      }
       if (task.label === 'push through') bot.heldKeys.add('KeyS');
       if (task.label === 'unhide' && h) {
         L(`unhide ${h}`);
@@ -472,6 +593,8 @@ function installBot(cfg) {
     // stealth rule (asset/route independent): in the upstairs stealth beats, sneak (crouch) whenever she is on our floor
     // within 4 m and not answering the bell / chasing — footsteps are what give a walker away at that range
     let speed = task.speed;
+    // any player runs once she is coming for them (the careless one included: careless ≠ suicidal)
+    if (adaOut?.state === 'CHASE' && adaOut.pos && Math.abs(adaOut.pos[2] - pos()[2]) < 1.2) speed = Math.max(speed, 3.6);
     // QA_CARELESS=1 never sneaks: it walks everywhere and only hides where the story asks for it
     if (!cfg.careless && ['B05', 'B06', 'B08', 'B09', 'B10'].includes(s.beat) && adaOut?.pos && speed < 3) {
       const p = pos();
@@ -490,6 +613,12 @@ function installBot(cfg) {
     // B11 "let her look": face her when she is on our floor; otherwise keep the beam on the hall floor in front of us.
     // (Pointing the lit torch down the hall at the front door pins her upstairs — see docs/QA.md bug "B11 beam
     // through the floor"; a player who faces the stair, as the design intends, is not affected.)
+    if (arrived && task.label === 'careless glance' && adaOut?.pos) {
+      bot.aimT[s.beat] = (bot.aimT[s.beat] ?? 0) + DT;
+      const p = pos();
+      const c = chestOf(adaOut.pos);
+      g.look(Math.atan2(c[1] - p[1], c[0] - p[0]), Math.atan2(c[2] - (p[2] + 1.55), d2(c, p)));
+    }
     if (arrived && s.beat === 'B11') {
       const p = pos();
       if (adaOut && adaOut.visible && Math.abs(adaOut.pos[2] - p[2]) < 1) g.look(Math.atan2(adaOut.pos[1] - p[1], adaOut.pos[0] - p[0]), 0.02);
@@ -504,6 +633,22 @@ function installBot(cfg) {
   // book-keeping after a frame
   const after = () => {
     const s = st();
+    if (g.rig.on && adaOut?.visible && adaOut.pos && !hidden()) {
+      const pv = g.director.host?.player?.();
+      const bm = pv?.beam;
+      if (bm?.on) {
+        const c = chestOf(adaOut.pos);
+        const v = [c[0] - bm.origin[0], c[1] - bm.origin[1], c[2] - bm.origin[2]];
+        const dl = Math.hypot(...v);
+        const bl = Math.hypot(...bm.dir) || 1;
+        const cos = (v[0] * bm.dir[0] + v[1] * bm.dir[1] + v[2] * bm.dir[2]) / (dl * bl);
+        if (dl >= 6 && dl <= bm.range && Math.acos(Math.min(1, cos)) <= bm.halfAngle + Math.atan(0.35 / dl) && g.brain.world.lineOfSight(bm.origin, c)) {
+          const h = (bot.beamHits[s.beat] ??= { frames: 0, minD: 99 });
+          h.frames++;
+          h.minD = Math.min(h.minD, +dl.toFixed(2));
+        }
+      }
+    }
     if (s.beat !== bot.lastBeat) {
       bot.beats.push({ beat: s.beat, game: +bot.t.toFixed(2), wall: +((performance.now() - bot.wallT0) / 1000).toFixed(1), builds: g.builds?.() ?? null, programs: g.memory?.()?.programs ?? null }); // builds: running node-builder count (src/render/perf.ts) — a jump between beats = shader variants compiled during play
       L(`beat → ${s.beat}`);
@@ -636,13 +781,14 @@ function installBot(cfg) {
       ended: bot.ended,
     };
   };
-  bot.summary = () => ({ beats: bot.beats, checkpoints: bot.checkpoints, cutscenes: bot.cutscenes, gates: bot.gates, deaths: bot.deaths, unsticks: bot.unsticks, frameErrors: bot.errors, adaTrace: bot.trace.slice(-40), strikes: bot.strikes, hints: st().hintsGiven, stimuli: stims.slice(-80), log: bot.log.slice(-60), states: Object.fromEntries(Object.entries(bot.states).map(([k, v]) => [k, +v.toFixed(1)])) });
+  bot.summary = () => ({ beats: bot.beats, checkpoints: bot.checkpoints, cutscenes: bot.cutscenes, gates: bot.gates, deaths: bot.deaths, unsticks: bot.unsticks, frameErrors: bot.errors, adaTrace: bot.trace.slice(-40), strikes: bot.strikes, hints: st().hintsGiven, stimuli: stims.slice(-80), log: bot.log.slice(-60), states: Object.fromEntries(Object.entries(bot.states).map(([k, v]) => [k, +v.toFixed(1)])), beamHits: bot.beamHits });
   return true;
 }
 
 // ------------------------------------------------------------------------------------------------ node side
 export default async function (qa) {
   const MAX_GAME_S = 2400;
+  const strict = process.env.QA_STRICT !== '0';
   const cfg = { dt: 1 / 30, PW, PE: process.env.QA_GRATE ? [...PE, ['u2_mid', 'u2_ledger']] : PE, stallSec: Number(process.env.QA_STALL_S ?? 240), torchOn: !!process.env.QA_TORCH_ON || !!process.env.QA_CARELESS, careless: !!process.env.QA_CARELESS };
   qa.report.playthrough = { ok: false };
   await qa.game('loop.stop()'); // the scenario owns time from here: every frame is an advance()
@@ -699,9 +845,21 @@ export default async function (qa) {
   // difficulty gate (ROADMAP "Difficulty", 2026-10-08): the stealth bot is never caught; the careless bot (QA_CARELESS:
   // walks, torch on, hides only where the story asks) at most once; QA_TORCH_ON is informative only
   if (cfg.careless) qa.assert(sum.deaths.length <= 1, `careless player caught at most once (deaths ${sum.deaths.length})`);
-  // gameplay review: an UNSTICK teleport is the bot bailing the player out (a stuck real player); QA_STRICT=1 fails on any
-  if (process.env.QA_STRICT) qa.assert(sum.unsticks.length === 0, `no unstick rescues (${sum.unsticks.length}: ${sum.unsticks.map((u) => u.beat + '@' + u.at).join(' ')})`);
-  else if (!cfg.torchOn) qa.assert(sum.deaths.length === 0, `stealth player never caught (deaths ${sum.deaths.length})`);
+  // round E (ruling a): the careless bot really shone the lit torch on her at ≥ 6 m in B05 and B09 (B10/B06 reported)
+  if (cfg.careless) {
+    qa.log('careless beam on her at ≥ 6 m (frames / nearest m): ' + JSON.stringify(sum.beamHits));
+    // B05 always offers the shot (she stands at her vigil down the hall); B09/B10 rarely do — B10 never (the player is
+    // sealed on the kitchen side while she patrols upstairs), B09 only as she walks off after the dress visit — so the
+    // gate asks for B05 plus one more upstairs beat, and the summary reports every beat
+    const lit = (b) => (sum.beamHits[b]?.frames ?? 0) >= 15 || (sum.beamHits[b]?.beamLooks ?? 0) >= 1;
+    const show = (b) => `${b} ${sum.beamHits[b]?.frames ?? 0} cone frames / ${sum.beamHits[b]?.beamLooks ?? 0} beam LOOKs`;
+    qa.assert(lit('B05'), `careless: lit beam on her at ≥ 6 m in B05 (${show('B05')})`);
+    qa.assert(['B06', 'B09', 'B10'].some(lit), `careless: lit beam on her at ≥ 6 m in another upstairs beat (${['B06', 'B09', 'B10'].map(show).join(', ')})`);
+  }
+  // gameplay review: an UNSTICK teleport is the bot bailing the player out (a stuck real player). Round E ruling (a):
+  // strict is the DEFAULT gate (QA_STRICT=0 opts out)
+  if (strict) qa.assert(sum.unsticks.length === 0, `no unstick rescues (${sum.unsticks.length}: ${sum.unsticks.map((u) => u.beat + '@' + u.at).join(' ')})`);
+  if (!cfg.torchOn) qa.assert(sum.deaths.length === 0, `stealth player never caught (deaths ${sum.deaths.length})`);
   qa.assert(sum.frameErrors.length === 0, `no frame threw inside the game (${sum.frameErrors.length}: ${sum.frameErrors.map((e) => `${e.beat}/${e.cs}: ${e.msg.slice(0, 120)}`).join(' ; ')})`);
   // per-beat timing: game / wall seconds spent in each beat (first entry → next beat's first entry or the end) + deaths
   const beatTimes = [];

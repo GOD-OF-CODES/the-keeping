@@ -6,13 +6,13 @@
 // Values are measured means (mip-averaged over the whole tile), so they are resolution-independent to ~1–3 %.
 
 export const ALBEDO_CAL: Record<string, [number, number, number]> = {
-  floor_varnished: [0.766, 0.849, 1.018],
-  floor_bare: [0.891, 0.865, 0.849],
-  floor_scrubbed: [0.964, 0.951, 0.924],
-  stair_treads: [0.696, 0.76, 0.884],
-  stair_rough: [0.889, 0.846, 0.779],
-  wood_furniture_dark: [0.864, 0.995, 1.106],
-  wood_raw_plank: [0.918, 0.917, 0.909],
+  floor_varnished: [0.771, 0.852, 1.026], // round E (Nyquist 0.5, matlab)
+  floor_bare: [0.89, 0.865, 0.847], // round E (Nyquist 0.5, matlab)
+  floor_scrubbed: [0.964, 0.951, 0.923], // round E (Nyquist 0.5, matlab)
+  stair_treads: [0.694, 0.764, 0.879], // round E (Nyquist 0.5, matlab)
+  stair_rough: [0.889, 0.847, 0.778], // round E (Nyquist 0.5, matlab)
+  wood_furniture_dark: [0.862, 0.996, 1.111], // round E (Nyquist 0.5, matlab)
+  wood_raw_plank: [0.918, 0.917, 0.909], // round E (Nyquist 0.5, matlab)
   wallpaper_damask_green: [0.974, 0.978, 0.996],
   wallpaper_damask_rose: [0.932, 0.948, 0.952],
   wallpaper_damask_ochre: [1.098, 1.117, 1.161],
@@ -69,7 +69,7 @@ export const ALBEDO_CAL: Record<string, [number, number, number]> = {
   // 2026-09-30: character/prop specs added by the Blender quality pass (measured in the material lab, Medium)
   trousers_wool: [0.609, 0.597, 0.578],
   twine_jute: [1.138, 1.156, 1.17],
-  steel_cleaver: [0.559, 0.582, 0.557],
+  steel_cleaver: [0.704, 0.748, 0.763], // round E props (matlab)
   coat_rain_dark: [1.081, 1.091, 1.144],
   steel_flashlight: [0.764, 0.767, 0.729],
   lens_flashlight: [0.853, 0.87, 0.906],
@@ -91,4 +91,11 @@ export const ALBEDO_CAL: Record<string, [number, number, number]> = {
   canopy_far: [1.135, 1.549, 1.56],
   truck_paint: [0.94, 1.285, 1.192],
   concrete_wet: [1.789, 1.712, 1.763],
+  steel_forged: [0.861, 0.857, 0.863], // round E props (matlab)
+  hickory_handle: [0.868, 0.903, 0.96], // round E props (matlab)
+  paint_steel_can: [0.708, 0.768, 0.71], // round E props (matlab r2: oxide-red 0.17 base)
+  enamel_stove: [0.875, 0.883, 0.892], // round E props (matlab)
+  wood_weathered_post: [0.845, 0.941, 1.11], // round E props (matlab r2: wet 0.25)
+  paint_steel_sign: [0.727, 0.748, 0.76], // round E props (matlab)
+  wool_needlepoint: [0.815, 0.506, 0.534], // round E props (matlab r2: palette fix)
 };

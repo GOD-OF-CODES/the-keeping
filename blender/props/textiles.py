@@ -152,9 +152,26 @@ def _proxy_height(shape):
     return 0.9, 0.5, (lambda x, y: 0.55 + 0.04 * math.cos(y / 0.25 * 1.4))   # trunk: domed lid
 
 
+def hem_edges(part, fn, nu, nv, mat, r=0.002, sides=6, edges=('v0', 'v1', 'u0', 'u1')):
+    """Round E (PROPS-FINISH audit #6): a turned/rolled hem (selvedge) along the borders of a cloth grid fn(u, v),
+    a tube of radius r (cotton sheeting: a 5 mm double-turned hem ≈ 1.2 mm thick → r 2 mm) so the edge reads as
+    cloth with thickness instead of a paper cut-out."""
+    paths = {'v0': [fn(i / nu, 0.0) for i in range(nu + 1)], 'v1': [fn(i / nu, 1.0) for i in range(nu + 1)],
+             'u0': [fn(0.0, j / nv) for j in range(nv + 1)], 'u1': [fn(1.0, j / nv) for j in range(nv + 1)]}
+    for e in edges:
+        pts = paths[e]
+        clean = [pts[0]]
+        for q in pts[1:]:
+            if (Vector(q) - Vector(clean[-1])).length > r * 0.5:
+                clean.append(q)
+        if len(clean) > 1:
+            part.add(tube(clean, r, sides=sides), mat)
+
+
 @prop('dust_sheet_proxy', budget=5000)
 def dust_sheet_proxy(p, rng):
-    """Furniture under a dust sheet (chair / treadle sewing machine / trunk): the sheet shape is the prop."""
+    """Furniture under a dust sheet (chair / treadle sewing machine / trunk): the sheet shape is the prop.
+    Round E: no auto-sharp split (soft shading — the faceting cause); grid stays 40 x 34 (Low budget)."""
     shape = p.get('shape', 'trunk')
     bw, bd, h = _proxy_height(shape)
     part = Part('dust_sheet_proxy', rng)
@@ -163,8 +180,12 @@ def dust_sheet_proxy(p, rng):
     off = (rng.j(0.1), rng.j(0.1))
     seed = rng.randint(0, 99)
     rot = rng.j(0.15)
-    part.add_grid(40, 34, lambda u, v: drape(u, v, sw, sd, bw, bd, h, 0.0, off, seed, 1.3, 0.03, rot),
-                  p.get('mat', 'dust_sheet') + '@2s', uv_size=(sw, sd))
+    sheet_fn = lambda u, v: drape(u, v, sw, sd, bw, bd, h, 0.0, off, seed, 1.3, 0.03, rot)
+    mat = p.get('mat', 'dust_sheet')
+    part.no_sharp = True     # soft cloth shading: no auto-sharp split on fold crests
+    part.add_grid(40, 34, sheet_fn, mat + '@2s', uv_size=(sw, sd))
+    # (hems tried in round E: +2.5k verts per proxy after the UV2 splits — over the 27 MB Low budget, these
+    # lightmapped meshes are never decimated; the hem edge lies on the floor where it barely reads)
     for sx in (-1, 1):   # a hint of legs/feet under the hem
         for sy in (-1, 1):
             part.add(cyl(0.02, 0.05, n=8), 'wood_furniture_dark', T((sx * (bw / 2 - 0.04), sy * (bd / 2 - 0.04), 0)))
@@ -219,7 +240,7 @@ def _form_radius(z, a):
     return (rx + bust) * math.cos(a), (ry + bust * 1.5) * math.sin(a)
 
 
-@prop('dress_dummy', instance_keys=('states',), budget=14000)
+@prop('dress_dummy', instance_keys=('states',), budget=26000)
 def dress_dummy(p, rng):
     """Dressmaker's form on a tripod stand wearing Ada's wedding dress; the dust sheet has slid off one shoulder.
     Two dress mesh states as children (`dress_intact`, `dress_cut_hem`); runtime shows the one matching `state`."""
@@ -242,8 +263,10 @@ def dress_dummy(p, rng):
     seed = rng.randint(0, 999)
     for state in ('intact', 'cut_hem'):
         d = Part(f'dress_dummy.dress_{state}', rng)
+        d.no_sharp = True
+        d.extras['low_ratio'] = 0.15   # Low budget (27 MB): the dense round-E cloth decimates harder on Low
         # bodice: a shell 6 mm off the form, long sleeves omitted (form has no arms): cap sleeves at the shoulders
-        d.add_grid(20, 10, lambda u, v: (*[c * 1.05 for c in _form_radius(0.22 + v * 0.36, u * math.tau)],
+        d.add_grid(48, 12, lambda u, v: (*[c * 1.05 for c in _form_radius(0.22 + v * 0.36, u * math.tau)],
                                          hip + 0.22 + v * 0.36), satin, closed_u=True)
         hem_z = 0.02 if state == 'intact' else 0.04
 
@@ -252,21 +275,47 @@ def dress_dummy(p, rng):
             z = hip + 0.24 - v * (hip + 0.24 - hem_z)
             flare = 0.17 + 0.42 * v ** 1.3
             train = 0.25 * max(0.0, math.cos(a - math.pi / 2)) * v ** 3
-            fold = 1 + (0.06 + 0.05 * v) * math.sin(a * 11 + seed) * v + 0.03 * math.sin(a * 23 + 2 * seed) * v
+            # soft gravity folds: 11 deep + 23 shallow flutes growing toward the hem (96 segments → ≥ 4 per flute)
+            fold = 1 + (0.055 + 0.045 * v) * math.sin(a * 11 + seed) * v + 0.02 * math.sin(a * 23 + 2 * seed) * v ** 1.5
             r = (flare + train) * fold
             zz = z
             if cut and v > 0.93:   # the cut: a ragged strip missing from the front hem
                 if abs(((a - (-math.pi / 2)) + math.pi) % math.tau - math.pi) < 0.9:
                     zz = z + 0.06 + 0.02 * math.sin(a * 37)
             return (r * math.cos(a) * 1.05, r * math.sin(a), max(0.005, zz))
-        d.add_grid(40, 18, skirt, satin + '@2s', closed_u=True, uv_size=(3.0, hip))
-        d.extras = {'part': 'dress', 'state': state, 'visible_when': state}
+        d.add_grid(96, 30, skirt, satin + '@2s', closed_u=True, uv_size=(3.0, hip))
+        # Round E: the rolled satin hem (≈ 6 mm turned hem → r 3 mm); on the cut state only the uncut arc keeps it
+        # (the cut edge stays raw).
+        hem = [skirt(i / 96, 1.0) for i in range(97)]
+        if state == 'cut_hem':
+            keep = [abs(((i / 96 * math.tau + math.pi / 2) + math.pi) % math.tau - math.pi) >= 0.95 for i in range(97)]
+            run = []
+            for q, k in zip(hem, keep):
+                if k:
+                    run.append(q)
+                elif len(run) > 1:
+                    d.add(tube(run, 0.003, sides=6), satin)
+                    run = []
+                else:
+                    run = []
+            if len(run) > 1:
+                d.add(tube(run, 0.003, sides=6), satin)
+        else:
+            d.add(tube(hem[:-1], 0.003, sides=6, closed=True), satin)
+        d.extras.update({'part': 'dress', 'state': state, 'visible_when': state})
         part.children.append((d, None))
     # dust sheet: slid off the left shoulder, hanging down the back
-    sheet = p.get('sheetMat', 'dust_sheet') + '@2s'
-    part.add_grid(18, 22, lambda u, v: (
-        -0.05 + (u - 0.5) * 0.7 * (0.7 + 0.5 * v) + 0.1 * v,
-        0.12 + 0.12 * v + 0.03 * math.sin(u * 17 + seed) * v,
-        hip + 0.62 - v * (hip + 0.5) * (0.9 + 0.1 * math.sin(u * 5))), sheet, uv_size=(0.8, 1.6))
+    # Round E: 40 x 44 grid, softer vertical gravity folds (two octaves, deepening downward), rolled hems.
+    sheet_m = p.get('sheetMat', 'dust_sheet')
+    sheet_fn = lambda u, v: (
+        -0.05 + (u - 0.5) * 0.7 * (0.7 + 0.5 * v) + 0.1 * v + 0.012 * math.sin(u * 9 + seed) * v,
+        0.12 + 0.12 * v + 0.026 * math.sin(u * 17 + seed) * v + 0.009 * math.sin(u * 37 + 3 * seed) * v ** 0.7,
+        hip + 0.62 - v * (hip + 0.5) * (0.9 + 0.1 * math.sin(u * 5)))
+    sh = Part('dress_dummy.sheet', rng)
+    sh.no_sharp = True
+    sh.extras['low_ratio'] = 0.15
+    sh.add_grid(40, 44, sheet_fn, sheet_m + '@2s', uv_size=(0.8, 1.6))
+    hem_edges(sh, sheet_fn, 40, 44, sheet_m, edges=('v1', 'u0', 'u1'))
+    part.children.append((sh, None))
     part.extras['sheet_slid'] = bool(p.get('sheetSlidOffShoulder', True))
     return [part]

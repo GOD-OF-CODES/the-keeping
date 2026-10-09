@@ -33,6 +33,14 @@ export const LOOK = {
   meterHigh: 0.995,
   /** 0 = log-average (geometric mean) of the window, 1 = arithmetic mean (bright areas dominate). */
   meterMeanMix: 0.7,
+  /** Highlight protect (runtime E review): the centre-weighted hpPct percentile of scene luminance may map to at most
+   *  hpWhite × display white (pre-AgX). 0 = off. */
+  // Measured (sw3): never binds in the 13 torch/lamp/candle test views (p98 ≤ 1.6× white at their exposure); it is a
+  // clip guard for faces/props at < 0.5 m in the 2 kcd core (builder E request 4, Ada in the torch core).
+  hpPct: 0.98,
+  hpWhite: 3,
+  /** Lowest exposure the highlight cap may set (linear; the room clamp's minExposure no longer binds it). */
+  hpFloor: 0.03,
   /** Exposure compensation in EV on top of the meter. */
   biasEV: 0,
   /** Adaptation time constants (s). Rod dark adaptation is minutes; 6 s is a game-scale slow brightening.
@@ -52,6 +60,23 @@ export const LOOK = {
   /** Extra grain per EV of exposure gain (a camera pushed +4.6 EV shows ~2× the grain). */
   grainPerEV: 0.25,
   bloom: 0.22,
+  /** Glare high-pass threshold in EXPOSED (display) units (pipeline.ts bloom). Runtime E review: halation is light
+   *  scattered in the lens/emulsion from EMITTERS and specular glints (10²–10⁵× a diffuse white), not from a lit
+   *  diffuse surface. At 1.5 (AgX shoulder) a cloth in the 2 kcd torch core 0.5–1.3 m away (≈ 30× display white at the
+   *  old 0.25 exposure floor) became a milky disc (PROPS-FINISH-AUDIT item 1, x2-dress). Raised so a diffuse surface
+   *  the eye has adapted to (≤ 2–4× white) never glares while flames/bulbs/headlights/lightning windows still do. */
+  // sw3 (runtime E review, medium, 0.25 exposure): the dress hot spot's centre-weighted p98 is only ≈ 0.8× display
+  // white (log2 1.7 scene at exposure 0.25) — the close-ups are NOT clipped; the veil was the 1.5 threshold catching
+  // the torch core. 3 = the core no longer veils the jerry cans / sign post / dress (sw3-09/10, 13/14), while a
+  // candle flame (≈ 3–7 display) still carries its halo (sw3-25/26).
+  // sg1 (runtime E review, Medium; scratch/rer2/gS1–gS3): the veil's real cause was the high pass forwarding T + excess —
+  // a cloth crossing T in the torch core jumped from 0 to ≥ T of glare (a disc-shaped onset). With only the EXCESS
+  // scattering (glareBase 0, film halation: light the emulsion can't hold), T 3 left the candle flame with no halo and
+  // T 1.5 put a faint veil back on the dress; 2 keeps a soft flame halo and a clean, folded dress.
+  bloomThreshold: 2,
+  /** Fraction of the threshold forwarded to the glare with the excess (pipeline.ts GLARE_BASE): 1 = stock r186 high
+   *  pass (T + excess → hard onset), 0 = only the excess above T scatters (no step at T). */
+  glareBase: 0,
   vignette: 0.4,
 
   // ---- White balance (item 14): camera WB in kelvin per zone, blended in mired over ~1 s at doors.
@@ -95,9 +120,13 @@ export const LOOK = {
   /** Lightning DirectionalLight peak (lux-like, × flash level) outdoors. The old 2.2 was set for exposure 1; at the
    *  dark-adapted night exposure (≈ 7-15) it lit the lawn like daylight. 0.5 over-exposes the frame by ~1.3 EV at the
    *  peak — a flash, with hard shadows — and the exposure doesn't follow it. */
-  lightningPeak: 0.5,
+  // Runtime E review (lt1, Medium: facade / road / yard strikes): 0.5 with flashSky 5 left the shadows at ≈ half the lit
+  // level — an overcast-day wash, not a stroke. A visible stroke is a near-point source: the shadow side is lit only by
+  // the cloud base, ≥ 2 stops under the lit side. 0.75 / 2.5 keeps the same total peak (direct 7.5 + fill 2.5 vs
+  // 5 + 5 sky units) with a 4:1 lit:shadow ratio; the sky still flashes +1.3 EV.
+  lightningPeak: 0.75,
   /** Cloud-base glow at the flash peak (× the sky), and the fog's (× its colour). */
-  flashSky: 5,
+  flashSky: 2.5,
   flashFog: 2,
   /** Azimuth jitter per strike around L_LTN_SUN (degrees, ±). */
   flashAzimuthJitter: 40,
@@ -116,12 +145,16 @@ export const LOOK = {
   reflLod: 7,
   /** Flashlight (item 11): peak candela, cookie core weight / σ² (r normalised to the cone) / spill shelf weight /
    *  shelf fade start, cone half-angle (deg), penumbra, bulb colour temperature (K), bounce × physical (ρΦ/π). */
-  torchCd: 120,
-  torchCore: 0.87,
-  torchSigma2: 0.012,
-  torchSpill: 0.13,
+  // Runtime AD review (round D, 2026-10-09): CLAUDE.md's 1990s 2-cell D krypton torch — ≈ 27 lm, peak 2–3 kcd, hot
+  // centre + soft spill. The old 120 cd / 16 cd-shelf profile (item 11, chosen before auto-exposure existed) had no
+  // throw: 2.8 lux on the U1 end wall at 6.5 m, no hot spot on Ada. Now 2000 cd, core HWHM 2.9° (σ² 0.0036), spill
+  // shelf 7 cd, corona 1.6 cd: 30.9 lm (beamFlux). The exposure meter handles the clipped near hot spot.
+  torchCd: 2000,
+  torchCore: 1,
+  torchSigma2: 0.0036,
+  torchSpill: 0.0035,
   torchShelf: 0.4,
-  torchTail: 0.02,
+  torchTail: 0.0008,
   torchAngle: 45,
   torchPenumbra: 0.5,
   torchKelvin: 2900,

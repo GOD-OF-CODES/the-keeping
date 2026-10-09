@@ -23,7 +23,9 @@ import { createFlashlight } from '../render/flashlight.ts';
 import { syncSurfaceLook } from '../render/surfaces.ts'; // LIGHTING lane (builder 2)
 import { LightmapMaterial, uLightning } from '../render/lightmap-material.ts';
 import { bakeProbeGrid, excludeGridFromLightmapped } from '../render/probes.ts';
-import { installPerf, perfBuilds, perfLog, perfMark } from '../render/perf.ts';
+import { deferCompileWaits, installParallelCompile } from '../render/parallel-compile.ts';
+import { requestExposureSnap } from '../render/exposure.ts';
+import { installPerf, perfBuildClasses, perfBuilds, perfLog, perfMark } from '../render/perf.ts';
 import { SHADOW_CANDLE_ID, setCandleShadow } from '../world/lights.ts';
 import type { GameContext } from './context.ts';
 import type { LevelLayout, TriggerVolume } from '../shared/layout-types.ts';
@@ -69,6 +71,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
   h.status('Starting the renderer…');
   const { renderer, canvas, backend, backendReason } = await createRenderer(preset, { forceWebGL, parent: gameRoot });
   installPerf(renderer, debug);
+  if (params.get('pcompile') !== '0') installParallelCompile(renderer); // runtime lane E item 1: batched pipeline compiles
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
@@ -137,7 +140,8 @@ export async function startGame(h: BootHandoff): Promise<void> {
     pipeline.render();
   };
   const warm = rt.expose.afterCompile as ((render: () => void, compile: () => Promise<void>) => Promise<void>) | undefined;
-  if (warm) await warm(frame, compileView);
+  // runtime lane E (item 1): node builds stay serial, every pipeline compiles in parallel; awaited once at the end
+  if (warm) await deferCompileWaits(() => warm(frame, compileView));
   else await compileView();
   perfMark('firstFrame');
   frame();
@@ -336,6 +340,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
     /** Node builds so far (diff around a beat: > 0 = a shader variant compiled at runtime) and the load phases. */
     builds: () => perfBuilds(),
     perfLog: () => perfLog(),
+    buildClasses: () => perfBuildClasses(),
     /**
      * Debug screenshot that works in hidden/occluded tabs: renders the pipeline into a render target, reads it back
      * and returns a JPEG data URL (w px wide; AgX output is already display-referred — sRGB-encoded here).
@@ -506,6 +511,10 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
     if (inside) {
       torchBeforeHide = rig.on;
       rig.setOn(false);
+      // runtime lane E (item 9): the hide is a cut in light level (torch off, eye pressed to the slats); at the
+      // brightening τ 6 s the first seconds showed only near-black bars (playthrough frame ptmed-05) — adapt to the
+      // first reading taken inside, so the candle-lit hall reads between the louvres from the start
+      requestExposureSnap();
     } else rig.setOn(torchBeforeHide);
   });
   bindDefaultInteractions(interact, { ctx, level, doors: level.doors, hides, inventory, journal, sound: audio, toast: toastEl.show });
@@ -547,6 +556,8 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
   }
 
   // ---- per-frame state
+  let peek: { dist: number; yaw: number } | null = null; // runtime lane E item 8 (debug posePeek)
+  const peekV = new THREE.Vector3();
   let torchPending = false;
   let lastRoom: string | null = null;
   let weatherKey = '';
@@ -601,6 +612,19 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
     }
     level.update(dt, t, lightning);
     story.lateUpdate();
+    if (peek && story.ada) {
+      // runtime lane E item 8 (debug only): Ada held `peek.dist` m in front of the camera, facing it, feet on the
+      // player's floor — her brain is parked ('hold' far away), so the director can neither move nor catch.
+      const g = story.ada.group;
+      camera.getWorldDirection(peekV);
+      peekV.y = 0;
+      peekV.normalize();
+      const pf = coords.planToWorld(player.planFeet());
+      g.position.set(camera.position.x + peekV.x * peek.dist, pf[1], camera.position.z + peekV.z * peek.dist);
+      g.rotation.y = Math.atan2(-peekV.x, -peekV.z) + peek.yaw;
+      g.visible = true;
+      g.updateMatrixWorld(true);
+    }
     rig.update(dt, t);
     // sky + flash, fog (mist in B12/C6), C6's blue hour, exposure, white balance (LIGHTING lane)
     atmo.update(dt, lightning, outside, level.room, story.mist(), story.skyTint());
@@ -699,7 +723,12 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
         camera.updateProjectionMatrix();
         overlay.set('compile', 0.3, 'warming rooms');
         const rooms = ctx.layout.rooms.filter((r) => r.kind !== 'set');
+        // runtime lane E (item 1): every step names itself — the Max "stall at U4T" was the unlabelled tableau /
+        // car-set / rc9 steps compiling cold for 5 min behind the last room's label
+        let cf = 0.3;
         const step = async (label: string, place: () => void, headings: number[]) => {
+          overlay.set('compile', cf, label);
+          if (cf >= 0.9) cf = Math.min(0.99, cf + 0.015);
           const ts = performance.now();
           const b0 = perfBuilds();
           place();
@@ -717,11 +746,12 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
             rig.update(0.016, 0);
             render();
           }
-          // runtime lane D (fz7.mjs): with the cutscene DOF chain on, the scene pass draws in ANOTHER render context
-          // (ctx 15 vs 10), so every road object warmed here was node-built again at C0's DOF cuts (12.5 / 19.0 /
-          // 22.0 s: 1.1–2.9 s freezes on Medium). The opening steps also draw their headings through the DOF chain.
-          if (label.startsWith('rc9') && preset.post.cutsceneDof && warmPipe?.kind === 'post') {
-            warmPipe.setCutscene({ dof: { focusDistance: 30, focalLength: 40, bokehScale: 1.5 } });
+          // runtime lane E (item 3): the arms' car-light set (C0/C1 driver POV), in the frame's own context too
+          if (label.startsWith('rc9') && story.arms) {
+            const arms = story.arms;
+            const was = arms.visible;
+            arms.visible = true;
+            arms.useCarLights(true);
             for (const rot of headings) {
               camera.rotation.set(-0.2, rot, 0);
               camera.updateMatrixWorld(true);
@@ -729,7 +759,32 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
               rig.update(0.016, 0);
               render();
             }
+            arms.useCarLights(false);
+            arms.visible = was;
+          }
+          // runtime lane D (fz7.mjs): with the cutscene DOF chain on, the scene pass draws in ANOTHER render context
+          // (ctx 15 vs 10), so every road object warmed here was node-built again at C0's DOF cuts (12.5 / 19.0 /
+          // 22.0 s: 1.1–2.9 s freezes on Medium). The opening steps also draw their headings through the DOF chain.
+          if (label.startsWith('rc9') && preset.post.cutsceneDof && warmPipe?.kind === 'post') {
+            // runtime lane E (item 3, cut2.mjs): the first DOF cut (C0 12.5, driver POV) built the 7 FP-arm meshes in
+            // the DOF scene-pass context (0.28 s Medium, 0.4 s Max) — draw them through the DOF chain here too
+            const arms = story.arms;
+            const armsWas = arms?.visible;
+            if (arms) arms.visible = true;
+            warmPipe.setCutscene({ dof: { focusDistance: 30, focalLength: 40, bokehScale: 1.5 } });
+            for (const car of [false, true]) {
+              arms?.useCarLights(car); // both of the arms' light sets (FpArms.setLightSets), in the DOF context
+              for (const rot of headings) {
+                camera.rotation.set(-0.2, rot, 0);
+                camera.updateMatrixWorld(true);
+                rig.snap();
+                rig.update(0.016, 0);
+                render();
+              }
+            }
+            arms?.useCarLights(false);
             warmPipe.setCutscene(null);
+            if (arms) arms.visible = !!armsWas;
           }
           console.info(`[game] warm ${label} ${(performance.now() - ts).toFixed(0)} ms builds=${perfBuilds() - b0}`);
           await nextFrame();
@@ -749,7 +804,8 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
             },
             four,
           );
-          overlay.set('compile', 0.3 + (0.6 * ++k) / rooms.length, r.id);
+          cf = 0.3 + (0.6 * ++k) / rooms.length;
+          overlay.set('compile', cf, r.id);
         }
         // C2 tableau: Ada + Harlan at the table (their shadow-casting / receiving variants: C2, C5's shadow-play and
         // C7 reuse the table candle, whose shadow is always on in the LightsNodes — RuntimeLights, P0-2)
@@ -813,6 +869,23 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
               const eye = coords.planToWorld([600, -150, 60]);
               camera.position.set(eye[0], eye[1], eye[2]);
               level.setViewer(600, -150, 0);
+              // runtime lane E (item 7, s1max: 683 ms at C0 9.0): the corridor's trees now cast into the lightning's
+              // map, whose shadow-pass render objects were only built at the first strike. Draw that map once here,
+              // with the aerial strike's ±110 m box over the road below (geometry instancing shares the builds per
+              // material, so one stretch of corridor covers every chunk).
+              const ld = level.lights.lightningDir;
+              const sc = ld.shadow.camera;
+              sc.left = -110;
+              sc.right = 110;
+              sc.top = 110;
+              sc.bottom = -110;
+              sc.far = 320;
+              sc.updateProjectionMatrix();
+              ld.target.position.set(eye[0], 0, eye[2]);
+              ld.position.set(eye[0] + 80, 110, eye[2] + 60);
+              ld.target.updateMatrixWorld();
+              ld.updateMatrixWorld();
+              ld.shadow.needsUpdate = true;
             },
             four,
           );
@@ -876,6 +949,16 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
       /** Plan-space feet position. */
       pos: () => player.planFeet(),
       /** Teleport to a PLAN position (feet) with a heading (CCW from east, like the layout). */
+      /** runtime lane E item 8: hold Ada `dist` m in front of the camera (null = release). Debug scenarios only. */
+      posePeek: (dist: number | null, yaw = 0) => {
+        if (dist === null) {
+          peek = null;
+          story.director.brain.setScripted?.('hidden');
+          return;
+        }
+        story.director.brain.setScripted?.('hold', { force: true });
+        peek = { dist, yaw };
+      },
       goto: (x: number, y: number, z: number, heading = Math.PI / 2, pitch = 0) => {
         player.teleport(coords.planToWorld([x, y, z + 1.65]), heading - Math.PI / 2, pitch);
       },
@@ -1070,11 +1153,15 @@ function createLightning(ctx: GameContext, pipeline: Pipeline, hooks: LightningH
     strike() {
       const r = ctx.settings.reducedFlash;
       const peak = r ? 0.3 : 1;
+      // runtime lane E (item 7, CLAUDE.md): a cloud-to-ground flash is 3–4 return strokes 40–100 ms apart, the whole
+      // flicker ≈ 0.4 s (the old 3 pulses ran 0.6–0.8 s). Each stroke: a fast rise, then the continuing current's decay.
+      const j = () => 0.85 + Math.random() * 0.3;
       pulses = [
-        { at: 0, peak: peak * 0.55, len: 0.07 },
-        { at: 0.12, peak, len: 0.16 },
-        { at: 0.38 + Math.random() * 0.2, peak: peak * 0.7, len: 0.22 },
+        { at: 0, peak: peak * 0.6, len: 0.06 },
+        { at: 0.085 * j(), peak, len: 0.11 },
+        { at: 0.19 * j(), peak: peak * 0.5, len: 0.07 },
       ];
+      if (Math.random() < 0.6) pulses.push({ at: 0.3 * j(), peak: peak * 0.8, len: 0.12 });
       if (r) pulses = pulses.map((p) => ({ ...p, len: p.len * 2.5 }));
       t = 0;
       ctx.events.emit('lightning', { strength: peak, durationMs: 800 });

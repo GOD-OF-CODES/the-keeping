@@ -330,5 +330,5 @@ export function createGlimpses(d: GlimpseDeps) {
     for (const e of eyes) e.quad.visible = on;
   };
 
-  return { fx, update, setWarm, debug: () => ({ yard: yard.stats(), c0, near: cam.near, far: cam.far, flutter, retro: retroMats.size, reflector: !!reflectorMat, eyes: eyes.length, eyesOn: [...eyesOn] }) };
+  return { fx, update, setWarm, c0On: () => c0, debug: () => ({ yard: yard.stats(), c0, near: cam.near, far: cam.far, flutter, retro: retroMats.size, reflector: !!reflectorMat, eyes: eyes.length, eyesOn: [...eyesOn] }) };
 }

@@ -3,7 +3,7 @@
 
 import type { MaterialFamily } from '../../shared/material-types.ts';
 import type { GenCtx, Generator, N, RGB } from '../gen-types.ts';
-import { fbm, fbm01, hashf } from '../tsl-noise.ts';
+import { fbm, fbm01, gn, hashf } from '../tsl-noise.ts';
 import { abs, band, boards, c3, chipMask, dots, float, fract, lines, max, min, mix, nyqOctaves, paintOver, patches, rot45, smoothstep, tideStain, vec2, vec3, woodGrain } from './common.ts';
 
 interface Species {
@@ -18,6 +18,8 @@ const SPECIES: Record<string, Species> = {
   oak: { rings: 7, late: 0.62, early: 1.12, pores: 0.6, figure: 2.2, hueVar: [1.12, 1.05, 0.92] },
   pine: { rings: 4, late: 0.52, early: 1.16, pores: 0, figure: 3.2, hueVar: [1.08, 1.04, 0.95] },
   walnut: { rings: 6, late: 0.6, early: 1.1, pores: 0.4, figure: 1.8, hueVar: [1.1, 1.0, 1.0] },
+  // Hickory (Carya): ring-porous, straight tight grain, pale sapwood with tan-brown heart streaks (tool handles).
+  hickory: { rings: 9, late: 0.72, early: 1.08, pores: 0.5, figure: 1.4, hueVar: [1.08, 1.02, 0.94] },
 };
 
 /** Bare wood albedo for a board layout (grain, per-board tone, streaks). */
@@ -153,8 +155,25 @@ const woodBare: Generator = (c) => {
     alb = mix(alb, c3([0.21, 0.2, 0.18]), dust);
     rough = mix(rough, float(0.95), dust);
   }
+  // Round E: weather checks (season cracks) on exterior posts — long thin splits along the grain (u), 0.5–3 mm wide,
+  // dark (dirt/algae in the split, ≈ 0.03) with a slightly raised, lighter lip; plus green-black algae/mildew streaks.
+  let checkH: N = float(0);
+  const chk = c.num('checks', 0);
+  if (chk > 0) {
+    const across = Math.min(c.cells(0.004), Math.round(c.size * 0.5));
+    const crackN = gn(c.uv, [c.cells(0.5), across], seed + 13);
+    const run = patches(c.uv, [c.cells(0.25), c.cells(0.05)], chk * 0.6, 0.06, seed + 14, 3);
+    const split = float(1).sub(smoothstep(0.0, 0.06, abs(crackN))).mul(run);
+    const lip = float(1).sub(smoothstep(0.06, 0.16, abs(crackN))).sub(split).clamp(0, 1).mul(run);
+    alb = mix(alb, c3([0.025, 0.022, 0.018]), split.mul(0.9));
+    alb = alb.mul(lip.mul(0.12).add(1));
+    rough = mix(rough, float(0.95), split);
+    checkH = lip.mul(0.05).sub(split.mul(0.5));
+    const mildew = patches(c.uv, [c.cells(0.6), c.cells(0.08)], c.num('mildew', 0) * 0.5, 0.15, seed + 15, 4);
+    alb = mix(alb, alb.mul(vec3(0.55, 0.6, 0.45)), mildew.mul(0.7));
+  }
   // Furniture dust + edge wear are world-space (bind: up-facing dust); keep the texture clean-ish.
-  const height = float(1).sub(b.gap).mul(0.85).add(b.across.sub(0.5).mul(b.across.sub(0.5)).mul(0.2)).sub(wood.late.mul(0.05)).add(stainH).add(nailM.mul(0.06)).add(sawH);
+  const height = float(1).sub(b.gap).mul(0.85).add(checkH).add(b.across.sub(0.5).mul(b.across.sub(0.5)).mul(0.2)).sub(wood.late.mul(0.05)).add(stainH).add(nailM.mul(0.06)).add(sawH);
   return { albedo: alb, roughness: rough, height, heightDepthM: c.num('gapDepth', furniture ? 0.001 : 0.005), cavity: furniture ? 0.3 : 0.6 };
 };
 

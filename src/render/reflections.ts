@@ -31,6 +31,7 @@ import type { LevelLayout } from '../shared/layout-types.ts';
 import { planToWorld } from '../shared/coords.ts';
 import { specById } from '../materials/spec-index.ts';
 import { uParlorBake } from './lightmap-material.ts';
+import { deferCompileWaits } from './parallel-compile.ts';
 
 /** Global reflection multiplier (look API `reflections`; 1 = physical). */
 export const uReflection = uniform(1);
@@ -287,6 +288,30 @@ export class RoomReflections {
       for (const [g] of groupVis) g.visible = true;
       for (const [l] of dark) l.intensity = 0;
       for (const [c] of others) c.visible = false;
+      // runtime lane E (item 1): precompile the cube context's pipelines in parallel (render/parallel-compile.ts)
+      // before the synchronous captures — cold, the 13 cubes' serial first-render compiles took 67 s on Max.
+      if (!only && typeof renderer.compileAsync === 'function') {
+        const prev = renderer.getRenderTarget();
+        try {
+          await deferCompileWaits(async () => {
+          for (const p of this.probes.values()) {
+            const cc = new THREE.CubeCamera(p.near, p.far, p.cube);
+            cc.coordinateSystem = renderer.coordinateSystem;
+            cc.updateCoordinateSystem();
+            cc.position.copy(p.center);
+            cc.updateMatrixWorld(true);
+            for (let f = 0; f < 6; f++) {
+              renderer.setRenderTarget(p.cube, f);
+              await renderer.compileAsync(scene, cc.children[f]); // serial node builds (no duplicate builds)
+            }
+          }
+          });
+        } catch (e) {
+          console.warn('[reflections] precompile failed (continuing):', e);
+        } finally {
+          renderer.setRenderTarget(prev);
+        }
+      }
       for (const p of only ?? this.probes.values()) {
         const cc = new THREE.CubeCamera(p.near, p.far, into ?? p.cube);
         cc.position.copy(p.center);

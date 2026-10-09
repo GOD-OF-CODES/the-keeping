@@ -145,7 +145,7 @@ export function woodGrain(c: GenCtx, b: Boards, o: GrainOpts): { late: N; streak
   const late = smoothstep(0.3, 0.86, ring).pow(1.6).mul(float(1).sub(smoothstep(0.9, 0.995, ring)));
   // Fine fibre streaks (long along u, very thin across).
   const sAlong = c.cells(0.35);
-  const sAcross = Math.min(c.cells(0.0016), Math.round(c.size * 0.7));
+  const sAcross = Math.min(c.cells(0.0016), Math.round(c.size * 0.5));
   const streak = gn(uv, [sAlong, sAcross], o.seed + 11).mul(0.5).add(gn(uv, [sAlong * 2, Math.round(sAcross / 2)], o.seed + 12).mul(0.5));
   let pores: N = float(0);
   if (o.pores) {

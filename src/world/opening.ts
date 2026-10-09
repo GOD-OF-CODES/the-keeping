@@ -22,6 +22,7 @@ import { LOOK } from '../render/look.ts';
 import { EXPOSURE_CUE, requestExposureSnap } from '../render/exposure.ts';
 import { specById } from '../materials/spec-index.ts';
 import { roadFrame, roadPoint } from '../cutscenes/road.ts';
+import { DRIVER_EYE } from '../cutscenes/stage.ts';
 import { chainageOf } from './corridor.ts';
 import { planToWorld } from '../shared/coords.ts';
 import { createCorridorCuller } from './corridor.ts';
@@ -77,7 +78,9 @@ export function createOpening(d: OpeningDeps) {
   // what casts into the lamps' shadow maps: the road set, the gate (posts, sign, fence) and the vehicles
   for (const g of [level.roomGroups.get('RC9'), level.roomGroups.get('EXT1'), gate, interior, level.prop('P_RC9_TRUCK')]) {
     g?.traverse((o: any) => {
-      if (o.isMesh) o.layers.enable(HEADLAMP_SHADOW_LAYER);
+      // runtime lane E: the corridor's tree chunks now cast (into the lightning's map only — atmosphere.ts); keep them
+      // out of the per-frame headlamp maps, as before (their cost, and C1's look, unchanged)
+      if (o.isMesh && !inCorridorChunk(o)) o.layers.enable(HEADLAMP_SHADOW_LAYER);
     });
   }
   const shadowLights = [...lamps.lights, dome, veil].filter((l) => l?.castShadow);
@@ -551,7 +554,7 @@ export function createOpening(d: OpeningDeps) {
         // culling off, the culler leaves all chunks visible while no cutscene holds the camera), then restore.
         warmCulled = [];
         level.root?.traverse((o: any) => {
-          if (o.isInstancedMesh && o.frustumCulled) {
+          if ((o.isInstancedMesh || o.userData?.geoInstanced) && o.frustumCulled) {
             o.frustumCulled = false;
             warmCulled!.push(o);
           }
@@ -578,8 +581,22 @@ export function createOpening(d: OpeningDeps) {
       beamRain.mesh.visible = on;
     },
     mounted: () => mounted,
+    /** runtime lane E (item 3): the FP arms use the CAR light list from the start of C0 (its black date card) until the
+     *  interior is unmounted after C1. Switching material.lightsNode needs a node rebuild (story-runtime setArmsCar →
+     *  needsUpdate: 7 arm meshes, 0.17–0.42 s) — at the first mount (C0 12.5, a live cut) that was the C0 hitch. */
+    armsCar: () => mounted || glimpses.c0On(),
+    /** Driver-POV anchor for the FP arms (review fix): the mounted interior while a POV shot runs, else null. Its local
+     *  frame is car space as (x, z, −y), so the eye frame of clips_arms.py (car − EYE, axes = the car's) is a pure
+     *  translation by DRIVER_EYE in it. */
+    driverAnchor: () => (mounted && povNow && interior ? { obj: interior, eye: DRIVER_EYE } : null),
     debug: () => ({ glimpses: glimpses.debug(), truck: truck ? [+truck.position.x.toFixed(1), +(-truck.position.z).toFixed(1), truckRun ? +truckRun.t.toFixed(1) : -1] : null, corridor: corridor.stats(), mounted, lamps: lamps.lights.length, clones: clones.size, glass: interiorGlass.length, cabinLo: cabinLo.length, proxy: proxy.length, rim: !!steering }),
   };
 }
 
 export type Opening = ReturnType<typeof createOpening>;
+
+/** A mesh under a corridor chunk node (details_corridor.glb extras { corridor, chunk }) — src/world/corridor.ts. */
+function inCorridorChunk(o: any): boolean {
+  for (let p = o; p; p = p.parent) if (p.userData?.corridor && p.userData.chunk !== undefined) return true;
+  return false;
+}

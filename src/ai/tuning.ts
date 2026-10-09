@@ -26,8 +26,8 @@ export const TUNING = {
   listenS: [1.0, 0.8, 0.6],
   /** Difficulty 2026-10-08: lit 14 → 8 m (torch on is ordinary play), dark 5 → 4 m. noticeS: she must keep you in
    *  sight this long before a CHASE (a glance across her cone is a near miss); within closeM it is instant. */
-  sight: { halfAngleDeg: 30, lit: 8, dark: 4, darkCrouched: 2, eyeHeight: 1.5, noticeS: 0.6, closeM: 2.5 },
-  light: { beamInvestigate: 6, flameLit: 1.5, bodyRadius: 0.35, chestHeight: 1.2, beamInvestigateCooldownS: 2.5 },
+  sight: { halfAngleDeg: 30, lit: 8, dark: 4, darkCrouched: 2, eyeHeight: 1.5, noticeS: 0.6, closeM: 2.5, chaseM: 5 }, // chaseM (round E careless gate): a first sighting farther than this → she comes to look (INVESTIGATE), not a chase
+  light: { beamInvestigate: 6, flameLit: 1.5, bodyRadius: 0.35, chestHeight: 1.2, beamInvestigateCooldownS: 2.5, beamRepeatS: 12 }, // beamRepeatS (round E, B11 stall): after a beam LOOK that saw nothing, a beam on her body within this long sends her toward the holder instead of another LOOK in place
   locket: { range: 4 },
   /** Difficulty 2026-10-08: lostS 4 → 2.5, catchDist 1 → 0.8 m, and she abandons any chase after giveUpS. */
   chase: { lostS: 2.5, catchDist: 0.8, runNoiseMin: 5, giveUpS: 10 },
@@ -44,7 +44,9 @@ export const TUNING = {
   throughU2Chance: [0.25, 0.4, 0.55],
   /** Post-death grace (difficulty 2026-10-08: patrol-only 8 → 10 s, hearing window 20 → 30 s). calmS: after ANY
    *  cutscene ends she perceives nothing (no sight / hearing / beam / contact) for this long. */
-  grace: { patrolOnlyS: 10, hearingS: 30, hearingMul: 0.7, calmS: 6 },
+  /*  awayS/awayM (round E ruling b, respawn fairness): for awayS after a death every routine leg keeps awayM from the
+   *  player (dark sight 4 m + 0.5 m margin), or she holds; an idle player must survive ≥ 60 s at every checkpoint. */
+  grace: { patrolOnlyS: 10, hearingS: 30, hearingMul: 0.7, calmS: 6, awayS: 75, awayM: 4.5 },
   assist: { speedMul: 0.85, noiseMul: 0.8 },
   hide: { seenWindowS: 2, audibleDist: 2, breathRadius: 1.2 },
   door: { openS: 1.2, openChaseS: 0.5 },

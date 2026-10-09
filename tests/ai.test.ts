@@ -718,3 +718,117 @@ test('difficulty (gameplay review): an unaware bump is a tell first — she stop
   const r2 = run(b2, FAR_PLAYER, 3);
   assert.ok(!r2.events.some((e) => e.type === 'catch'), 'stepping away during the wind-up survives');
 });
+
+// ------------------------------------------------------------------ respawn fairness (round E ruling b)
+
+test('grace away rule: an idle torch-off player at each upper/ground checkpoint survives 60 s; she resumes after awayS; walking into her still kills', () => {
+  const CPS: [string, P3, 'upper' | 'upper_dress' | 'ground_finale', DoorMap][] = [
+    ['CP3', [2.55, 4.2, 4.1], 'upper', {}],
+    ['CP4', [5.6, 2.3, 4.1], 'upper', { D_HARLAN: 'open', D_DRESSING: 'open' }],
+    ['CP5', [2.5, 7.3, 4.1], 'upper', { D_ADA: 'open' }],
+    ['CP6', [6.4, 7.6, 4.1], 'upper_dress', { D_ADA: 'open' }],
+    ['CP7', [4.7, 8.6, 0.6], 'ground_finale', { D_ADA: 'open', D_PASSAGE: 'open' }],
+  ];
+  for (const [cp, pos, kind, extra] of CPS)
+    for (const seed of [1, 3, 5]) {
+      const b = new AdaBrain(layout, world(initialDoors(extra)), { seed });
+      b.setRoutine(kind);
+      run(b, FAR_PLAYER, seed); // she is somewhere on her lap when the player dies
+      const P = player(pos);
+      b.grace(P.pos, P.room);
+      let minD = 99;
+      const { events } = run(b, () => {
+        if (Math.abs(b.pos[2] - pos[2]) < 2) minD = Math.min(minD, Math.hypot(b.pos[0] - pos[0], b.pos[1] - pos[1]));
+        return P;
+      }, 60);
+      assert.ok(!events.some((e) => e.type === 'catch'), `${cp} seed ${seed}: caught while idle`);
+      assert.ok(minD >= 4, `${cp} seed ${seed}: she came to ${minD.toFixed(2)} m`);
+    }
+  // after the window she patrols the full lap again (CP3: she held at her vigil, then walks the runner)
+  const b = new AdaBrain(layout, world(), { seed: 1 });
+  b.grace([2.55, 4.2, 4.1], 'U1');
+  run(b, player([2.55, 4.2, 4.1]), 30);
+  const held = b.pos;
+  let moved = 0;
+  run(b, () => {
+    moved = Math.max(moved, Math.hypot(b.pos[0] - held[0], b.pos[1] - held[1]));
+    return player([2.55, 4.2, 4.1]);
+  }, TUNING.grace.awayS);
+  assert.ok(moved > 2, `she resumes her lap after awayS (moved ${moved.toFixed(2)} m)`);
+  // a player who walks into her during the window still gets the bump tell, then the grab
+  const b2 = new AdaBrain(layout, world(), { seed: 1 });
+  b2.grace([2.55, 4.2, 4.1], 'U1');
+  run(b2, player([2.55, 4.2, 4.1]), 15);
+  const at = b2.pos;
+  const r = run(b2, player([at[0] + 0.3, at[1], at[2]]), 4);
+  assert.ok(r.events.some((e) => e.type === 'catch'), 'contact during the away window still catches');
+});
+
+test("B11 'let her look' stall (round E): beam on her body but her eyes can't reach the holder → she walks toward the light, looks at it from 2.5 m, sees the locket", () => {
+  const P: P3 = [2.41, 8.28, 0.6];
+  let b: AdaBrain;
+  // the main stair's balustrade/soffit: her eye → the player is blocked while she is > 4.5 m away; lens → her chest is clear
+  const los: WorldQuery['lineOfSight'] = (a, c) => {
+    const e = (b as any).eye() as P3;
+    const atEye = (q: P3) => Math.hypot(q[0] - e[0], q[1] - e[1], q[2] - e[2]) < 0.05;
+    return !(atEye(a) || atEye(c)) || Math.hypot(e[0] - P[0], e[1] - P[1]) < 4.5;
+  };
+  const doors: DoorMap = {};
+  for (const d of layout.doors) doors[d.id] = 'open';
+  b = new AdaBrain(layout, world(doors, los), { seed: 1 });
+  b.setRoutine('ground_finale');
+  (b as any).nav.placeFree([0.11, 3.73, 1.24], 'G1');
+  const pv = (): PlayerView => {
+    const eye: P3 = [P[0], P[1], P[2] + 1.65];
+    const a = b.pos;
+    const v: P3 = [a[0] - eye[0], a[1] - eye[1], a[2] + TUNING.light.chestHeight - eye[2]];
+    const l = Math.hypot(...v);
+    return player(P, { locketRaised: true, beam: { on: true, origin: [eye[0] + (v[0] / l) * 0.3, eye[1] + (v[1] / l) * 0.3, eye[2]], dir: [v[0] / l, v[1] / l, v[2] / l], range: 14, halfAngle: 0.3, hit: null } });
+  };
+  const { events } = run(b, pv, 30, 1 / 30);
+  const fin = events.find((e) => e.type === 'finale' && e.phase === 'start');
+  assert.ok(fin, `no finale in 30 s (state ${b.state} at ${b.pos.map((x) => x.toFixed(2))})`);
+  assert.ok(!events.some((e) => e.type === 'catch'));
+});
+
+test('C2 → B04 handover (round E, measured 5.17 s in-game): a frozen player released 1.47 m from her is not grabbed within the 6 s calm, and is grabbed after it', () => {
+  const b = new AdaBrain(layout, world(), { seed: 1 });
+  b.setScripted('b04_chase', { node: 'G_PARLOR_LURE', force: true });
+  b.calm(); // cutscene end
+  const P = player([2.35, 2.7, 0.6]);
+  let caughtAt = -1;
+  let t = 0;
+  for (; t < 12 && caughtAt < 0; t += 1 / 30) if (b.update(1 / 30, P).events.some((e: any) => e.type === 'catch')) caughtAt = t;
+  assert.ok(caughtAt >= TUNING.grace.calmS, `grabbed at ${caughtAt.toFixed(2)} s`);
+  assert.ok(caughtAt > 0 && caughtAt < 9, `a frozen player is still caught (at ${caughtAt.toFixed(2)} s)`);
+});
+
+test('C2 → B04 handover (round E, measured 4.27 s in-game): a player who moves and then stops is not grabbed within the 6 s calm', () => {
+  const b = new AdaBrain(layout, world(), { seed: 1 });
+  b.setScripted('b04_chase', { node: 'G_PARLOR_LURE', force: true });
+  b.calm();
+  let pos: P3 = [2.35, 2.7, 0.6];
+  let caughtAt = -1;
+  for (let t = 0; t < 6 && caughtAt < 0; t += 1 / 30) {
+    const moving = t > 1 && t < 1.8; // a short dash toward the stair, then frozen at its foot
+    if (moving) pos = [pos[0] - 0.08, pos[1] + 0.02, 0.6];
+    if (b.update(1 / 30, player(pos, { speed: moving ? 2.4 : 0 })).events.some((e: any) => e.type === 'catch')) caughtAt = t;
+  }
+  assert.equal(caughtAt, -1, `grabbed at ${caughtAt.toFixed(2)} s`);
+});
+
+test('far sighting (round E careless gate): a lit player seen at 7 m makes her come and look (INVESTIGATE), not chase; at 3 m she chases', () => {
+  for (const [d, want] of [[7, 'INVESTIGATE'], [3, 'CHASE']] as const) {
+    const b = new AdaBrain(layout, world(initialDoors({ D_ADA: 'open' })), { seed: 2 });
+    b.setRoutine('ground_finale');
+    (b as any).nav.placeFree([2.3, 1.2, 0.6], 'G1');
+    (b as any).nav.facing = Math.PI / 2; // facing north, up the hall
+    const P: P3 = [2.3, 1.2 + d, 0.6];
+    const eye: P3 = [P[0], P[1], P[2] + 1.65];
+    const toHer: P3 = [0, -1, -0.15];
+    const pv = player(P, { beam: { on: true, origin: eye, dir: toHer, range: 14, halfAngle: 0.3, hit: null } });
+    const seen = states(run(b, pv, 6, 1 / 30).events);
+    assert.ok(seen.includes(want), `${d} m: states ${seen.join(',')}`);
+    if (want === 'INVESTIGATE') assert.ok(!seen.includes('CHASE'), `${d} m: chased (${seen.join(',')})`);
+  }
+});

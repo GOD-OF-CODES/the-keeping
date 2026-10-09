@@ -1845,8 +1845,8 @@
     "gasPaintedOut": true,
     "board": "ROOMS",
     "vacancyPlate": true,
-    "mat": "wood_raw_plank",
-    "plateMat": "zinc_galvanized"
+    "mat": "wood_weathered_post",
+    "plateMat": "paint_steel_sign"
    },
    "lighting": "static",
    "collider": "mesh",
@@ -1883,7 +1883,7 @@
    "yaw": 0.785,
    "params": {
     "text": "VACANCY",
-    "mat": "zinc_galvanized",
+    "mat": "paint_steel_sign",
     "swing": true
    },
    "lighting": "dynamic",
@@ -3203,7 +3203,7 @@
    ],
    "yaw": 1.2,
    "params": {
-    "mat": "rust",
+    "mat": "steel_cleaver",
     "handleMat": "wood_furniture_dark"
    },
    "lighting": "dynamic",
@@ -3264,7 +3264,7 @@
    "yaw": 3.142,
    "params": {
     "mat": "cast_iron",
-    "doorMat": "enamel_chipped",
+    "doorMat": "enamel_stove",
     "cold": true,
     "pipeTo": "chimney"
    },
@@ -3297,7 +3297,7 @@
    "type": "kitchen_table",
    "room": "G3",
    "pos": [
-    7.2,
+    6.6,
     9.5,
     0.6
    ],
@@ -3316,7 +3316,7 @@
    "type": "kitchen_chair",
    "room": "G3",
    "pos": [
-    6.5,
+    5.9,
     9.55,
     0.6
    ],
@@ -3333,11 +3333,11 @@
    "type": "kitchen_chair",
    "room": "G3",
    "pos": [
-    7.95,
-    9.35,
+    6.95,
+    10.3,
     0.6
    ],
-   "yaw": -1.171,
+   "yaw": 1.691,
    "params": {
     "mat": "wood_furniture_dark",
     "tipped": true
@@ -3351,7 +3351,7 @@
    "type": "candle",
    "room": "G3",
    "pos": [
-    7.35,
+    6.75,
     9.6,
     1.38
    ],
@@ -3398,7 +3398,7 @@
     "plate": "DRIFTER",
     "full": true,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3418,7 +3418,7 @@
     "plate": "OKB 441",
     "full": true,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3438,7 +3438,7 @@
     "plate": "D. PRUITT",
     "full": true,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3458,7 +3458,7 @@
     "plate": "7L 2290",
     "full": true,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3478,7 +3478,7 @@
     "plate": "HYX 904",
     "full": true,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3498,7 +3498,7 @@
     "plate": "CARVEL 12",
     "full": true,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3518,7 +3518,7 @@
     "plate": "3M-7718",
     "full": true,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3538,7 +3538,7 @@
     "plate": "TNR 506",
     "full": true,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3558,7 +3558,7 @@
     "plate": "KJ 3395",
     "full": true,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3578,7 +3578,7 @@
     "plate": "WRD 118",
     "full": true,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3599,7 +3599,7 @@
     "plate": "LBE 260",
     "full": true,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3619,7 +3619,7 @@
     "plate": "RVX-318",
     "full": false,
     "chalk": true,
-    "mat": "rust"
+    "mat": "paint_steel_can"
    },
    "lighting": "dynamic",
    "collider": "box",
@@ -3632,7 +3632,7 @@
    "room": "G3",
    "pos": [
     8.72,
-    10,
+    9.6,
     0.6
    ],
    "yaw": -1.571,
@@ -3951,7 +3951,7 @@
    "yaw": 0,
    "params": {
     "length": 1.2,
-    "mat": "rag_rug",
+    "mat": "wool_needlepoint",
     "tasselMat": "brass_tarnished"
    },
    "lighting": "dynamic",
@@ -4051,8 +4051,8 @@
    ],
    "yaw": 0.3,
    "params": {
-    "mat": "cast_iron",
-    "handleMat": "wood_furniture_dark"
+    "mat": "steel_forged",
+    "handleMat": "hickory_handle"
    },
    "lighting": "dynamic",
    "collider": "none",
@@ -4208,7 +4208,8 @@
    ],
    "yaw": 0.9,
    "params": {
-    "mat": "cast_iron"
+    "mat": "steel_forged",
+    "bowMat": "cast_iron"
    },
    "lighting": "dynamic",
    "collider": "none",
@@ -4734,7 +4735,7 @@
    "role": "candle",
    "type": "point",
    "pos": [
-    7.35,
+    6.75,
     9.6,
     1.46
    ],

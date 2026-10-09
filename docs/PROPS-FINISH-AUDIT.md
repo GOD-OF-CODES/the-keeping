@@ -116,3 +116,100 @@ Evidence: the same audit views on Medium WebGPU, mains power. "now" = `scratch/p
 6. **Cloth.** The dress hem and dust sheet read as faceted paper cut-outs (flat triangles, hard folds). They need a cloth sim or subdivision with soft normals.
 7. **Unverifiable views.** The hammer (camera clipping on the U2 work surface), the locket (in the hem until `cut_hem`) and the shears (out of frame) need scenario hooks: take or inspect the item, or trigger `cut_hem`.
 8. **woodGrain Nyquist** (0.7·size → 0.5·size), the global wood shimmer, still waits for the lead's approval.
+
+## Review: art director, round E finishing (2026-10-09; before = HEAD 521251c, now = current tree)
+
+Status: verdicts below; gate at the end of the section. Evidence: `scratch/pe-review/` — base = HEAD 521251c (git archive → `scratch/dist-pe-base`),
+now = `scratch/dist-pe-review`; scenario `scratch/pe-review/look.mjs` (the audit views + new AUTO views that aim at
+each hero prop's live bbox centre; exposure meter logged per view). Medium WebGPU, mains, 960×600.
+
+Max = `now-max` (same views, preset max). Grids (2×2, 640×400 per view): `g-now-a..d` (now, audit views), `c1–c3`
+(base vs now), `x-a..x-d` / `x2-*` (exposure + bloom split), `r3-a/b` + `hemcrop.jpg` (final round, exposure snapped).
+
+**Verdict in one line:** the round-E materials are right and some finishing now reads (stove porcelain, cleaver steel,
+can ribs/handles, louvred armoire/wardrobe varnish, candle-lit and moonlit views), but **at torch range nothing on a
+hero prop reads as a photograph yet**, and the dominant cause is not the props: the 2 kcd hot core puts a diffuse
+prop 30–50× over display white, the meter is pinned at its 0.25 floor in 8 of the 13 torch close-ups, and the bloom
+high pass (threshold 1.5 display, `pipeline.ts` l.380) turns that over-exposed DIFFUSE surface into a milky disc
+that veils the grain, wear and grime. Measured split (x2): bloom 0 at the same exposure restores the dress fold
+shading and silhouette; −2 EV alone only darkens the veil. The user would still say "the finishing is not there".
+
+### Per-prop verdict now (Medium; Max checked on 4 views, `scratch/pe-review/maxgrid.jpg`)
+
+Max looks the same on the props (same hot-spot veil on the guest book, dress and stove panel). It adds the
+volumetric beam: a milky in-scatter shaft from the torch across the lower frame (guest book, armoire), which makes
+the veil slightly worse at 0.5–1.5 m.
+
+
+| Prop | Base 521251c → now | Verdict now |
+|---|---|---|
+| iron_stove (g3-stove-door2, a-stove) | flat white sticker panel → mottled grey/white porcelain in a cast frame with rust specks | **Reads** (best gain of the round). A hard torch specular disc sits on the glossy enamel — physically right for r 0.15. |
+| hog_cleaver + sawbuck (g2-cleaver, a-cleaver) | pale/salmon slab → grey forged steel with patina mottle | **Partly reads.** Steel is right; the honed edge and rivets are below the resolution at 0.6–1 m; the sawbuck top is a featureless grey-white plane under the core. |
+| jerry cans ×7 (g3-jerry2, a-jerry) | salmon-red boxes → deeper oxide red, pressed ribs/handles/stencils | **Reads in the spill** (dull oxide red, ribs, chipped edges); **pink in the hot core** (over-exposure + AgX desaturation, sRGB 129/91/74 for a 0.17/0.022/0.016 albedo). Not a material fault. |
+| claw_hammer (u2-hammer4, a-hammer aimed) | small grey shape on a pale bench | **Fails at play distance.** Hammer and nail can are legible as objects; the hickory grain, polished face and grip polish do not read — the hot core lands on the bench edge and blows it to grey-white. |
+| sewing_shears (u3-shears2, a-shears aimed) | view missed the shears | **Weak.** Shears now framed (inside the open basket): a small dark-steel shape; blade grind and japanned bows not readable at 0.7 m. |
+| bell_pull (u2-bellpull3, a-bellpull) | flat beige strip | **Weak.** Claret wool-work strip with a pattern now, but it is a thin 1.37 m strip seen at 1–1.5 m; the beam core lands below/above it; tassel and stitched border not readable. |
+| guest_book + hall table + candle (g1-table-torch, a-guest, g1-table-candle) | flat white pages | **Fails under the torch** (pages = the brightest thing in frame, meter floored: the meter wanted 0.06, i.e. 2 EV down); **reads under its own candle** (ruled pages, warm wax, varnished top). |
+| armoire (u1-armoire) / Ada's wardrobe (u3-adawardrobe) | similar | **Reads** — louvres, mouldings and varnish sheen look like old furniture at 2–3 m. Torch disc on the lower panel is a hard bright spot. |
+| pump_sink (g3-sink, a-sink) | similar | **Weak.** Enamel basin + wooden cabinet read as shapes; the meter is floored (wanted 0.077); no chips/rust rings legible. |
+| dress + dummy (u3-dress, a-dress, a-hem) | white cone → white cone with flutes | **Fails.** The skirt is a smooth grey-white plastic sheet: flutes visible with bloom 0, no satin sheen, no weave, no soil. Round-E hem band (FIX 1) measured only ≈ 20 % darker → strengthened (FIX 1b). |
+| dust sheets (u3-sheets, a-sheet) | white blobs | **Fails.** Smooth white blobs under the core; no hems (dropped for Low), no fold creases legible. |
+| sign post + VACANCY plate (e1-plate, e1-bolts, e1-sign-moon) | pale streak → pale streak | **Fails under the torch** (post albedo 0.13 → 2.5 klux at 0.9 m → white streak, exposure 0.37–0.47, not floored: the thin post is a small part of the centre-weighted meter). **Passes in moonlight** at 5 m (dark weathered post, rusty board, lantern). |
+| porch furniture | — | **No such prop exists** (EXT2 has only porch deck/steps/posts, knocker, bell knob); nothing to judge. |
+
+### Fixed in this review (props lane)
+
+1. **Dress hem soil band** (`blender/props/wear.py` FLOOR_GRIME, dress_dummy only, Low mask already dropped → Low
+   budget unchanged) + a dress-only wear rule `fabric_soiled` (`src/materials/wear-math.ts`, cavity ×0.48/0.42/0.33).
+   Three look→fix rounds: 0.10 m/0.85 → a ≈ 20 % gradient (r3); 0.15 m/1.0 → unchanged (r4); decoded the GLB
+   (`hemmask.mjs`: G 0.93 at 2 cm, 0.27 at 9 cm — the mask was right) and wearView(1) (r6: the band reached only the
+   bottom ≈ 3 cm rim) → stronger rule (FIX 2, r5: still a rim only) → band 0.25 m (FIX 1c, G ≈ 0.65 at 10 cm).
+   **FIX 1c is built and checked (assets --check ok, GLB mask) but NOT seen in-game**: the final look (r7) and the
+   re-gate could not run (environment blocker below).
+2. **Review tooling** (`scratch/pe-review/look.mjs`): AUTO views aim at each prop's live bbox (re-aimed after the
+   teleport's floor snap), the exposure meter is logged per view, `@bloom=0;biasEV=-2;minExposure` per-view
+   overrides, SNAP. The hammer/shears/bell-pull views are usable for the first time (remainder item 7 of round D).
+
+### Ranked remainder (biggest visible problem first)
+
+1. **Torch close-up exposure + bloom veil (runtime lane D: `src/render/pipeline.ts` bloom, `look.ts`/`exposure.ts`
+   meter).** Every hero prop is judged at 0.5–1.5 m under the 2 kcd core (ruling: 2000 cd stands). Evidence: meter at
+   the 0.25 floor in hammer/shears/bell pull/guest book/sink/dress/sheets/jerry views (it asks for 0.06–0.18); bloom
+   0 vs 0.22 at equal exposure = fold shading visible vs a milky disc (`x2-dress.jpg`). Physically: a real camera's
+   halation comes from emitters and specular glints, not from a 0.5-albedo cloth; a real eye adapts to what it is
+   looking at. Fix ideas for lane D: key the glare high pass to emissive/specular radiance or raise its threshold to
+   ≈ 30–60 display (flames at 10³+ still glare), and add a centre highlight-protect term to the meter (cap exposure so
+   the centre-weighted p99 maps ≤ ≈ 2–4× white) with a floor ≈ 0.03. Until this lands, props finishing cannot be
+   judged at torch range, and more texture work there is wasted.
+2. **Cloth reads as plastic** (dress, dust sheets): no satin sheen (isotropic rough ≈ 0.5 after the dust mix), no
+   macro soil/yellowing variation (the yellowing fbm is one cell per 0.4 m tile), no hems on the dust sheets (Low
+   budget, lightmapped → never decimated). Next: anisotropic satin sheen (TSL `anisotropy` on the dress only), a
+   world-space soil/yellowing layer, dust-sheet hems on Medium/Max only (needs a per-tier mesh split decision).
+3. **Hammer / shears / bell pull are too small to carry detail at 0.7–1.5 m.** The take/inspect close-up (the
+   player picks them up) is where their finishing must read — needs an inspect-view scenario hook (gameplay lane).
+4. **Hot specular discs on glossy enamel/varnish** (stove panel, armoire lower panel): physically right for r 0.15–0.3
+   but read as a CG disc because the core is over-exposed; resolves with item 1.
+5. **Max budget**: u1-armoire 799 draws / 2.56 M tris, g1-table-torch 623 / 2.72 M, u2-hammer4 501 / 2.47 M (fps ≥ 49
+   everywhere on mains). Pre-existing at HEAD 32ca774 (764 / 615 draws); needs a props merge/instancing pass.
+6. **Sign post under the torch**: a thin 0.13-albedo post at 0.9 m is a white streak (meter not floored: the post is
+   a small part of the centre-weighted window) — item 1's highlight protect fixes it; in moonlight it passes.
+
+### What still does not look real (plainly)
+
+At the distance the player actually looks at these things with the torch, none of the hero props looks like a
+photograph of a lived-in 1890s farmhouse: the torch core flattens them into a glowing disc, the dress and dust
+sheets read as smooth plastic, and the small handheld props (hammer, shears, bell pull) are too small at play distance
+for their (correct) finishing to show. Under candlelight and moonlight the furniture, stove, cans and sign get close.
+
+### Gate (this review)
+
+- Final tree: `npm run typecheck` 0 errors; `npm test` 233 pass / 0 fail; `npm run build` + verify-boot OK;
+  `node scripts/assets.mjs --check` ok (Low 26.97 / 27 MB, Medium 49.96, Max 67.93).
+- `QA_STRICT=1` Medium playthrough on `scratch/dist-pe-final` (tree incl. FIX 2, before FIX 1c — FIX 1c changes only
+  the dress COLOR_0 values, no geometry/collider): B01…B13, C1/C2/C3/C5/C6/C7, title reached, 0 unstick rescues,
+  0 deaths, 0 console errors, 0 exceptions (`scratch/pe-review/ptf.log`). Same result earlier on `dist-pe-review`.
+- Re-gate on the FIX 1c dist: **blocked** — macOS iCloud evicted repo files (`compressed,dataless`: 1601 in
+  node_modules incl. `vite/package.json`, 192 in src/blender/public), so vite preview cannot start ("server did not
+  start", r7 + ptg). Every lane is affected until the files are downloaded again.
+- Max (now, mains): fps ≥ 49 in every view; draws/tris over budget at u1-armoire (799 / 2.56 M), g1-table-torch
+  (623 / 2.72 M), u2-hammer4 (501 / 2.47 M) — pre-existing at HEAD 32ca774.
