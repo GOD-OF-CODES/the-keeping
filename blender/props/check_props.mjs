@@ -19,6 +19,10 @@ const assets = path.resolve(ROOT, process.argv[2] ?? 'public/assets');
 const report = JSON.parse(fs.readFileSync(path.join(ROOT, '.cache/props/props.json'), 'utf8'));
 const spec = JSON.parse(fs.readFileSync(path.join(ROOT, 'src/shared/material-spec.json'), 'utf8'));
 const specIds = new Set(spec.materials.map((m) => m.id));
+const familyOf = Object.fromEntries(spec.materials.map((m) => [m.id, m.family]));
+// PROPS-FINISH §5: the 'wear' COLOR_0 mask (Low: HERO props only) — read from blender/props/wear.py
+const HERO = new Set([...fs.readFileSync(path.join(ROOT, 'blender/props/wear.py'), 'utf8')
+  .match(/^HERO = \[([\s\S]*?)\]/m)[1].matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]));
 
 let failures = 0;
 const fail = (m) => (failures++, console.log(`  FAIL ${m}`));
@@ -65,6 +69,49 @@ for (const name of files) {
     if (!fs.existsSync(f)) continue;
     const { gltf: g2 } = await parse(f);
     let n = 0, bad = 0;
+    const wear = { meshes: 0, verts: 0, bad: [], nonHero: new Set(), hiEdge: [], underDust: [], glassMixed: 0 };
+    for (const root of g2.scene.children) {
+      const type = root.userData?.prop_type;
+      let sR = 0, nV = 0, under = 0, upN = 0;
+      root.traverse((o) => {
+        const col = o.isMesh && o.geometry.attributes.color;
+        if (!col) return;
+        const ud = { ...(o.parent?.userData ?? {}), ...o.userData };
+        wear.meshes++;
+        wear.verts += col.count;
+        if (col.itemSize !== 4 || !col.normalized || !(col.array instanceof Uint16Array)) wear.bad.push(`${o.name}: COLOR_0 not unorm16x4`);
+        if (ud.decal || ud.print) wear.bad.push(`${o.name}: decal with COLOR_0`);
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          if (!specIds.has(m.userData?.material_id)) wear.bad.push(`${o.name}: masked primitive without a spec material_id`);
+          else if (familyOf[m.userData.material_id] === 'glass') wear.glassMixed++;
+        }
+        if (tier === 'low' && !HERO.has(type)) wear.nonHero.add(type);
+        const nrm = o.geometry.attributes.normal;
+        // edge mean is AREA-weighted (what the eye sees): bevel strips are vertex-dense, so a plain vertex mean
+        // over-reports thin props (cleaver, crank) whose edge band is only a few mm wide.
+        const pos = o.geometry.attributes.position, idx = o.geometry.index;
+        const triN = idx ? idx.count / 3 : pos.count / 3;
+        for (let t = 0; t < triN; t++) {
+          const a = idx ? idx.getX(3 * t) : 3 * t, b = idx ? idx.getX(3 * t + 1) : 3 * t + 1, c = idx ? idx.getX(3 * t + 2) : 3 * t + 2;
+          const ux = pos.getX(b) - pos.getX(a), uy = pos.getY(b) - pos.getY(a), uz = pos.getZ(b) - pos.getZ(a);
+          const vx = pos.getX(c) - pos.getX(a), vy = pos.getY(c) - pos.getY(a), vz = pos.getZ(c) - pos.getZ(a);
+          const ar = 0.5 * Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+          sR += ar * (col.getX(a) + col.getX(b) + col.getX(c)) / 3;
+          nV += ar;
+        }
+        for (let i = 0; i < col.count; i++) {
+          if (nrm && nrm.getY(i) < -0.3) (upN++, col.getW(i) > 0.05 && under++);   // three Y-up: underside
+        }
+      });
+      if (nV && sR / nV > 0.25) wear.hiEdge.push(`${type} ${(sR / nV).toFixed(2)}`);
+      if (upN && under / upN > 0.02) wear.underDust.push(`${type} ${(100 * under / upN).toFixed(0)}%`);
+    }
+    wear.bad.length ? fail(`${tier}/${name}: wear contract: ${[...new Set(wear.bad)].slice(0, 6).join('; ')}`)
+      : ok(`${tier}: ${wear.meshes} wear-masked meshes (${wear.verts} verts)${wear.glassMixed ? `, ${wear.glassMixed} glass primitives in mixed meshes (mask 0)` : ''}`);
+    if (wear.nonHero.size) fail(`low/${name}: non-HERO props carry COLOR_0: ${[...wear.nonHero].join(', ')}`);
+    if (wear.hiEdge.length) console.log(`  warn ${tier}: edge-mask mean > 0.25 (too worn?): ${wear.hiEdge.join(', ')}`);
+    if (wear.underDust.length) console.log(`  warn ${tier}: dust on undersides: ${wear.underDust.join(', ')}`);
     g2.scene.traverse((o) => {
       if (!o.isMesh) return;
       // child nodes (moving parts, decals, colliders) of a lightmapped node inherit its extras in a merged view

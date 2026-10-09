@@ -4,7 +4,7 @@
 import type { MaterialFamily } from '../../shared/material-types.ts';
 import type { GenCtx, Generator, N, RGB } from '../gen-types.ts';
 import { fbm, fbm01, hashf } from '../tsl-noise.ts';
-import { abs, band, boards, c3, dots, float, fract, lines, max, min, mix, paintOver, patches, rot45, smoothstep, tideStain, vec3, woodGrain } from './common.ts';
+import { abs, band, boards, c3, chipMask, dots, float, fract, lines, max, min, mix, nyqOctaves, paintOver, patches, rot45, smoothstep, tideStain, vec2, vec3, woodGrain } from './common.ts';
 
 interface Species {
   rings: number; // visible rings across a 0.11 m board
@@ -56,7 +56,10 @@ const woodFloor: Generator = (c) => {
   const worn = wood.alb.mul(vec3(1.25, 1.2, 1.12)).mul(mix(float(1), fbm01(c.uv, c.cells(0.03), 3, seed + 42).mul(0.5).add(0.6), 0.6));
   const varnished = wood.alb.mul(vec3(0.92, 0.82, 0.62)); // amber absorption
   let alb: N = mix(worn, varnished, film);
-  let rough: N = mix(float(0.62), float(0.2), film).add(fbm(c.uv, c.cells(0.2), 3, seed + 43).mul(0.05));
+  // REALISM-BACKLOG item 16: aged satin varnish ≈ 0.3 (an old oil/shellac film, not new polyurethane at 0.2), the
+  // trodden wear path 0.45 (polished bare oak, not raw 0.62) — most of the floor's read comes from candle specular
+  // and the room reflection (items 5, 6) on this film.
+  let rough: N = mix(float(0.45), float(0.3), film).add(fbm(c.uv, c.cells(0.2), 3, seed + 43).mul(0.05));
 
   // Scratches: fine lines in two orientations (along boards + 45°), lighter and rougher in the varnish.
   const sd = c.num('scratchDensity', 0.4);
@@ -203,8 +206,14 @@ const woodPainted: Generator = (c) => {
 // ---------------------------------------------------------------- trim paint ------------------------------
 
 const trimPaint: Generator = (c) => {
-  const under = c3(c.col('underlayer', [0.1, 0.075, 0.05])).mul(fbm01(c.uv, c.cells(0.04), 3, c.seed + 2).mul(0.5).add(0.75));
-  const p = paintOver(c, { color: c.col('paint', [0.5, 0.48, 0.42]), under, underRough: float(0.7), chip: c.num('chip', 0.35) * 0.25, chipSizeM: 0.012, gloss: c.num('gloss', 0.4), dir: 'u', seed: c.seed, thicknessFrac: 0.4 });
+  // REALISM-BACKLOG item 13 ("pox"): a chip in 120-year-old trim exposes the OLDER paint coat (a yellowed
+  // cream-grey, ~0.3), not bare dark wood: ~1.5:1 against the top coat instead of 5:1. Field density 0.1 (was
+  // 0.35 × 0.25 ≈ 0.09 but every chip read as a hole). Bare wood shows only where a chip is deep (its core).
+  const older = c3([0.33, 0.3, 0.24]).mul(fbm01(c.uv, c.cells(0.04), 3, c.seed + 2).mul(0.2).add(0.9));
+  const bare = c3(c.col('underlayer', [0.1, 0.075, 0.05]));
+  const deep = chipMask(c, 0.03 * (c.num('chip', 0.35) / 0.35), 0.006, c.seed + 4);
+  const under = mix(older, bare, deep);
+  const p = paintOver(c, { color: c.col('paint', [0.5, 0.48, 0.42]), under, underRough: float(0.6), chip: 0.1 * (c.num('chip', 0.35) / 0.35), chipSizeM: 0.012, gloss: c.num('gloss', 0.4), dir: 'u', seed: c.seed, thicknessFrac: 0.4 });
   // Yellowed, dirty old gloss: grime in patches, runs of darker grime along v.
   const grime = patches(c.uv, c.cells(0.25), 0.3 + c.num('grimeInCorners', 0.6) * 0.2, 0.2, c.seed + 9).mul(0.3);
   const runs = smoothstep(0.3, 0.9, fbm01(c.uv, [c.cells(0.02), c.cells(0.6)], 3, c.seed + 10)).mul(0.25);
@@ -227,19 +236,26 @@ const clapboard: Generator = (c) => {
   // Bare weathered wood under the paint: grey, grain along u.
   const grainB = { row, id: b.id, id2: b.id2, along: fract(c.uv.x.add(b.id)), across: t, lenM: float(c.tile), widthM: c.tile / rows, gap: float(0), edge: float(1), rows };
   const g = woodAlbedo(c, grainB as any, c.col('bareWood', [0.12, 0.1, 0.08]), SPECIES.pine, 0.8, seed + 3);
-  const p = paintOver(c, { color: c.col('paint', [0.42, 0.41, 0.37]), under: g.alb, underRough: float(0.85), chip: c.num('peel', 0.55) * 0.8, chipSizeM: 0.02, gloss: 0.3, dir: 'u', seed: seed + 5, thicknessFrac: 0.3, aniso: [5, 1] });
+  const p = paintOver(c, { color: c.col('paint', [0.42, 0.41, 0.37]), under: g.alb, underRough: float(0.85), chip: c.num('peel', 0.55) * 0.8, chipSizeM: 0.04, gloss: c.num('gloss', 0.3), dir: 'u', seed: seed + 5, thicknessFrac: 0.3, aniso: [3, 1] });
+  // (chipSizeM 0.02 / aniso [5,1] made 6 × 1.2 cm Worley dashes all over the wall; old oil paint fails in 2–7 cm plates.)
   let alb: N = p.albedo;
   let rough: N = p.rough;
   // Paint peels along the grain: stretch the missing areas horizontally (curled flake edges catch light).
   const curl = smoothstep(0.35, 0.5, p.chip).mul(float(1).sub(smoothstep(0.5, 0.65, p.chip)));
   // Mildew: dark green-black speckle, heaviest just under each lap (t near 1) and in blotches.
   const mild = c.num('mildew', 0.35);
-  const mN = fbm01(c.uv, c.cells(0.02), 4, seed + 7).mul(patches(c.uv, c.cells(0.6), mild, 0.25, seed + 8));
+  const mN = fbm01(c.uv, c.cells(0.02), nyqOctaves(c, c.cells(0.02), 4), seed + 7).mul(patches(c.uv, c.cells(0.6), mild, 0.25, seed + 8));
   const underLap = smoothstep(0.55, 1.0, t);
   const mildew = smoothstep(0.45, 0.75, mN.add(underLap.mul(0.25))).mul(mild * 1.4).clamp(0, 1);
   alb = mix(alb, c3([0.035, 0.04, 0.028]), mildew.mul(0.8));
   // Rain streaks: vertical grime runs below the laps.
-  const streak = smoothstep(0.5, 0.9, fbm01(c.uv, [c.cells(0.015), c.cells(0.9)], 4, seed + 9)).mul(c.num('rainStreaks', 0.6));
+  // Runs are 1–5 cm wide at irregular spacing, wandering a little as they fall: base cell 5 cm across × 1.2 m down,
+  // u domain-warped by ±2 cm. (The old 1.5 cm × 0.9 m cells made an even comb of vertical lines that read, with
+  // the lap lines, as a square grid on the torch-lit wall.)
+  const sU = c.cells(0.05);
+  const warpU = fbm(c.uv, [c.cells(0.5), c.cells(0.7)], 2, seed + 10).mul(0.02 / c.tile);
+  const suv = c.uv.add(vec2(warpU, 0));
+  const streak = smoothstep(0.56, 0.86, fbm01(suv, [sU, c.cells(1.2)], nyqOctaves(c, sU, 4), seed + 9)).mul(c.num('rainStreaks', 0.6));
   alb = alb.mul(float(1).sub(streak.mul(0.35)));
   // The lap shadow (the underside of the board above is not lit: bake a thin dark line).
   const lapShadow = float(1).sub(smoothstep(0.0, 0.06, t));

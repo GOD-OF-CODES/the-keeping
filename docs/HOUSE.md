@@ -135,10 +135,82 @@ footprint cut-out), 0.45 m grid whose lines include every exterior `surfaces[]` 
 material id (grass_wet, gravel_wet, mud_wet, asphalt_wet; the porch zone is mud under the deck). Crowned road (+4.5 cm),
 flooded ditch south of the road (−0.28 m), two wheel ruts down the drive, 12 puddle dips (3–7 cm) in the ruts, mud
 zones, yard and shoulders; no dips under props standing on the ground; heights feather to exactly 0 at the rect edge.
+**The drive is an overgrown two-track** (art-director review 2026-10-07: the full-width gravel slab with ruler-straight
+edges read as a concrete runway): gravel only on two ~1.3 m wheel tracks on the sedan's 1.8 m track gauge, a grass
+crown 0.55–1.05 m wide between them that fades out over 2 m at the gate and porch ends, and grass shoulders inside the
+layout's gravel rect. The drive band has its own grid columns (`DRIVE_GRID`); the vertices on the four boundary lines
+(`DRIVE_LINES`) move in x by two octaves of Perlin noise (±0.12–0.20 m, 2–4 m wavelength), so every gravel/grass
+edge meanders. Quads are classified by grid column and keep one material id each; UV0 follows the moved vertices.
+`terrain.mat_at()` gives the same answer for any point (ground cover uses it). CONTRACT-CHANGES row 37.
 Walkable areas stay within ±5 cm of z = 0. ~14.3k quads, lightmapped as one planar chart (`lm_weight` 0.3 → ~6 texel/m
 at 1024). The bake-only ground proxy is skipped when the terrain exists. **Lane B:** skip the runtime ground cells
 (`partitionGround`) inside `terrainRect` (keep them outside as the far field at z = 0); the flat ground collider can
 stay (≤ 5 cm error in the walkable area; the ditch is outside the play bounds).
+
+## Night sky in the bakes (`scene_prep.night_world`, every base lightmap)
+
+The base lightmaps are lit by a physically plausible **overcast moonlit night** instead of the layout's 600 W overhead
+sky disc (`L_SKY`, role `sky`, which lit the ground but never a facade or a window): a CIE-overcast dome
+L(θ) = Lz (1 + 2 cos θ) / 3 with Lz = 0.00982 cd/m² (horizontal illuminance E = 7πLz/9 = 0.024 lux) + the layout's
+moon (`L_MOON`, 0.0028 lux through thin cloud) ≈ **0.027 lux at the open ground** (CLAUDE.md: 0.003–0.03 lux), 7500 K
+normalised to unit luminance, wet ground below the horizon at 0.001 cd/m². Interior atlases get a Cycles **portal in
+every window opening** (`interior_portals`) so that faint light reaches the rooms only through the windows and stays
+clean at 64 spp. Candles / lamps keep their physical values (layout W, CLAUDE.md). Flash maps keep the uniform
+storm sky (`uniform_world`). Measured on the dev bake (1024², 64 spp, Medium KLM, median / p90 irradiance in lux):
+exterior 0.009 / 0.023, ground floor 0.020 / 0.062 (lamp spill), parlor 0.10 / 0.25 (fire + candles), kitchen
+0.018 / 0.040, upper rooms 0.0011 / 0.0014, upper hall 0.0003 / 0.0008 (one small window: ~3 % of the outdoor level,
+which is what a real hall gets). Whether the dark rooms READ on screen is the camera's job (eye-like exposure, lighting
+lane), not the bake's: the numbers stay physical.
+
+## Ground cover (`groundcover.py` → `details_groundcover.glb`, EXT_mesh_gpu_instancing)
+
+Instanced meshes over the terrain (three r186 `GLTFLoader` builds one `InstancedMesh` per primitive:
+`GLTFMeshGpuInstancing`); one glTF node per (kind, variant, room[, turf cell]), probe-lit (`detail: true`), never in
+the bakes. Kinds: **turf** (0.8 m patches of matted winter sward: 190 one-triangle leaves, two thirds lodged flat
+15–40° off the ground reaching 10–30 cm, + 20 arching / folded three-triangle leaves, 7–14 mm wide, in tillered clumps;
+~330 blades/m², 250 triangles) on a jittered 0.7 m grid in the band the player walks through: within 2.6 m of the
+drive, the house and the gate, fading out over 2.4 m; one variant per 14 m cell so each cell is one draw call and
+frustum-culls on its own. **tuft** (10–25 cm), **tussock** (30–60 cm) along fences / foundation / ditch / post bases,
+**rosette** (dock / plantain), **stalks** (dead goldenrod 0.5–1.1 m), **stone** (2–6 cm gravel along the track
+edges, thrown up to 0.35 m onto the grass, and on the road shoulder). Two-track drive: a ragged fringe of tufts creeps
+0–0.3 m onto the gravel along every boundary, clumps line the grass side, and a strip of turf patches runs down the
+crown (`terrain.drive_edge_dist`). Nothing in the wheel ruts, puddles, under posts / car bodies / trunks. Tier density Max 1,
+Medium 0.6, Low 0.3 (no stones). Measured (2026-10-07, two-track drive): Low 730 instances / 101k triangles, Medium 1849 / 215k, Max 3066 / 361k, 40 nodes.
+Turf uses `grass_dead` (straw, albedo ~0.2) as soon as material-spec.json has it, `grass_wet` until then (with the same
+id as the ground the blades melt into it in-game — requested from the lead).
+Review: `node blender/characters/dev.mjs blender/house/review_groundcover.py --out gc` → `scratch/blender-r2/gc.png`.
+
+## Treeline + power line (`treeline.py` → `details_treeline.glb`, EXT_mesh_gpu_instancing)
+
+Field-edge hedgerows round the farm (6 rows, all outside the walkable rooms, no colliders), grown with
+`props/trees.py`: 8 tree variants (open-grown bur oak ×2, American elm ×2, hedge-grown oak ×2 — tall clean bole,
+narrow high crown —, white ash with up-turned tips, one storm-killed snag that keeps its broken height), 9–17 m,
+seeded yaw, uniform scale, a 0–4° lean; an **understory** of 62 hawthorn / sumac shrub clumps (style `shrub`: 6–9 stems
+from the ground, 2.2–4.3 m) strung along the rows 0–1.6 m off the tree line. **Static distance LOD** per tree on
+Medium / Max (metres from the middle of the drive): < 24 m `mid` (twigs kept, ~11k tris), 24–40 m `far` (branchlets
+finest, ~6.5k), > 40 m `low` (~3k), shrubs ~2.4k; Low tier: the nearer half on `low`, no shrubs (67k). Medium/Max:
+107 placements (45 trees + 62 shrubs), 384k triangles in the file, 30 nodes, 1.9 MB. Whole-frame Medium (WebGPU,
+`renderer.info`, 2026-10-07): CP1 gate 1.11 M triangles / 280 draws, yard 1.45 M / 348, drive verge 1.37 M / 333.
+**Power line:** the layout's `P_UTILITY_POLE` (-12.5, -37.4) alone in the fog read as a white pillar (QA play-08); it
+is now the end of a rural spur: two more creosoted poles due south at 45 m spans (REA rural spans 45–75 m) and the four
+conductors (aluminium ACSR #2, 8 mm) as catenaries with 1.0 m sag (~2.2 %), tied to the layout pole's actual
+insulator tops (same seed as the props job). Review:
+`node blender/characters/dev.mjs blender/house/review_treeline.py --out tl [--view row|gate|pole]`.
+
+## County Road 9 corridor (`corridor.py` + `road_rc9.py` + `pines.py` → `details_corridor.glb`, EXT_mesh_gpu_instancing)
+
+- The opening's 1,550 m road east of the gate (docs/C1-OPENING.md §2, §6.4). `road_rc9.py` is the analytic centreline
+  (5 segments); `scripts/layout/rc9.mjs` is its JS port, matching to 0.1 m. Jobs: `corridor`, `corridor-review`
+  (manual; renders `scratch/opening/corridor_*.png`).
+- Contents: the road mesh (asphalt, faded yellow paint, gravel shoulders, ditches); about 2,300 instanced trees on
+  Max/Medium (1,400 on Low) with `pine` L0/L1/L2 (needle "skirts": ragged star-rimmed cones, no alpha cards) plus bare
+  snags; understory saplings; on Max/Medium two bands of instanced L2 far crowns (n ±40–100 at 8.5 m, and an outer band
+  n ±100–190 at 10.5 m, `OUTER_N`; none on Low) over the canopy blanket at 18–24 m from n ±40 to ±330 (lowered under
+  the bands), with crown pits and a sloped edge;
+  33 creosoted poles (one leaning, one with a broken crossarm) and the `P_RC9_LINE` marker carrying
+  `extras.wire_points` for the runtime catenaries; reflector posts.
+- All of it is `lighting:'dynamic'`: no lightmap atlas.
+- Sizes: Low 0.28 MB, Medium/Max 0.90 MB (all instances ≈ 0.98 M tris on Medium/Max: the C0 aerial needs chunk culling).
 
 ## Coordination notes (other lanes)
 - The layout props `porch` (P_PORCH) and `foundation_skirt` (P_FOUNDATION) are realised by the house builder —

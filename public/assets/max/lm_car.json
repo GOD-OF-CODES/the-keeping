@@ -9,14 +9,14 @@
   "container": "klm",
   "codec": null,
   "mantissaBits": 10,
-  "floorExp": 8,
+  "floorExp": 13,
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.00304,
-    "p99": 0.00687,
-    "max": 0.00752,
-    "coverage": 0.6439
+    "mean": 0.00087,
+    "p99": 0.00631,
+    "max": 0.01075,
+    "coverage": 0.5125
   },
   "file": "lm_car.klm"
 }

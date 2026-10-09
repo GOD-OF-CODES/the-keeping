@@ -14,6 +14,7 @@ import { writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MATERIALS } from './materials.mjs';
+import { rcPoint, rcFaceOncoming, rcFaceRoad, frame as rcFrame, definition as rcDefinition } from './rc9.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PI = Math.PI;
@@ -67,6 +68,7 @@ const R = {
   U3: [3.75, 4.65, 8.75, 9.15],
   U4T: [4.6, 9.3, 5.45, 11.65],
   CAR: [100, 0, 101.6, 2.8],
+  RC9: [70, -420, 1500, -10],   // County Road 9 corridor set (docs/C1-OPENING.md §2): C0/C1 only, hidden in play
 };
 const STAIRWELL = [0, 4.6, 1.2, 7.8];
 const GRATE = [5.7, 2.9, 6.3, 3.5];
@@ -142,8 +144,13 @@ room('U4T', 'Servants\' stair top landing', 'upper', 'interior', {
   reverb: { size: 2.4, damping: 0.4, wet: 0.3 }, visible: ['U4T', 'U4', 'U3'], atlas: 'LM_KITCHEN', ms: 'M2',
   note: 'Narrow boarded landing behind Ada\'s wardrobe; the flight drops away east from its north end.',
 });
+room('RC9', 'County Road 9 corridor (opening set)', 'exterior', 'set', {
+  floorMat: 'asphalt_wet', wallMat: 'bark_wet', ceilingMat: 'none', trimMat: 'none',
+  reverb: { size: 60, damping: 0.92, wet: 0.04 }, visible: ['RC9', 'EXT1', 'EXT2'], atlas: 'LM_EXTERIOR', playable: false, ms: 'M1',
+  note: 'C0/C1 only: 1550 m of road east of the gate (scripts/layout/rc9.mjs), details_corridor.glb + props_road.glb, all runtime-lit (no atlas texels). No gameplay room lists it, so it is culled in play.',
+});
 room('CAR', 'Sedan interior set', 'car', 'set', {
-  ceiling: 1.15, floorMat: 'car_interior_tan', wallMat: 'car_interior_tan', ceilingMat: 'car_interior_tan', trimMat: 'chrome_pitted',
+  ceiling: 1.34, floorMat: 'car_interior_tan', wallMat: 'car_interior_tan', ceilingMat: 'car_interior_tan', trimMat: 'chrome_pitted',
   reverb: { size: 1.8, damping: 0.85, wet: 0.08 }, visible: ['CAR', 'EXT1'], atlas: 'LM_CAR', playable: false, ms: 'M1',
   note: 'Set apart from the house (x 100). Used by C1, C6 and the C7 re-trim (car_interior_maroon).',
 });
@@ -319,9 +326,24 @@ p('P_FENCE_W', 'fence_run', 'EXT1', [-9.8, -28.25, 0], 0, { params: { length: 20
 p('P_FENCE_E', 'fence_run', 'EXT1', [11.6, -28.25, 0], 0, { params: { length: 16.8, postSpacing: 2.4, style: 'post_and_wire' } });
 p('P_GATE', 'farm_gate', 'EXT1', [0.5, -28.25, 0], 0.35, { params: { width: 2.6, state: 'open_sagging', mat: 'rust' } });
 for (const [i, x] of [-14, -6, 8, 16].entries()) p(`P_REFLECTOR_${i + 1}`, 'reflector_post', 'EXT1', [x, -29.0, 0], FACE.S, { collider: 'none' });
-p('P_NEXT_SERVICES', 'road_card', 'EXT1', [18.6, -28.9, 0], FACE.E, { params: { text: 'NEXT SERVICES 48 MI' }, collider: 'none' });
+p('P_NEXT_SERVICES', 'road_card', 'EXT1', [18.6, -28.9, 0], FACE.E, { params: { text: 'CARVEL 48' }, collider: 'none' });
 p('P_CAR_GATE', 'sedan', 'EXT1', [2.8, -30.2, 0], faceYaw(-1, 0), { params: { plate: 'RVX-318', paint: 'car_paint_sedan', interior: 'car_interior_tan', state: 'dead_at_gate' }, lighting: 'dynamic', collider: 'box', interaction: 'car', ms: 'M1' });
 p('P_UTILITY_POLE', 'utility_pole', 'EXT1', [-12.5, -37.4, 0], FACE.N, { params: { wiresCut: true, mat: 'bark_wet' } });
+
+// RC9 — County Road 9 opening set (docs/C1-OPENING.md §2, §6.3): positions from the shared centreline (rc9.mjs)
+{
+  const at = (s, n, z = 0) => rcPoint(s, n, z).map(r3);
+  const rd = { lighting: 'dynamic', collider: 'none', ms: 'M1' };
+  p('P_RC9_NEXT_SERVICES', 'road_card', 'RC9', at(255, 6.2), rcFaceOncoming(255, 6.2, 0.2), { ...rd, params: { text: 'NEXT SERVICES 48 MI', hero: true, w: 2.4, h: 1.2 } });
+  p('P_RC9_CR9_A', 'county_shield', 'RC9', at(510, 6.0), rcFaceOncoming(510, 6.0, 0.2), { ...rd, params: { text: 'COUNTY|9' } });
+  p('P_RC9_BILLBOARD', 'billboard', 'RC9', at(930, -15), 2.11, { ...rd, params: { text: "58 · CARVEL EXIT 4 · EAT · SLEEP · GAS|STROUD'S · ROOMS ½ MI" } });
+  p('P_RC9_DINER', 'diner', 'RC9', at(700, 24), rcFaceRoad(700, 24), { ...rd });
+  p('P_RC9_EAT', 'eat_sign', 'RC9', at(688, 11.5), rcFaceOncoming(688, 11.5, 0.0), { ...rd });
+  p('P_RC9_TRUCK', 'logging_truck', 'RC9', at(1400, -1.75), rcFrame(1400)[2] + PI / 2, { ...rd, params: { note: 'parked at its track start; the C1 S5 track moves it (§7)' } });
+  for (const [i, [s, n, yawOff, headYaw]] of [[198, 12.5, 0.15, 0.0], [205, 13.5, -0.25, 0.35], [212, 13.0, 0.9, -0.7]].entries())
+    p(`P_RC9_DEER_${i + 1}`, 'deer', 'RC9', at(s, n), rcFaceRoad(s, n) + yawOff, { ...rd, params: { headYaw, pose: i === 2 ? 'mid_turn' : 'alert' } });
+  p('P_RC9_CR9_B', 'county_shield', 'RC9', at(1100, -6.0), rcFrame(1100)[2] + PI / 2 + 0.2, { ...rd, params: { text: 'COUNTY|9' } });
+}
 
 // EXT2 — drive, porch, field
 p('P_PORCH', 'porch', 'EXT2', [4.375, -1.55, 0], 0, { params: { width: 9, depth: 2.5, deckZ: EG - 0.02, steps: 3, stepsCentreX: 1.8, stepsWidth: 1.6, posts: 5, roof: true, roofZ: 3.9, deckMat: 'porch_boards_wet', mat: 'trim_chipped' }, collider: 'mesh' });
@@ -412,6 +434,10 @@ p('P_GALLERY_RAIL_E', 'balustrade_run', 'U1', [1.2, 6.2, zU], FACE.E, { params: 
 p('P_GALLERY_RAIL_S', 'balustrade_run', 'U1', [0.6, 4.6, zU], FACE.S, { params: { length: 1.2, height: 0.95, newelEnds: true, mat: 'stair_treads', balusterMat: 'trim_chipped' }, collider: 'box' });
 p('P_PUMP_PHOTO', 'photo_frame', 'U1', [0.03, 2.4, zU + 1.5], FACE.E, { params: { photo: 'pump_1970_knifed', size: 'medium', mat: 'photo_print' }, collider: 'none', interaction: 'examine_pump_photo' });
 p('P_HALL_CONSOLE_U1', 'hall_table', 'U1', [0.3, 1.2, zU], FACE.E, { params: { length: 0.8, depth: 0.35, height: 0.78, mat: 'wood_furniture_dark', dust: true } });
+// REALISM-BACKLOG #10 (lead-approved, ROADMAP round C): the key light of the upper floor, a full candle (12 W ~ 1 cd,
+// 12.6 lm, 1850 K like the hall candle) on a saucer on the gallery's SE newel cap (newel 1.15 m) — straight ahead of
+// the armoire hide eye (3.12, 4.45) looking west, so the hide view shows the flame and the lit hallway beyond the slats.
+p('P_CANDLE_LANDING', 'candle', 'U1', [1.2, 4.6, zU + 1.17], 0, { params: { holder: 'saucer', height: 0.12, mat: 'wax_candle' }, lighting: 'dynamic', collider: 'none', ms: 'M2' });
 
 // U2 — Harlan's bedroom
 p('P_BED', 'iron_bed', 'U2', [7.6, 3.5, zU], FACE.S, { params: { width: 1.4, length: 2.0, mat: 'cast_iron', mattressMat: 'ticking_mattress', blanketMat: 'wool_coats' }, collider: 'mesh', ms: 'M1' });
@@ -456,16 +482,24 @@ p('P_AIR_FRESHENER', 'air_freshener', 'CAR', [100.8, 1.95, 0.95], 0, { params: {
 
 // ------------------------------------------------------------------ hides
 const hides = [
-  { id: 'H_ARMOIRE', propId: 'P_ARMOIRE', room: 'U1', kind: 'armoire', entry: [2.55, 4.2, zU], eye: [3.3, 4.2, zU + 1.55], eyeYaw: H.W, unfailable: true },
+  { id: 'H_ARMOIRE', propId: 'P_ARMOIRE', room: 'U1', kind: 'armoire', entry: [2.55, 4.2, zU], eye: [3.12, 4.45, zU + 1.55], eyeYaw: H.W, unfailable: true },
   { id: 'H_COATS', propId: 'P_COAT_WARDROBE', room: 'U2', kind: 'wardrobe', entry: [4.75, 1.9, zU], eye: [4.07, 1.9, zU + 1.55], eyeYaw: H.E },
   { id: 'H_ADA_WARDROBE', propId: 'P_ADA_WARDROBE', room: 'U3', kind: 'wardrobe', entry: [5.0, 8.1, zU], eye: [5.0, 8.85, zU + 1.55], eyeYaw: H.S },
   { id: 'H_CLOSET', propId: 'P_CLOSET_INTERIOR', room: 'CLOSET', kind: 'closet', entry: [0.55, 9.65, zG], eye: [0.55, 8.4, zG + 1.5], eyeYaw: H.N },
 ];
 
 // ------------------------------------------------------------------ lights
+/** P_RC9_TRUCK's frame (s 1400, n -1.75, eastbound): at(right, forward, z) in PLAN. The runtime re-anchors its
+ *  high-beam lights to the prop's `-hi_l/_r` nodes; these positions are the parked fallback. */
+function layoutTruck() {
+  const [bx, by] = rcPoint(1400, -1.75), h = rcFrame(1400)[2];
+  const f = [Math.cos(h), Math.sin(h)], r = [Math.sin(h), -Math.cos(h)];
+  return { at: (x, y, z) => [r3(bx + r[0] * x + f[0] * y), r3(by + r[1] * x + f[1] * y), r3(z)] };
+}
 // point/spot: watts = Blender W, runtime intensity = W / (4*pi).  sun: Blender strength (W/m^2, NOT divided).  area: Blender W.
 const lights = [
-  { id: 'L_LANTERN', room: 'EXT1', role: 'lantern', type: 'point', pos: [-1.8, -28.45, 2.15], watts: 60, kelvin: 1900, radius: 0.03, mode: 'bake_flicker' },
+  { id: 'L_LANTERN', room: 'EXT1', role: 'lantern', type: 'point', pos: [-1.8, -28.45, 2.15], watts: 150, // flat-wick kerosene ~12 cd (lead-approved 60 -> 150 W)
+    kelvin: 1900, radius: 0.03, mode: 'bake_flicker' },
   { id: 'L_MOON', room: 'EXT2', role: 'moon', type: 'sun', pos: [30, -50, 60], target: [4, 4, 0], watts: 0.004, kelvin: 4100, radius: 0.5, mode: 'bake' },
   { id: 'L_SKY', room: 'EXT2', role: 'sky', type: 'area', pos: [4, -10, 35], target: [4, -10, 0], watts: 600, kelvin: 7500, radius: 30, mode: 'bake' },
   { id: 'L_LTN_SUN', room: 'EXT2', role: 'lightning', type: 'sun', pos: [-30, -60, 80], target: [4, 4, 0], watts: 3, kelvin: 9000, radius: 1.5, mode: 'flash' },
@@ -477,10 +511,25 @@ const lights = [
   { id: 'L_CANDLE_MANTEL', room: 'G2', role: 'candle', type: 'point', pos: [8.6, 3.4, zG + 1.44], watts: 10, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   { id: 'L_CANDLE_SILL', room: 'G2', role: 'candle', type: 'point', pos: [5.0, 0.18, zG + 0.9], watts: 10, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   { id: 'L_CANDLE_KITCHEN', room: 'G3', role: 'candle', type: 'point', pos: [7.35, 9.6, zG + 0.86], watts: 6, kelvin: 1800, radius: 0.01, mode: 'bake_flicker' },
+  { id: 'L_CANDLE_LANDING', room: 'U1', role: 'candle', type: 'point', pos: [1.2, 4.6, zU + 1.33], watts: 12, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   { id: 'L_LAMP_U2', room: 'U2', role: 'lamp', type: 'point', pos: [6.66, 4.33, zU + 0.86], watts: 60, kelvin: 2100, radius: 0.02, mode: 'bake_flicker' },
-  { id: 'L_HEADLIGHT_L', room: 'EXT1', role: 'headlight', type: 'spot', pos: [0.5, -29.6, 0.7], target: [-12, -30.0, 0], watts: 3000, kelvin: 4200, radius: 0.08, mode: 'runtime' },
-  { id: 'L_HEADLIGHT_R', room: 'EXT1', role: 'headlight', type: 'spot', pos: [0.5, -30.8, 0.7], target: [-12, -30.6, 0], watts: 3000, kelvin: 4200, radius: 0.08, mode: 'runtime' },
-  { id: 'L_DASH', room: 'CAR', role: 'dashboard', type: 'point', pos: [100.8, 2.0, 0.85], watts: 0.8, kelvin: 2700, radius: 0.1, mode: 'runtime' },
+  // Opening (docs/C1-OPENING.md §5.1, lead-approved 2026-10-08). Headlights: 1980s 4x6 in H4656-class halogen low beam,
+  // ~720 lm/lamp, hot spot 15 kcd (cd = peak candela of the beam cookie, `beam` names its lobe table), 3200 K.
+  // Lamp centres from sedan.py (car space (+-0.58, 2.43, 0.64)) on P_CAR_GATE (nose west); aim = straight ahead, the
+  // cookie carries the 1.5 deg dip. watts kept = cd*4pi for readers of the old field.
+  { id: 'L_HEADLIGHT_L', room: 'EXT1', role: 'headlight', type: 'spot', pos: [0.37, -30.78, 0.64], target: [-29.63, -30.78, 0.64], watts: r3(15000 * 4 * PI), cd: 15000, beam: 'halogen_low', kelvin: 3200, radius: 0.08, mode: 'runtime' },
+  { id: 'L_HEADLIGHT_R', room: 'EXT1', role: 'headlight', type: 'spot', pos: [0.37, -29.62, 0.64], target: [-29.63, -29.62, 0.64], watts: r3(15000 * 4 * PI), cd: 15000, beam: 'halogen_low', kelvin: 3200, radius: 0.08, mode: 'runtime' },
+  // L_DASH: the gauge cluster as a source: dials ~3 cd/m2 over 0.035 m2 -> ~0.1 cd toward the driver (green-aqua at runtime).
+  { id: 'L_DASH', room: 'CAR', role: 'dashboard', type: 'spot', pos: [100.43, 2.1, 0.84], target: [100.43, 1.3, 0.8], watts: r3(0.1 * 4 * PI), cd: 0.1, angle: 35, kelvin: 6500, radius: 0.1, mode: 'runtime' },
+  // L_DOME: 211-2 festoon (12 cp) behind a yellowed lens, ~120 lm -> I0 = phi/pi ~ 38 cd, Lambertian lens: a hemisphere (spot full cone 170 deg, penumbra 1 ~ cos falloff).
+  { id: 'L_DOME', room: 'CAR', role: 'other', type: 'spot', pos: [100.8, 1.0, 1.29], target: [100.8, 1.0, 0], watts: r3(38 * 4 * PI), cd: 38, angle: 170, kelvin: 2800, radius: 0.04, mode: 'runtime' },
+  // L_CAB_VEIL: rain backscatter in the beams across the lower windscreen (0.05-0.15 cd/m2) -> ~1 cd fill on the cabin.
+  { id: 'L_CAB_VEIL', room: 'CAR', role: 'other', type: 'spot', pos: [100.8, 2.75, 1.15], target: [100.8, 0.8, 0.8], watts: r3(1 * 4 * PI), cd: 1, angle: 120, kelvin: 3400, radius: 0.5, mode: 'runtime' },
+  // L_TRUCK_HI_L/R: logging-truck high beams, ~1500 lm/lamp, peak 35 kcd (truck local (+-0.82, front 10.3, 1.22) per props_road -hi_l/_r); follow P_RC9_TRUCK.
+  ...[['L', -0.85], ['R', 0.85]].map(([k, x]) => {
+    const t = layoutTruck();
+    return { id: `L_TRUCK_HI_${k}`, room: 'RC9', role: 'other', type: 'spot', pos: t.at(x, 10.3, 1.22), target: t.at(x, 70, 1.22 - 60 * Math.tan(0.5 * PI / 180)), watts: r3(35000 * 4 * PI), cd: 35000, beam: 'halogen_high', kelvin: 3300, radius: 0.09, mode: 'runtime' };
+  }),
 ];
 
 // ------------------------------------------------------------------ acoustic surfaces (smallest containing zone wins)
@@ -490,6 +539,7 @@ const surfaces = [
   { room: 'EXT1', rect: [-20, -29.5, 20, -28.5], surface: 'gravel', mat: 'gravel_wet' },
   { room: 'EXT1', rect: [-20, -38, 20, -37.3], surface: 'mud', mat: 'mud_wet' },
   { room: 'EXT2', rect: R.EXT2, surface: 'grass', mat: 'grass_wet' },
+  { room: 'RC9', rect: R.RC9, surface: 'asphalt', mat: 'asphalt_wet' },   // the opening set: only the car is ever on it
   { room: 'EXT2', rect: [-0.7, -28, 4.3, -2.8], surface: 'gravel', mat: 'gravel_wet' },
   { room: 'EXT2', rect: [4.3, -16, 8.5, -7], surface: 'mud', mat: 'mud_wet' },
   { room: 'EXT2', rect: [10.5, -4, 16, 1.5], surface: 'mud', mat: 'mud_wet' },
@@ -688,7 +738,7 @@ const triggers = [
 
 // ------------------------------------------------------------------ lightmap atlases
 const atlases = [
-  { id: 'LM_EXTERIOR', rooms: ['EXT1', 'EXT2'], maxResolution: 2048, flash: false },
+  { id: 'LM_EXTERIOR', rooms: ['EXT1', 'EXT2', 'RC9'], maxResolution: 2048, flash: false },
   { id: 'LM_GROUND', rooms: ['G1', 'CLOSET', 'G3P'], maxResolution: 2048, flash: false },
   { id: 'LM_PARLOR', rooms: ['G2'], maxResolution: 2048, flash: false },
   { id: 'LM_KITCHEN', rooms: ['G3', 'U4', 'U4T'], maxResolution: 2048, flash: false },
@@ -726,6 +776,8 @@ const matOut = resolve(ROOT, 'src/shared/material-spec.json');
 writeFileSync(matOut, JSON.stringify(deep({ version: 1, materials: MATERIALS }), null, 1) + '\n');
 console.log(`level-layout.json: ${rooms.length} rooms, ${walls.length} walls, ${doors.length} doors, ${props.length} props, ${lights.length} lights, ${aiNodes.length} AI nodes, ${aiEdges.length} edges`);
 console.log(`material-spec.json: ${MATERIALS.length} materials`);
+writeFileSync(resolve(ROOT, 'src/shared/road-rc9.json'), JSON.stringify(rcDefinition(), null, 1) + '\n');
+console.log('road-rc9.json: County Road 9 corridor definition');
 
 // The voice script lives in its own module; regenerate it too so one command rebuilds all three shared JSON files.
 await import('./build-voices.mjs');

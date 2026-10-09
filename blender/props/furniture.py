@@ -4,7 +4,8 @@ Real dimensions, turned legs, bevelled/rounded edges (no knife edges), asymmetri
 """
 import math
 
-from .kit import (Part, T, box, cyl, extrude, fillet, jitter, lathe, nz, prop, rect_section, sphere, tube, bisect, sag)
+from .kit import (Part, T, anchor, box, grime, cyl, escutcheon, extrude, fillet, hinge_butt, jitter, lathe, nz, prop,
+                  rect_section, sphere, tube, bisect, sag)
 
 
 def turned_leg(h, top_sq=0.045, foot_r=0.016, block=0.12, style=0):
@@ -22,7 +23,7 @@ def turned_leg(h, top_sq=0.045, foot_r=0.016, block=0.12, style=0):
     return pts
 
 
-def add_leg(part, rng, x, y, h, mat, top_sq=0.045, foot_r=0.016, block=0.12, style=0, n=12):
+def add_leg(part, rng, x, y, h, mat, top_sq=0.045, foot_r=0.016, block=0.12, style=0, n=24):
     part.add(lathe(turned_leg(h, top_sq, foot_r, block, style), n=n), mat, T((x, y, 0)))
     part.add(box(top_sq, top_sq, block, bevel_w=0.003, segs=1, base=True), mat, T((x, y, h - block)))
 
@@ -56,7 +57,11 @@ def hall_table(p, rng):
     drawer.add(box(dw - 0.03, D - 2 * over - 0.06, 0.07, 0.001, 1, base=True), mat, T((0, D / 2 - over - 0.03, 0.004)))
     knob = [(0, 0), (0.008, 0), (0.0075, 0.006), (0.004, 0.011), (0.011, 0.018), (0.012, 0.022), (0.007, 0.026),
             (0, 0.0265)]
-    drawer.add(lathe(knob, n=12), mat, T((0, -0.018, (ap_h - 0.016) / 2), (math.pi / 2, 0, 0)))
+    drawer.add(lathe(knob, n=24), mat, T((0, -0.018, (ap_h - 0.016) / 2), (math.pi / 2, 0, 0)))
+    anchor(drawer, 'wear_handle', (0, -0.03, (ap_h - 0.016) / 2), {'r': 0.035})
+    grime(drawer, [(9, 20, (0, -0.0185, (ap_h - 0.016) / 2), (0, 0, 0), 0.06, 0.05)])   # finger smudge
+    grime(part, [(c, 37 + c, (x * L, y * D, H), (-math.pi / 2, 0, 0), 0.085, 0.085)           # Ø 65–85 mm
+                 for c, x, y in ((0, -0.28, 0.12), (1, 0.31, -0.08))])                                   # glass rings
     drawer.extras = {'part': 'drawer', 'slide': [0, -1, 0], 'travel_m': 0.25}
     part.children.append((drawer, T((0, -ly - ap_t / 2 + 0.001, za + 0.012))))
     # low stretcher shelf, common on farmhouse hall tables
@@ -91,7 +96,7 @@ def stool(p, rng):
         k = zr / h
         a = [f0[j] + (t0[j] - f0[j]) * k for j in range(3)]
         b = [f1[j] + (t1[j] - f1[j]) * k for j in range(3)]
-        part.add(tube([a, b], 0.0095, sides=8), mat)
+        part.add(tube([a, b], 0.0095, sides=16), mat)
     part.jitter(0.001, freq=3.0, zmin=0.001)
     return [part]
 
@@ -137,7 +142,7 @@ def sawbuck_table(p, rng):
             a = (x + dx, -sgn * (W / 2 - 0.1), 0.0)
             b = (x + dx, sgn * (W / 2 - 0.12), H - tt - 0.05)
             part.add(tube([a, b], 0.03, section=rect_section(0.036, 0.075, 0.006, 2)), mat)
-        part.add(cyl(0.011, 0.1, n=8), mat, T((x - 0.05, 0, zc), (0, math.pi / 2, 0)))
+        part.add(cyl(0.011, 0.1, n=16), mat, T((x - 0.05, 0, zc), (0, math.pi / 2, 0)))
     part.add(box(2 * xs + 0.2, 0.05, 0.1, 0.006, 2, cuts={0: 4}), mat, T((0, 0, zc)))
     for sx in (-1, 1):
         part.add(extrude([(0, 0), (0.07, 0), (0.07, 0.018)], 0.022, 0.002, 1), mat,
@@ -146,7 +151,7 @@ def sawbuck_table(p, rng):
     return [part]
 
 
-@prop('rocking_chair', budget=12000)
+@prop('rocking_chair', budget=13500)   # 12000 -> 13500: 16-side spindles/legs + support loops (PROPS-FINISH §3.1a)
 def rocking_chair(p, rng):
     """Windsor-style farmhouse rocker: saddled plank seat, 7 spindles to a bent crest rail, scrolled arms, turned
     legs on long runners. Rocks about local x at the runner contact (extras.rock_axis)."""
@@ -169,8 +174,8 @@ def rocking_chair(p, rng):
     for y in (-0.2, 0.17):   # side stretchers
         pass
     for sx in (-1, 1):
-        part.add(tube([(sx * 0.235, -0.2, 0.2), (sx * 0.225, 0.17, 0.2)], 0.011, sides=8), mat)
-    part.add(tube([(-0.235, -0.2, 0.17), (0.235, -0.2, 0.17)], 0.011, sides=8), mat)
+        part.add(tube([(sx * 0.235, -0.2, 0.2), (sx * 0.225, 0.17, 0.2)], 0.011, sides=16), mat)
+    part.add(tube([(-0.235, -0.2, 0.17), (0.235, -0.2, 0.17)], 0.011, sides=16), mat)
     seat = box(0.5, 0.46, 0.036, 0.009, 3, cuts={0: 5, 1: 5}, base=True)
     for v in seat.verts:   # saddle: scooped either side of a centre pommel, front edge rounded down
         if v.co.z > 0.02:
@@ -196,17 +201,21 @@ def rocking_chair(p, rng):
         yb = 0.12 + 0.02 * math.cos(x * 4)
         yt = 0.17 + rake + 0.04 * (1 - (2 * ((x + 0.25) / 0.5) - 1) ** 2) - 0.01
         part.add(tube([(x * 0.9, yb, top - 0.01), (x, (yb + yt) / 2 + 0.015, (top + crest_z) / 2), (x, yt, crest_z - 0.04)],
-                      0.0085, sides=6, radii=[1.0, 1.1, 0.8]), mat)
+                      0.0085, sides=12, radii=[1.0, 1.1, 0.8]), mat)
     za = ys + 0.24
     for sx in (-1, 1):
         arm = [(sx * 0.215, 0.17 + rake * 0.35, za + 0.02), (sx * 0.25, 0.02, za), (sx * 0.26, -0.18, za - 0.01),
                (sx * 0.265, -0.25, za - 0.015)]
         part.add(tube(arm, 0.02, section=rect_section(0.06, 0.024, 0.009, 2)), mat)
-        part.add(cyl(0.024, 0.026, n=12, bevel_w=0.006), mat, T((sx * 0.265, -0.255, za - 0.035)))
-        part.add(tube([(sx * 0.235, -0.18, top - 0.01), (sx * 0.255, -0.2, za - 0.015)], 0.0125, sides=8,
+        part.add(cyl(0.024, 0.026, n=24, bevel_w=0.006), mat, T((sx * 0.265, -0.255, za - 0.035)))
+        part.add(tube([(sx * 0.235, -0.18, top - 0.01), (sx * 0.255, -0.2, za - 0.015)], 0.0125, sides=16,
                       radii=[1.0, 0.85]), mat)
-        part.add(tube([(sx * 0.225, -0.02, top - 0.01), (sx * 0.24, -0.02, za - 0.01)], 0.008, sides=6), mat)
+        part.add(tube([(sx * 0.225, -0.02, top - 0.01), (sx * 0.24, -0.02, za - 0.01)], 0.008, sides=12), mat)
     part.jitter(0.0012, freq=2.5)
+    for sx in (-1, 1):   # hands rest on the arm fronts; the crest rail is where it is pushed to rock
+        anchor(part, 'wear_handle', (sx * 0.26, -0.15, 0.66), {'r': 0.09})
+    anchor(part, 'wear_handle', (0.0, 0.22, 1.08), {'r': 0.12})
+    anchor(part, 'wear_handle', (0.0, -0.05, 0.45), {'r': 0.14})    # the seat, polished by sitting
     part.extras.update({'rock_axis': [1, 0, 0], 'runner_radius_m': R, 'rocks': bool(p.get('rocks', True))})
     return [part]
 
@@ -244,6 +253,12 @@ def photo_frame(p, rng):
     photo.add_grid(1, 1, lambda u, v: ((u - 0.5) * ow, -0.0015, (v - 0.5) * oh), p.get('mat', 'photo_print'))
     photo.extras = {'decal': 'photo', 'photo': str(p.get('photo', '')), 'text_param': 'photo'}
     part.children.append((photo, None))
+    # picture cord (jute, Ø 3 mm) from two screw eyes on the back up to a cut nail: the V shows above the frame
+    ny_ = H / 2 + (0.07 if size == 'large' else 0.05)
+    for sx in (-1, 1):
+        part.add(tube([(sx * ow * 0.42, 0.006, oh * 0.3), (sx * ow * 0.2, 0.008, H / 2 + 0.01),
+                       (sx * 0.004, 0.011, ny_ - 0.002)], 0.0015, sides=6), 'twine_jute')
+    part.add(cyl(0.0035, 0.004, n=12), 'cast_iron', T((0, 0.006, ny_), (math.pi / 2, 0, 0)))
     part.apply(T((0, -0.01, 0), (math.radians(-4), 0, 0)))
     return [part]
 
@@ -293,7 +308,7 @@ def mirror_crepe(p, rng):
         part.add(box(W + 0.08, 0.3, 0.06, 0.012, 3, base=True), fmat, T((0, -0.15 + 0.02, 0)))
         for sx in (-1, 1):
             part.add(lathe([(0, 0), (0.028, 0), (0.024, 0.08), (0.03, 0.2), (0.022, 0.3), (0.028, 0.33), (0, 0.34)],
-                           n=12), fmat, T((sx * (W / 2 - 0.02), -0.24, 0.06)))
+                           n=24), fmat, T((sx * (W / 2 - 0.02), -0.24, 0.06)))
         part.add(box(W + 0.1, 0.3, 0.03, 0.01, 3, base=True), 'enamel_chipped', T((0, -0.13, 0.4)))
         z0, z1 = 0.46, H - 0.12
     elif style == 'overmantel':
@@ -335,19 +350,33 @@ def nightstand(p, rng):
     part.add(box(W, D, ch, 0.003, 1, base=True), mat, T((0, 0.004, cz0)))
     for sx in (-1, 1):
         for sy in (-1, 1):
-            part.add(lathe(turned_leg(cz0 + 0.02, 0.04, 0.013, 0.02, style=1), n=10), mat,
+            part.add(lathe(turned_leg(cz0 + 0.02, 0.04, 0.013, 0.02, style=1), n=24), mat,
                      T((sx * (W / 2 - 0.025), sy * (D / 2 - 0.025), 0)))
     drawer = Part('nightstand.drawer', rng)
     drawer.add(box(W - 0.04, 0.02, 0.1, 0.003, 2, base=True), mat)
-    drawer.add(lathe([(0, 0), (0.007, 0), (0.012, 0.012), (0.009, 0.02), (0, 0.021)], n=10), mat,
+    drawer.add(lathe([(0, 0), (0.007, 0), (0.012, 0.012), (0.009, 0.02), (0, 0.021)], n=24), mat,
                T((0, -0.01, 0.05), (math.pi / 2, 0, 0)))
+    drawer.add(box(W - 0.07, D - 0.06, 0.085, 0.0015, 1, base=True), mat, T((0, (D - 0.06) / 2, 0.008)))   # box sides
+    anchor(drawer, 'wear_handle', (0, -0.02, 0.05), {'r': 0.03})
+    grime(drawer, [(9, 54, (0, -0.0105, 0.05), (0, 0, 0), 0.06, 0.05)])                # finger smudge
     drawer.extras = {'part': 'drawer', 'slide': [0, -1, 0], 'travel_m': 0.22}
     part.children.append((drawer, T((0, -D / 2 - 0.006, H - 0.022 - 0.12))))
     door = Part('nightstand.door', rng)
     dh = ch - 0.15
     door.add(box(W - 0.04, 0.02, dh, 0.003, 2), mat, T(((W - 0.04) / 2, -0.01, dh / 2)))
     door.add(box(W - 0.12, 0.012, dh - 0.09, 0.006, 2), mat, T(((W - 0.04) / 2, -0.021, dh / 2)))
-    door.add(sphere(0.011, 10, 6), mat, T((W - 0.08, -0.03, dh * 0.6)))
+    door.add(lathe([(0, 0), (0.0065, 0), (0.0045, 0.006), (0.011, 0.014), (0.0095, 0.02), (0, 0.0215)], n=24), mat,
+             T((W - 0.08, -0.02, dh * 0.6), (math.pi / 2, 0, 0)))
+    plate, hole = escutcheon(0.04, 0.018)                       # keyhole plate below the knob (brass, 40 x 18 mm)
+    door.add(plate, 'brass_tarnished', T((W - 0.08, -0.0206, dh * 0.6 - 0.045)))
+    door.add(hole, 'crepe_black', T((W - 0.08, -0.0206, dh * 0.6 - 0.045)))
+    for zf in (0.12, 0.88):                                     # 2 x 2.5" butt hinges: door leaf rides with the door
+        door.add(hinge_butt(0.064, 0.05, leaves=(1,), barrel=False), 'brass_tarnished', T((0.0, -0.0206, dh * zf)))
+        part.add(hinge_butt(0.064, 0.05, leaves=(-1,)), 'brass_tarnished',
+                 T((-(W - 0.04) / 2, -D / 2 - 0.0216, cz0 + 0.015 + dh * zf)))
+    anchor(door, 'wear_handle', (W - 0.08, -0.03, dh * 0.6), {'r': 0.035})
+    grime(door, [(9, 71, (W - 0.08, -0.0211, dh * 0.6), (0, 0, 0), 0.07, 0.06)])     # finger smudge
+    grime(part, [(0, 88, (0.09, -0.05, H), (-math.pi / 2, 0, 0), 0.08, 0.08)])          # glass ring
     door.extras = {'part': 'door', 'hinge_axis': [0, 0, 1]}
     part.children.append((door, T((-(W - 0.04) / 2, -D / 2 - 0.001, cz0 + 0.015))))
     part.jitter(0.0008, freq=3.0, zmin=0.001)
@@ -370,7 +399,7 @@ def washstand(p, rng):
     part.add(box(W + 0.01, D, 0.08, 0.004, 2, base=True), mat, T((0, 0.0, 0.0)))
     for sx in (-1, 1):
         part.add(tube([(sx * (W / 2 + 0.01), -0.12, H - 0.12), (sx * (W / 2 + 0.05), -0.12, H - 0.12),
-                       (sx * (W / 2 + 0.05), 0.12, H - 0.12), (sx * (W / 2 + 0.01), 0.12, H - 0.12)], 0.007, sides=8),
+                       (sx * (W / 2 + 0.05), 0.12, H - 0.12), (sx * (W / 2 + 0.01), 0.12, H - 0.12)], 0.007, sides=16),
                  mat)
         door = Part(f'washstand.door_{"l" if sx < 0 else "r"}', rng)
         dw = W / 2 - 0.03
@@ -417,7 +446,7 @@ def kitchen_table(p, rng):
         part.add(box(0.022, 2 * ly, 0.12, 0.003, 1, base=True), mat, T((sx * lx, 0, za)))
     part.add(box(2 * lx, 0.022, 0.12, 0.003, 1, base=True), mat, T((0, -ly, za)))
     part.add(box(0.36, 0.006, 0.08, 0.002, 1), mat, T((0.15, -ly - 0.014, za + 0.06)))
-    part.add(lathe([(0, 0), (0.008, 0), (0.012, 0.012), (0.009, 0.02), (0, 0.021)], n=10), mat,
+    part.add(lathe([(0, 0), (0.008, 0), (0.012, 0.012), (0.009, 0.02), (0, 0.021)], n=24), mat,
              T((0.15, -ly - 0.016, za + 0.06), (math.pi / 2, 0, 0)))
     part.jitter(0.001, freq=2.0, zmin=0.001)
     return [part]
@@ -433,9 +462,9 @@ def _ladder_chair(part, rng, mat, seat='plank'):
         part.add(tube([(sx * W / 2 * 0.92, D / 2 - 0.02, 0), (sx * W / 2 * 0.9, D / 2 - 0.01, ys),
                        (sx * W / 2 * 0.86, D / 2 + 0.06, 0.95)], 0.017, sides=10, radii=[0.9, 1.0, 0.85]), mat)
         part.add(tube([(sx * W / 2 * 0.93, -D / 2 + 0.03, 0.16), (sx * W / 2 * 0.91, D / 2 - 0.015, 0.16)], 0.009,
-                      sides=6), mat)
-    part.add(tube([(-W / 2 * 0.95, -D / 2 + 0.025, 0.2), (W / 2 * 0.95, -D / 2 + 0.025, 0.2)], 0.009, sides=6), mat)
-    part.add(tube([(-W / 2 * 0.9, D / 2 - 0.015, 0.2), (W / 2 * 0.9, D / 2 - 0.015, 0.2)], 0.009, sides=6), mat)
+                      sides=12), mat)
+    part.add(tube([(-W / 2 * 0.95, -D / 2 + 0.025, 0.2), (W / 2 * 0.95, -D / 2 + 0.025, 0.2)], 0.009, sides=12), mat)
+    part.add(tube([(-W / 2 * 0.9, D / 2 - 0.015, 0.2), (W / 2 * 0.9, D / 2 - 0.015, 0.2)], 0.009, sides=12), mat)
     for z, yy in ((0.62, D / 2 + 0.018), (0.76, D / 2 + 0.035), (0.9, D / 2 + 0.052)):
         slat = box(W * 0.84, 0.014, 0.06, 0.005, 2, cuts={0: 4})
         for v in slat.verts:
@@ -493,22 +522,22 @@ def iron_bed(p, rng):
     r = 0.019
     for yend, H in ((L / 2, 1.25), (-L / 2, 0.95)):
         for sx in (-1, 1):
-            part.add(cyl(r, H, n=12, bevel_w=0.004), mat, T((sx * W / 2, yend, 0)))
+            part.add(cyl(r, H, n=24, bevel_w=0.004), mat, T((sx * W / 2, yend, 0)))
             part.add(sphere(0.03, 12, 8), mat, T((sx * W / 2, yend, H + 0.02)))
             part.add(lathe([(0.021, 0), (0.026, 0.01), (0.021, 0.02)], n=12, closed=True), mat,
                      T((sx * W / 2, yend, H - 0.12)))
         top = [(x, yend, H - 0.14 + 0.1 * (1 - (2 * x / W) ** 2)) for x in [(-W / 2 + W * k / 12) for k in range(13)]]
-        part.add(tube(top, 0.013, sides=8), mat)
-        part.add(tube([(-W / 2, yend, 0.36), (W / 2, yend, 0.36)], 0.013, sides=8), mat)
+        part.add(tube(top, 0.013, sides=16), mat)
+        part.add(tube([(-W / 2, yend, 0.36), (W / 2, yend, 0.36)], 0.013, sides=16), mat)
         n = 9
         for k in range(1, n):
             x = -W / 2 + W * k / n
             zt = H - 0.14 + 0.1 * (1 - (2 * x / W) ** 2)
-            part.add(tube([(x, yend, 0.36), (x, yend, zt)], 0.0065, sides=6), mat)
+            part.add(tube([(x, yend, 0.36), (x, yend, zt)], 0.0065, sides=12), mat)
         for sx in (-1, 1):   # scroll detail
             sc = [(sx * (W / 2 - 0.02 - 0.08 * (1 - math.cos(a)) * 0.5), yend,
                    0.6 + 0.12 * math.sin(a)) for a in [math.pi * k / 10 for k in range(11)]]
-            part.add(tube(sc, 0.006, sides=6), mat)
+            part.add(tube(sc, 0.006, sides=12), mat)
     for sx in (-1, 1):
         part.add(tube([(sx * W / 2, -L / 2, 0.33), (sx * W / 2, L / 2, 0.33)], 0.02,
                       section=[(0, 0), (0.035, 0), (0.035, 0.004), (0.004, 0.004), (0.004, 0.035), (0, 0.035)]), mat,

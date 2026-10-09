@@ -145,11 +145,24 @@ if not args.get('no_export'):
             d.mkdir(parents=True, exist_ok=True)
             for f in files:
                 shutil.copyfile(f, d / f.name)
+    # ground cover (instanced, per-tier density; not in house.blend, so never in the bakes)
+    with T('groundcover'):
+        from house import groundcover
+        terrain_ob = next(o for o in objs if o.name.endswith('_terrain'))
+        G = groundcover.build(P, terrain_ob)
+        gc_stats = groundcover.export_tiers(G, {t: OUT / t for t in TIERS}, export.export_glb)
+        gc_stats['placed'] = G['counts']
+        gc_stats['variant_tris'] = G['tris']
+    # background hedgerow trees outside the walkable rooms (instanced, probe-lit, not in the bakes)
+    with T('treeline'):
+        from house import treeline
+        tl_stats = treeline.build_export(P, terrain_ob, {t: OUT / t for t in TIERS}, export.export_glb)
 
 res = {
     'job': 'house', 'ok': True, 'atlases': stats, 'glb_bytes': sizes,
     'doors': [d['name'] for d in door_parts], 'door_tris': sum(d['mesh'].tris for d in door_parts),
     'collision_objects': len(coll_objs), 'timings_s': T.t, 'terrain': terrain_stats, 'knocker': knocker,
+    'groundcover': locals().get('gc_stats'), 'treeline': locals().get('tl_stats'),
     'total_triangles': sum(s['triangles'] for s in stats.values()),
     'process_seconds_in_python': round(time.perf_counter() - t_start, 2),
 }

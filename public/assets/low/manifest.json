@@ -1,14 +1,14 @@
 {
   "tier": "low",
-  "generatedAt": "2026-09-30T06:02:48.656Z",
-  "totalBytes": 21857851,
+  "generatedAt": "2026-10-08T18:52:57.602Z",
+  "totalBytes": 28238981,
   "files": [
     {
       "id": "ada_albedo",
       "kind": "texture",
       "path": "assets/low/ada_albedo.webp",
-      "bytes": 134484,
-      "hash": "3a4c1b7322791cca"
+      "bytes": 135016,
+      "hash": "5c8970c542bf1013"
     },
     {
       "id": "ada_hair_albedo",
@@ -21,99 +21,120 @@
       "id": "ada_hair_normal.png",
       "kind": "texture",
       "path": "assets/low/ada_hair_normal.png",
-      "bytes": 136871,
-      "hash": "bda273e55e75247b"
+      "bytes": 114541,
+      "hash": "b40349846f858548"
     },
     {
       "id": "ada_normal.png",
       "kind": "texture",
       "path": "assets/low/ada_normal.png",
-      "bytes": 189547,
-      "hash": "17b7760bfc7dbf76"
+      "bytes": 129864,
+      "hash": "079521e018fff226"
     },
     {
       "id": "ada",
       "kind": "character",
       "path": "assets/low/ada.glb",
-      "bytes": 4654432,
-      "hash": "364b9f7ff6656e0f"
+      "bytes": 4654568,
+      "hash": "2c69feb44a4e580b"
     },
     {
       "id": "arms_albedo",
       "kind": "texture",
       "path": "assets/low/arms_albedo.webp",
-      "bytes": 100540,
-      "hash": "07faae05bef79287"
+      "bytes": 616582,
+      "hash": "ca6001f4f53bc8c6"
     },
     {
       "id": "arms_normal.png",
       "kind": "texture",
       "path": "assets/low/arms_normal.png",
-      "bytes": 181130,
-      "hash": "93e3f13b718a51bc"
+      "bytes": 1162814,
+      "hash": "7d303ad79c8efe8c"
     },
     {
       "id": "arms",
       "kind": "character",
       "path": "assets/low/arms.glb",
-      "bytes": 1227608,
-      "hash": "6885172843a2701d"
+      "bytes": 1812020,
+      "hash": "6571131358ea5a43"
     },
     {
       "id": "collision",
       "kind": "collision",
       "path": "assets/low/collision.glb",
       "bytes": 48212,
-      "hash": "0f324dfc6117ac1d"
+      "hash": "a0488b9253cfd7c7"
+    },
+    {
+      "id": "details_corridor",
+      "kind": "prop",
+      "path": "assets/low/details_corridor.glb",
+      "bytes": 291324,
+      "hash": "ef1fe67ad447e37f"
     },
     {
       "id": "details_exterior",
       "kind": "prop",
       "path": "assets/low/details_exterior.glb",
-      "bytes": 727312,
-      "hash": "fd105b60ac18bbfe"
+      "bytes": 722100,
+      "hash": "376148c75a2fb4fb"
     },
     {
       "id": "details_ground",
       "kind": "prop",
       "path": "assets/low/details_ground.glb",
-      "bytes": 234612,
-      "hash": "cc9bcda9b1f88a51"
+      "bytes": 233216,
+      "hash": "a4dabc8f23106856"
+    },
+    {
+      "id": "details_groundcover",
+      "kind": "prop",
+      "path": "assets/low/details_groundcover.glb",
+      "bytes": 135032,
+      "hash": "023ada00e47d69ba"
     },
     {
       "id": "details_kitchen",
       "kind": "prop",
       "path": "assets/low/details_kitchen.glb",
-      "bytes": 14772,
-      "hash": "57702c5c27b750bd"
+      "bytes": 14688,
+      "hash": "355f288b820828ef"
     },
     {
       "id": "details_parlor",
       "kind": "prop",
       "path": "assets/low/details_parlor.glb",
-      "bytes": 25684,
-      "hash": "7f1467570f72e04b"
+      "bytes": 25668,
+      "hash": "98a781c381b930cb"
+    },
+    {
+      "id": "details_treeline",
+      "kind": "prop",
+      "path": "assets/low/details_treeline.glb",
+      "bytes": 402108,
+      "hash": "5dfc6eaaf55695ba"
     },
     {
       "id": "details_upper_hall",
       "kind": "prop",
       "path": "assets/low/details_upper_hall.glb",
-      "bytes": 15140,
-      "hash": "f76231363c1f86ec"
+      "bytes": 15124,
+      "hash": "486171940cd1a4a2"
     },
     {
       "id": "details_upper_rooms",
       "kind": "prop",
       "path": "assets/low/details_upper_rooms.glb",
-      "bytes": 40456,
-      "hash": "444d204bfb37768a"
+      "bytes": 40264,
+      "hash": "ce3039ff6abd17ba"
     },
     {
       "id": "doors",
       "kind": "prop",
       "path": "assets/low/doors.glb",
-      "bytes": 426500,
-      "hash": "7e3be5068251fa79"
+      "bytes": 425152,
+      "hash": "b74cdc2a29299ca4"
     },
     {
       "id": "harlan_albedo",
@@ -126,169 +147,183 @@
       "id": "harlan_normal.png",
       "kind": "texture",
       "path": "assets/low/harlan_normal.png",
-      "bytes": 217560,
-      "hash": "8164a2dee418e9ae"
+      "bytes": 159389,
+      "hash": "d7b936197f46fd15"
     },
     {
       "id": "harlan",
       "kind": "character",
       "path": "assets/low/harlan.glb",
-      "bytes": 1694524,
-      "hash": "73d3206cd2dbb632"
+      "bytes": 1694520,
+      "hash": "11803d5e8346d815"
     },
     {
       "id": "house_exterior",
       "kind": "level",
       "path": "assets/low/house_exterior.glb",
-      "bytes": 2459724,
-      "hash": "69ee18188a369f9f"
+      "bytes": 2495672,
+      "hash": "19daadfa6893dbdd"
     },
     {
       "id": "house_ground",
       "kind": "level",
       "path": "assets/low/house_ground.glb",
-      "bytes": 509724,
-      "hash": "82666fcd5ced5fa6"
+      "bytes": 508528,
+      "hash": "008cfef51fa0e051"
     },
     {
       "id": "house_kitchen",
       "kind": "level",
       "path": "assets/low/house_kitchen.glb",
-      "bytes": 296400,
-      "hash": "47d43538f5de0112"
+      "bytes": 296488,
+      "hash": "8b630ebf2fd22a9c"
     },
     {
       "id": "house_parlor",
       "kind": "level",
       "path": "assets/low/house_parlor.glb",
-      "bytes": 203276,
-      "hash": "12a521216009740e"
+      "bytes": 202996,
+      "hash": "670382502ff8ac97"
     },
     {
       "id": "house_upper_hall",
       "kind": "level",
       "path": "assets/low/house_upper_hall.glb",
-      "bytes": 167432,
-      "hash": "02970d52fb5c40c6"
+      "bytes": 166620,
+      "hash": "f2d8dcd2a4890cbd"
     },
     {
       "id": "house_upper_rooms",
       "kind": "level",
       "path": "assets/low/house_upper_rooms.glb",
-      "bytes": 363116,
-      "hash": "96143440efc02c9a"
+      "bytes": 362008,
+      "hash": "ab833bfb91171b38"
     },
     {
       "id": "lm_car.meta",
       "kind": "lightmap",
       "path": "assets/low/lm_car.json",
-      "bytes": 418,
-      "hash": "b74a1e9419ab7fa8"
+      "bytes": 419,
+      "hash": "4b8b150ff0bac103"
     },
     {
       "id": "lm_car",
       "kind": "lightmap",
       "path": "assets/low/lm_car.klm",
-      "bytes": 73440,
-      "hash": "eb1fd50c50ff9711"
+      "bytes": 135311,
+      "hash": "15500780f2193236"
     },
     {
       "id": "lm_exterior.meta",
       "kind": "lightmap",
       "path": "assets/low/lm_exterior.json",
-      "bytes": 429,
-      "hash": "25ce170bfcd17374"
+      "bytes": 430,
+      "hash": "b19ccfc2e0db9788"
     },
     {
       "id": "lm_exterior",
       "kind": "lightmap",
       "path": "assets/low/lm_exterior.klm",
-      "bytes": 428891,
-      "hash": "bce1e4ffe18ceef8"
+      "bytes": 477553,
+      "hash": "5acc4d052cfd44d8"
     },
     {
       "id": "lm_ground.meta",
       "kind": "lightmap",
       "path": "assets/low/lm_ground.json",
-      "bytes": 423,
-      "hash": "db7276147e73023b"
+      "bytes": 424,
+      "hash": "3ef59e3c7947158f"
     },
     {
       "id": "lm_ground",
       "kind": "lightmap",
       "path": "assets/low/lm_ground.klm",
-      "bytes": 334069,
-      "hash": "29abd65338b64411"
+      "bytes": 309338,
+      "hash": "464e6f96447e8dbc"
     },
     {
       "id": "lm_kitchen.meta",
       "kind": "lightmap",
       "path": "assets/low/lm_kitchen.json",
-      "bytes": 426,
-      "hash": "97b523b8c6e62c62"
+      "bytes": 427,
+      "hash": "bcc8daa807dd9583"
     },
     {
       "id": "lm_kitchen",
       "kind": "lightmap",
       "path": "assets/low/lm_kitchen.klm",
-      "bytes": 300826,
-      "hash": "86f8c02fa69047e6"
+      "bytes": 277797,
+      "hash": "2cbbc0b2e1deaa86"
     },
     {
       "id": "lm_parlor.meta",
       "kind": "lightmap",
       "path": "assets/low/lm_parlor.json",
-      "bytes": 424,
-      "hash": "2822a6806b41b6b9"
+      "bytes": 423,
+      "hash": "e88dde7316edeaea"
     },
     {
       "id": "lm_parlor",
       "kind": "lightmap",
       "path": "assets/low/lm_parlor.klm",
-      "bytes": 339931,
-      "hash": "f60c0b243d3457d1"
+      "bytes": 325252,
+      "hash": "90a01798803772b4"
     },
     {
       "id": "lm_upper_hall.meta",
       "kind": "lightmap",
       "path": "assets/low/lm_upper_hall.json",
-      "bytes": 432,
-      "hash": "a2fe4a319c05071b"
+      "bytes": 433,
+      "hash": "d0d87855ddc03487"
     },
     {
       "id": "lm_upper_hall",
       "kind": "lightmap",
       "path": "assets/low/lm_upper_hall.klm",
-      "bytes": 96863,
-      "hash": "516228ac5c9746e1"
+      "bytes": 434278,
+      "hash": "b49c33d1c8af2eea"
     },
     {
       "id": "lm_upper_rooms.meta",
       "kind": "lightmap",
       "path": "assets/low/lm_upper_rooms.json",
       "bytes": 434,
-      "hash": "cbe5d3f703c84729"
+      "hash": "647c7ecbf251d1b1"
     },
     {
       "id": "lm_upper_rooms",
       "kind": "lightmap",
       "path": "assets/low/lm_upper_rooms.klm",
-      "bytes": 128701,
-      "hash": "926e80a779b15faf"
+      "bytes": 370084,
+      "hash": "7fcb0022d907837c"
+    },
+    {
+      "id": "probes.bin",
+      "kind": "probes",
+      "path": "assets/low/probes.bin",
+      "bytes": 14496,
+      "hash": "4b43f0d3e15c020a"
     },
     {
       "id": "props_m1",
       "kind": "prop",
       "path": "assets/low/props_m1.glb",
-      "bytes": 2541028,
-      "hash": "86c339018beae392"
+      "bytes": 4362900,
+      "hash": "7decda4d03b7f5c7"
     },
     {
       "id": "props_m2",
       "kind": "prop",
       "path": "assets/low/props_m2.glb",
-      "bytes": 3328948,
-      "hash": "327b0a8d9ff5d64e"
+      "bytes": 4091544,
+      "hash": "dae51804388016aa"
+    },
+    {
+      "id": "props_road",
+      "kind": "prop",
+      "path": "assets/low/props_road.glb",
+      "bytes": 359812,
+      "hash": "6283a06bdfd54086"
     }
   ]
 }

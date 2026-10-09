@@ -1,4 +1,4 @@
-"""Roadside + yard: mailbox, reflector posts, fence runs, farm gate, utility pole, dead trees, rain barrel."""
+"""Roadside + yard: mailbox, reflector posts, fence runs, farm gate, utility pole, rain barrel (trees: trees.py)."""
 import math
 
 from mathutils import Vector
@@ -51,6 +51,8 @@ def mailbox(p, rng):
     flag = Part('mailbox.flag', rng)
     flag.add(box(0.006, 0.22, 0.025, 0.002, 1), mat, T((0, 0.08, 0)))
     flag.add(box(0.006, 0.07, 0.06, 0.002, 1), mat, T((0, 0.17, 0.035)))
+    flag.add(lathe([(0.0065, 0.0), (0.0055, 0.0015), (0.003, 0.0026), (0.0, 0.003)], n=16), 'rust',
+             T((0.003, 0.0, 0.0), (0, math.pi / 2, 0)))                 # pivot rivet head (Ø 13 mm) on the flag arm
     flag.extras = {'part': 'flag', 'pivot_at': 'bolt', 'raise_axis': [1, 0, 0]}
     part.children.append((flag, T((top.x + W / 2 + 0.004, top.y - 0.05, 1.035 + Hs * 0.6), (-0.12, 0, 0))))
     decal(part, 'mailbox.name', 0.3, 0.06, T((top.x - W / 2 - 0.002, top.y - 0.08, 1.035 + Hs * 0.55), (0, 0, -math.pi / 2)),
@@ -71,7 +73,14 @@ def reflector_post(p, rng):
 
 @prop('road_card', instance_keys=('text',), budget=1500)
 def road_card(p, rng):
-    """County service sign: galvanised plate on two punched U-channel posts."""
+    """County service sign: galvanised plate on two punched U-channel posts.
+
+    hero=True (C0/C1 'NEXT SERVICES 48 MI', docs/C1-OPENING.md §6.3): a w x h guide sign (default 2.4 x 1.2 m) of
+    green retroreflective sheeting on an aluminium blank with two horizontal stiffener channels, bolted to two
+    4 x 4 in creosoted wooden posts, bottom edge at 2.1 m. The runtime 'road_sign' decal draws the legend.
+    """
+    if p.get('hero'):
+        return _road_card_hero(p, rng)
     part = Part('road_card', rng)
     w, h = 1.2, 0.45
     for sx in (-0.38, 0.38):
@@ -190,64 +199,6 @@ def utility_pole(p, rng):
     return [part]
 
 
-def _branch(part, rng, p0, d, length, r0, depth, maxd, mat, budget):
-    """Recursive gnarled branch: a tapering tube with kinks, spawning 1-3 children."""
-    n = max(3, int(length / 0.35))
-    pts, radii = [p0.copy()], [1.0]
-    pos, dirn = p0.copy(), d.normalized()
-    for i in range(1, n + 1):
-        kink = Vector((rng.j(0.45), rng.j(0.45), rng.j(0.3) + (0.06 if depth < 2 else -0.04)))
-        dirn = (dirn + kink * 0.35).normalized()
-        pos = pos + dirn * (length / n)
-        pts.append(pos.copy())
-        radii.append(max(0.18, 1.0 - 0.8 * i / n))
-    sides = (10, 7, 5, 4, 3)[min(depth, 4)]
-    part.add(tube(pts, r0, sides=sides, radii=radii), mat)
-    budget[0] -= n * sides * 2
-    if depth >= maxd or budget[0] < 0:
-        return
-    kids = rng.randint(4, 5) if depth == 0 else (rng.randint(2, 4) if depth == 1 else rng.randint(1, 3))
-    for k in range(kids):
-        idx = rng.randint(max(1, n // 4), n - 1) if n > 2 else n
-        base = pts[idx]
-        rr = r0 * radii[idx] * rng.u(0.55, 0.8)
-        side = Vector((rng.j(1), rng.j(1), rng.u(0.1, 0.8)))
-        nd = (d.normalized() * 0.5 + side.normalized()).normalized()
-        _branch(part, rng, base, nd, length * rng.u(0.45, 0.75), rr, depth + 1, maxd, mat, budget)
-
-
-@prop('dead_tree', budget=16000)
-def dead_tree(p, rng):
-    """Dead hardwood: flared root buttresses, a leaning split trunk and bare, gnarled limbs (no leaves)."""
-    H = float(p.get('height', 9.0))
-    mat = p.get('mat', 'bark_wet')
-    part = Part('dead_tree', rng)
-    r = 0.18 + H * 0.022
-    trunk_h = H * 0.42
-    prof = [(0, -0.4), (r * 1.25, -0.4), (r * 1.6, 0.0), (r * 1.25, 0.25), (r * 1.05, 0.6), (r, 1.2),
-            (r * 0.9, trunk_h * 0.7), (r * 0.8, trunk_h), (0, trunk_h)]
-    bm = lathe(prof, n=14, cap_top=False)
-    for v in bm.verts:   # buttresses + bark ridges
-        a = math.atan2(v.co.y, v.co.x)
-        lo = max(0.0, 1 - max(0.0, v.co.z) / 0.9)
-        k = 1 + lo * 0.35 * max(0.0, math.cos(5 * a + 0.7)) + 0.04 * math.cos(23 * a + v.co.z * 3)
-        v.co.x *= k
-        v.co.y *= k
-    jitter(bm, r * 0.12, freq=1.1, seed=rng.randint(0, 999))
-    part.add(bm, mat)
-    for k in range(4):   # surface roots
-        a = rng.u(0, math.tau)
-        pts = [(math.cos(a) * r * 0.9, math.sin(a) * r * 0.9, 0.12)]
-        for s in range(1, 5):
-            rr = r * 0.9 + s * 0.3
-            pts.append((math.cos(a + rng.j(0.1)) * rr, math.sin(a + rng.j(0.1)) * rr, 0.1 - s * 0.03))
-        part.add(tube(pts, r * 0.35, sides=6, radii=[1, 0.7, 0.5, 0.35, 0.2]), mat)
-    budget = [13000]
-    lean = Vector((rng.j(0.15), rng.j(0.15), 1))
-    _branch(part, rng, Vector((0, 0, trunk_h - 0.3)), lean, (H - trunk_h + 0.3) * 0.8, r * 0.8, 0, 4, mat, budget)
-    return [part]
-
-
 @prop('rain_barrel', budget=5000)
 def rain_barrel(p, rng):
     """A 55-gallon steel drum used as a rain barrel: two rolling hoops, chimes, open top brimming over."""
@@ -265,4 +216,30 @@ def rain_barrel(p, rng):
     water.extras = {'liquid': 'water_rain', 'overflowing': bool(p.get('overflowing', False))}
     part.children.append((water, None))
     part.add(box(0.8, 0.8, 0.1, 0.02, 2), 'stone_foundation', T((0, 0, -0.08), (0, 0, 0.3)))
+    return [part]
+
+
+def _road_card_hero(p, rng):
+    part = Part('road_card', rng)
+    w, h = float(p.get('w', 2.4)), float(p.get('h', 1.2))
+    z0 = float(p.get('bottom', 2.1))
+    zc = z0 + h / 2
+    px = w * 0.3
+    for i, sx in enumerate((-px, px)):
+        top = wood_post(part, rng, 0.089, z0 + h - 0.08, 'bark_wet', x=sx, y=0.06, below=0.9, lean=0.012)
+        # a 1 in drilled breakaway hole + saw kerf low on each post (real US practice), and a weathered top bevel
+        part.add(box(0.095, 0.095, 0.012, 0.002, 1, center=(sx, 0.06, 0.1 + 0.03 * i)), 'rubber_black')
+    # aluminium blank (slightly oil-canned) with the sheeting on its face
+    blank = box(w, 0.004, h, 0.0015, 1, cuts={0: 8, 2: 4})
+    for v in blank.verts:
+        v.co.y += 0.006 * (1 - (2 * v.co.x / w) ** 2) * (1 - (2 * v.co.z / h) ** 2) + rng.j(0.0008)
+    part.add(blank, 'sign_sheeting', T((0, 0, zc)))
+    # two horizontal Z-bar stiffeners behind, bolted to the posts
+    for zz in (zc - h * 0.3, zc + h * 0.3):
+        part.add(box(w - 0.06, 0.03, 0.05, 0.003, 1, center=(0, 0.02, zz)), 'zinc_galvanized')
+        for sx in (-px, px):
+            part.add(cyl(0.009, 0.012, n=8, z0=0), 'zinc_galvanized', T((sx, -0.004, zz), (math.pi / 2, 0, 0)))
+    # a shotgun-pellet ding pattern is a material job; geometry: one bent corner (snowplough)
+    decal(part, 'road_card.face', w - 0.06, h - 0.06, T((0, -0.004, zc)), p.get('text', 'NEXT SERVICES 48 MI'),
+          style='road_sign', extra={'text_param': 'text', 'retro': 1.0})
     return [part]

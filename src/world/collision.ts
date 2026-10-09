@@ -2,8 +2,9 @@
 //   - collision.glb (walls / floors / stair ramps / rails / porch / chimney / foundation, faces wound outward),
 //   - an exterior ground plane at grade (the terrain is not part of the Blender shell: docs/HOUSE.md),
 //   - prop colliders (layout `collider: box|mesh`): the prop's own `*-collider` proxy children when it has them
-//     (hides keep their open interior), exact triangles for props up to PROP_TRI_LIMIT, oriented boxes per mesh
-//     for heavier ones (sedans, wrecks),
+//     (hides keep their open interior); `box` → an oriented box per mesh (PERF-PLAN P1-5: these props were exact
+//     triangles too — ~100 k of the octree's ~125 k, ≈5 s of load); `mesh` → exact triangles up to PROP_TRI_LIMIT,
+//     oriented boxes per mesh above it,
 // plus DYNAMIC blockers (door leaves) tested analytically each step: a vertical capsule vs the leaf's oriented box
 // in its hinge frame (moving leaves never go into the octree).
 //
@@ -25,6 +26,8 @@ export interface DynamicBlocker {
   /** Leaf box in the object's local frame (door closed geometry). */
   box: any; // THREE.Box3
   enabled(): boolean;
+  /** True while the leaf swings (open or shut; gameplay-d review: a swinging leaf shoves the player radially, see pushOutOfBox). */
+  moving?(): boolean;
 }
 
 export interface CollisionHit {
@@ -50,8 +53,21 @@ export class WorldCollision {
     root.name = 'collision-build';
     for (const s of sources) root.add(s);
     root.updateMatrixWorld(true);
-    this.octree = new Octree();
-    this.octree.fromGraphNode(root);
+    // The ground quad (hundreds of metres) gets its own two-triangle octree: in the shared one it stretched the root
+    // box to 320 × 12 m, so every cell became a thin slab that most wall/prop triangles crossed many times over —
+    // measured in the page: 10.3 s build with it, 3.4 s without (PERF-PLAN P1-5). `octree` keeps the Octree API
+    // (capsuleIntersect / rayIntersect) the controller calls, answering for both. Ground meshes live on layer
+    // GROUND_LAYER only (groundColliderMesh), which the main octree's layer test (Octree.fromGraphNode) skips.
+    const main = new Octree();
+    main.fromGraphNode(root);
+    const ground = new Octree();
+    ground.layers.set(GROUND_LAYER);
+    let hasGround = false;
+    root.traverse((o: any) => {
+      if (o.isMesh && o.userData?.groundPlane === true) hasGround = true;
+    });
+    if (hasGround) ground.fromGraphNode(root);
+    this.octree = hasGround ? new GroundSplitOctree(main, ground) : main;
     let n = 0;
     root.traverse((o: any) => {
       if (o.isMesh) n += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
@@ -110,6 +126,30 @@ export class WorldCollision {
     let dz = _p.z - cz;
     let d = Math.hypot(dx, dz);
     if (d >= r) return false;
+    if (b.moving?.()) {
+      // gameplay-d review: a SWINGING leaf shoves the capsule radially away from its hinge, out of the swept arc, so the
+      // player ends up on the open side of the door. The nearest-face push dragged the player round with the leaf to its
+      // far side: opening the back-stair door from the kitchen trapped the player behind the leaf (B10).
+      const W = Math.max(Math.abs(box.min.x), Math.abs(box.max.x), Math.abs(box.min.z), Math.abs(box.max.z));
+      const e = o.matrixWorld.elements;
+      const rx = capsule.start.x - e[12];
+      const rz = capsule.start.z - e[14];
+      const rl = Math.hypot(rx, rz);
+      if (rl > 1e-4 && rl < W + r) {
+        const ux = rx / rl;
+        const uz = rz / rl;
+        // at most 6 cm a frame (the leaf tip moves ≈ 3 cm a frame): one full-radius jump shoved a player standing in the
+        // doorway through the jamb wall and out of the house (B10 stealth run, EXT2 at (9.37,10.40)); the octree resolve
+        // of the next frame now always wins against a wall
+        capsule.translate(_v.set(ux, 0, uz).multiplyScalar(Math.min(W + r + 1e-3 - rl, 0.06)));
+        const vd = velocity.x * ux + velocity.z * uz;
+        if (vd < 0) {
+          velocity.x -= ux * vd;
+          velocity.z -= uz * vd;
+        }
+        return true;
+      }
+    }
     if (d < 1e-6) {
       // Centre inside the box: push out along the thinnest axis.
       const px = Math.min(_p.x - box.min.x, box.max.x - _p.x);
@@ -198,14 +238,59 @@ export function groundColliderMesh(rect: [number, number, number, number], y = 0
   g.setAttribute('position', new THREE.BufferAttribute(v, 3));
   const m = new THREE.Mesh(g);
   m.name = 'col_ground';
+  m.userData.groundPlane = true;
+  m.layers.set(GROUND_LAYER); // its own octree (WorldCollision)
   return m;
+}
+
+/** Octree layer of the ground quad — kept out of the main octree (see the WorldCollision constructor). */
+const GROUND_LAYER = 30;
+
+/**
+ * The Octree surface WorldCollision and the player controller use (capsuleIntersect / rayIntersect), over the main
+ * octree plus the ground octree. capsuleIntersect accumulates push-outs like Octree.capsuleIntersect does over its
+ * triangles (main first, then the ground on the pushed capsule) and returns the total as { normal, depth }.
+ */
+class GroundSplitOctree {
+  readonly main: any;
+  readonly ground: any;
+  private readonly cap: any = new Capsule();
+  private readonly c0 = new THREE.Vector3();
+  private readonly c1 = new THREE.Vector3();
+
+  constructor(main: any, ground: any) {
+    this.main = main;
+    this.ground = ground;
+  }
+
+  capsuleIntersect(capsule: any): { normal: any; depth: number } | false {
+    // (Octree returns its normal in a module-scoped vector: copy before the next query)
+    const r = this.main.capsuleIntersect(capsule);
+    const a = r ? { normal: r.normal.clone(), depth: r.depth } : false;
+    const cap = this.cap.copy(capsule);
+    if (a) cap.translate(this.c1.copy(a.normal).multiplyScalar(a.depth));
+    const b = this.ground.capsuleIntersect(cap);
+    if (!b) return a;
+    cap.translate(this.c1.copy(b.normal).multiplyScalar(b.depth));
+    const v = cap.getCenter(this.c1).sub(capsule.getCenter(this.c0));
+    const depth = v.length();
+    return { normal: v.normalize(), depth };
+  }
+
+  rayIntersect(ray: any): { distance: number; triangle: any; position: any } | false {
+    const a = this.main.rayIntersect(ray);
+    const b = this.ground.rayIntersect(ray);
+    if (!a) return b;
+    if (!b) return a;
+    return a.distance <= b.distance ? a : b;
+  }
 }
 
 /**
  * Collider meshes for a placed prop root (already positioned in the world). Returns meshes in WORLD space
  * (geometry baked with matrixWorld) so they can be added to the collision build group directly.
  */
-export function propColliderMeshes(root: any): any[] {
+export function propColliderMeshes(root: any, kind: 'box' | 'mesh' = 'mesh'): any[] {
   const out: any[] = [];
   root.updateMatrixWorld(true);
   const proxies: any[] = [];
@@ -228,16 +313,31 @@ export function propColliderMeshes(root: any): any[] {
   }
   let tris = 0;
   for (const m of meshes) tris += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
-  if (tris <= PROP_TRI_LIMIT) {
+  if (kind === 'mesh' && tris <= PROP_TRI_LIMIT) {
     for (const m of meshes) out.push(bake(m));
     return out;
   }
-  // Heavy props: an oriented box per mesh (local bounding box → world).
+  // Box colliders and heavy props: an oriented box per mesh (local bounding box → world).
   for (const m of meshes) {
     m.geometry.computeBoundingBox();
     const bb = m.geometry.boundingBox;
     const size = bb.getSize(new THREE.Vector3());
     if (Math.max(size.x, size.y, size.z) < 0.08) continue;
+    const treeH = Number(m.userData?.tree_height);
+    if (treeH > 0) {
+      // gameplay-d (B10 stall): a tree's bounding box is its CROWN — P_TREE_2's (14.4 × 11.4 × 10.4 m) reached 7 m into
+      // the house and shoved the player onto the back-stair foot at the kitchen door. Collide with the bole only:
+      // trees.py r0 = 0.10 + 0.0125·H at breast height, ×1.6 for the root flare; first fork at ≥ 0.28·H.
+      const r = (0.1 + 0.0125 * treeH) * 1.6;
+      const h = Math.max(2.2, 0.28 * treeH);
+      const tg = new THREE.BoxGeometry(2 * r, h, 2 * r);
+      tg.translate(0, h / 2 - 0.3, 0);
+      tg.applyMatrix4(m.matrixWorld);
+      const t = new THREE.Mesh(tg);
+      t.name = `col_${root.name}_${m.name}_bole`;
+      out.push(t);
+      continue;
+    }
     const g = new THREE.BoxGeometry(size.x, size.y, size.z);
     g.translate((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2);
     g.applyMatrix4(m.matrixWorld);

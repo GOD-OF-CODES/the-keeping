@@ -68,15 +68,15 @@ def bell_crank(p, rng):
     part = Part('bell_crank', rng)
     part.add(box(0.05, 0.004, 0.07, 0.0015, 1), mat, T((0, 0.0, 0)))
     for z in (-0.022, 0.022):
-        part.add(cyl(0.004, 0.004, n=8), mat, T((0, -0.004, z), (math.pi / 2, 0, 0)))
+        part.add(cyl(0.004, 0.004, n=16), mat, T((0, -0.004, z), (math.pi / 2, 0, 0)))
     part.add(tube([(0, -0.002, 0), (0, -0.04, 0)], 0.008, section=rect_section(0.03, 0.004, 0.001)), mat)
     lever = Part('bell_crank.lever', rng)
     arm = [(0.06, 0, 0), (0, 0, 0), (0, 0.06, 0)]
     lever.add(tube(arm, 0.005, section=rect_section(0.012, 0.004, 0.001)), mat)
     for x, y in ((0.06, 0), (0, 0.06)):
         lever.add(tube([(x + 0.006 * math.cos(a), y + 0.006 * math.sin(a), 0) for a in
-                        [math.tau * k / 8 for k in range(8)]], 0.0016, sides=5, closed=True), mat)
-    lever.add(cyl(0.006, 0.012, n=10), mat, T((0, 0, -0.006)))
+                        [math.tau * k / 8 for k in range(8)]], 0.0016, sides=12, closed=True), mat)
+    lever.add(cyl(0.006, 0.012, n=24), mat, T((0, 0, -0.006)))
     lever.extras = {'part': 'lever', 'pivot_at': 'pin', 'rotate_axis': [0, 0, 1]}
     part.children.append((lever, T((0, -0.04, 0))))
     return [part]
@@ -118,7 +118,7 @@ def spring_bell(p, rng):
     bp = [(0, 0.0), (0.008, 0.0), (0.012, -0.012), (0.02, -0.02), (0.03, -0.04), (0.038, -0.062), (0.044, -0.07),
           (0.045, -0.074), (0.04, -0.073), (0.034, -0.064), (0.026, -0.042), (0.016, -0.024), (0, -0.018)]
     bell.add(lathe(bp, n=24), mat)
-    bell.add(tube([(0, 0, -0.018), (0, 0, -0.05)], 0.0015, sides=4), 'cast_iron')
+    bell.add(tube([(0, 0, -0.018), (0, 0, -0.05)], 0.0015, sides=12), 'cast_iron')
     bell.add(sphere(0.007, 8, 6), 'cast_iron', T((0, 0, -0.055)))
     bell.extras = {'part': 'bell', 'pivot_at': 'spring_tip', 'swing': True}
     part.children.append((bell, T((0, -0.06, -0.19))))
@@ -138,15 +138,15 @@ def rope_pulley(p, rng):
     sheave.add(lathe(sp, n=24, closed=True), mat, T((0, 0, 0), (0, math.pi / 2, 0)))
     sheave.extras = {'part': 'sheave', 'spin_axis': [1, 0, 0]}
     part.children.append((sheave, None))
-    part.add(cyl(0.007, 0.036, n=8), mat, T((-0.018, 0, 0), (0, math.pi / 2, 0)))
+    part.add(cyl(0.007, 0.036, n=16), mat, T((-0.018, 0, 0), (0, math.pi / 2, 0)))
     for sx in (-1, 1):
         strap = [(sx * 0.013, 0, -0.02), (sx * 0.013, 0, 0.03), (sx * 0.006, 0, 0.055)]
         part.add(tube(fillet(strap, 0.01, 3), 0.004, section=rect_section(0.004, 0.018, 0.001)), mat)
-    part.add(lathe([(0.004, 0.055), (0.009, 0.055), (0.01, 0.062), (0.004, 0.064)], n=10, closed=True), mat)
+    part.add(lathe([(0.004, 0.055), (0.009, 0.055), (0.01, 0.062), (0.004, 0.064)], n=24, closed=True), mat)
     eye = [(0.009 * math.cos(a), 0, 0.074 + 0.009 * math.sin(a)) for a in [math.tau * k / 10 for k in range(10)]]
-    part.add(tube(eye, 0.0022, sides=5, closed=True), mat)
+    part.add(tube(eye, 0.0022, sides=12, closed=True), mat)
     hook = [(0.0, 0, 0.068), (0.012, 0, 0.075), (0.01, 0, 0.088), (0.0, 0, 0.092), (0.0, 0, 0.13)]
-    part.add(tube(fillet(hook, 0.006, 3), 0.003, sides=6), mat)
+    part.add(tube(fillet(hook, 0.006, 3), 0.003, sides=12), mat)
     return [part]
 
 
@@ -180,7 +180,7 @@ def door_rope(p, rng, pos=(0, 0, 0), yaw=0.0):
     return [part]
 
 
-@prop('rope_cleat', budget=1200)
+@prop('rope_cleat', budget=1400)   # 1200 -> 1400: 12-side rope figure-eight (was 6)
 def rope_cleat(p, rng):
     """Cast horn cleat (15 cm) screwed to the parlour wall, with a figure-eight of rope made fast on it."""
     mat = p.get('mat', 'cast_iron')
@@ -194,7 +194,7 @@ def rope_cleat(p, rng):
     for k in range(40):   # figure-eight round the horns, crossing over the waist
         a = math.tau * k / 40
         fig8.append((0.058 * math.sin(a), -0.037 - 0.011 * math.cos(2 * a) - 0.004, 0.02 * math.sin(2 * a)))
-    part.add(tube(fig8, 0.0085, sides=6, closed=True), 'rope_hemp')
+    part.add(tube(fig8, 0.0085, sides=12, closed=True), 'rope_hemp')
     return [part]
 
 
@@ -212,9 +212,9 @@ def bolt_box(p, rng):
     part.add(box(0.12, 0.003, 0.05, 0.001, 1), p.get('plateMat', 'brass_tarnished'), T((0, -D - 0.0015, 0.02)))
     eye = [(0.012 * math.cos(a), -D / 2, H / 2 + 0.018 + 0.012 * math.sin(a)) for a in
            [math.tau * k / 10 for k in range(10)]]
-    part.add(tube(eye, 0.003, sides=6, closed=True), mat)
+    part.add(tube(eye, 0.003, sides=12, closed=True), mat)
     bolt = Part('bolt_box.bolt', rng)
-    bolt.add(cyl(0.011, 0.34, n=12, bevel_w=0.002, z0=-0.3), mat)
+    bolt.add(cyl(0.011, 0.34, n=24, bevel_w=0.002, z0=-0.3), mat)
     bolt.add(sphere(0.016, 10, 6), mat, T((0, 0, -0.3)))
     bolt.extras = {'part': 'bolt', 'slide_axis': [0, 0, 1], 'travel_m': 0.12, 'state': 'dropped'}
     part.children.append((bolt, T((0, -D / 2, -H / 2))))
@@ -232,35 +232,46 @@ def door_counterweight(p, rng):
     part.add(lathe([(0.004, -0.006), (0.03, -0.006), (0.025, 0), (0.03, 0.006), (0.004, 0.006)], n=20, closed=True),
              mat, T((0, -0.02, 0), (math.pi / 2, 0, 0)))
     cord = p.get('cord', 'rope_hemp')
-    part.add(tube([(0.028, -0.02, 0), (0.028, -0.02, -0.55)], 0.004, sides=6), cord)
-    part.add(tube([(-0.028, -0.02, 0), (-0.028, -0.02, -0.02), (-0.33, -0.02, 0.0)], 0.004, sides=6), cord)
+    part.add(tube([(0.028, -0.02, 0), (0.028, -0.02, -0.55)], 0.004, sides=12), cord)
+    part.add(tube([(-0.028, -0.02, 0), (-0.028, -0.02, -0.02), (-0.33, -0.02, 0.0)], 0.004, sides=12), cord)
     wt = Part('door_counterweight.weight', rng)
-    wt.add(cyl(0.028, 0.3, n=12, bevel_w=0.006, z0=-0.3), mat)
+    wt.add(cyl(0.028, 0.3, n=24, bevel_w=0.006, z0=-0.3), mat)
     wt.add(tube([(0.008 * math.cos(a), 0, 0.012 + 0.008 * math.sin(a)) for a in
-                 [math.tau * k / 8 for k in range(8)]], 0.002, sides=4, closed=True), mat)
+                 [math.tau * k / 8 for k in range(8)]], 0.002, sides=12, closed=True), mat)
     wt.extras = {'part': 'weight', 'slide_axis': [0, 0, 1], 'travel_m': 0.5}
     part.children.append((wt, T((0.028, -0.02, -0.56))))
     return [part]
 
 
-@prop('bell_pull_embroidered', budget=3000)
+@prop('bell_pull_embroidered', budget=5000)
 def bell_pull_embroidered(p, rng):
-    """Embroidered bell-pull strip (1.2 m) on a brass hanger, with a brass tassel cap. Hangs from its origin."""
+    """Embroidered bell-pull strip (1.2 m x 90 mm) on a brass hanger, with a brass tassel cap. Hangs from its origin.
+    PROPS-FINISH §3.2 #9: 8 x 48 cloth grid (it sways in a slow S), a rolled 4 mm hem along both edges, a 24-seg
+    end cap with its ring, 24 tassel strands; the bottom 30 cm is the grip (handled mask)."""
     L = float(p.get('length', 1.2))
     part = Part('bell_pull_embroidered', rng)
     tassel = p.get('tasselMat', 'brass_tarnished')
+    cloth = p.get('mat', 'rag_rug')
     part.add(box(0.12, 0.012, 0.03, 0.004, 2), tassel, T((0, -0.006, 0.0)))
     w = 0.09
     ph = rng.u(0, 6)
-    part.add_grid(4, 24, lambda u, v: ((u - 0.5) * w * (1 - 0.1 * v), -0.012 - 0.01 * math.sin(v * 5 + ph) * v
-                                       - 0.004 * (u - 0.5) ** 2, -0.02 - v * L), p.get('mat', 'rag_rug') + '@2s',
-                  uv_size=None)
+    surf = lambda u, v: ((u - 0.5) * w * (1 - 0.1 * v), -0.012 - 0.01 * math.sin(v * 5 + ph) * v
+                         - 0.004 * (u - 0.5) ** 2, -0.02 - v * L)
+    part.add_grid(8, 48, surf, cloth + '@2s', uv_size=None)
+    for u in (0.0, 1.0):     # rolled hems: the strip's edges read as cloth with a thickness, not a sheet
+        part.add(tube([surf(u, k / 47) for k in range(48)], 0.002, sides=6), cloth)
     zt = -0.02 - L
-    part.add(lathe([(0, 0), (0.015, -0.005), (0.018, -0.02), (0.012, -0.035), (0, -0.04)], n=12), tassel,
+    part.add(lathe([(0, 0), (0.015, -0.005), (0.018, -0.02), (0.012, -0.035), (0, -0.04)], n=24), tassel,
              T((0, -0.015, zt)))
-    for k in range(10):
-        a = math.tau * k / 10
-        part.add(tube([(0.008 * math.cos(a), 0.008 * math.sin(a), 0), (0.014 * math.cos(a), 0.014 * math.sin(a), -0.09)],
-                      0.002, sides=3), tassel, T((0, -0.015, zt - 0.035)))
+    part.add(lathe([(0.0165, -0.006), (0.0195, -0.008), (0.0195, -0.011), (0.0165, -0.013)], n=24, closed=True),
+             tassel, T((0, -0.015, zt)))
+    for k in range(24):
+        a = math.tau * k / 24 + rng.j(0.08)
+        ln = 0.09 + rng.j(0.008)
+        part.add(tube([(0.008 * math.cos(a), 0.008 * math.sin(a), 0),
+                       (0.012 * math.cos(a), 0.012 * math.sin(a), -ln * 0.5),
+                       (0.015 * math.cos(a) + rng.j(0.002), 0.015 * math.sin(a), -ln)],
+                      0.0018, sides=4), tassel, T((0, -0.015, zt - 0.035)))
+    anchor(part, 'wear_handle', (0, -0.015, -0.02 - L * 0.88), {'r': 0.16})
     part.extras.update({'pull_axis': [0, 0, -1], 'travel_m': 0.08})
     return [part]

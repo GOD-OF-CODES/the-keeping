@@ -371,6 +371,13 @@ SIGHT (only while her head is lifted, during LOOK and CHASE). 60-degree cone: 14
 - Lose her through the bedroom's two doors or on the servants' stair.
 - In the finale, reverse everything: light on, the open locket in the beam in front of your face, stand still, let her look.
 
+**Tuning note (2026-10-08, difficulty — user: "i shouldnt get caught very easily").** Ada forgives ordinary play
+(walking, torch on, the odd noise); a catch needs a clear mistake (running into her, standing in her path, lighting her
+face up close). Numbers in `src/ai/tuning.ts` (CONTRACT-CHANGES #52–56): sight 8 m lit / 4 m dark / 2 m dark+crouched;
+she must hold you in sight 0.6 s before a chase (instant within 2.5 m); LOOK wind-up 1.8 s (beam on her within 4 m:
+1.0 s; slat looks 1.2 s); chase bursts 3.0 m/s, lost after 2.5 s, abandoned after 10 s, caught within 0.8 m; the slow
+assist starts at the first death; no detection for 6 s after any cutscene. Every tell is unchanged.
+
 ## Obstacles & puzzles
 
 ### Every Bell Rings in His Room (the lure) — Harlan's bedroom bell pull, sending her to the parlor door

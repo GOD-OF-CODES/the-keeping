@@ -81,6 +81,16 @@ L('b01_come_on', 'driver', 'B01', 'c1:fuel_chime',
 L('b01_put_me_up', 'driver', 'B01', 'c1:engine_dead',
   "[quietly, to himself] Forty-eight miles to anything... [sighs] They'll have to put me up for the night.",
   "Forty-eight miles to anything. They'll have to put me up for the night.", { priority: 8 });
+// the opening drive (docs/C1-OPENING.md §8, lead-approved 2026-10-08): three short lines, <= 2 s each
+L('c1_preacher', 'driver', 'B01', 'c1:radio_seek',
+  "[flat, tired, to the radio] Nothing. Not even a preacher.",
+  'Nothing. Not even a preacher.', { priority: 5 });
+L('c1_interstate', 'driver', 'B01', 'c1:map',
+  "[under his breath, finger on the map] Should've stayed on the interstate.",
+  "Should've stayed on the interstate.", { priority: 5 });
+L('c1_dim', 'driver', 'B01', 'c1:truck',
+  '[squinting, sharp] Dim your lights—',
+  'Dim your lights—', { priority: 7 });
 L('b02_hello', 'driver', 'B02', 'b02:first_knock',
   "[raising his voice over the rain, hesitant] Hello? [short pause] ...Sorry to bother you this late. My car ran out of gas.",
   "Hello? …Sorry to bother you this late. My car ran out of gas.", { priority: 7 });

@@ -132,15 +132,22 @@ def freeze():
 
 
 def wheel():
-    c = np.array([0.0, 0.43, -0.3])
+    """Both hands on the rim at ten-to-two (C1/C6/C7), a loose driving grip with small corrections; the left hand
+    leaves the torch (the runtime hides the flashlight mesh in the car). Rim points from the sedan_interior wheel."""
+    rl, Rl = rim_grip('l', 150.0)
+    rr, Rr = rim_grip('r', 30.0)
 
-    def path(t):
-        return c + np.array([0.165, -0.02, 0.1]) + np.array([0, 0, 0.004 * math.sin(t * 2.1)])
+    def right(t):
+        return np.asarray(rr) + np.array([0.0, 0.0, 0.003 * math.sin(t * 2 * math.pi / 3.0)])
+
+    def left(t):
+        return np.asarray(rl) + np.array([0.0, 0.0, 0.003 * math.sin(t * 2 * math.pi / 3.0 + 1.3)])
 
     def fn(t):
-        return add(fist('r', 0.8), F('upperarm_l', 6, 0, 0), sway(t, 0.3))
-    return Clip('arms_wheel', 3.0, fn, loop=True, ik=ik_r(path),
-                note='hands on the wheel (C1/C6/C7); runtime hides the flashlight mesh and places the left hand by CCDIK')
+        return add(fist('r', 0.82), grip_l(0.9), sway(t, 0.25))
+    return Clip('arms_wheel', 3.0, fn, loop=True, ik=ik2(right, lambda t: tuple(Rr.to_euler('XYZ')), left,
+                                                         lambda t: tuple(Rl.to_euler('XYZ'))),
+                note='hands on the wheel at ten-to-two (C1/C6/C7); the runtime hides the flashlight mesh in the car')
 
 
 def key_turn():
@@ -169,7 +176,7 @@ def all_clips(rig=None):
     if rig is None:
         return m1
     rest_frames(rig)
-    return m1 + m2_clips()
+    return m1 + m2_clips() + car_clips()
 
 
 # ================================================================================================ M2 clips
@@ -535,6 +542,224 @@ def pour_can():
     return Clip('arms_pour_can', 4.3, fn, ik=ik2(right_j, rrot, left, lrot), milestone='M2',
                 note='C6 pour (gate at 3.0): can on socket prop_r lifted to the filler by 0.6 s, tipped (glug 0.1 / 2.2 s), '
                      'lowered by 4.3 s (can_in_hand off); the beam on the filler')
+
+
+# ================================================================================================ car clips (C1 opening)
+# Car-space control positions come from the sedan_interior generator (blender/props/sedan_cabin.py, read back from
+# props_m1.glb): driver eye EYE = car (-0.35, -0.05, 1.12); camera space = car - EYE (+Y forward, +Z up, +X right).
+# Wheel: hub car (-0.37, 0.42, 0.80), column tilt 25 deg, rim centre-line radius 0.1765 m (15 in wheel).
+CAR_EYE = Vector((-0.35, -0.05, 1.12))
+HUB = Vector((-0.37, 0.42, 0.80)) - CAR_EYE
+WHEEL_TILT = math.radians(25.0)
+RIM_R = 0.1765
+WHEEL_FWD = Vector((0.0, math.cos(WHEEL_TILT), -math.sin(WHEEL_TILT)))
+RADIO_SEEK = Vector((0.077, 0.532, 0.734)) - CAR_EYE           # radio_seek_up button face
+HEADLAMP_KNOB = Vector((-0.665, 0.515, 0.80)) - CAR_EYE         # push-pull knob cap
+STALK_TIP = Vector((-0.582, 0.436, 0.739)) - CAR_EYE            # turn/high-beam stalk tip (left of the column)
+MAP_C = Vector((0.0, 0.40, -0.12))                              # the unfolded map's centre, propped on the upper rim
+MAP_GRIP = Vector((-0.17, 0.41, -0.10))                         # left-hand pinch on the map's left edge
+
+
+def rim_point(deg):
+    """Point on the rim centre-line at clock angle `deg` (0 = 3 o'clock, 90 = 12, CCW seen from the driver)."""
+    a = math.radians(deg)
+    return HUB + Vector((RIM_R * math.cos(a), -RIM_R * math.sin(a) * math.sin(WHEEL_TILT),
+                         RIM_R * math.sin(a) * math.cos(WHEEL_TILT)))
+
+
+def rim_grip(side, deg):
+    """(wrist, hand frame) of a power grip on the rim at `deg`: the rim runs across the palm, the knuckles point
+    forward over it, the palm faces the hub; the fist centre (socket prop_r convention: 5 cm along the hand, 3 cm
+    toward the palm) sits on the rim centre-line."""
+    a = math.radians(deg)
+    radial = Vector((math.cos(a), -math.sin(a) * math.sin(WHEEL_TILT), math.sin(a) * math.cos(WHEEL_TILT)))
+    y = (WHEEL_FWD * 0.8 + radial * 0.35 + Vector((0, 0, 0.3))).normalized()
+    z = (-radial * 0.85 + WHEEL_FWD * 0.2 - Vector((0, 0, 0.2)))
+    M = frame(y, z)
+    g = rim_point(deg)
+    wr = g - M.col[1] * 0.05 - M.col[2] * 0.03
+    return tuple(wr), M
+
+
+def grip_l(amt=1.0):
+    """Left-hand fingers: the rest pose already curls them ~64 deg round the torch barrel; this adds the last of a
+    rim grip (amt 1) or opens them (amt < 0)."""
+    out = {f'{f}_0{i}_l': (c * amt, 0, 0) for f in ('index', 'middle', 'ring', 'pinky') for i, c in ((1, 8), (2, 14), (3, 10))}
+    out['thumb_02_l'] = (10 * amt, 0, 0)
+    return out
+
+
+def point_r(amt=1.0):
+    """Right hand pointing: index straight, the other three curled, thumb tucked."""
+    out = {}
+    for f, c in (('index', (-4, -6, -4)), ('middle', (68, 85, 50)), ('ring', (72, 88, 52)), ('pinky', (75, 88, 52))):
+        for i in range(3):
+            out[f'{f}_0{i + 1}_r'] = (c[i] * amt, 0, 0)
+    out['thumb_02_r'] = (20 * amt, 0, 0)
+    out['thumb_03_r'] = (25 * amt, 0, 0)
+    return out
+
+
+def press_frame(target, side='r', twist=0.0):
+    """Hand frame for poking/turning something on the dash ahead: knuckles toward the target from slightly above,
+    palm down."""
+    y = (Vector(target).normalized() + Vector((0, 0, -0.15))).normalized()
+    M = frame(y, (0.0, 0.1, -1.0) if side == 'r' else (0.0, 0.1, -1.0))
+    return about(y, twist, M) if twist else M
+
+
+def finger_wrist(tip, M, reach=0.165):
+    """Wrist position that puts the extended index fingertip at `tip` (hand + index ~16.5 cm)."""
+    return tuple(Vector(tip) - M.col[1] * reach)
+
+
+def radio_seek():
+    """C1: the right hand leaves the wheel, the index presses SEEK twice (0.8 s, 1.3 s), back by 2.4 s."""
+    rw, Rw = rim_grip('r', 30.0)
+    lw, Lw = rim_grip('l', 150.0)
+    Rp = press_frame(RADIO_SEEK)
+    near = finger_wrist(RADIO_SEEK + Vector((0, -0.02, 0.004)), Rp)
+    on = finger_wrist(RADIO_SEEK, Rp)
+    right = reach([(0.0, rw), (0.55, near), (0.8, on), (0.95, near), (1.25, on), (1.4, near), (1.6, near), (2.4, rw)])
+    rrot = rpath([(0.0, Rw), (0.5, Rp), (1.6, Rp), (2.4, Rw)])
+
+    def fn(t):
+        pt = ps.ease((t - 0.1) / 0.35) * (1 - ps.ease((t - 1.6) / 0.6))
+        return add(sway(t, 0.25), add({k: tuple(v * (1 - pt) for v in vv) for k, vv in fist('r', 0.82).items()},
+                                      point_r(pt)), grip_l(0.9))
+    return Clip('arms_radio_seek', 2.4, fn, ik=ik2(right, rrot, lambda t: lw, lambda t: tuple(Lw.to_euler('XYZ'))),
+                note='C1: right index presses radio SEEK at 0.8 and 1.3 s (VFD digits step on each press); left on the wheel')
+
+
+def headlamp_knob():
+    """C1: the left hand drops off the rim to the push-pull headlamp knob left of the binnacle, pulls it out 12 mm
+    (click at 0.85 s) and returns by 1.6 s. Played reversed = pushing it in (off)."""
+    rw, Rw = rim_grip('r', 30.0)
+    lw, Lw = rim_grip('l', 150.0)
+    Lk = frame((HEADLAMP_KNOB + Vector((0, 0.0, 0.03))).normalized(), (0.6, 0.2, -0.75))
+    pinch_off = 0.115                                      # wrist -> thumb/index pinch along the hand
+    at = tuple(HEADLAMP_KNOB - Lk.col[1] * pinch_off)
+    pulled = tuple(Vector(at) + Vector((0, -0.012, 0)))
+    left = reach([(0.0, lw), (0.5, tuple(Vector(at) + Vector((0, -0.03, 0.01)))), (0.65, at), (0.75, at), (0.85, pulled),
+                  (1.0, pulled), (1.6, lw)])
+    lrot = rpath([(0.0, Lw), (0.5, Lk), (1.0, Lk), (1.6, Lw)])
+
+    def fn(t):
+        k = ps.ease((t - 0.1) / 0.4) * (1 - ps.ease((t - 1.0) / 0.5))
+        pin = ps.ease((t - 0.55) / 0.1) * (1 - ps.ease((t - 0.95) / 0.1))
+        lp = {kk: tuple(v * pin for v in vv) for kk, vv in pinch('l', 0.6).items()}
+        return add(sway(t, 0.25), fist('r', 0.82), grip_l(0.9 * (1 - k) - 1.6 * k), lp)
+    return Clip('arms_headlamp_knob', 1.6, fn, ik=ik2(lambda t: rw, lambda t: tuple(Rw.to_euler('XYZ')), left, lrot),
+                note='C1: left thumb+index pull the headlamp knob out 12 mm (click at 0.85 s); reverse for off')
+
+
+def stalk_flick():
+    """C1: left fingers slide off the rim to the turn/high-beam stalk and flick it toward the driver (0.45 s),
+    then settle back on the rim by 1.0 s; the hand barely leaves the wheel."""
+    rw, Rw = rim_grip('r', 30.0)
+    lw, Lw = rim_grip('l', 165.0)
+    tip = STALK_TIP + Vector((0.02, 0.0, 0.015))
+    Ls = frame((tip - Vector(lw)).normalized(), (0.4, 0.3, -0.85))
+    at = tuple(tip - Ls.col[1] * 0.13)
+    pull = tuple(Vector(at) + Vector((0, -0.02, 0)))
+    left = reach([(0.0, lw), (0.3, at), (0.45, pull), (0.55, pull), (1.0, lw)])
+    lrot = rpath([(0.0, Lw), (0.3, Ls), (0.55, Ls), (1.0, Lw)])
+
+    def fn(t):
+        k = ps.ease(t / 0.3) * (1 - ps.ease((t - 0.55) / 0.45))
+        return add(sway(t, 0.2), fist('r', 0.82), grip_l(0.9 - 1.3 * k))
+    return Clip('arms_stalk_flick', 1.0, fn, ik=ik2(lambda t: rw, lambda t: tuple(Rw.to_euler('XYZ')), left, lrot),
+                note='C1: left fingers flick the high-beam stalk toward the driver at 0.45 s')
+
+
+def brace():
+    """C1: braced for impact: both hands clamp the rim at quarter-to-three, arms lock (the body is pushed back into
+    the bench), white-knuckle tremble; 1.2 s, clamp the last frame to hold."""
+    rw0, Rw0 = rim_grip('r', 30.0)
+    lw0, Lw0 = rim_grip('l', 150.0)
+    rw1, Rw1 = rim_grip('r', 8.0)
+    lw1, Lw1 = rim_grip('l', 172.0)
+    right = reach([(0.0, rw0), (0.25, rw1), (1.2, rw1)])
+    left = reach([(0.0, lw0), (0.25, lw1), (1.2, lw1)])
+    rrot = rpath([(0.0, Rw0), (0.25, Rw1), (1.2, Rw1)])
+    lrot = rpath([(0.0, Lw0), (0.25, Lw1), (1.2, Lw1)])
+
+    def fn(t):
+        k = ps.ease(t / 0.25)
+        return add(fist('r', 0.82 + 0.18 * k), grip_l(0.9 + 0.5 * k), tremble(t, 0.6 * k))
+    return Clip('arms_brace', 1.2, fn, ik=ik2(right, rrot, left, lrot),
+                note='C1: hands clamp the rim at quarter-to-three by 0.25 s, arms locked, tremble; clamp the last frame')
+
+
+def map_hold_frame():
+    """Left hand pinching the map's left edge: hand upright, knuckles up/forward, palm toward the map (+X)."""
+    return frame((0.18, 0.25, 0.95), (1.0, 0.05, -0.15))
+
+
+def map_wrist():
+    return MAP_GRIP - map_hold_frame().col[1] * 0.105 - map_hold_frame().col[2] * 0.01
+
+
+def map_socket_rest(rig):
+    """Rest-space head/orientation of the arms `prop_l` socket such that, in the map hold, it sits at MAP_GRIP with
+    +X along the map (toward its centre, the player's right), +Y away from the player (the printed face looks back
+    along -Y at the eye) and +Z up the sheet."""
+    rest_frames(rig)
+    Mh = map_hold_frame().to_4x4()
+    Mh.translation = map_wrist()
+    y = MAP_C.normalized()
+    S = frame(y, (0, 0, 1)).to_4x4()
+    S.translation = MAP_GRIP
+    L = Mh.inverted() @ S
+    W = rig.data.bones['hand_l'].matrix_local @ L
+    return W.translation.copy(), W.to_3x3()
+
+
+def map_read():
+    """C1 (6.0 s): the left hand leaves the rim, picks the folded road map up off the bench (0-1.2 s, map attached to
+    prop_l from 0.6 s), unfolds it against the upper rim (1.2-2.8 s, the right hand opens the far edge), the right
+    index traces County Road 9 (2.8-5.0 s), the map is lowered to the lap and the hands go back (5.0-6.0 s)."""
+    rw, Rw = rim_grip('r', 30.0)
+    lw, Lw = rim_grip('l', 150.0)
+    Mh = map_hold_frame()
+    hold = tuple(map_wrist())
+    bench = (0.02, 0.22, -0.58)
+    lap = tuple(Vector(hold) + Vector((0.06, -0.08, -0.28)))
+    Lpick = frame((0.3, 0.6, -0.75), (0.2, -0.3, -0.9))
+    left = reach([(0.0, lw), (0.5, bench), (0.7, bench), (1.2, tuple(Vector(hold) + Vector((0.03, -0.05, -0.08)))),
+                  (2.0, hold), (5.0, hold), (5.6, lap), (6.0, lw)])
+    lrot = rpath([(0.0, Lw), (0.5, Lpick), (0.7, Lpick), (1.4, Mh), (5.0, Mh), (5.6, Lpick), (6.0, Lw)])
+    # right: opens the far edge, then traces with the index; points on the map's face (MAP_C plane), toward the eye
+    n_ = -MAP_C.normalized()
+    face = lambda dx, dz: MAP_C + Vector((dx, 0, dz)) + n_ * 0.004
+    trace = [face(-0.05, -0.04), face(-0.02, -0.03), face(0.01, -0.01), face(0.03, 0.0), face(0.05, 0.025), face(0.06, 0.04)]
+    # the index comes up at the sheet from below-right (as a reader points at a map held against the rim): the hand
+    # stays under the map's lower half instead of on the eye->map ray (round C review: the back of the glove filled
+    # a third of the frame 0.24 m from the eye)
+    Rpt = frame((-0.35, 0.40, 0.85), (-0.2, 0.85, -0.45))
+    Redge = frame((-0.25, 0.3, 0.92), (-0.9, 0.3, -0.1))
+    edge = tuple(MAP_C + Vector((0.17, 0.0, 0.0)) - Redge.col[1] * 0.1)
+    rk = [(0.0, rw), (1.6, rw), (2.1, edge), (2.6, edge)]
+    tt = np.linspace(2.9, 4.9, len(trace))
+    rk += [(float(t_), finger_wrist(p_, Rpt)) for t_, p_ in zip(tt, trace)]
+    rk += [(5.2, tuple(Vector(finger_wrist(trace[-1], Rpt)) + Vector((0, -0.04, -0.02)))), (6.0, rw)]
+    right = reach(rk)
+    rrot = rpath([(0.0, Rw), (1.6, Rw), (2.1, Redge), (2.6, Redge), (2.9, Rpt), (4.9, Rpt), (6.0, Rw)])
+
+    def fn(t):
+        pick = ps.ease((t - 0.5) / 0.2)
+        let = 1 - ps.ease((t - 5.6) / 0.3)
+        lp = {k: tuple(v * pick * let for v in vv) for k, vv in pinch('l', 0.7).items()}
+        po = ps.ease((t - 2.6) / 0.3) * (1 - ps.ease((t - 5.0) / 0.4))
+        rf = {k: tuple(v * (1 - po) for v in vv) for k, vv in fist('r', 0.82 * (1 - ps.ease((t - 1.6) / 0.3) * (1 - ps.ease((t - 5.4) / 0.4)))).items()}
+        return add(sway(t, 0.25), rf, point_r(po), grip_l(0.9 * (1 - pick * let) - 1.0 * pick * let), lp)
+    return Clip('arms_map', 6.0, fn, ik=ik2(right, rrot, left, lrot),
+                note='C1: road map on socket prop_l (attach at 0.6 s, detach at 5.8 s): picked up off the bench 0-1.2, '
+                     'unfolded against the rim 1.2-2.8, right index traces 2.8-5.0, lowered 5.0-6.0')
+
+
+def car_clips():
+    return [radio_seek(), headlamp_knob(), stalk_flick(), brace(), map_read()]
 
 
 def m2_clips():

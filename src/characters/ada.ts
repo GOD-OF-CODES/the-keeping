@@ -9,6 +9,7 @@
 //   • `override()` lets the cutscene lane (and the pre-C2 tableau) play any clip at a world pose; `release()` hands
 //     her back to the AI.
 
+import { ContactShadow } from './skin.ts';
 import * as THREE from 'three/webgpu';
 import type { AdaAnim, AdaOutput } from '../ai/types.ts';
 import { planToWorld } from '../shared/coords.ts';
@@ -96,6 +97,7 @@ export class AdaCharacter {
   private gurgle = 0;
   private headYaw = 0;
   private readonly morphMeshes: any[] = [];
+  private readonly contact: ContactShadow;
 
   constructor(c: LoadedCharacter) {
     this.c = c;
@@ -104,6 +106,8 @@ export class AdaCharacter {
     this.group.name = 'ada';
     this.group.add(c.root);
     this.group.visible = false;
+    // LIGHTING lane (REALISM-BACKLOG item 17): floor contact shadow (presets without GTAO; src/characters/skin.ts)
+    this.contact = new ContactShadow(this.group, [c.bones.get('foot_l'), c.bones.get('foot_r')], c.bones.get('hips') ?? null);
     this.mixer = new THREE.AnimationMixer(c.root);
     for (const m of c.meshes) if (m.morphTargetDictionary && 'gurgle' in m.morphTargetDictionary) this.morphMeshes.push(m);
     // secondary chains
@@ -249,6 +253,7 @@ export class AdaCharacter {
     } else if (!out || !out.visible) {
       this.group.visible = false;
       this.primed = false;
+      this.contact.update();
       return;
     } else {
       this.group.visible = this.roomVisible(out.room);
@@ -342,6 +347,7 @@ export class AdaCharacter {
       }
     }
     this.primed = true;
+    this.contact.update();
   }
 
   private selectAnim(out: AdaOutput): void {

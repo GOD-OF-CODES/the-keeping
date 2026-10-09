@@ -2,6 +2,7 @@
 // C6, C7, death) plus 'C4' (preview-only linear dress visit; in game C4 is the HemOverlay in c4-hem.ts).
 // Pure data + factories (no three.js): safe for node tests.
 
+import { c0Road } from './c0-road.ts';
 import { c1Empty } from './c1-empty.ts';
 import { c2Replay, c2Room } from './c2-room.ts';
 import { c3LooksUp } from './c3-looks-up.ts';
@@ -13,6 +14,7 @@ import { deathCutaway } from './death.ts';
 import type { TimelineFactory } from './types.ts';
 
 export const CUTSCENES: Record<string, TimelineFactory> = {
+  C0: c0Road, // C1's preroll (host.ts PREROLL), never requested by the Director
   C1: c1Empty,
   C2: c2Room,
   C2_replay: c2Replay,

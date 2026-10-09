@@ -9,14 +9,14 @@
   "container": "klm",
   "codec": null,
   "mantissaBits": 6,
-  "floorExp": 8,
+  "floorExp": 13,
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.00026,
-    "p99": 0.00949,
-    "max": 0.03381,
-    "coverage": 0.5816
+    "mean": 0.02128,
+    "p99": 0.14127,
+    "max": 9.88401,
+    "coverage": 0.5519
   },
   "file": "lm_upper_hall.klm"
 }

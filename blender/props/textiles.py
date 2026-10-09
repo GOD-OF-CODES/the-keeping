@@ -7,7 +7,7 @@ import math
 
 from mathutils import Vector
 
-from .kit import (Part, T, box, cyl, jitter, lathe, nz, prop, rect_section, sphere, tube)
+from .kit import (Part, T, box, cyl, jitter, knurl, lathe, nz, prop, rect_section, sphere, tube)
 
 
 def drape(u, v, sheet_w, sheet_d, bw, bd, height, floor=0.0, off=(0.0, 0.0), seed=0, fold=1.0, edge_r=0.015,
@@ -228,13 +228,16 @@ def dress_dummy(p, rng):
     hip = 0.95
     part.add_grid(20, 12, lambda u, v: (*_form_radius(v * 0.62, u * math.tau), hip + v * 0.62), 'leather_worn',
                   closed_u=True)
-    part.add(lathe([(0, 0), (0.05, 0), (0.05, 0.03), (0.02, 0.05), (0, 0.06)], n=12), 'wood_furniture_dark',
+    part.add(lathe([(0, 0), (0.05, 0), (0.05, 0.03), (0.02, 0.05), (0, 0.06)], n=24), 'wood_furniture_dark',
              T((0, 0, hip + 0.62)))
-    part.add(cyl(0.014, hip - 0.18, n=10), 'wood_furniture_dark', T((0, 0, 0.18)))
-    part.add(cyl(0.03, 0.08, n=12, bevel_w=0.01), 'wood_furniture_dark', T((0, 0, 0.16)))
+    part.add(cyl(0.014, hip - 0.18, n=24), 'wood_furniture_dark', T((0, 0, 0.18)))
+    part.add(knurl(0.022, 0.03, n=20), 'brass_tarnished', T((0, 0, 0.18 + (hip - 0.18) * 0.55)))   # height clamp collar
+    part.add(tube([(0.02, 0, 0.18 + (hip - 0.18) * 0.55 + 0.015), (0.05, 0, 0.18 + (hip - 0.18) * 0.55 + 0.015)], 0.004, sides=12), 'brass_tarnished')
+    part.add(lathe([(0.0, 0.0), (0.012, 0.0), (0.012, 0.004), (0.0, 0.006)], n=16), 'brass_tarnished', T((0.05, 0, 0.18 + (hip - 0.18) * 0.55 + 0.015), (0, math.pi / 2, 0)))
+    part.add(cyl(0.03, 0.08, n=24, bevel_w=0.01), 'wood_furniture_dark', T((0, 0, 0.16)))
     for k in range(3):
         a = k * math.tau / 3 + 0.3
-        part.add(tube([(0, 0, 0.2), (0.3 * math.cos(a), 0.3 * math.sin(a), 0.02)], 0.014, sides=8), 'wood_furniture_dark')
+        part.add(tube([(0, 0, 0.2), (0.3 * math.cos(a), 0.3 * math.sin(a), 0.02)], 0.014, sides=16), 'wood_furniture_dark')
         part.add(sphere(0.02, 8, 6), 'wood_furniture_dark', T((0.31 * math.cos(a), 0.31 * math.sin(a), 0.015)))
     seed = rng.randint(0, 999)
     for state in ('intact', 'cut_hem'):

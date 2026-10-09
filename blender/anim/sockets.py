@@ -10,6 +10,9 @@ In the GLB the socket is an ordinary node under its hand; three: `skeleton.getBo
                  arms_raise_locket / arms_locket_hold its +Y points AWAY from the player (the photo face, toward
                  Ada / along the view), +Z up (hinge), +X to the player's right. Rest-pose position is only
                  meaningful during those clips.
+  arms  prop_l   child of hand_l: the road map's left-edge pinch (arms_map, C1). In the map hold its +X runs along
+                 the map toward its centre (player's right), +Y away from the player (printed face looks back at
+                 the eye), +Z up the sheet. Rest-pose position is only meaningful during arms_map.
   ada   prop_l   child of hand_l: centre of her closed left fist (the locket she takes; +Z toward the palm).
   ada   prop_r   child of hand_r: her closed right fist (the sting sack by its knot, the cleaver in the shadow clip).
 """
@@ -67,6 +70,9 @@ def add_sockets(char, rig, clips_mod=None):
         from anim import clips_arms
         head, rot = clips_arms.locket_socket_rest(rig)
         made.append(add_socket(rig, 'locket', 'hand_r', head, rot, 0.03))
+        # the road map (C1 arms_map): left-hand pinch on the map's left edge, rest placement from the map hold
+        head, rot = clips_arms.map_socket_rest(rig)
+        made.append(add_socket(rig, 'prop_l', 'hand_l', head, rot, 0.03))
     elif char == 'ada':
         for s in ('l', 'r'):
             R = rig.data.bones[f'hand_{s}'].matrix_local.to_3x3()

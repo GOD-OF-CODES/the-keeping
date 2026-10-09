@@ -17,6 +17,24 @@ verified research (three r186 APIs, Blender 5.2 experiments, device detection) i
   a full-resolution bake while a browser/WebGPU session is open.
 - Never print or commit `ELEVENLABS_API_KEY` (lives in `.env.local`, git-ignored). Never use a `VITE_` prefix for it.
 
+## Photoreal standard (the user's top priority)
+- **Ultra-realistic, photographic graphics come first.** Realism-and-performance work precedes new content; every
+  round ends with a harsh AAA art-director review of `scripts/shot.mjs` screenshots. Never degrade Medium/Max visuals
+  to gain speed — fix performance with efficiency (shader dedupe, caching, culling). Say plainly when something
+  doesn't look real yet.
+- **Use real-world numbers** (state the source value in comments):
+  - Light: candle ≈ 1 cd (12.6 lm), 1850 K · flat-wick kerosene lamp ≈ 10–15 cd, 1950 K · 1990s 2-cell D krypton
+    flashlight ≈ 27 lm, peak beam ≈ 2–3 kcd, 2900 K, hot centre + soft spill ring · 1980s halogen low beam ≈ 700–1000
+    lm, 3200 K · moonlit overcast rainy night ≈ 0.003–0.03 lux (graded cool/desaturated, never pitch-black on
+    screen) · a lightning stroke: 3–4 pulses in ~0.4 s, sky-coloured (≈ 7000–9000 K), lighting through windows with
+    hard shadows — never a flat global grey wash.
+  - Surfaces (albedo / roughness): dark varnished wood 0.05–0.15 / 0.2–0.35 · aged plaster 0.5–0.7 / 0.85–0.95 ·
+    wet asphalt 0.04–0.06 / 0.05–0.2 · wet wood/porch 0.08–0.12 / 0.2–0.35 · grass 0.1–0.2 / 0.6–0.8 · fabric
+    0.2–0.6 / 0.8–1.0 · glass F0 0.04.
+  - Camera: exposure behaves like an eye/film camera adapting to the scene (dark rooms still read, lightning briefly
+    over-exposes then settles); fine luminance grain (ISO 800–1600 look), chromatic aberration ≤ 1 px at the frame
+    edge, natural vignette, halation/bloom only around real light sources.
+
 ## Credits
 - **THE KEEPING is a game by Raj Vardhan Singh. All credits go to him**: the boot screen and loading screen byline,
   the end card, any end-credits roll (every role → Raj Vardhan Singh), `docs/CREDITS.md`, the README and
@@ -54,8 +72,13 @@ verified research (three r186 APIs, Blender 5.2 experiments, device detection) i
 - **Playthrough bot:** every QA round runs `node scripts/shot.mjs --scenario scripts/qa/playthrough.mjs` and it must
   reach the ending (C7 → title) on the real game, plus `npm test` (headless logic playthroughs) and `npm run build`.
 - **Performance budget (M1 7-core, Medium, WebGPU, measured with `--fps`):** ≥ 45 fps floor, 60 target; ≤ 1.5 M
-  triangles and ≤ 400 draw calls per frame in any room; Low ≥ 30 fps. Download budgets are enforced by
-  `node scripts/assets.mjs --check`.
+  triangles and ≤ 400 draw calls per frame in any room; Low ≥ 30 fps. **Max** (judged on the M1 too — "never
+  degrade Max" means visually, not that it may be unplayable): ≥ 45 fps, ≤ 2 M triangles, ≤ 500 draw calls in any
+  view. Download budgets are enforced by `node scripts/assets.mjs --check`. Measure on mains power only (shot.mjs
+  flags battery runs: Chrome caps at 30 fps and the GPU throttles).
+- **Handoff notes are mandatory:** every builder keeps `docs/STATUS-<lane>.md` current as it finishes each item (item,
+  change, before/after numbers, screenshot paths, what's left). Agents can be interrupted and restarted; a restarted
+  agent reads its lane's status file and `git status` first and continues instead of redoing or re-measuring.
 - **Realism from physics:** use real-world numbers (dimensions, light power in W, candle ≈ 1 cd, rain drop sizes and
   fall speeds, wet-surface roughness, lens/film behaviour), not "make it look nice".
 - **Reports end with "requests for the lead"** instead of editing files you don't own. Every deviation from the

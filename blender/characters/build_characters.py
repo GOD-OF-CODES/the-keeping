@@ -83,7 +83,7 @@ def assign(ob, m):
 
 
 # ------------------------------------------------------------------------------------------------ texture assembly
-def bake_atlas(char, objs, importance, shaders, size, normal_strength=1.0):
+def bake_atlas(char, objs, importance, shaders, size, normal_strength=1.0, tiers=None, distance=0.002):
     """objs: list of objects; shaders: {obj.name: fn(P, N, AO) -> (albedo, rough, height)}."""
     t0 = time.time()
     texbake.atlas_uv(objs, importance)
@@ -97,11 +97,13 @@ def bake_atlas(char, objs, importance, shaders, size, normal_strength=1.0):
     alb = texbake.dilate(alb, cov, 8)
     rough = texbake.dilate(rough, cov, 8)
     height = texbake.dilate(height, cov, 8)
-    nrm = texbake.bake_normal(objs, height * normal_strength, size)
+    nrm = texbake.bake_normal(objs, height * normal_strength, size, distance=distance)
     nrm = np.where(cov[..., None], nrm, np.array([0.5, 0.5, 1.0]))
     nrm = texbake.dilate(nrm, cov, 8)
     rgba = np.concatenate([texbake.linear_to_srgb(alb), rough[..., None]], -1)
-    sizes = texbake.save_tiers(char, rgba, nrm, tier_dir)
+    tilt = np.linalg.norm(nrm[..., :2] * 2 - 1, axis=-1)[cov]
+    log(f'{char}: normal map mean tilt {tilt.mean():.3f}, >0.1 on {(tilt > 0.1).mean() * 100:.1f} % of covered texels')
+    sizes = texbake.save_tiers(char, rgba, nrm, tier_dir, tiers=tiers)
     log(f'{char}: atlas {size}^2 in {time.time() - t0:.1f} s, bytes {sizes}')
     return sizes
 

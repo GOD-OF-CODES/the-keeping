@@ -327,7 +327,23 @@ function polyline(g: Ctx2D, pts: [number, number][], dx: number, dy: number): vo
 // ------------------------------------------------------------------------------------------------ surfaces
 
 /** Aged paper background: warm base, fibre noise, foxing spots, a water stain. */
-export function paintPaper(g: Ctx2D, w: number, h: number, rng: () => number, tone: [number, number, number] = [214, 200, 168]): void {
+/**
+ * Per-document paper ageing (PROPS-FINISH §4.4). age 0..1 = yellowing (lignin oxidation: cream → (196,168,118)) and a
+ * browned margin; foxing = extra rust-brown spots (fungal / iron foxing, 0.5–4 mm); fold = crease count (a dark valley
+ * + a light ridge). Uses its own seeded stream, so the caller's rng (handwriting jitter) is unchanged.
+ */
+export interface PaperAge {
+  age?: number;
+  foxing?: number;
+  fold?: number;
+  seed?: number;
+}
+
+export function paintPaper(g: Ctx2D, w: number, h: number, rng: () => number, tone: [number, number, number] = [214, 200, 168], age?: PaperAge): void {
+  if (age?.age) {
+    const a = Math.min(1, Math.max(0, age.age)) * 0.6;
+    tone = [0, 1, 2].map((i) => Math.round(tone[i] + ([196, 168, 118][i] - tone[i]) * a)) as [number, number, number];
+  }
   g.fillStyle = `rgb(${tone[0]},${tone[1]},${tone[2]})`;
   g.fillRect(0, 0, w, h);
   // fibre / tooth
@@ -355,6 +371,52 @@ export function paintPaper(g: Ctx2D, w: number, h: number, rng: () => number, to
   e.addColorStop(1, 'rgba(90,60,30,0.35)');
   g.fillStyle = e;
   g.fillRect(0, 0, w, h);
+  if (age) agePaper(g, w, h, age);
+}
+
+function agePaper(g: Ctx2D, w: number, h: number, o: PaperAge): void {
+  const r = hashRng(o.seed ?? 4404);
+  const a = Math.min(1, Math.max(0, o.age ?? 0));
+  // browned margin (oxidation starts at the exposed edges): a band ~5 % of the short side
+  if (a > 0) {
+    const m = Math.min(w, h) * 0.05;
+    const bands: [number, number, number, number, number, number, number, number][] = [
+      [0, 0, w, m, 0, 0, 0, m], [0, h - m, w, m, 0, h, 0, h - m], [0, 0, m, h, 0, 0, m, 0], [w - m, 0, m, h, w, 0, w - m, 0],
+    ];
+    for (const [x0, y0, ww, hh, ax, ay, bx, by] of bands) {
+      const gr = g.createLinearGradient(ax, ay, bx, by);
+      gr.addColorStop(0, `rgba(120,80,35,${0.3 * a})`);
+      gr.addColorStop(1, 'rgba(120,80,35,0)');
+      g.fillStyle = gr;
+      g.fillRect(x0, y0, ww, hh);
+    }
+  }
+  // foxing: small rust-brown spots with a darker core
+  for (let i = 0; i < (o.foxing ?? 0); i++) {
+    const x = r() * w;
+    const y = r() * h;
+    const rad = (0.002 + r() * 0.008) * Math.max(w, h);
+    const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+    gr.addColorStop(0, `rgba(105,62,28,${0.35 + r() * 0.25})`);
+    gr.addColorStop(0.55, 'rgba(125,80,40,0.18)');
+    gr.addColorStop(1, 'rgba(125,80,40,0)');
+    g.fillStyle = gr;
+    g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  // folds (a letter folded in thirds): dark valley + light ridge 1.5 px apart, slightly skewed; dirt in the crease ends
+  const n = o.fold ?? 0;
+  for (let i = 1; i <= n; i++) {
+    const y = (h * i) / (n + 1) + (r() - 0.5) * h * 0.02;
+    const sk = (r() - 0.5) * h * 0.012;
+    g.lineWidth = 1.2;
+    g.strokeStyle = 'rgba(70,50,25,0.28)';
+    g.beginPath(); g.moveTo(0, y); g.lineTo(w, y + sk); g.stroke();
+    g.strokeStyle = 'rgba(255,248,230,0.3)';
+    g.beginPath(); g.moveTo(0, y + 1.5); g.lineTo(w, y + sk + 1.5); g.stroke();
+    g.strokeStyle = `rgba(90,60,30,${0.12 * (0.5 + a)})`;
+    g.lineWidth = 3;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(w * 0.12, y + sk * 0.12); g.moveTo(w * 0.88, y + sk * 0.88); g.lineTo(w, y + sk); g.stroke();
+  }
 }
 
 /** Weathered painted board (sign faces): cream paint over grey wood, flaking. */
@@ -437,6 +499,8 @@ export interface PageOptions {
   ruled?: boolean;
   title?: string;
   seed?: number;
+  /** Per-document paper ageing (§4.4). */
+  paper?: PaperAge;
 }
 
 /** A handwritten page (reading overlay / letter / ledger): paper + wrapped text. */
@@ -446,7 +510,7 @@ export function drawPage(g: Ctx2D, w: number, h: number, text: string, o: PageOp
   const em = o.em ?? Math.round(h / 26);
   const margin = o.margin ?? Math.round(w * 0.08);
   const gap = (o.lineGap ?? 1.9) * em;
-  paintPaper(g, w, h, rng);
+  paintPaper(g, w, h, rng, undefined, o.paper);
   if (o.ruled) {
     g.strokeStyle = 'rgba(90,110,150,0.25)';
     g.lineWidth = 1;
@@ -479,9 +543,9 @@ export interface GuestRow {
 }
 
 /** Guest-book page: header + rows, each in a DIFFERENT hand, ruled through when `ruled`. */
-export function drawGuestBook(g: Ctx2D, w: number, h: number, rows: GuestRow[], o: { seed?: number; header?: boolean } = {}): void {
+export function drawGuestBook(g: Ctx2D, w: number, h: number, rows: GuestRow[], o: { seed?: number; header?: boolean; paper?: PaperAge } = {}): void {
   const rng = hashRng(o.seed ?? 1976);
-  paintPaper(g, w, h, rng, [218, 206, 176]);
+  paintPaper(g, w, h, rng, [218, 206, 176], o.paper);
   const n = Math.max(12, rows.length + (o.header === false ? 0 : 1));
   const gap = h / (n + 1.2);
   const em = gap * 0.62;

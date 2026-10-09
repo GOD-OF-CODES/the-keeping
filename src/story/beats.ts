@@ -296,7 +296,7 @@ export class Story {
     if (s.checkpoint !== id) {
       s.checkpoint = id;
       // a new section: the slow assist lapses unless this section already earned it
-      this.ai({ op: 'assist', slow: (s.deathsAt[id] ?? 0) >= 2 });
+      this.ai({ op: 'assist', slow: (s.deathsAt[id] ?? 0) >= 1 }); // difficulty 2026-10-08: from the first death (was 2)
     }
     this.progress();
     this.emit({ type: 'checkpoint', id });
@@ -688,7 +688,7 @@ export class Story {
       return;
     }
     this.ai({ op: 'grace' });
-    if (deaths >= 2) this.ai({ op: 'assist', slow: true });
+    if (deaths >= 1) this.ai({ op: 'assist', slow: true }); // difficulty 2026-10-08: from the first death (was 2)
     if (cp === 'CP6' && s.beat === 'B09' && this.f('has_locket') && !this.f('locket_given')) this.ai({ op: 'scripted', mode: 'dress' });
     if (s.beat === 'B11' && !this.f('locket_given')) {
       if (s.finaleDeaths >= 1) {

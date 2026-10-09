@@ -67,19 +67,25 @@ export const c5Face: TimelineFactory = (ctx) => {
     { t: 14.6, type: 'sfx', id: 'sack_breath', pos: [5.4, 3.3, 2.3], room: 'G2' },
     { t: 15.4, type: 'clip', char: 'ada', clip: 'ada_look', fallback: ['ada_listen'] },
     // the candle dies (baked light can't go out: the fade darkens the room, flames gutter)
-    { t: 15.6, type: 'light', op: 'gutter', id: 'L_CANDLE_TABLE', d: 0.4 },
+    // LIGHTING lane (item 19): the table candle is the one left burning — it throws the shadow-play (moved to its
+    // shadow position at the cut to the wall, lightOnly cue below), so the eye never adapts to black first
+    // LIGHTING lane (item 19): your torch dies with them — its beam from the camera washed the tally wall white
+    { t: 15.6, type: 'light', op: 'flashlight', on: false },
     { t: 15.7, type: 'light', op: 'gutter', id: 'L_CANDLE_MANTEL', d: 0.5 },
     { t: 15.7, type: 'light', op: 'gutter', id: 'L_CANDLE_SILL', d: 0.5 },
     { t: 16.0, type: 'dof', dof: null },
+    // LIGHTING lane (item 19): the one candle left is lit at the cut to the wall, so the eye has adapted by the flash
+    { t: FLASH1 - 0.85, type: 'fx', id: 'silhouette', params: { id: 'unmask', on: true, lightOnly: true } },
     // lightning: her shadow pulls the sack from his head
     { t: FLASH1 - 0.05, type: 'fx', id: 'silhouette', params: { id: 'unmask', on: true } },
     { t: FLASH1, type: 'light', op: 'lightning', strength: 1 },
     { t: FLASH1 + 0.6, type: 'voice', trigger: 'c5:recognition' },
-    { t: FLASH1 + 0.9, type: 'fx', id: 'silhouette', params: { id: 'unmask', on: false } },
     // next flash: her shadow lifts his cleaver
     { t: FLASH2 - 0.05, type: 'fx', id: 'silhouette', params: { id: 'cleaver', on: true } },
     { t: FLASH2, type: 'light', op: 'lightning', strength: 1 },
-    { t: FLASH2 + 0.9, type: 'fx', id: 'silhouette', params: { id: 'cleaver', on: false } },
+    // LIGHTING lane (item 19): the one candle left burns through both beats (off with the cut to black)
+    { t: 21.3, type: 'fx', id: 'silhouette', params: { id: 'cleaver', on: false } },
+    { t: 21.3, type: 'light', op: 'flashlight', on: true },
     // black · one stroke · one bell
     { t: 21.6, type: 'visible', char: 'harlan', visible: false },
     { t: 21.6, type: 'visible', char: 'ada', visible: false },
@@ -140,7 +146,9 @@ export const c5Face: TimelineFactory = (ctx) => {
       { t: 10.0, d: 4.2, path: [add(eye0, [0, 0, -0.05]), walkMid, th.pos], target: [add(adaAtDoor, [0.8, 0.3, 1.2]), [5.0, 2.8, 1.5], th.target], fov: [48, th.fov], ease: 'inOut', handheld: 1.2 },
       { t: 14.2, d: FLASH1 - 0.8 - 14.2, path: [th.pos], target: [th.target, add(th.target, [-0.5, -0.3, 0])], fov: th.fov, ease: 'linear', handheld: 0.4 },
       // shadow-play on the tally wall + the door gap
-      { t: FLASH1 - 0.8, d: 21.3 - (FLASH1 - 0.8), path: [CAM.parlor_wide.pos], target: [CAM.parlor_wide.target], fov: CAM.parlor_wide.fov, handheld: 0.3 },
+      // LIGHTING lane (item 19): framed ON the wall where the heads land (x 5.5–6.2, z ≈ 2.9), from the east, 1.9 m off
+      // the wall — the figures stay ≥ 1.4 m from the lens at the left edge (was CAM.parlor_wide from the SW corner)
+      { t: FLASH1 - 0.8, d: 21.3 - (FLASH1 - 0.8), path: [[6.95, 4.05, 2.25]], target: [[5.8, 6.0, 2.6]], fov: 52, handheld: 0.3 },
       // black … then behind you the front door swings open onto grey mist
       { t: 21.3, d: C5_DURATION - 21.3, path: [th.pos, add(th.pos, [-0.2, 0.1, 0]), C5_END_EYE], target: [[2.4, 0.4, 2.4], [1.9, -0.4, 2.0], add(C5_END_EYE, fwd(endHeading, 0, 3))], fov: [55, ctx.player.fov ?? 60], ease: 'inOut', handheld: 0.6 },
     ],

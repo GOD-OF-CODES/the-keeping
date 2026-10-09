@@ -4,19 +4,19 @@
   "colorSpace": "linear",
   "atlas": "upper_rooms",
   "tier": "medium",
-  "width": 2048,
-  "height": 2048,
+  "width": 1024,
+  "height": 1024,
   "container": "klm",
   "codec": null,
   "mantissaBits": 7,
-  "floorExp": 8,
+  "floorExp": 13,
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.00013,
-    "p99": 0.00216,
-    "max": 11.53049,
-    "coverage": 0.4035
+    "mean": 0.00019,
+    "p99": 0.00383,
+    "max": 0.19052,
+    "coverage": 0.4034
   },
   "file": "lm_upper_rooms.klm"
 }

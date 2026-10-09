@@ -127,8 +127,82 @@ def ground(P, size=(-14, -30, 26, 20), z=-0.0):
     return ob
 
 
+# Overcast moonlit night (CLAUDE.md "Photoreal standard": 0.003-0.03 lux; target the top, ~0.027 lux at the ground).
+# Project photometry: Blender W ~ lm (candle 12 W ~ 12.6 lm), so W/m^2 ~ lux and radiance W/m^2/sr ~ cd/m^2.
+# Sky dome = CIE overcast (Moon & Spencer 1942): L(theta) = Lz (1 + 2 cos theta) / 3, horizontal illuminance
+# E = 7 pi Lz / 9. Target E_sky = 0.024 lux -> Lz = 0.024 * 9 / (7 pi) = 0.00982 cd/m^2 (horizon Lz/3 = 0.0033).
+# + the moon disc through thin cloud (layout L_MOON, sun 0.004 W/m^2 at 45 deg elevation -> 0.0028 lux) = 0.027 lux.
+# Colour: scattered moonlight + skyglow ~7500 K (the layout sky's kelvin), normalised to unit luminance so the
+# strength IS the luminance. Below the horizon (beyond the modelled terrain): wet ground, albedo 0.12 -> radiance
+# 0.027 * 0.12 / pi = 0.001. The dome replaces the layout's 600 W overhead sky disc (L_SKY) in the bakes: a disc
+# straight overhead lights the ground but never the facades or the windows (docs/CONTRACT-CHANGES.md).
+SKY_LZ = 0.00982
+SKY_KELVIN = 7500
+GROUND_L = 0.001
+SKY_ROLES_REPLACED = ('sky',)
+
+
+def _lum_norm(rgb):
+    y = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+    return tuple(c / y for c in rgb)
+
+
 def night_world(strength=1.0):
-    scene.world_color((0.0035, 0.005, 0.009), strength)
+    """CIE-overcast moonlit dome (see above); strength scales it (0 = black)."""
+    w = bpy.context.scene.world
+    if w is None:
+        w = bpy.data.worlds.new('World')
+        bpy.context.scene.world = w
+    nt = w.node_tree
+    for n in list(nt.nodes):
+        nt.nodes.remove(n)
+    out = nt.nodes.new('ShaderNodeOutputWorld')
+    bg = nt.nodes.new('ShaderNodeBackground')
+    nt.links.new(bg.outputs[0], out.inputs[0])
+    bg.inputs['Color'].default_value = (*_lum_norm(kelvin_rgb(SKY_KELVIN)), 1.0)
+    tc = nt.nodes.new('ShaderNodeTexCoord')
+    sep = nt.nodes.new('ShaderNodeSeparateXYZ')
+    nt.links.new(tc.outputs['Generated'], sep.inputs[0])
+    cz = nt.nodes.new('ShaderNodeMath')
+    cz.operation = 'MAXIMUM'
+    cz.inputs[1].default_value = 0.0
+    nt.links.new(sep.outputs['Z'], cz.inputs[0])
+    sky = nt.nodes.new('ShaderNodeMath')          # Lz/3 * (1 + 2 cos)
+    sky.operation = 'MULTIPLY_ADD'
+    sky.inputs[1].default_value = 2.0 * SKY_LZ / 3.0
+    sky.inputs[2].default_value = SKY_LZ / 3.0
+    nt.links.new(cz.outputs[0], sky.inputs[0])
+    fac = nt.nodes.new('ShaderNodeMapRange')       # 0 just below the horizon -> 1 at it (no hard seam)
+    fac.inputs['From Min'].default_value = -0.04
+    fac.inputs['From Max'].default_value = 0.0
+    fac.clamp = True
+    nt.links.new(sep.outputs['Z'], fac.inputs['Value'])
+    mix = nt.nodes.new('ShaderNodeMix')
+    mix.data_type = 'FLOAT'
+    mix.inputs['A'].default_value = GROUND_L
+    nt.links.new(fac.outputs[0], mix.inputs['Factor'])
+    nt.links.new(sky.outputs[0], mix.inputs['B'])
+    sc_ = nt.nodes.new('ShaderNodeMath')
+    sc_.operation = 'MULTIPLY'
+    sc_.inputs[1].default_value = strength
+    nt.links.new(mix.outputs['Result'], sc_.inputs[0])
+    nt.links.new(sc_.outputs[0], bg.inputs['Strength'])
+    return w
+
+
+def uniform_world(rgb, strength):
+    """Flat world (flash storm sky, clay/leak reviews): drops the dome graph first."""
+    w = bpy.context.scene.world
+    nt = w.node_tree
+    for n in list(nt.nodes):
+        nt.nodes.remove(n)
+    scene.world_color(rgb, strength)
+
+
+def interior_portals(P):
+    """Cycles portals in EVERY window opening (interior atlases): the dome reaches the rooms only through the
+    windows, and portal sampling keeps that faint moonlight clean at 32-64 spp instead of OIDN-smeared fireflies."""
+    return [portal(w, f"portal_{w['id']}") for w in window_openings(P)]
 
 
 def portal(L_open, name='portal'):

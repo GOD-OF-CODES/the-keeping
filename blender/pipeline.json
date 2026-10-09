@@ -3,7 +3,7 @@
   "blender": "/Applications/Blender.app/Contents/MacOS/Blender",
   "libInputs": ["blender/lib/*.py"],
   "sharedAssetDirs": ["public/assets/voice"],
-  "budgetsMB": { "low": 25, "medium": 60, "max": 120 },
+  "budgetsMB": { "low": 27, "medium": 60, "max": 120 },
   "jobs": [
     {
       "id": "smoke-s1",
@@ -68,6 +68,7 @@
                  "blender/house/trim.py", "blender/house/openings.py", "blender/house/windows.py",
                  "blender/house/doors.py", "blender/house/exterior.py", "blender/house/deform.py",
                  "blender/house/collision.py", "blender/house/lmuv.py", "blender/house/terrain.py",
+                 "blender/house/groundcover.py", "blender/house/treeline.py", "blender/props/trees.py",
                  "blender/props/bells_rope.py", "blender/props/kit.py", "blender/props/registry.py"],
       "outputs": [
         { "path": ".cache/house/house.blend" },
@@ -96,6 +97,9 @@
         { "path": "public/assets/low/props_m2.glb" },
         { "path": "public/assets/medium/props_m2.glb" },
         { "path": "public/assets/max/props_m2.glb" },
+        { "path": "public/assets/low/props_road.glb" },
+        { "path": "public/assets/medium/props_road.glb" },
+        { "path": "public/assets/max/props_road.glb" },
         { "path": ".cache/props/props.json" },
         { "path": ".cache/props/props.blend" },
         { "path": ".cache/props/lightmap.json" },
@@ -106,9 +110,9 @@
     {
       "id": "bake-house-ground",
       "group": "bake",
-      "description": "Dev bake LM_GROUND (1024^2, 32 spp, Metal) + OIDN + per-tier KLM (Low 512^2 m6) -> public/assets/<tier>/lm_ground.klm (house + static props band)",
+      "description": "Dev bake LM_GROUND (1024^2, 64 spp, Metal) + OIDN + per-tier KLM (Low 512^2 m6) -> public/assets/<tier>/lm_ground.klm (house + static props band)",
       "script": "blender/house/bake_house.py",
-      "args": ["--atlas", "LM_GROUND", "--size", "1024", "--samples", "32"],
+      "args": ["--atlas", "LM_GROUND", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
@@ -117,9 +121,9 @@
     {
       "id": "bake-house-parlor",
       "group": "bake",
-      "description": "Dev bake LM_PARLOR (1024^2, 32 spp) -> lm_parlor.klm",
+      "description": "Dev bake LM_PARLOR (1024^2, 64 spp) -> lm_parlor.klm",
       "script": "blender/house/bake_house.py",
-      "args": ["--atlas", "LM_PARLOR", "--size", "1024", "--samples", "32"],
+      "args": ["--atlas", "LM_PARLOR", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
@@ -128,9 +132,9 @@
     {
       "id": "bake-house-kitchen",
       "group": "bake",
-      "description": "Dev bake LM_KITCHEN (1024^2, 32 spp) -> lm_kitchen.klm",
+      "description": "Dev bake LM_KITCHEN (1024^2, 64 spp) -> lm_kitchen.klm",
       "script": "blender/house/bake_house.py",
-      "args": ["--atlas", "LM_KITCHEN", "--size", "1024", "--samples", "32"],
+      "args": ["--atlas", "LM_KITCHEN", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
@@ -139,9 +143,9 @@
     {
       "id": "bake-house-upper-hall",
       "group": "bake",
-      "description": "Dev bake LM_UPPER_HALL (1024^2, 32 spp) + lightning flash map -> lm_upper_hall.klm, lm_upper_hall_flash.klm",
+      "description": "Dev bake LM_UPPER_HALL (1024^2, 64 spp) + lightning flash map -> lm_upper_hall.klm, lm_upper_hall_flash.klm",
       "script": "blender/house/bake_house.py",
-      "args": ["--atlas", "LM_UPPER_HALL", "--size", "1024", "--samples", "32"],
+      "args": ["--atlas", "LM_UPPER_HALL", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
@@ -151,9 +155,9 @@
     {
       "id": "bake-house-upper-rooms",
       "group": "bake",
-      "description": "Dev bake LM_UPPER_ROOMS (1024^2, 32 spp) + lightning flash map -> lm_upper_rooms.klm, lm_upper_rooms_flash.klm",
+      "description": "Dev bake LM_UPPER_ROOMS (1024^2, 64 spp) + lightning flash map -> lm_upper_rooms.klm, lm_upper_rooms_flash.klm",
       "script": "blender/house/bake_house.py",
-      "args": ["--atlas", "LM_UPPER_ROOMS", "--size", "1024", "--samples", "32"],
+      "args": ["--atlas", "LM_UPPER_ROOMS", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
@@ -163,9 +167,9 @@
     {
       "id": "bake-house-exterior",
       "group": "bake",
-      "description": "Dev bake LM_EXTERIOR (1024^2, 32 spp) -> lm_exterior.klm",
+      "description": "Dev bake LM_EXTERIOR (1024^2, 64 spp) -> lm_exterior.klm",
       "script": "blender/house/bake_house.py",
-      "args": ["--atlas", "LM_EXTERIOR", "--size", "1024", "--samples", "32"],
+      "args": ["--atlas", "LM_EXTERIOR", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
@@ -174,9 +178,9 @@
     {
       "id": "bake-house-car",
       "group": "bake",
-      "description": "Dev bake LM_CAR (sedan interior set, 1024^2, 32 spp; maxResolution 1024 -> tiers 1024/1024/256) -> lm_car.klm",
+      "description": "Dev bake LM_CAR (sedan interior set, 1024^2, 64 spp; maxResolution 1024 -> tiers 1024/1024/256) -> lm_car.klm",
       "script": "blender/house/bake_house.py",
-      "args": ["--atlas", "LM_CAR", "--size", "1024", "--samples", "32"],
+      "args": ["--atlas", "LM_CAR", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
       "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
@@ -275,6 +279,79 @@
       "args": ["--samples", "48"],
       "libInputs": ["blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "outputs": []
+    },
+    {
+      "id": "arms-review",
+      "group": "review",
+      "manual": true,
+      "description": "Review renders of the C1 car arm clips (arms_anim.blend in a clay cabin stand-in) -> scratch/blender-realism/arms_car.png",
+      "script": "blender/characters/review_arms_car.py",
+      "args": ["--samples", "48"],
+      "libInputs": ["blender/lib/scene.py"],
+      "inputs": [".cache/anims/arms_anim.blend", "blender/anim/clips_arms.py"],
+      "outputs": []
+    },
+    {
+      "id": "arms-dim-review",
+      "group": "review",
+      "manual": true,
+      "description": "Dim game-like review of the FP arms rest pose (torch hold + gloves; game view and close-ups) -> scratch/blender-realism/arms_dim.png",
+      "script": "blender/characters/review_arms_dim.py",
+      "args": ["--samples", "64"],
+      "libInputs": ["blender/lib/scene.py"],
+      "inputs": [".cache/characters/arms.blend"],
+      "outputs": []
+    },
+    {
+      "id": "corridor",
+      "group": "content",
+      "description": "County Road 9 corridor east of the gate (docs/C1-OPENING.md §2, §6.4): road + ditches + paint, chunked instanced pines (3 LODs x 3 variants), snags, understory, canopy blanket, power-line poles (+ wire points marker), delineators -> public/assets/<tier>/details_corridor.glb (EXT_mesh_gpu_instancing; room RC9); scratch/opening/road-rc9.json",
+      "script": "blender/house/corridor.py",
+      "inputs": ["src/shared/level-layout.json", "src/shared/material-spec.json", "blender/house/corridor.py", "blender/house/road_rc9.py", "src/shared/road-rc9.json", "blender/house/pines.py", "blender/house/treeline.py", "blender/props/kit.py", "blender/props/registry.py", "blender/props/trees.py", "blender/props/exterior.py"],
+      "outputs": [
+        { "path": "public/assets/low/details_corridor.glb" },
+        { "path": "public/assets/medium/details_corridor.glb" },
+        { "path": "public/assets/max/details_corridor.glb" },
+        { "path": ".cache/corridor/corridor.json" }
+      ]
+    },
+    {
+      "id": "corridor-review",
+      "group": "review",
+      "manual": true,
+      "description": "Review renders of the RC9 corridor (max tier set) under the shot lights: POV low beams, C0 aerial with lightning, S6 walls, edge pines; reads scratch/opening/corridor_review.json -> scratch/opening/corridor_*.png (run with --force)",
+      "script": "blender/house/corridor.py",
+      "args": ["--review", "1"],
+      "inputs": ["src/shared/level-layout.json", "src/shared/material-spec.json", "blender/house/corridor.py", "blender/house/review_corridor.py", "blender/house/road_rc9.py", "src/shared/road-rc9.json", "blender/house/pines.py", "blender/props/**"],
+      "outputs": []
+    },
+    {
+      "id": "road-review",
+      "group": "review",
+      "manual": true,
+      "description": "Review renders of the RC9 set props (billboard, diner, EAT sign, truck, deer, signs) in clay and under moonlight + low beams; reads scratch/opening/road_review.json -> scratch/opening/road/*.png (run with --force)",
+      "script": "blender/props/review_road.py",
+      "inputs": ["src/shared/level-layout.json", "src/shared/material-spec.json", "blender/props/**", "blender/house/scene_prep.py"],
+      "outputs": []
+    },
+    {
+      "id": "cabin-review",
+      "group": "review",
+      "manual": true,
+      "description": "Review renders of the C1 cabin (sedan_interior v2 inside the exterior sedan on a road between pine walls) under the shot lights: clay/normals, dash glow, dome light; reads scratch/props/cabin_review.json -> scratch/props/cabin/*.png + metrics.json (run with --force)",
+      "script": "blender/props/review_cabin.py",
+      "inputs": ["src/shared/level-layout.json", "src/shared/material-spec.json", "blender/props/**", "blender/house/scene_prep.py"],
+      "outputs": []
+    },
+    {
+      "id": "props-wear-review",
+      "group": "review",
+      "manual": true,
+      "description": "Prop wear-mask measurement/review build (docs/PROPS-FINISH.md §6): build_props into scratch/props-wear only (never public/assets or .cache/props); --job-args=\"--types a,b [--no-wear] [--export-dir scratch/props-wear/x] [--render]\"",
+      "script": "blender/props/build_props.py",
+      "args": ["--export-dir", "scratch/props-wear", "--no-lightmap", "--no-render"],
+      "inputs": ["src/shared/level-layout.json", "src/shared/material-spec.json", "blender/props/**"],
       "outputs": []
     },
     {

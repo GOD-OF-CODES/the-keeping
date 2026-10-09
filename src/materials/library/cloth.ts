@@ -286,8 +286,12 @@ const carInterior: Generator = (c) => {
   const grain = worley(c.uv, c.cells(0.0015), c.seed, 1);
   const emb = smoothstep(0.0, 0.2, grain.w);
   const vinyl = c3(c.col('vinyl', [0.3, 0.22, 0.14]));
-  const cr = worley(c.uv, c.cells(0.03), c.seed + 1, 1);
-  const crack = smoothDown(0.03, 0.0, cr.w).mul(patches(c.uv, c.cells(0.2), c.num('dashCrack', 0.4), 0.1, c.seed + 2, 3));
+  // Sun crazing (AD review: the old 3 cm cells read as a cartoon pattern on a 28 mm rim): real UV-aged vinyl crazes
+  // in a 3–6 mm network of hairline cracks (~0.3 mm), in patches a few cm across where the sun hits; the large
+  // dash cracks are real geometry on sedan_interior v2. Widths are in cell units, so 0.07 × 4.5 mm ≈ 0.3 mm.
+  const cr = worley(c.uv, c.cells(0.0045), c.seed + 1, 1);
+  const craze = Math.max(c.num('dashCrack', 0.4), c.num('sunCraze', 0));
+  const crack = smoothDown(0.07, 0.0, cr.w).mul(0.8).mul(patches(c.uv, c.cells(0.035), craze, 0.15, c.seed + 2, 3));
   const velour = smoothstep(0.45, 0.55, fract(c.uv.y.mul(c.cells(0.25)))).mul(c.num('velour', 0.5) > 0 ? 1 : 0);
   const nap = fbm01(c.uv, c.cells(0.002), 3, c.seed + 3);
   let alb: N = vinyl.mul(emb.mul(0.1).add(0.93));

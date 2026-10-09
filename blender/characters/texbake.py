@@ -310,10 +310,44 @@ def downsample(a, f):
     return a.reshape(h // f, f, w // f, f, *a.shape[2:]).mean((1, 3))
 
 
+def write_png_optimal(arr, path, alpha):
+    """Lossless 8-bit PNG straight from numpy with the smallest encoding we can get without extra tools: the
+    best of the five PNG row filters per row (min sum |residual|, libpng's heuristic) + zlib level 9. Blender's
+    img.save() uses compression 15 with a fixed filter: the 2048^2 arms normal map shrinks 4.95 -> 4.14 MB
+    (identical pixels). arr: (H, W, C) 0..1, rows bottom-up (flipped to PNG's top-down here)."""
+    import struct
+    import zlib
+    c = 4 if alpha else 3
+    a = np.ones((*arr.shape[:2], 4), np.float32)
+    a[..., :arr.shape[2]] = arr
+    px = np.clip(np.floor(a[::-1, :, :c] * 255.0 + 0.5), 0, 255).astype(np.int16)
+    h, w = px.shape[:2]
+    cur = px.reshape(h, w * c)
+    up = np.vstack([np.zeros((1, w * c), np.int16), cur[:-1]])
+    left = np.hstack([np.zeros((h, c), np.int16), cur[:, :-c]])
+    ul = np.hstack([np.zeros((h, c), np.int16), up[:, :-c]])
+    pa, pb, pc = np.abs(up - ul), np.abs(left - ul), np.abs(left + up - 2 * ul)
+    paeth = np.where((pa <= pb) & (pa <= pc), left, np.where(pb <= pc, up, ul))
+    res = np.stack([cur, cur - left, cur - up, cur - ((left + up) >> 1), cur - paeth]) & 255     # (5, h, w*c)
+    cost = np.where(res < 128, res, 256 - res).sum(axis=2)                                       # (5, h)
+    best = cost.argmin(axis=0)
+    rows = res[best, np.arange(h)].astype(np.uint8)
+    raw = np.hstack([best.astype(np.uint8)[:, None], rows]).tobytes()
+
+    def chunk(t, d):
+        return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    ihdr = struct.pack('>IIBBBBB', w, h, 8, 6 if alpha else 2, 0, 0, 0)
+    data = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b'')
+    Path(path).write_bytes(data)
+    return len(data)
+
+
 def save_png(arr, path, alpha=True):
     """arr: (H, W, 3|4) values 0..1 already encoded (sRGB colour / raw data), rows bottom-up."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix == '.png':
+        return write_png_optimal(arr, path, alpha)
     h, w = arr.shape[:2]
     img = bpy.data.images.new('__save', w, h, alpha=alpha, float_buffer=False)
     img.colorspace_settings.name = 'Non-Color'
@@ -337,10 +371,10 @@ def save_png(arr, path, alpha=True):
     return path.stat().st_size
 
 
-def save_tiers(name, albedo_rgba, normal_rgb, outdir_fn, ext_color='webp', ext_normal='png'):
+def save_tiers(name, albedo_rgba, normal_rgb, outdir_fn, ext_color='webp', ext_normal='png', tiers=None):
     """albedo_rgba: sRGB-encoded rgb + roughness alpha (0..1); normal_rgb: 0..1 tangent normal."""
     sizes = {}
-    for tier, f in TIERS.items():
+    for tier, f in (tiers or TIERS).items():
         d = outdir_fn(tier)
         a = downsample(albedo_rgba, f)
         n = downsample(normal_rgb, f)

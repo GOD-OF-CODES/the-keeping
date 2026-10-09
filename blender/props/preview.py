@@ -183,6 +183,59 @@ class Studio:
         return [round(x, 3) for x in dims]
 
 
+def wear_override(ch):
+    """Emission material showing one channel of the 'wear' colour attribute (0 edge, 1 cavity, 2 handled, 3 dust)."""
+    name = f'_wear_view_{ch}'
+    m = bpy.data.materials.get(name)
+    if m is not None:
+        return m
+    m = bpy.data.materials.new(name)
+    nt = m.node_tree if m.node_tree else None
+    if nt is None:
+        m.use_nodes = True
+        nt = m.node_tree
+    for n in list(nt.nodes):
+        nt.nodes.remove(n)
+    at = nt.nodes.new('ShaderNodeAttribute')
+    at.attribute_type = 'GEOMETRY'
+    at.attribute_name = 'wear'
+    em = nt.nodes.new('ShaderNodeEmission')
+    out = nt.nodes.new('ShaderNodeOutputMaterial')
+    if ch == 3:
+        nt.links.new(at.outputs['Alpha'], em.inputs['Color'])
+    else:
+        sep = nt.nodes.new('ShaderNodeSeparateColor')
+        nt.links.new(at.outputs['Color'], sep.inputs['Color'])
+        nt.links.new(sep.outputs[ch], em.inputs['Color'])
+    nt.links.new(em.outputs['Emission'], out.inputs['Surface'])
+    return m
+
+
+def render_wear(studio, objs, stem, shot=None):
+    """Beauty + the 4 wear-mask channels (flat emission, Standard view) -> stem_{beauty,edge,cavity,handled,dust}.png."""
+    sc = bpy.context.scene
+    vl = bpy.context.view_layer
+    out = [Path(f'{stem}_beauty.png')]
+    dims = studio.render(objs, out[0], shot=shot)
+    if dims is None:
+        return None
+    vt, ex = sc.view_settings.view_transform, sc.view_settings.exposure
+    sc.view_settings.view_transform, sc.view_settings.exposure = 'Standard', 0.0
+    studio.floor.hide_render = True
+    try:
+        for ch, nm in enumerate(('edge', 'cavity', 'handled', 'dust')):
+            vl.material_override = wear_override(ch)
+            p = Path(f'{stem}_{nm}.png')
+            sc.render.filepath = str(p)
+            bpy.ops.render.render(write_still=True)
+            out.append(p)
+    finally:
+        vl.material_override = None
+        studio.floor.hide_render = False
+        sc.view_settings.view_transform, sc.view_settings.exposure = vt, ex
+    return out
+
+
 def contact_sheet(items, out_path, cols=6, thumb=256, label_h=26):
     """items: [(png_path, label, sublabel)] -> one PNG grid."""
     n = len(items)

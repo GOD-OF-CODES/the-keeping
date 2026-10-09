@@ -9,8 +9,10 @@
 // Textures are decoded with createImageBitmap(premultiplyAlpha 'none') so the roughness/alpha channel survives
 // intact, and glTF UVs mean flipY = false.
 
+import { ContactShadow, applySkinOrHair } from './skin.ts';
+import { roomEnvironment } from '../render/reflections.ts';
 import * as THREE from 'three/webgpu';
-import { float, texture, uniform, vec3 } from 'three/tsl';
+import { float, mx_noise_float, positionGeometry, texture, uniform, vec3 } from 'three/tsl';
 import type { PresetConfig } from '../render/presets.ts';
 import type { AssetManifest, PresetId } from '../shared/types.ts';
 import { assetUrl, fetchBytes, fetchManifest, parseGlb } from '../world/assets.ts';
@@ -95,6 +97,7 @@ export async function loadCharacter(id: CharacterId, o: CharacterLoadOptions): P
   const materials: any[] = [];
   const lensGlow = uniform(0);
   const low = o.preset.id === 'low';
+  ContactShadow.enabled &&= !o.preset.post.gtao; // LIGHTING lane (item 17): Max has GTAO contact occlusion
   await Promise.all(
     meshes.map(async (mesh) => {
       const src = mesh.material;
@@ -138,6 +141,22 @@ export async function loadCharacter(id: CharacterId, o: CharacterLoadOptions): P
         m.normalScale = new THREE.Vector2(1, 1);
       }
       m.metalness = METALNESS[String(ud.material_id)] ?? 0;
+      if (String(ud.material_id) === 'steel_cleaver' && albedo && !alphaIsCoverage) {
+        // R2-6: the blade is one flat quad with one baked roughness, so every light/probe it reflects spread over it
+        // evenly — a flat blue-grey card. Used carbon steel isn't uniform: honing smears and wipe marks (cm scale),
+        // oxide/patina blooms that darken the reflectance, and pitting that roughens it (mm scale). Object space, so
+        // the pattern rides the blade.
+        const t = texture(albedo);
+        const pos = positionGeometry;
+        const smear = mx_noise_float(pos.mul(vec3(18, 60, 18)));
+        const bloom = mx_noise_float(pos.mul(9).add(3.7)).mul(0.5).add(0.5).smoothstep(0.45, 0.85);
+        const pits = mx_noise_float(pos.mul(260)).max(0);
+        m.roughnessNode = t.a.mul(smear.mul(0.3).add(1)).add(bloom.mul(0.2)).add(pits.mul(0.1)).clamp(0.18, 0.9);
+        m.colorNode = t.rgb.mul(float(1).sub(bloom.mul(0.45))).mul(smear.mul(0.12).add(1));
+        // the parlor's cube (B02 sharpening, C5) — reflections.ts. Not on Max: Harlan's fragments there already use all
+        // 16 samplers an M1 allows per stage (more shadowed lights); the cube made it 17 (invalid pipeline).
+        if (o.presetId !== 'max') m.setupEnvironment = roomEnvironment('G2');
+      }
       if (ud.eye) {
         // wet cornea: a little clearcoat-like sheen via lower roughness
         m.roughnessNode = float(0.12);
@@ -148,13 +167,14 @@ export async function loadCharacter(id: CharacterId, o: CharacterLoadOptions): P
         const k = Number(ud.emissive) > 0 ? Number(ud.emissive) : 4;
         m.emissiveNode = vec3(ec[0], ec[1], ec[2]).mul(lensGlow).mul(k);
       }
-      if (ud.sss) {
-        // cheap wrap for the dead skin: a faint cold emissive lift so she never goes pure black under the probes
-        m.emissiveNode = vec3(0.004, 0.005, 0.007);
-      }
+      // r3 AD review (R3-2): the old "cold emissive lift" (0.004, 0.005, 0.007) on the sss skin is gone. Skin does
+      // not emit; at the C2 cut exposure (≈ 10) and the 3300 K indoor white balance (blue gain ≈ 2.5) it turned her
+      // unlit face into a saturated blue patch. The probe grids + room env now give her the ambient she needs.
       if (o.lightsNode) m.lightsNode = o.lightsNode;
-      mesh.material = m;
-      materials.push(m);
+      // LIGHTING lane (item 17): wrap-diffuse skin with a wet clearcoat film, dual-lobe strand hair (./skin.ts)
+      const fm = applySkinOrHair(m, ud, o.presetId);
+      mesh.material = fm;
+      materials.push(fm);
       src.dispose?.();
     }),
   );

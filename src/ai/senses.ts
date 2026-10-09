@@ -200,11 +200,22 @@ export function beamTouches(beam: BeamView, target: P3, radius: number, los: (a:
   return los(beam.origin, target);
 }
 
-/** The beam "plays within 6 m of her": its landing point is within 6 m (same floor band). */
-export function beamNear(beam: BeamView, adaPos: P3): boolean {
+/**
+ * The beam "plays within 6 m of her": its landing point is within 6 m (same floor band) AND she can see the lit
+ * patch — a line of sight from her chest to a point just in front of the hit surface (backed 0.1 m toward the lens).
+ * Without the sight test a torch spot on the far side of a wall (or on the floor above / below) drew her through
+ * the wall; see docs/CONTRACT-CHANGES.md (b08). `los` omitted → distance test only (unit tests / no world).
+ */
+export function beamNear(beam: BeamView, adaPos: P3, los?: (a: P3, b: P3) => boolean, eye?: P3): boolean {
   if (!beam.on || !beam.hit) return false;
   if (Math.abs(beam.hit[2] - adaPos[2]) > 3) return false;
-  return Math.hypot(beam.hit[0] - adaPos[0], beam.hit[1] - adaPos[1]) <= TUNING.light.beamInvestigate;
+  if (Math.hypot(beam.hit[0] - adaPos[0], beam.hit[1] - adaPos[1]) > TUNING.light.beamInvestigate) return false;
+  if (!los) return true;
+  const back = sub(beam.origin, beam.hit);
+  const bl = len(back) || 1;
+  const k = Math.min(0.1, bl) / bl;
+  const spot: P3 = [beam.hit[0] + back[0] * k, beam.hit[1] + back[1] * k, beam.hit[2] + back[2] * k];
+  return los(eye ?? [adaPos[0], adaPos[1], adaPos[2] + TUNING.light.chestHeight], spot);
 }
 
 // ------------------------------------------------------------------ sight

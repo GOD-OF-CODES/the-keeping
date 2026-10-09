@@ -87,6 +87,10 @@ export type LightOp =
   /** Runtime lights the world leaves to cutscenes: headlights / dashboard (L_HEADLIGHT_L/R, L_DASH). */
   | { op: 'runtime'; id: string; on: boolean; scale?: number };
 
+/** Title cards (DOM, system serif): 'date' = small, centred low (C0 shot 0); 'byline' = the smaller second line
+ *  under a 'title' card ("a game by Raj Vardhan Singh"); text null on 'byline' clears only the byline. */
+export type CardStyle = 'title' | 'small' | 'date' | 'byline';
+
 /** Discrete cues. `t` is the cutscene time the cue fires at (fires once, in authoring order among equal times). */
 export type Cue =
   | { t: number; type: 'clip'; char: CharId; clip: string; loop?: boolean; fade?: number; speed?: number; fallback?: string[] }
@@ -101,7 +105,7 @@ export type Cue =
   | { t: number; type: 'voice'; trigger: string }
   | { t: number; type: 'subtitle'; speaker: string; text: string; d: number; caption?: boolean }
   /** Full-screen text card (title) or null to clear. */
-  | { t: number; type: 'card'; text: string | null; style?: 'title' | 'small' }
+  | { t: number; type: 'card'; text: string | null; style?: CardStyle }
   | ({ t: number; type: 'light' } & LightOp)
   | { t: number; type: 'door'; id: string; action: DoorAction }
   | { t: number; type: 'prop'; id: string; visible: boolean }
@@ -179,6 +183,8 @@ export interface CutsceneContext {
   flags: ReadonlyMap<string, boolean>;
   /** true once this id has been completed or skipped before (replays can be shorter). */
   seen: boolean;
+  /** Started straight after a preroll cutscene (C0 → C1): no fade-in, the cut is matched (C1-OPENING §3 shot 4). */
+  chained?: boolean;
 }
 
 export type TimelineFactory = (c: CutsceneContext) => Timeline;

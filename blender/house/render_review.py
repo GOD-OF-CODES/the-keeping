@@ -90,6 +90,10 @@ VIEWS = {
     'c_closet_door': ((0.9, 10.6, 1.7), (0.5, 9.0, 1.6), 60, 0.0, 'clay'),
     'c_armoire': ((1.3, 4.2, 5.2), (3.2, 4.2, 5.1), 60, 0.0, 'clay'),
     'terrain': ((-6.0, -34.0, 7.0), (3.0, -12.0, 0.0), 60, 3.0, 'lit'),
+    # the player's first look at the house: CP1 at the gate (layout spawns), 60 deg vertical like the game camera
+    'gate': ((1.8, -27.4, 1.65), (3.2, 0.0, 3.6), 40, 3.0, 'lit'),
+    'c_gate': ((1.8, -27.4, 1.65), (3.2, 0.0, 3.6), 40, 0.0, 'clay'),
+    'c_gate_tele': ((1.8, -27.4, 1.65), (3.0, -1.5, 3.2), 16, 0.0, 'clay'),
     'car': ((100.45, 0.95, 1.1), (100.8, 3.0, 0.85), 75, 4.0, 'lit'),
 }
 # the same framings rendered from the BAKED lightmaps (emission = lightmap texel x albedo, like the runtime)
@@ -123,7 +127,8 @@ scene_prep.append_props()
 scene_prep.glass_transmissive()
 scene_prep.pose_doors()
 scene_prep.ground(P)
-lights_lit = scene_prep.add_lights(L, ('bake', 'bake_flicker'))
+lights_lit = scene_prep.add_lights({'lights': [l for l in L['lights'] if l.get('role') not in
+                                               scene_prep.SKY_ROLES_REPLACED]}, ('bake', 'bake_flicker'))
 cam_d = bpy.data.cameras.new('review')
 cam = bpy.data.objects.new('review', cam_d)
 sc.collection.objects.link(cam)
@@ -225,12 +230,11 @@ for name in want:
     else:
         sc.cycles.max_bounces = 6
     if mode == 'leak':
-        scene_prep.night_world(0.0)
-        scene.world_color((0.8, 0.85, 1.0), 25.0)
+        scene_prep.uniform_world((0.8, 0.85, 1.0), 25.0)
     elif mode == 'clay':
-        scene.world_color((0.3, 0.32, 0.36), 1.0)
+        scene_prep.uniform_world((0.3, 0.32, 0.36), 1.0)
     else:
-        scene.world_color((0.0035, 0.005, 0.009), 1.0 + FILL)
+        scene_prep.night_world(1.0 + FILL)
     sc.render.filepath = str(OUT / f'{name}.png')
     t0 = time.perf_counter()
     bpy.ops.render.render(write_still=True)

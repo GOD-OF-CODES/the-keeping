@@ -48,15 +48,23 @@ n_props = scene_prep.append_props()
 scene_prep.glass_transmissive()
 scene_prep.pose_doors()
 scene_prep.ground(P)
-scene_prep.night_world(1.0)
-base_lights = scene_prep.add_lights(L, ('bake', 'bake_flicker'))
+# CIE-overcast moonlit dome, ~0.027 lux at the ground (scene_prep). REALISM-BACKLOG #10: the upper floor sees the sky
+# only through U1S and two bedroom windows, so its atlases bake under the skyglow of a lightning-lit cloud base,
+# Lz ~ 0.02 cd/m^2 (x2.04 -> 0.049 lux horizontal; the backlog's design-safe compromise, above the 0.03 lux moonlit
+# ceiling on purpose, lead-approved). Exterior/ground/car atlases keep the 0.024 lux sky.
+SKY_GAIN = {'upper_hall': 0.02 / scene_prep.SKY_LZ, 'upper_rooms': 0.02 / scene_prep.SKY_LZ}.get(SHORT, 1.0)
+scene_prep.night_world(SKY_GAIN)
+base_lights = scene_prep.add_lights({'lights': [l for l in L['lights'] if l.get('role') not in
+                                                scene_prep.SKY_ROLES_REPLACED]}, ('bake', 'bake_flicker'))
+portals = [] if ATLAS in ('LM_EXTERIOR', 'LM_CAR') else scene_prep.interior_portals(P)
 
 objs = [o for o in bpy.data.objects if o.type == 'MESH' and o.get('atlas') == ATLAS and not o.get('bake_occluder')
         and not o.get('detail') and 'Lightmap' in o.data.uv_layers]
 if not objs:
     raise SystemExit(f'no objects for {ATLAS}')
 tris = sum(len(p.vertices) - 2 for o in objs for p in o.data.polygons)
-scene.log(f'{ATLAS}: {len(objs)} objects, {tris} triangles, {len(base_lights)} lights, {SIZE}^2 @ {SPP} spp')
+scene.log(f'{ATLAS}: {len(objs)} objects, {tris} triangles, {len(base_lights)} lights, {len(portals)} portals, '
+          f'{SIZE}^2 @ {SPP} spp')
 
 
 def bake_one(tag):
@@ -85,7 +93,8 @@ def save(den, mask, lm_id, tiers=None):
 
 res = {'job': f'bake-house-{SHORT}', 'ok': True, 'atlas': ATLAS, 'size': SIZE, 'samples': SPP, 'device': device,
        'objects': len(objs), 'triangles': tris, 'prop_placements_in_scene': n_props,
-       'lightmapped_prop_objects': sum(1 for o in objs if o.get('lm_prop'))}
+       'lightmapped_prop_objects': sum(1 for o in objs if o.get('lm_prop')), 'portals': len(portals),
+       'sky': {'model': 'CIE overcast', 'Lz': scene_prep.SKY_LZ * SKY_GAIN, 'kelvin': scene_prep.SKY_KELVIN}}
 den, mask, info, oinfo = bake_one('base')
 written, st = save(den, mask, f'lm_{SHORT}')
 res['base'] = {'bake_seconds': info['bake_seconds'], 'coverage': info['coverage'], 'oidn': oinfo, 'stats': st,
@@ -95,8 +104,9 @@ if adef.get('flash') and not args.get('no_flash'):
     for ob in base_lights:
         ob.hide_render = True
     flash = scene_prep.add_lights(L, ('flash',))
-    scene.world_color((0.55, 0.62, 0.8), 2.5)       # storm sky during a strike
-    portals = [scene_prep.portal(w, f"portal_{w['id']}") for w in scene_prep.window_openings(P, only_sky=True)]
+    scene_prep.uniform_world((0.55, 0.62, 0.8), 2.5)       # storm sky during a strike
+    if not portals:
+        portals = [scene_prep.portal(w, f"portal_{w['id']}") for w in scene_prep.window_openings(P, only_sky=True)]
     den, mask, info, oinfo = bake_one('flash')
     written, st = save(den, mask, f'lm_{SHORT}_flash', tiers=('max',))   # flash maps are a Max-tier feature (PLAN)
     res['flash'] = {'bake_seconds': info['bake_seconds'], 'lights': len(flash), 'portals': len(portals),

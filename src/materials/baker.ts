@@ -109,6 +109,9 @@ export class MaterialBaker {
   log = true;
 
   private quad: any;
+  private quadVertex: any = null;
+  /** Generator materials built ahead of their bake (precompile). */
+  private prepared = new Map<string, { repeatM: number; res: GenResult; genMat: any }>();
   private scratch = new Map<number, any>();
   // finalize (shared)
   private fin: any = null;
@@ -251,15 +254,10 @@ export class MaterialBaker {
   }
 
   /** Bakes one material (cached by id + size). */
-  async bake(spec: MaterialSpec, gen: Generator, size: number, superTile = 1): Promise<BakedMaterial> {
-    const key = `${spec.id}@${size}x${superTile}`;
-    const hit = this.cache.get(key);
+  /** Generator material for one bake (built once: precompile() and bake() share it). */
+  private prepareGen(key: string, spec: MaterialSpec, gen: Generator, size: number, superTile: number): { repeatM: number; res: GenResult; genMat: any } {
+    const hit = this.prepared.get(key);
     if (hit) return hit;
-    const r = this.renderer;
-    const t0 = performance.now();
-
-    // ---- pass 1: generator → scratch
-    const scratch = this.scratchFor(size);
     const repeatM = spec.tileMetres * superTile;
     const ctx = makeCtx(spec, uv(), size, repeatM);
     const res: GenResult = gen(ctx);
@@ -271,6 +269,64 @@ export class MaterialBaker {
     });
     genMat.depthTest = false;
     genMat.depthWrite = false;
+    // QuadMesh.render swaps its full-screen-triangle vertexNode in for the draw; set it for good so a precompile
+    // (renderer.compileAsync on a stand-in mesh) builds the very program the bake then draws with.
+    genMat.vertexNode = this.quadVertexNode();
+    const p = { repeatM, res, genMat };
+    this.prepared.set(key, p);
+    return p;
+  }
+
+  /** The vertexNode QuadMesh.render uses (module-private in QuadMesh.js): read through a stand-in renderer. */
+  private quadVertexNode(): any {
+    if (this.quadVertex === null) {
+      let v: any = null;
+      this.quad.render({ render: (q: any) => (v = q.material.vertexNode) });
+      this.quadVertex = v;
+    }
+    return this.quadVertex;
+  }
+
+  /**
+   * PERF-PLAN P1-7: compiles the generator programs of a whole bake list in parallel (WebGPU createRenderPipelineAsync,
+   * WebGL2 KHR_parallel_shader_compile) before the bakes run one by one — each bake otherwise waits for its own
+   * program to compile on its readback fence. Same render context as the bake (scratch MRT target, call depth 0);
+   * the target stays bound until every compile has resolved, because node builds run after compileAsync's awaits.
+   */
+  async precompile(items: Array<{ spec: MaterialSpec; gen: Generator; size: number; superTile?: number }>): Promise<void> {
+    const r = this.renderer;
+    const todo = items.filter((it) => !this.cache.has(`${it.spec.id}@${it.size}x${it.superTile ?? 1}`));
+    if (!todo.length || typeof r.compileAsync !== 'function') return;
+    const t0 = performance.now();
+    const prevRT = r.getRenderTarget();
+    const jobs: Promise<unknown>[] = [];
+    r.setRenderTarget(this.scratchFor(todo[0].size)); // every scratch target has the same attachment state
+    try {
+      for (const it of todo) {
+        const key = `${it.spec.id}@${it.size}x${it.superTile ?? 1}`;
+        const { genMat } = this.prepareGen(key, it.spec, it.gen, it.size, it.superTile ?? 1);
+        const stand = new THREE.Mesh(this.quad.geometry, genMat);
+        stand.frustumCulled = false;
+        jobs.push(r.compileAsync(stand, this.quad.camera).catch((e: unknown) => console.warn(`[materials] precompile ${it.spec.id} failed:`, e)));
+      }
+      await Promise.all(jobs);
+    } finally {
+      r.setRenderTarget(prevRT);
+    }
+    if (this.log) console.info(`[materials] precompiled ${todo.length} generator programs in ${(performance.now() - t0).toFixed(0)} ms`);
+  }
+
+  async bake(spec: MaterialSpec, gen: Generator, size: number, superTile = 1): Promise<BakedMaterial> {
+    const key = `${spec.id}@${size}x${superTile}`;
+    const hit = this.cache.get(key);
+    if (hit) return hit;
+    const r = this.renderer;
+    const t0 = performance.now();
+
+    // ---- pass 1: generator → scratch
+    const scratch = this.scratchFor(size);
+    const { repeatM, res, genMat } = this.prepareGen(key, spec, gen, size, superTile);
+    this.prepared.delete(key);
     const prevRT = r.getRenderTarget();
     r.setRenderTarget(scratch);
     this.quad.material = genMat;

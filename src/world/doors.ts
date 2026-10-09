@@ -141,7 +141,7 @@ export class DoorSystem {
 
   /** Registers every leaf as a dynamic blocker (closed or not: an open leaf blocks where it stands). */
   attachCollision(c: WorldCollision): void {
-    for (const d of this.doors.values()) c.addBlocker({ object: d.group, box: d.box, enabled: () => d.group.visible !== false || true });
+    for (const d of this.doors.values()) c.addBlocker({ object: d.group, box: d.box, enabled: () => d.group.visible !== false || true, moving: () => d.angle !== d.target });
   }
 
   isOpen(id: string): boolean {

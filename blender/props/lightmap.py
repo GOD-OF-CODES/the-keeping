@@ -20,7 +20,7 @@ EXCLUDE_TYPES = {'wreck_sedan', 'dead_tree', 'porch', 'foundation_skirt', 'cobwe
 FORCE_TYPES = {'sedan_interior'}           # layout lighting 'dynamic' (moving wheel/wipers) but the shell is a set
 MOVING_KEYS = ('part', 'hinge_axis', 'swing_axis', 'slide_axis', 'slide', 'pull_axis', 'rotate_axis', 'travel_m',
                'pivot_at', 'door_id')
-SKIP_KEYS = ('decal', 'collider', 'hide_proxy', 'flame', 'liquid', 'lamp', 'reflector')
+SKIP_KEYS = ('decal', 'collider', 'hide_proxy', 'flame', 'liquid', 'lamp', 'reflector', 'dressing', 'lens', 'probe_lit')
 MAX_TEXELS_PER_M = {'LM_EXTERIOR': 26.0, 'LM_CAR': 220.0}   # at 1024; interiors default below
 DEFAULT_MAX_TPM = 70.0
 PAD = 4

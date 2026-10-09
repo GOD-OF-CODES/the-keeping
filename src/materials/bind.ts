@@ -16,13 +16,18 @@
 //  - albedo gain from the baker's measurement (matches spec.avgAlbedo, the Blender bounce colour).
 
 import * as THREE from 'three/webgpu';
-import { float, mix, mx_fractal_noise_float, mx_noise_float, normalMap, normalWorld, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';
+import { float, mix, mx_fractal_noise_float, mx_noise_float, normalMap, normalWorld, positionLocal, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';
 import type { MaterialSpec } from '../shared/material-types.ts';
 import type { PresetConfig } from '../render/presets.ts';
 import { LightmapMaterial, type LightmapOptions } from '../render/lightmap-material.ts';
 import { MaterialBaker, textureSizeFor, type BakedMaterial, type BakeProgress } from './baker.ts';
 import { generatorFor, superTileFor } from './library/index.ts';
 import { MATERIAL_SPECS, specById } from './spec-index.ts';
+import { applyWear } from './wear.ts';
+import { wearRuleFor } from './wear-math.ts';
+
+/** `?nowear` (debug A/B, PROPS-FINISH R4): prop wear masks are ignored (no masked shader variants at all). */
+export const NO_WEAR = typeof location !== 'undefined' && new URLSearchParams(location.search).has('nowear');
 
 type N = any;
 
@@ -61,9 +66,20 @@ export interface SurfaceOptions {
    * derivative (no-tangent) frame; GLTFLoader flips normalScale.y between the two frames, so we do too.
    */
   vertexTangents?: boolean;
+  /** The mesh carries Blender's per-vertex 'wear' masks (geometry `color`, PROPS-FINISH §5.1). */
+  wearMask?: boolean;
   /** Disable the runtime layers (matlab A/B). */
-  layers?: { macro?: boolean; dust?: boolean };
+  layers?: { macro?: boolean; dust?: boolean; wear?: boolean };
 }
+
+/**
+ * PERF-PLAN P1-6a: per-spec numbers go into uniforms, not into the shader source as literals — materials of the
+ * same structure (family layers, lightmapped or not, light set) then generate identical WGSL/GLSL and share one GPU
+ * program/pipeline instead of one per spec. Same values (f32 either way): the look does not change.
+ */
+const uf = (v: number): N => uniform(v);
+const c3n = (v: unknown, d: [number, number, number]): [number, number, number] => (Array.isArray(v) && v.length >= 3 ? [Number(v[0]), Number(v[1]), Number(v[2])] : d);
+const u3 = (v: ArrayLike<number>): N => uniform(new THREE.Vector3(v[0], v[1], v[2]));
 
 /** Builds the node material for one spec. `baked` null → constant or baked_unique path. */
 export function createSurfaceMaterial(spec: MaterialSpec, baked: BakedMaterial | null, o: SurfaceOptions): any {
@@ -81,24 +97,25 @@ export function createSurfaceMaterial(spec: MaterialSpec, baked: BakedMaterial |
   const uniqueMaps = spec.source === 'baked_unique' && src?.map;
   let albedo: N;
   let rough: N;
-  let metal: N = float(spec.metalness);
+  let metal: N = uf(spec.metalness);
   let ao: N = null;
   let normal: N = null;
   let opacity: N = null;
 
   if (uniqueMaps) {
     albedo = texture(src.map).rgb;
-    rough = src.roughnessMap ? texture(src.roughnessMap).g.mul(src.roughness ?? 1) : float(spec.roughness);
-    if (src.metalnessMap) metal = texture(src.metalnessMap).b.mul(src.metalness ?? 1);
-    if (src.normalMap) normal = normalMap(texture(src.normalMap), vec2(src.normalScale?.x ?? 1, src.normalScale?.y ?? 1));
+    rough = src.roughnessMap ? texture(src.roughnessMap).g.mul(uf(src.roughness ?? 1)) : uf(spec.roughness);
+    if (src.metalnessMap) metal = texture(src.metalnessMap).b.mul(uf(src.metalness ?? 1));
+    if (src.normalMap) normal = normalMap(texture(src.normalMap), uniform(new THREE.Vector2(src.normalScale?.x ?? 1, src.normalScale?.y ?? 1)));
     if (src.aoMap) ao = texture(src.aoMap).r;
   } else if (baked) {
     const rep = o.repeat ?? 1 / baked.repeatM;
     const flipV = GRAVITY_FAMILIES.has(spec.family) && !o.vertexTangents;
-    const tuv = flipV ? vec2(uv().x, uv().y.oneMinus()).mul(rep) : uv().mul(rep);
+    const uRep = uf(rep);
+    const tuv = flipV ? vec2(uv().x, uv().y.oneMinus()).mul(uRep) : uv().mul(uRep);
     const A = texture(baked.mapA, tuv);
     const B = texture(baked.mapB, tuv);
-    albedo = A.rgb.mul(vec3(...baked.gain));
+    albedo = A.rgb.mul(u3(baked.gain));
     rough = A.a;
     // a mirrored V mirrors the tangent frame: flip the normal's green channel with it
     const nm = o.vertexTangents || flipV ? normalMap(B, vec2(1, -1)) : normalMap(B);
@@ -108,35 +125,68 @@ export function createSurfaceMaterial(spec: MaterialSpec, baked: BakedMaterial |
     if (baked.extraKind === 'metal') metal = B.w; // generators write metalness itself (spec.metalness = its mean)
     if (baked.extraKind === 'opacity') opacity = B.w;
   } else {
-    albedo = vec3(...spec.avgAlbedo);
-    rough = float(spec.roughness);
+    albedo = u3(spec.avgAlbedo);
+    rough = uf(spec.roughness);
   }
 
   // ---- runtime layers
   const L = o.layers ?? {};
   const isGlass = spec.family === 'glass';
+  // Masked props (PROPS-FINISH §1.6.6): every runtime noise layer moves to object space so it travels with the prop.
+  const wearRule = o.wearMask && L.wear !== false ? wearRuleFor(spec) : null;
+  const P0 = wearRule ? positionLocal : positionWorld;
   if (L.macro !== false && !isGlass) {
     // Two non-periodic world-space octaves (runtime-only; never baked, so no tiling concern).
-    const pw = positionWorld;
+    const pw = P0;
     const big = mx_fractal_noise_float(pw.mul(0.45), 2, 2, 0.5).mul(materialUniforms.macro);
     const hue = mx_noise_float(pw.mul(0.23).add(vec3(3.1, 7.7, 1.3))).mul(materialUniforms.macro);
     albedo = albedo.mul(big.mul(0.16).add(1)).mul(vec3(hue.mul(0.05).add(1), 1, hue.mul(-0.05).add(1)));
     rough = rough.add(big.mul(-0.05));
   }
   const p = spec.params as Record<string, unknown>;
+  // Clapboard (STATUS-blender-c #5): paint fails where the siding is splashed (lowest ~1.5 m above the sill) and
+  // under the eaves (condensation + no sun), not uniformly — the baked tile (3 m repeat) cannot know height, so the
+  // extra peel is a world-space layer: flakes stretched along the boards (grain), revealing silver weathered pine.
+  if (L.macro !== false && spec.family === 'clapboard') {
+    const pw = positionWorld;
+    const splash = float(1).sub(smoothstep(0.9, 2.0, pw.y));
+    const eave = smoothstep(5.4, 6.6, pw.y);
+    const band = splash.max(eave);
+    // Flakes: 3–8 cm irregular patches (old oil paint alligators then lifts in plates), domain-warped so the edges
+    // are ragged, mildly stretched along the boards (x/z) — not the thin 2 cm dashes of a pure anisotropic noise.
+    const warp = mx_noise_float(pw.mul(vec3(14, 30, 14)).add(vec3(1.7, 4.2, 0.3))).mul(0.35);
+    const fl = mx_fractal_noise_float(pw.mul(vec3(7, 16, 7)).add(warp), 4, 2, 0.5).mul(0.5).add(0.5);
+    const big = mx_noise_float(pw.mul(vec3(0.9, 1.6, 0.9)).add(vec3(5.3, 1.1, 2.7))).mul(0.5).add(0.5);
+    const cov = uf(Number(p.peelBand ?? 0.45));
+    const t = float(1).sub(band.mul(cov).mul(big.mul(0.8).add(0.4)));
+    const peel = smoothstep(t.sub(0.012), t.add(0.012), fl);
+    // Lifted flake edge: the paint just outside each hole curls up (~1–2 mm) and catches the light; the bare wood
+    // right inside it sits in the curl's shadow.
+    const lip = smoothstep(t.sub(0.05), t.sub(0.012), fl).mul(peel.oneMinus());
+    const inner = smoothstep(t.add(0.012), t.add(0.06), fl);
+    // Bare weathered pine (silver-grey, dry ≈ 0.27/0.25/0.22). Under the eaves it stays dry (sheltered); the splash
+    // zone is soaked → porous wood (rough ≈ 0.85) darkens like the tile baker's wet rule.
+    const wetAmt = float(spec.wetness * 0.85).mul(eave.mul(0.75).oneMinus());
+    const bare = u3(c3n(p.bareWood, [0.27, 0.25, 0.22]))
+      .mul(fl.mul(0.25).add(0.88))
+      .mul(wetAmt.mul(0.45).oneMinus())
+      .mul(inner.mul(0.25).add(0.75));
+    albedo = mix(albedo.mul(lip.mul(0.12).add(1)), bare, peel);
+    rough = mix(rough, uf(0.85).mul(wetAmt.mul(0.55).oneMinus()), peel);
+  }
   // World-space water stains (wallpaper / plaster / ceilings): tide-marked brown blotches that never repeat.
   // Walls get more of them near the ceiling when the spec says the water comes from above.
   const stainAmt = Math.max(Number(p.damp ?? 0) * 0.6, Number(p.waterStains ?? 0), Number(p.waterStainFromCeiling ?? 0));
   if (L.macro !== false && stainAmt > 0 && (spec.family === 'wallpaper' || spec.family === 'plaster' || spec.family === 'ceiling_plaster')) {
-    const pw = positionWorld;
+    const pw = P0;
     const n = mx_fractal_noise_float(pw.mul(vec3(0.9, 0.55, 0.9)), 4, 2, 0.55).mul(0.5).add(0.5);
     const fromTop = Number(p.waterStainFromCeiling ?? 0);
-    const bias = fromTop > 0 ? smoothstep(1.2, 2.6, pw.y).mul(fromTop * 0.35) : float(0);
-    const t = 1 - stainAmt * 0.42;
+    const bias = fromTop > 0 ? smoothstep(1.2, 2.6, pw.y).mul(uf(fromTop * 0.35)) : float(0);
+    const t = uf(1 - stainAmt * 0.42);
     const v = n.add(bias);
-    const body = smoothstep(t - 0.01, t + 0.03, v);
+    const body = smoothstep(t.sub(0.01), t.add(0.03), v);
     const d1 = v.sub(t).div(0.012);
-    const d2 = v.sub(t + 0.06).div(0.009);
+    const d2 = v.sub(t.add(0.06)).div(0.009);
     const rim = d1.mul(d1).negate().exp().add(d2.mul(d2).negate().exp().mul(0.5)).clamp(0, 1);
     albedo = mix(albedo, albedo.mul(vec3(0.82, 0.66, 0.44)), body.mul(0.75)).mul(float(1).sub(rim.mul(0.4)));
     rough = rough.add(body.mul(0.04));
@@ -144,18 +194,26 @@ export function createSurfaceMaterial(spec: MaterialSpec, baked: BakedMaterial |
   // World-space stains on small-tile textiles/paper (tile-space stains would repeat every few centimetres).
   const clothStain = Math.max(Number(p.stains ?? 0), Number(p.waterDamage ?? 0) * 0.6);
   if (L.macro !== false && clothStain > 0 && spec.tileMetres < 0.5) {
-    const n = mx_fractal_noise_float(positionWorld.mul(3.1), 4, 2, 0.55).mul(0.5).add(0.5);
-    const t = 1 - clothStain * 0.3;
-    const body = smoothstep(t - 0.01, t + 0.03, n);
+    const n = mx_fractal_noise_float(P0.mul(3.1), 4, 2, 0.55).mul(0.5).add(0.5);
+    const t = uf(1 - clothStain * 0.3);
+    const body = smoothstep(t.sub(0.01), t.add(0.03), n);
     const d1 = n.sub(t).div(0.012);
     const rim = d1.mul(d1).negate().exp();
     albedo = mix(albedo, albedo.mul(vec3(0.62, 0.52, 0.38)), body.mul(0.7)).mul(float(1).sub(rim.mul(0.3)));
   }
+  let wearOut: ReturnType<typeof applyWear> | null = null;
+  if (wearRule) {
+    // Wear (edge chips / abrasion, handled polish, cavity grime/rust) + masked dust replacing the up-facing term.
+    wearOut = applyWear(spec, wearRule, albedo, rough, metal, { cheap: low, dust: materialUniforms.dust, noDust: L.dust === false });
+    albedo = wearOut.albedo;
+    rough = wearOut.rough;
+    metal = wearOut.metal;
+  }
   const dustAmt = Math.max(Number(p.dust ?? 0), Number(p.cobwebDust ?? 0), Number(p.dustOnTop ?? 0));
-  if (L.dust !== false && dustAmt > 0 && !isGlass && spec.wetness < 0.3) {
+  if (!wearRule && L.dust !== false && dustAmt > 0 && !isGlass && spec.wetness < 0.3) {
     const up = smoothstep(0.55, 0.95, normalWorld.y);
     const patch = mx_fractal_noise_float(positionWorld.mul(2.7), 3, 2, 0.5).mul(0.5).add(0.5);
-    const d = up.mul(smoothstep(0.25, 0.75, patch.mul(dustAmt).add(dustAmt * 0.35))).mul(materialUniforms.dust).clamp(0, 1).mul(0.75);
+    const d = up.mul(smoothstep(0.25, 0.75, patch.mul(uf(dustAmt)).add(uf(dustAmt * 0.35)))).mul(materialUniforms.dust).clamp(0, 1).mul(0.75);
     albedo = mix(albedo, vec3(...DUST_RGB), d);
     rough = mix(rough, float(0.95), d);
     metal = metal.mul(float(1).sub(d));
@@ -179,12 +237,13 @@ export function createSurfaceMaterial(spec: MaterialSpec, baked: BakedMaterial |
     m.opacityNode = opacity ? mix(float(0.1), float(0.85), opacity) : float(0.15);
   }
   if (wantsClearcoat) {
-    m.clearcoatNode = float(Number(p.clearcoat ?? 0.6)).mul(float(1).sub(rough.mul(0.5)));
+    m.clearcoatNode = uf(Number(p.clearcoat ?? 0.6)).mul(float(1).sub(rough.mul(0.5)));
     m.clearcoatRoughnessNode = rough.mul(0.35).add(0.03);
   }
   if (wantsSheen) {
     m.sheenNode = albedo.mul(0.6).add(0.08);
-    m.sheenRoughnessNode = float(0.6);
+    // nap loss raises sheen roughness 0.6 → 0.9; use-shine lowers it (PROPS-FINISH §2.2 fabric)
+    m.sheenRoughnessNode = wearOut ? float(0.6).add(wearOut.edge.mul(0.3)).sub(wearOut.handled.mul(0.2)).clamp(0.3, 1) : float(0.6);
   }
   return m;
 }
@@ -261,6 +320,8 @@ export async function bindMaterials(root: any, bc: BindContext): Promise<BindRes
   const todo = [...need.values()].filter((n) => n.spec.source === 'generated' || (n.unique && !n.hasMap));
   let done = 0;
   const baked = new Map<string, BakedMaterial>();
+  // P1-7: all generator programs compile in parallel first; the bakes below then only draw + read back
+  await baker.precompile(todo.map((n) => ({ spec: n.spec, gen: generatorFor(n.spec), size: textureSizeFor(n.spec, bc.preset), superTile: superTileFor(n.spec) })));
   for (const n of todo) {
     const b = await ensureBaked(baker, n.spec, bc.preset, true);
     if (b) baked.set(n.spec.id, b);
@@ -278,15 +339,18 @@ export async function bindMaterials(root: any, bc: BindContext): Promise<BindRes
   for (const mesh of meshes) {
     const lm = bc.lightmapFor?.(mesh) ?? null;
     const vt = !!mesh.geometry?.attributes?.tangent;
+    const hasColor = mesh.geometry?.attributes?.color?.itemSize === 4;
     const swap = (mat: any) => {
       const id = materialIdOf(mat);
       const spec = id ? specById(id) : undefined;
       if (!spec) return mat;
       const side = mat.side ?? THREE.FrontSide;
-      const key = `${spec.id}|${side}|${lm ? lm.base?.uuid : '-'}|${vt ? 't' : ''}|${spec.source === 'baked_unique' && mat.map ? mat.uuid : ''}`;
+      // masked only when the family has a wear rule (glass/stone/mud on mixed prop meshes carry COLOR_0 too)
+      const wm = hasColor && !NO_WEAR && !!wearRuleFor(spec);
+      const key = `${spec.id}|${side}|${lm ? lm.base?.uuid : '-'}|${vt ? 't' : ''}|${spec.source === 'baked_unique' && mat.map ? mat.uuid : ''}|${wm ? 'w' : ''}`;
       let m = shared.get(key);
       if (!m) {
-        m = createSurfaceMaterial(spec, baked.get(spec.id) ?? null, { preset: bc.preset, lightmap: lm, side, source: mat, vertexTangents: vt });
+        m = createSurfaceMaterial(spec, baked.get(spec.id) ?? null, { preset: bc.preset, lightmap: lm, side, source: mat, vertexTangents: vt, wearMask: wm });
         shared.set(key, m);
         materials.push(m);
         if (lm) lightmapped.push(m);

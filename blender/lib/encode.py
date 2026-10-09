@@ -237,6 +237,10 @@ TIER_POLICY = {
     # 2 texels at 512, and the coverage-weighted downsample never mixes islands.
     'low': {'size': 512, 'container': 'klm', 'mantissa_bits': 6, 'floor_exp': 8},
 }
+# docs/REALISM-BACKLOG.md #9: in the dark atlases (upper floor ~1e-4..1e-3 irradiance, moonlit exterior/car at
+# ~0.003-0.03 lux) the floor_exp 8 absolute step (2^-14..2^-18 ~ 6e-5..4e-6) bands once eye adaptation lifts them
+# by +4 EV. floor_exp 13 = steps of 2^-(13+N) (1.2e-6 at m6, 1.5e-8 at m10); cost < 3 % in size.
+FLOOR_EXP_DARK = {'upper_hall': 13, 'upper_rooms': 13, 'car': 13, 'exterior': 13}
 
 
 def encode_tiers(rgba, atlas_id, out_root, policy=None, intensity=None, max_resolution=2048, on_written=None):
@@ -248,6 +252,8 @@ def encode_tiers(rgba, atlas_id, out_root, policy=None, intensity=None, max_reso
     `on_written(tier, source_rgba, path)` is called after each file (QA hook; source = the tier-size float image).
     """
     policy = policy or TIER_POLICY
+    if atlas_id in FLOOR_EXP_DARK:
+        policy = {t: {**p, 'floor_exp': FLOOR_EXP_DARK[atlas_id]} for t, p in policy.items()}
     base = rgba.shape[0]
     scale = min(1.0, max_resolution / 2048.0)
     written = []

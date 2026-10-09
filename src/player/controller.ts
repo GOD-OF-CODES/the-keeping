@@ -21,6 +21,11 @@ const HEIGHT = 1.78;
 const CROUCH_HEIGHT = 1.2;
 const GRAVITY = 9.81;
 const STEP_UP = 0.32;
+/** Round E ruling (c): the most the feet may rise above the last FLOOR the player stood on by stepping (real stair
+ *  risers 0.25 m, UK/US building codes max ≈ 0.20–0.22 m; 0.27 m leaves 2 cm for the riser's mesh tolerance). A chair
+ *  seat (0.45 m) or a table (0.75 m) is never a step. STEP_UP stays the TRIAL lift (it must clear the nosing edge). */
+export const STEP_MAX = 0.27;
+const STEP_LIFTS = [STEP_UP, STEP_UP / 2, STEP_UP / 4] as const;
 const SNAP_DOWN = 0.38;
 
 /**
@@ -110,6 +115,7 @@ export class PlayerController {
   /** Scratch capsules (step-up / snap-down / headroom): no per-frame allocation. */
   private readonly trial = new Capsule(new THREE.Vector3(), new THREE.Vector3(0, 1, 0), RADIUS);
   private readonly trial2 = new Capsule(new THREE.Vector3(), new THREE.Vector3(0, 1, 0), RADIUS);
+  private readonly blocked = new Capsule(new THREE.Vector3(), new THREE.Vector3(0, 1, 0), RADIUS);
   /** Space holds the breath only when gameplay allows it (hidden, or free and not in a cutscene): the story sets it. */
   breathAllowed = true;
 
@@ -271,26 +277,57 @@ export class PlayerController {
     const move = _v.copy(this.velocity).multiplyScalar(h);
     c.translate(move);
     const vel = this.velocity;
+    const vx0 = vel.x;
+    const vz0 = vel.z;
     const hit = this.world.collision.resolve(c, vel);
     let onFloor = hit.onFloor;
+    // round E (c): the floor straight under the capsule centre before this move is the step cap's datum (a sphere
+    // riding up a 0.3 m edge keeps its centre over the lower floor until it is on top, so the cap sees the full rise)
+    let under = NaN;
+    const floorUnder = () => (Number.isNaN(under) ? (under = this.world.collision.floorBelow(start.x, start.y, start.z, 1.2) ?? start.y - RADIUS) : under);
+    if (c.start.y > start.y && c.start.y - RADIUS - floorUnder() > STEP_MAX) {
+      // resolve()'s slope push lifted us up an edge (aggregate floor+riser normal): a wall, not a ramp
+      c.translate(_t.set(start.x - c.start.x, start.y - c.start.y, start.z - c.start.z));
+      vel.x = 0;
+      vel.z = 0;
+    }
     // step-up: blocked while grounded and moving → try the same move from STEP_UP higher
-    if (hit.hitWall && this.onFloor) {
+    // (a nosing contact with 0.3 < n.y < 0.6 is neither wall nor floor in resolve(): it blocks too — gameplay-d)
+    if ((hit.hitWall || !hit.onFloor) && this.onFloor) {
       const wantH = Math.hypot(move.x, move.z);
       const got = Math.hypot(c.start.x - start.x, c.start.z - start.z);
       if (wantH > 1e-5 && got < wantH * 0.6) {
-        const trial = this.trial.copy(c);
-        trial.translate(_t.set(start.x - c.start.x, start.y + STEP_UP - c.start.y, start.z - c.start.z));
-        if (!this.world.collision.octree.capsuleIntersect(trial)) {
+        // lower lifts too: on a riser right under a door lintel (O_BACKSTAIR → kite 2) the full 0.32 m lift hits the
+        // lintel, but a smaller one still clears the nosing the sphere is resting on and walks it onto the tread
+        for (const lift of STEP_LIFTS) {
+          const trial = this.trial.copy(c);
+          trial.translate(_t.set(start.x - c.start.x, start.y + lift - c.start.y, start.z - c.start.z));
+          if (this.world.collision.octree.capsuleIntersect(trial)) continue;
           trial.translate(_t.set(move.x, 0, move.z));
-          if (!this.world.collision.octree.capsuleIntersect(trial)) {
-            c.copy(trial);
-            onFloor = this.snapDown(STEP_UP + 0.05) || onFloor;
+          if (this.world.collision.octree.capsuleIntersect(trial)) continue;
+          // gameplay-d (B10 back-stair stall): accept the step only if the swept landing is HIGHER than where we
+          // started. The old full-depth resolve let the lower floor's penetration swamp the riser-edge contact and
+          // dropped the capsule back every substep (the sphere centre is 0.26 m behind the edge after one 1.3 cm
+          // substep), so the ST_BACK kites/treads (the only real 0.25 m risers) climbed only by frame-time luck.
+          this.blocked.copy(c);
+          c.copy(trial);
+          // round E (c): the landing (or the edge rest on the way up) may sit at most STEP_MAX above the last floor
+          if (this.snapDown(lift + 0.05) && c.start.y > start.y + 1e-3 && c.start.y - RADIUS - floorUnder() <= STEP_MAX) {
+            // we stepped, we did not hit a wall: keep the walking speed the riser contact had cancelled
+            onFloor = true;
+            vel.x = vx0;
+            vel.z = vz0;
+            if (vel.y < 0) vel.y = 0;
+            break;
           }
+          c.copy(this.blocked);
         }
       }
     }
     // ground snap: walking down stairs / off the porch step keeps contact instead of hopping
-    if (!onFloor && this.onFloor && this.velocity.y <= 0) onFloor = this.snapDown(SNAP_DOWN);
+    if (!onFloor && this.onFloor && this.velocity.y <= 0) {
+      onFloor = this.snapDown(SNAP_DOWN);
+    }
     this.onFloor = onFloor;
     // world bounds (the drive, yard and road; the fog hides the edge): slide back horizontally
     if (!this.world.index.inBounds(c.start.x, -c.start.z, c.start.y - RADIUS)) {
@@ -315,16 +352,35 @@ export class PlayerController {
     }
   }
 
+  /**
+   * Sweeps the capsule down by up to `dist` and stops at the FIRST surface met (bisection, ~3 mm), instead of
+   * resolving penetration at full depth (which let a floor 5 cm below outvote the stair-nosing edge we were landing
+   * on). A floor-class contact settles as before; an edge contact (sphere resting on a riser nosing, n.y < 0.6) rests
+   * just above it and still counts as support, so the next substeps' step-ups walk the sphere onto the tread.
+   */
   private snapDown(dist: number): boolean {
     const c = this.capsule;
+    const oct = this.world.collision.octree;
     const trial = this.trial2.copy(c);
     trial.translate(_t.set(0, -dist, 0));
+    if (!oct.capsuleIntersect(trial)) return false;
+    let lo = 0;
+    let hi = dist;
+    for (let k = 0; k < 7; k++) {
+      const m = (lo + hi) / 2;
+      trial.copy(c).translate(_t.set(0, -m, 0));
+      if (oct.capsuleIntersect(trial)) hi = m;
+      else lo = m;
+    }
+    trial.copy(c).translate(_t.set(0, -hi, 0));
     const hit = this.world.collision.resolve(trial, _zero.set(0, 0, 0));
     if (hit.onFloor && trial.start.y < c.start.y + 1e-4) {
       c.copy(trial);
       return true;
     }
-    return false;
+    if (lo <= 0) return false; // already touching: nothing to settle onto
+    c.translate(_t.set(0, -lo, 0));
+    return true;
   }
 
   private headroomFor(height: number): boolean {

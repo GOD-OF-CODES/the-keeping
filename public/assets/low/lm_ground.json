@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.0114,
-    "p99": 0.06947,
-    "max": 6.97044,
-    "coverage": 0.5182
+    "mean": 0.01254,
+    "p99": 0.07124,
+    "max": 6.81709,
+    "coverage": 0.4638
   },
   "file": "lm_ground.klm"
 }

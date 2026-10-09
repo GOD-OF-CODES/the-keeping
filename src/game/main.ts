@@ -20,14 +20,18 @@ import { createRenderer, effectivePixelRatio } from '../render/renderer.ts';
 import { createPipeline, type Pipeline } from '../render/pipeline.ts';
 import { DynamicResolution } from '../render/dynres.ts';
 import { createFlashlight } from '../render/flashlight.ts';
-import { uLightning } from '../render/lightmap-material.ts';
+import { syncSurfaceLook } from '../render/surfaces.ts'; // LIGHTING lane (builder 2)
+import { LightmapMaterial, uLightning } from '../render/lightmap-material.ts';
 import { bakeProbeGrid, excludeGridFromLightmapped } from '../render/probes.ts';
+import { installPerf, perfBuilds, perfLog, perfMark } from '../render/perf.ts';
+import { SHADOW_CANDLE_ID, setCandleShadow } from '../world/lights.ts';
 import type { GameContext } from './context.ts';
 import type { LevelLayout, TriggerVolume } from '../shared/layout-types.ts';
 import layoutJson from '../shared/level-layout.json';
 import { buildTestRoom, ROOM } from './test-room.ts';
 import { TestController } from './test-controller.ts';
 import { PauseMenu, clickToBegin } from './pause-menu.ts';
+import { setWearView } from '../materials/wear.ts';
 
 /** String literal that survives minification; scripts/verify-boot.mjs asserts it never reaches the boot chunk. */
 export const GAME_CHUNK_MARKER = 'the-keeping:game-runtime';
@@ -46,6 +50,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
   console.info(`[game] ${GAME_CHUNK_MARKER} three r${THREE.REVISION}`);
   const params = new URLSearchParams(location.search);
   const debug = params.has('debug');
+  LightmapMaterial.stockModel = params.get('lmmodel') === '0'; // LIGHTING lane debug A/B (item 5 load cost)
   const settings = h.settings;
   const presetId = settings.preset;
   const preset = PRESETS[presetId];
@@ -63,6 +68,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
 
   h.status('Starting the renderer…');
   const { renderer, canvas, backend, backendReason } = await createRenderer(preset, { forceWebGL, parent: gameRoot });
+  installPerf(renderer, debug);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
@@ -113,21 +119,38 @@ export async function startGame(h: BootHandoff): Promise<void> {
   const dynres = new DynamicResolution(preset.dynamicResolution, preset.sceneScale);
   camera.updateMatrixWorld(true);
   const tc = performance.now();
-  try {
-    // WebGL2 polls KHR_parallel_shader_compile with requestAnimationFrame, which stalls in a hidden tab: cap the
-    // wait; anything not compiled yet compiles synchronously on the first frames.
-    const done = await Promise.race([renderer.compileAsync(scene, camera).then(() => true), delay(20000).then(() => false)]);
-    if (!done) console.warn('[game] compileAsync still pending after 20 s (hidden tab?) — continuing');
-  } catch (e) {
-    console.warn('[game] compileAsync failed (continuing):', e);
-  }
-  pipeline.render(); // warm-up frames compile the post chain behind the loading screen
-  await (rt.expose.afterCompile as ((render: () => void) => Promise<void>) | undefined)?.(() => {
+  perfMark('warmup');
+  // PERF-PLAN P0-1: compile in the context the frame is drawn in (pipeline.compileView), per room with culling on —
+  // never renderer.compileAsync(scene, camera), whose default-context variants no frame of ours ever uses.
+  const compileView = async () => {
+    const slow = setTimeout(() => console.warn('[game] shader compile still running after 20 s (hidden tab?) — waiting'), 20000);
+    try {
+      await pipeline.compileView();
+    } catch (e) {
+      console.warn('[game] compileView failed (continuing):', e);
+    } finally {
+      clearTimeout(slow);
+    }
+  };
+  const frame = () => {
     renderer._nodes?.nodeFrame?.update(); // new node frame, or FRAME-updated passes (scene pass …) are skipped
     pipeline.render();
-  });
-  pipeline.render();
+  };
+  const warm = rt.expose.afterCompile as ((render: () => void, compile: () => Promise<void>) => Promise<void>) | undefined;
+  if (warm) await warm(frame, compileView);
+  else await compileView();
+  perfMark('firstFrame');
+  frame();
+  // PERF (review): the cutscene DoF chain builds its post passes on first use (measured: ~16 node builds at the first
+  // DoF cut). Build it once here, behind the loading screen; chains are cached per key in the pipeline.
+  if (preset.post.cutsceneDof && pipeline.kind === 'post') {
+    pipeline.setCutscene({ dof: { focusDistance: 2, focalLength: 0.5, bokehScale: 2 } });
+    frame();
+    pipeline.setCutscene(null);
+    frame();
+  }
   console.info(`[game] shader compile + warm-up ${(performance.now() - tc).toFixed(0)} ms`);
+  perfMark('setup');
 
   // ---- FPS overlay
   const overlay = new FpsOverlay(document.body);
@@ -310,6 +333,9 @@ export async function startGame(h: BootHandoff): Promise<void> {
       setPaused(false);
     },
     memory: () => renderer.info.memory,
+    /** Node builds so far (diff around a beat: > 0 = a shader variant compiled at runtime) and the load phases. */
+    builds: () => perfBuilds(),
+    perfLog: () => perfLog(),
     /**
      * Debug screenshot that works in hidden/occluded tabs: renders the pipeline into a render target, reads it back
      * and returns a JPEG data URL (w px wide; AgX output is already display-referred — sRGB-encoded here).
@@ -319,9 +345,14 @@ export async function startGame(h: BootHandoff): Promise<void> {
       const h = Math.round((w * size.y) / size.x);
       const rtg = new THREE.RenderTarget(w, h, { type: THREE.UnsignedByteType }); // output is already display-encoded
       renderer._nodes?.nodeFrame?.update();
-      renderer.setRenderTarget(rtg);
-      pipeline.render();
-      renderer.setRenderTarget(null);
+      // P1-6c: the OUTPUT target, so the frame goes through the same output path as on screen (Low: AgX / grade / FXAA)
+      // in the same render contexts — no capture-only shader variants
+      renderer.setOutputRenderTarget(rtg);
+      try {
+        pipeline.render();
+      } finally {
+        renderer.setOutputRenderTarget(null);
+      }
       const px = await renderer.readRenderTargetPixelsAsync(rtg, 0, 0, w, h);
       rtg.dispose();
       const c = document.createElement('canvas');
@@ -395,8 +426,11 @@ export async function startGame(h: BootHandoff): Promise<void> {
       return (performance.now() - t0) / n;
     },
   };
+  // PROPS-FINISH §5.4: __game.debug.wearView(0..3 | 4 composite | null) shows the Blender wear masks (props lane)
+  (expose as Record<string, unknown>).debug = { ...((expose as Record<string, unknown>).debug as object | undefined), wearView: setWearView };
   if (debug) (window as unknown as { __game: unknown }).__game = expose;
   ctx.systems.set('debug', { id: 'debug' });
+  perfMark('play');
   console.info(`[game] ready: preset=${presetId}, backend=${backend}, pixelRatio=${renderer.getPixelRatio()}`);
 }
 
@@ -431,6 +465,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
   if (h.bootRoot) h.bootRoot.style.display = 'none';
 
   const rig = new FlashlightRig(scene, camera, preset);
+  if (params.get('bounce') === '0') rig.flashlight.bounce = null; // LIGHTING lane debug A/B (item 11 GPU cost)
 
   // Audio prerender runs while the house downloads (it needs ctx.layout, already the real layout).
   const audioP = (async () => {
@@ -447,7 +482,9 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
 
   let level: Awaited<ReturnType<typeof loadLevel>>;
   try {
+    perfMark('download');
     level = await loadLevel({ ctx, renderer, scene, preset, presetId: ctx.presetId, overlay, flashlight: rig.flashlight });
+    perfMark('story');
   } catch (e) {
     overlay.remove();
     scene.remove(rig.rig);
@@ -516,9 +553,32 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
   let insideTriggers = new Set<string>();
   let triggersNow = new Set<string>();
   const triggerHits: TriggerVolume[] = [];
-  const sky = new THREE.Color(...SKY_COLOR);
   const fog = new THREE.FogExp2(new THREE.Color(0.012, 0.014, 0.019), 0.0);
   scene.fog = fog;
+  // LIGHTING lane: sky, fog, lightning shadow, exposure, white balance (src/world/atmosphere.ts, REALISM-BACKLOG)
+  const { Atmosphere } = await import('../world/atmosphere.ts');
+  const atmo = new Atmosphere({ renderer, scene, camera, fog, preset, lightningDir: level.lights.lightningDir, events: ctx.events });
+  let warmPipe: Pipeline | null = null; // runtime lane D: the load warm-up also draws the opening through the DOF chain
+  // LIGHTING lane (REALISM-BACKLOG item 6): box-projected per-room reflection cubes (Medium/Max), hooked into the
+  // glossy materials BEFORE the first compile and captured once from the lightmapped house (src/render/reflections.ts)
+  // LIGHTING lane (item 11): the torch beam's bounce light (src/render/flashlight-bounce.ts)
+  const { FlashlightBounce } = await import('../render/flashlight-bounce.ts');
+  const torchBounce = new FlashlightBounce(rig.flashlight, [level.root], level.collision);
+  let refl: import('../render/reflections.ts').RoomReflections | null = null;
+  // (WebGPU only: WebGL compiles every program synchronously and the cube context's shaders differ from the frame's
+  //  — the capture alone took 51 s on WebGL2 Medium, measured — so the WebGL2 fallback keeps no reflections)
+  if (ctx.presetId !== 'low' && !renderer.backend?.isWebGLBackend && params.get('refl') !== '0') {
+    try {
+      const { RoomReflections } = await import('../render/reflections.ts');
+      refl = new RoomReflections({ renderer, scene, camera, layout: ctx.layout, roomGroups: level.roomGroups, doors: level.doors.doors.values(), darken: [rig.flashlight.light], keep: [level.root], extra: (c, m) => (m.isLightmapMaterial ? level.lightmapped : level.probeLit).push(c) });
+      await refl.capture(); // first: the cube context renders the materials as they are (no reflection code built there)
+      refl.attach();
+      console.info(`[reflections] ${JSON.stringify(refl.stats)}`);
+    } catch (e) {
+      console.warn('[reflections] disabled:', e);
+      refl = null;
+    }
+  }
 
   const world = (dt: number, t: number, lightning: number) => {
     // culling + room from the camera (hides move the camera, not the body)
@@ -539,17 +599,14 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
         audio.layers.setWeather({ rain: story.rain(), wind: (outside ? 0.8 : 0.5) * (story.rain() > 0 ? 1 : 0.35), inside: outside ? 0 : 1, surface: surf });
       }
     }
-    // blue hour (B12/C6): the mist lies in the field — thicker exterior fog, paler
-    fog.density = outside ? 0.028 + story.mist() * 0.022 : 0.0;
     level.update(dt, t, lightning);
     story.lateUpdate();
     rig.update(dt, t);
-    // sky flash (+ C6's blue hour: the sky pales toward dawn)
-    const bh = story.skyTint();
-    sky.setRGB(SKY_COLOR[0] + bh * 0.05, SKY_COLOR[1] + bh * 0.07, SKY_COLOR[2] + bh * 0.11);
-    (scene.background as any).setRGB(sky.r + lightning * 0.35, sky.g + lightning * 0.38, sky.b + lightning * 0.46);
-    // the rain haze is lit by the same sky: fog colour follows the background (flashes included)
-    fog.color.setRGB(sky.r * 1.05 + lightning * 0.3, sky.g * 1.05 + lightning * 0.33, sky.b * 1.05 + lightning * 0.4);
+    // sky + flash, fog (mist in B12/C6), C6's blue hour, exposure, white balance (LIGHTING lane)
+    atmo.update(dt, lightning, outside, level.room, story.mist(), story.skyTint());
+    refl?.update(lightning, camera, story.skyTint()); // LIGHTING lane (items 6, 19): flash, camera-in-room, dawn re-capture
+    torchBounce.update(dt, rig.on); // LIGHTING lane (item 11): beam bounce at the hit point
+    syncSurfaceLook(rig.flashlight, torchBounce, story.skyTint()); // LIGHTING lane (items 5, 6, 11, 19): look → uniforms
   };
 
   const runtime: SceneRuntime = {
@@ -597,7 +654,11 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
     },
     expose: {
       attachLightning: story.attachLightning,
-      setPipeline: story.setPipeline,
+      setPipeline: (p: Pipeline) => {
+        warmPipe = p;
+        story.setPipeline(p);
+        atmo.setPipeline(p); // LIGHTING lane: exposure meter reads the pipeline's scene texture
+      },
       story,
       characters: story.characters,
       cutscenes: story.cutscenes,
@@ -620,59 +681,95 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
       rig,
       doors: level.doors,
       /**
-       * Shadow/depth pipelines compile lazily the first time an object enters the flashlight frustum (a visible
-       * hitch). Walk the camera through every playable room's centre, 4 headings each, rendering with culling on,
-       * so those pipelines exist before the player gets there.
+       * Load-time shader warm-up (PERF-PLAN P0-1/P0-2). Walks the camera through every playable room's centre, 4
+       * headings, culling ON: `compile()` builds the room's pipelines asynchronously in the context the frame is drawn
+       * in, then one synchronous render per heading creates the shadow-pass objects (shadow maps share one depth
+       * material, so that adds few programs). Then the special sets: the C2 tableau (Ada + Harlan + the table candle,
+       * whose shadow light is fixed from load — no castShadow toggles) and the car set / your car in the row.
+       * Each step logs `[game] warm <step> <ms> builds=<n>` so a stall names its step.
        */
-      afterCompile: async (render: () => void) => {
+      afterCompile: async (render: () => void, compile: () => Promise<void>) => {
         const t0 = performance.now();
         level.setCulling(true);
         const saved = player.eye();
         const yaw = player.yaw;
         const pitch = player.pitch;
+        const fov = camera.fov;
+        camera.fov = Math.max(fov, 100); // taller frustum: floors + ceilings in the same 4 headings
+        camera.updateProjectionMatrix();
         overlay.set('compile', 0.3, 'warming rooms');
         const rooms = ctx.layout.rooms.filter((r) => r.kind !== 'set');
+        const step = async (label: string, place: () => void, headings: number[]) => {
+          const ts = performance.now();
+          const b0 = perfBuilds();
+          place();
+          for (const rot of headings) {
+            camera.rotation.set(-0.2, rot, 0);
+            camera.updateMatrixWorld(true);
+            rig.snap();
+            rig.update(0.016, 0);
+            await compile();
+          }
+          for (const rot of headings) {
+            camera.rotation.set(-0.2, rot, 0);
+            camera.updateMatrixWorld(true);
+            rig.snap();
+            rig.update(0.016, 0);
+            render();
+          }
+          // runtime lane D (fz7.mjs): with the cutscene DOF chain on, the scene pass draws in ANOTHER render context
+          // (ctx 15 vs 10), so every road object warmed here was node-built again at C0's DOF cuts (12.5 / 19.0 /
+          // 22.0 s: 1.1–2.9 s freezes on Medium). The opening steps also draw their headings through the DOF chain.
+          if (label.startsWith('rc9') && preset.post.cutsceneDof && warmPipe?.kind === 'post') {
+            warmPipe.setCutscene({ dof: { focusDistance: 30, focalLength: 40, bokehScale: 1.5 } });
+            for (const rot of headings) {
+              camera.rotation.set(-0.2, rot, 0);
+              camera.updateMatrixWorld(true);
+              rig.snap();
+              rig.update(0.016, 0);
+              render();
+            }
+            warmPipe.setCutscene(null);
+          }
+          console.info(`[game] warm ${label} ${(performance.now() - ts).toFixed(0)} ms builds=${perfBuilds() - b0}`);
+          await nextFrame();
+        };
+        const four = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
         let k = 0;
         for (const r of rooms) {
           const e = level.index.elevationOf(r.id);
           const cx = (r.rect[0] + r.rect[2]) / 2;
           const cy = r.kind === 'exterior' ? Math.min(r.rect[3], -3) - 6 : (r.rect[1] + r.rect[3]) / 2;
-          const eye = coords.planToWorld([cx, cy, e + 1.6]);
-          for (let d = 0; d < 4; d++) {
-            camera.position.set(eye[0], eye[1], eye[2]);
-            camera.rotation.set(-0.2, (d * Math.PI) / 2, 0);
-            camera.updateMatrixWorld(true);
-            level.setViewer(cx, cy, e);
-            rig.snap();
-            rig.update(0.016, 0);
-            render();
-          }
-          overlay.set('compile', 0.3 + (0.7 * ++k) / rooms.length, r.id);
-          await nextFrame();
+          await step(
+            r.id,
+            () => {
+              const eye = coords.planToWorld([cx, cy, e + 1.6]);
+              camera.position.set(eye[0], eye[1], eye[2]);
+              level.setViewer(cx, cy, e);
+            },
+            four,
+          );
+          overlay.set('compile', 0.3 + (0.6 * ++k) / rooms.length, r.id);
         }
-        // C2 turns on the table candle's shadow: compile that variant now (a pipeline hitch mid-cutscene otherwise)
-        const candle = level.lights.flickers.find((f) => f.def.id === 'L_CANDLE_TABLE');
-        if (candle) {
-          // with Ada + Harlan in the tableau (their shadow-casting / receiving variants compile too: C2, C5's
-          // shadow-play and C7 reuse this light)
+        // C2 tableau: Ada + Harlan at the table (their shadow-casting / receiving variants: C2, C5's shadow-play and
+        // C7 reuse the table candle, whose shadow is always on in the LightsNodes — RuntimeLights, P0-2)
+        if (ctx.layout.rooms.some((r) => r.id === 'G2')) {
           story.warmTableau(true);
-          candle.light.castShadow = true;
-          candle.light.shadow.mapSize.set(512, 512);
-          candle.light.shadow.bias = -0.002;
-          const g2 = ctx.layout.rooms.find((r) => r.id === 'G2');
-          if (g2) {
-            const e = level.index.elevationOf('G2');
-            const eye = coords.planToWorld([3.3, 1.5, e + 1.6]);
-            camera.position.set(eye[0], eye[1], eye[2]);
-            camera.rotation.set(-0.15, -Math.PI / 2 + 0.3, 0);
-            camera.updateMatrixWorld(true);
-            level.setViewer(3.3, 1.5, e);
-            rig.snap(); // the first-person arms (their LightsNode has the candles too) compile the shadow variant as well
-            rig.update(0.016, 0);
-            render();
-            await nextFrame();
-          }
-          candle.light.castShadow = false;
+          // PERF (review): unmute the candle's cube shadow for this step so its shadow-pass render objects (parlor
+          // props, Ada, Harlan) build now — measured ~470 node builds / +146 programs at C2's first shadow frame else
+          const candle = level.lights.flickers.find((f) => f.def.id === SHADOW_CANDLE_ID)?.light;
+          if (candle) setCandleShadow(candle, true);
+          const e = level.index.elevationOf('G2');
+          await step(
+            'tableau',
+            () => {
+              const eye = coords.planToWorld([3.3, 1.5, e + 1.6]);
+              camera.position.set(eye[0], eye[1], eye[2]);
+              level.setViewer(3.3, 1.5, e);
+            },
+            [-Math.PI / 2 + 0.3],
+          );
+          if (candle) setCandleShadow(candle, false);
           story.warmTableau(false);
         }
         // the CAR set (C1/C7 interior: rain overlay, cluster, lamps) and your car in the row (shown at C3's flash)
@@ -680,29 +777,92 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
           const row = level.prop('P_CAR_ROW');
           const rowWas = row?.visible;
           if (row) row.visible = true;
-          const setEye = coords.planToWorld([100.45, 1.35, 1.1]);
-          camera.position.set(setEye[0], setEye[1], setEye[2]);
-          camera.rotation.set(-0.05, 0, 0);
-          camera.updateMatrixWorld(true);
-          level.setCulling(false);
-          rig.snap();
-          rig.update(0.016, 0);
-          render();
+          await step(
+            'car-set',
+            () => {
+              const setEye = coords.planToWorld([100.45, 1.35, 1.1]);
+              camera.position.set(setEye[0], setEye[1], setEye[2]);
+              level.setViewer(100.45, 1.35, 0);
+            },
+            four,
+          );
           const rowEye = coords.planToWorld([9.5, -5.5, 1.7]);
-          camera.position.set(rowEye[0], rowEye[1], rowEye[2]);
-          camera.lookAt(new THREE.Vector3(...coords.planToWorld([13.4, -1.6, 0.6])));
-          camera.updateMatrixWorld(true);
-          render();
-          await nextFrame();
+          const look = new THREE.Vector3(...coords.planToWorld([13.4, -1.6, 0.6]));
+          await step(
+            'car-row',
+            () => {
+              camera.position.set(rowEye[0], rowEye[1], rowEye[2]);
+              level.setViewer(9.5, -5.5, 0);
+            },
+            [Math.atan2(-(look.x - rowEye[0]), -(look.z - rowEye[2]))],
+          );
           if (row) row.visible = !!rowWas;
-          level.setCulling(true);
         }
+        // County Road 9 (C0 / C1, opening builder 2): gameplay's 90 m far plane never reaches the billboard, diner, EAT
+        // sign, truck, guide sign, shields, deer or most corridor chunks — compile them from above the road with the C0
+        // aerial range (near 1 / far 2000), else their first frame inside the cutscene compiles (a hitch)
+        if (level.prop('P_RC9_BILLBOARD')) {
+          const near0 = camera.near;
+          const far0 = camera.far;
+          camera.near = 1;
+          camera.far = 2000;
+          camera.updateProjectionMatrix();
+          await step(
+            'rc9',
+            () => {
+              const eye = coords.planToWorld([600, -150, 60]);
+              camera.position.set(eye[0], eye[1], eye[2]);
+              level.setViewer(600, -150, 0);
+            },
+            four,
+          );
+          // AD review (opening): ground level beside our sedan (interior mounted) + the truck at the billboard — C0
+          // compiled their cabin/truck/road-dressing programs mid-cinematic otherwise (0.2–9 s hitches)
+          camera.near = 0.03;
+          camera.far = 900;
+          camera.updateProjectionMatrix();
+          const roadEye = story.fx.warmRoad?.(true);
+          if (roadEye) {
+            await step(
+              'rc9-road',
+              () => {
+                camera.position.set(roadEye[0], roadEye[1], roadEye[2]);
+                const p = coords.worldToPlan(roadEye);
+                level.setViewer(p[0], p[1], 0);
+              },
+              [...four, Math.PI / 4, (5 * Math.PI) / 4],
+            );
+            story.fx.warmRoad(false);
+          }
+          camera.near = near0;
+          camera.far = far0;
+          camera.updateProjectionMatrix();
+        }
+        camera.fov = fov;
+        camera.updateProjectionMatrix();
+        overlay.set('compile', 1, 'ready');
         player.teleport(saved, yaw, pitch);
         const pf = player.planFeet();
         level.setViewer(pf[0], pf[1], pf[2]);
         rig.snap();
         rig.update(0.016, 0);
         console.info(`[game] room warm-up ${(performance.now() - t0).toFixed(0)} ms`);
+      },
+      /**
+       * PERF-PLAN P1-4 (debug; scripts/qa/probes-export.mjs): the runtime-baked probe grids (load with ?probes=bake)
+       * as a probes.bin file, base64 — the export writes it to public/assets/<tier>/probes.bin.
+       */
+      exportProbes: async () => {
+        const { readGridData, encodeProbeFile } = await import('../render/probes.ts');
+        const grids = [];
+        for (const g of level.grids) {
+          if (!g.grid || g.shipped || !g.spec) throw new Error(`grid ${g.id} was not baked at runtime (load with ?probes=bake)`);
+          grids.push({ id: g.id, size: g.spec.size, center: g.spec.center, counts: g.spec.counts, far: g.spec.far, falloff: g.grid.falloff, data: await readGridData(renderer, g.grid) });
+        }
+        const bytes = encodeProbeFile({ key: level.probeKey, grids });
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        return { key: level.probeKey, bytes: bytes.length, grids: grids.map((g) => `${g.id} ${g.counts.join('x')}`), base64: btoa(bin) };
       },
       onReady: () => overlay.remove(),
       whereText: () => {
@@ -766,6 +926,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
       },
     },
   };
+  atmo.attachApi(runtime.expose.look); // LIGHTING lane: window.__game.look.{get,set,meter,snap} (look() still turns)
   return {
     runtime,
     lightning: { exposureScale: 1 },
@@ -837,12 +998,13 @@ async function startTestRoom(h: BootHandoff, ctx: GameContext, input: Input, pre
   }
   const controller = new TestController(camera, input, room.spawn, { x0: ROOM.minX, x1: ROOM.maxX, z0: ROOM.minZ, z1: ROOM.maxZ }, room.obstacles);
   const SPOT_PEAK = 90; // candela
+  let torchOn = true; // (the torch light stays visible when off: see flashlight.setOn)
   const runtime: SceneRuntime = {
     beginText: ['Click to begin', 'WASD move · Shift walk faster · mouse look · F flashlight · L lightning · Esc pause'],
     update(dt, now, paused, lightning) {
       if (!paused) {
         controller.update(dt, settings);
-        if (input.wasPressed('KeyF')) flashlight.setOn(!flashlight.light.visible);
+        if (input.wasPressed('KeyF')) flashlight.setOn((torchOn = !torchOn));
       }
       room.update(dt, now);
       flashlight.update(dt, now);
@@ -948,7 +1110,8 @@ function createLightning(ctx: GameContext, pipeline: Pipeline, hooks: LightningH
       }
       api.level = level;
       uLightning.value = level;
-      pipeline.uniforms.exposure.value = 1 + 0.18 * level * hooks.exposureScale;
+      // LIGHTING lane (REALISM-BACKLOG item 3): no exposure kick — a 100 ms flash over-exposes, the eye can't follow;
+      // the auto-exposure meter (src/render/exposure.ts) holds through flashes.
     },
   };
   return api;

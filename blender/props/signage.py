@@ -54,6 +54,11 @@ def sign_post(p, rng):
     part.add(box(0.5, 0.03, 0.09, 0.004, 2), mat, T((0, -ps / 2 - 0.015, zc - 0.2)))
     face_y = yb - st / 2
     plank_board(part, rng, sw, sh, st, mat, 4, T((0, face_y, zc)))
+    for bx in (-0.55, 0.55):     # 3/8" carriage bolts through each plank into the battens (Ø 22 mm domes), rust-streaked
+        for k in range(4):
+            zb = zc + (k - 1.5) * sh / 4 + rng.j(0.01)
+            part.add(lathe([(0.011, 0.0), (0.0095, 0.003), (0.006, 0.0052), (0.0, 0.006)], n=16), 'rust',
+                     T((bx + rng.j(0.008), face_y - st / 2 + 0.0005, zb), (math.pi / 2, 0, 0)))
     # moulding frame round the sign face
     fy = face_y - st / 2 - 0.009
     for zz in (sh / 2 + 0.01, -sh / 2 - 0.01):
@@ -119,11 +124,13 @@ def vacancy_plate(p, rng):
         v.co.y += 0.012 * cx * cz + 0.004 * (1 - (2 * v.co.x / w) ** 2)
     part.add(plate, mat, T((0, 0, zt - h / 2)))
     for zz in (zt, zt - h):   # folded hem top and bottom
-        part.add(tube([(-w / 2, 0.001, zz), (w / 2, 0.001, zz)], 0.0022, sides=6), mat)
+        part.add(tube([(-w / 2, 0.001, zz), (w / 2, 0.001, zz)], 0.0022, sides=12), mat)
     for sx in (-0.17, 0.17):
         hook = [(sx, 0, 0.0), (sx + 0.012, 0, -0.012), (sx, 0, -0.03), (sx - 0.012, 0, -0.045), (sx, 0, -0.062),
                 (sx, 0.002, zt + 0.01)]
-        part.add(tube(fillet(hook, 0.008, 3), 0.0025, sides=6), 'rust')
+        part.add(tube(fillet(hook, 0.008, 3), 0.0025, sides=12), 'rust')
+        part.add(lathe([(0.0045, 0.0), (0.004, 0.0008), (0.0025, 0.0012), (0.0, 0.0012)], n=16), 'rust',
+                 T((sx, -0.0009, zt - 0.012), (math.pi / 2, 0, 0)))          # punched-hole grommet the hook rides in
     part.add(tube([(-0.21, 0, 0.0), (0.21, 0, 0.0)], 0.004, sides=8), 'rust')   # hanger rod = the swing pivot
     decal(part, 'vacancy_plate.face', w - 0.03, h - 0.03, T((0, -0.0015, zt - h / 2)), p.get('text', 'VACANCY'),
           style='stencil', extra={'text_param': 'text'})

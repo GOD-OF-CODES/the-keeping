@@ -13,7 +13,7 @@ from . import kit
 import importlib
 
 FAMILIES = ['lighting', 'furniture', 'small_items', 'signage', 'cabinets', 'bells_rope', 'exterior', 'architecture',
-            'textiles', 'kitchen', 'sedan']
+            'textiles', 'kitchen', 'sedan', 'sedan_cabin', 'trees', 'roadside']
 MISSING = []
 for _f in FAMILIES:   # registration side effects; a family not written yet must not break the others
     try:

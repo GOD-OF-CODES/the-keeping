@@ -13,6 +13,7 @@ Conventions (docs/PROPS.md):
 """
 import math
 import random
+import zlib
 
 import bmesh
 import bpy
@@ -38,7 +39,9 @@ class Rng(random.Random):
         return self.random() < p
 
     def sub(self, salt):
-        return Rng(hash((self.random(), salt)) & 0xFFFFFFFF)
+        # zlib.crc32, not hash(): str hashes are salted per process (PYTHONHASHSEED), which made every props /
+        # corridor run produce different geometry (and lightmap UV2) from the same code (lane A round C)
+        return Rng(zlib.crc32(repr((self.random(), salt)).encode()) & 0xFFFFFFFF)
 
 
 def T(loc=(0, 0, 0), rot=(0, 0, 0), scale=None):
@@ -390,6 +393,68 @@ def bend_z(bm, amount_per_m2):
     return bm
 
 
+def screw_head(d=0.0079, slot=True):
+    """Slotted round-head wood screw head, axis +z, sitting on z=0 (#8 = 7.9 mm; slot 1.2 mm wide, 0.8 mm deep).
+    Two half-domes either side of the slot over a slot floor; <= 120 tris."""
+    r = d / 2
+    dome = [(r, 0.0), (r * 0.95, r * 0.25), (r * 0.7, r * 0.45), (0.0, r * 0.52)]
+    if not slot:
+        return lathe(dome, n=12)
+    out = merge(*[transform(lathe(dome, n=6, a0=-math.pi / 2, a1=math.pi / 2),
+                            Matrix.Translation((0.0006 * s, 0, 0)) @ Matrix.Rotation(0 if s > 0 else math.pi, 4, 'Z'))
+                  for s in (1, -1)])
+    return merge(out, cyl(r * 0.92, max(0.0002, r * 0.52 - 0.0008), n=12))
+
+
+def nail_head(d=0.005):
+    """Cut-nail head: a slightly domed rectangle d x 0.7 d, 1.2 mm proud, z=0 at the surface."""
+    bm = box(d, d * 0.7, 0.0012, 0.0004, 1, base=True)
+    for v in bm.verts:
+        if v.co.z > 0.001:
+            v.co.z += 0.0003 * (1 - (2 * v.co.x / d) ** 2)
+    return bm
+
+
+def hinge_butt(h=0.064, w=0.05, knuckles=5, leaves=(-1, 1), barrel=True):
+    """Butt hinge seen closed on a door edge: two leaves (w/2 each, 2 mm) + a knuckle barrel (Ø 6 mm in `knuckles`
+    segments with 0.4 mm gaps) along z, 3 screw heads per leaf. Leaves lie in the y=0 plane, barrel at x=0.
+    leaves/barrel pick the pieces (a door carries its own leaf; the carcass the other leaf + barrel)."""
+    parts = []
+    for s in leaves:
+        parts.append(box(w / 2 - 0.003, 0.002, h, 0.0004, 1, center=(s * (w / 4 + 0.0015), 0, 0)))
+        for k in (-1, 0, 1):
+            m = Matrix.Translation((s * w / 4, -0.001, k * h * 0.32)) @ Matrix.Rotation(math.pi / 2, 4, 'X')
+            parts.append(transform(screw_head(0.0055), m))
+    seg = h / knuckles
+    for k in (range(knuckles) if barrel else ()):
+        parts.append(transform(cyl(0.003, seg - 0.0004, n=12), Matrix.Translation((0, 0, -h / 2 + k * seg + 0.0002))))
+    return merge(*parts)
+
+
+def escutcheon(h=0.04, w=0.018):
+    """Keyhole plate h x w (1 mm, domed edges) with a 10 x 4 mm keyhole read as a dark inset (separate slot box
+    returned second: give it a dark material). Plate faces -y, centred on the origin."""
+    plate = box(w, 0.0012, h, 0.0005, 1)
+    hole = merge(transform(cyl(0.0022, 0.0004, n=12), Matrix.Translation((0, -0.0004, 0.002)) @
+                           Matrix.Rotation(math.pi / 2, 4, 'X')),
+                 box(0.0018, 0.0004, 0.006, 0.0, 1, center=(0, -0.0006, -0.0015)))
+    return plate, hole
+
+
+def knurl(r, h, n=24, depth=0.0004):
+    """Straight-knurled cylinder (axis z, from z=0): n ridges round the rim."""
+    bm = cyl(r, h, n=n * 2)
+    for v in bm.verts:
+        a = math.atan2(v.co.y, v.co.x)
+        k = int(round(a / (math.pi / n))) % 2
+        rr = math.hypot(v.co.x, v.co.y)
+        if rr > r * 0.9:
+            f = (r - depth * k) / rr
+            v.co.x *= f
+            v.co.y *= f
+    return bm
+
+
 def merge(*bms):
     """Concatenate bmeshes into the first (topology copied through a temp mesh)."""
     out = bms[0]
@@ -443,6 +508,7 @@ class Part:
         self.children = []   # (Part, matrix) — attached as child nodes (e.g. a hinged door inside a cabinet)
         self.origin = Matrix.Identity(4)   # node transform relative to its parent (pivot for moving parts)
         self.subsurf = 0                     # Catmull-Clark levels applied at build (car body panels)
+        self.sharp_angle = None              # override build()'s auto-sharp angle (trees: smooth thin tubes)
 
     def add(self, bm, mat, m=None, smooth=True, grain=None, uv_scale=1.0, face_mats=None):
         """Add a bmesh (freed afterwards). face_mats: optional per-face material ids (bm.faces order) for one
@@ -564,8 +630,17 @@ class Part:
             uv.data.foreach_set('uv', flat)
         me.polygons.foreach_set('material_index', self.face_mat)
         me.polygons.foreach_set('use_smooth', self.face_smooth)
+        # wear finishing (props/wear.py, docs/PROPS-FINISH.md §1.4): support loops on the final topology
+        from props import wear
+        anchors = [(c.name.split('.')[0].split(' ')[0], (cm if cm is not None else c.origin).to_translation(), c.extras)
+                   for c, cm in self.children if not c.faces and c.name.startswith('wear_')]
+        self.children = [(c, cm) for c, cm in self.children if c.faces or not c.name.startswith('wear_')]
+        finish = wear.ENABLED and not (self.extras.get('decal') or self.extras.get('print')) and self.sharp_angle is None
+        skip = {i for i, mid in enumerate(self.mats) if wear.family(mid) in wear.NO_MASK_FAMILIES}
+        if finish and wear.LOOPS and wear.CURRENT_TYPE in wear.LOOP_TYPES and not self.subsurf and len(skip) < len(self.mats):
+            wear.support_loops(me, wear.loop_width(self.verts), skip)
         try:
-            me.set_sharp_from_angle(angle=math.radians(sharp_angle))
+            me.set_sharp_from_angle(angle=math.radians(self.sharp_angle or sharp_angle))
         except Exception:
             pass
         for mid in self.mats:
@@ -582,6 +657,9 @@ class Part:
                 ob.data.set_sharp_from_angle(angle=math.radians(sharp_angle))
             except Exception:
                 pass
+        if finish and len(skip) < len(self.mats):
+            wear.weighted_normals(ob)
+            wear.STATS[(wear.CURRENT_KEY or wear.CURRENT_TYPE, self.name)] = wear.bake(ob, wear.SCALARS.get(wear.CURRENT_TYPE, wear.DEFAULT), anchors, skip)['mean']
         for k, v in self.extras.items():
             ob[k] = v
         ob['_local'] = self.name
@@ -642,6 +720,38 @@ def decal(part, name, w, h, m, text, mat='paper_aged', style='painted', extra=No
     d.extras = {'decal': style, 'text': text, 'decal_size_m': [round(w, 4), round(h, 4)], **(extra or {})}
     part.children.append((d, m))
     return d
+
+
+GRIME = False   # PROPS-FINISH §4: off until the runtime 'grime' decal case + the grime_decal spec land (lead R1/R3)
+
+
+def grime(part, quads):
+    """All of a part's grime quads as ONE child Part '<part>_grime' (PROPS-FINISH §4.1): one mesh, one draw call.
+
+    quads: [(cell, seed, loc, rot, w, h)] — each quad is built like decal() (local XZ, facing -y), placed by
+    T(loc, rot) in the part's space and lifted 0.3 mm along its normal; its UVs map the 4x4 atlas cell
+    (col + u) / 4, (row + v) / 4 with cell = row * 4 + col. rot (-pi/2, 0, 0) lays a quad face-up on a top.
+    Returns None (builds nothing) while GRIME is off.
+    """
+    if not GRIME or not quads:
+        return None
+    g = Part(part.name + '_grime', part.rng)
+    g.mats.append('grime_decal')
+    for cell, seed, loc, rot, w, h in quads:
+        m = T(loc, rot)
+        n = (m.to_3x3() @ Vector((0, -1, 0))).normalized()
+        col, row = cell % 4, cell // 4
+        base = len(g.verts)
+        for x, z in ((-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2)):
+            g.verts.append(m @ Vector((x, 0, z)) + n * 0.0003)
+        g.faces.append([base, base + 1, base + 2, base + 3])
+        g.face_mat.append(0)
+        g.face_smooth.append(False)
+        g.loop_uv.append([((col + u) / 4, (row + v) / 4) for u, v in ((0, 0), (1, 0), (1, 1), (0, 1))])
+    g.extras = {'decal': 'grime', 'grime': [[int(q[0]), int(q[1])] for q in quads],
+                'decal_size_m': [round(max(q[4] for q in quads), 4), round(max(q[5] for q in quads), 4)]}
+    part.children.append((g, T()))
+    return g
 
 
 def anchor(part, name, loc, extras=None):

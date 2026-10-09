@@ -20,6 +20,10 @@ export const c6BlueHour: TimelineFactory = (ctx) => {
   const drive: P3[] = [[11.5, -5.5, 0], [9.5, -7.5, 0], [5.8, -11, 0], [3.6, -16, 0], [2.4, -23, 0], [1.4, -28.2, 0], [-3, -30.4, 0], [-14, -30.8, 0]];
 
   const cues: Cue[] = [
+    // C1-OPENING §7.1.2: the detailed sedan_interior v2 rides the driven sedan in C6 too (same cabin as C1, not cabin_lo)
+    { t: 7.5, type: 'fx', id: 'car_mount', params: { on: true, pov: true } },
+    { t: 15.5, type: 'fx', id: 'car_mount', params: { on: true, pov: false } },
+    { t: 19.5, type: 'fx', id: 'car_mount', params: { on: true, pov: true } },
     { t: 0, type: 'lock', mode: 'full' },
     { t: 0, type: 'light', op: 'storm_auto', on: false },
     { t: 0, type: 'weather', rain: 0, wind: 0.25, inside: 0, surface: 'gravel' },
@@ -60,6 +64,7 @@ export const c6BlueHour: TimelineFactory = (ctx) => {
     { t: 23.8, type: 'visible', char: 'arms', visible: false },
     { t: 24.0, type: 'fx', id: 'blue_hour', params: { mist: 1.5, rain: 0 } },
     { t: C6_DURATION, type: 'fx', id: 'mirror_view', params: { on: false } },
+    { t: C6_DURATION, type: 'fx', id: 'car_mount', params: { on: false } },
     { t: C6_DURATION, type: 'fx', id: 'dash', params: { on: false, fuelNeedle: 0.25, fuelLamp: false } },
   ];
 

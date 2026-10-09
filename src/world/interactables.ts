@@ -4,6 +4,7 @@
 // Ada's boards); every action also emits `interact { id, action }` so the story lane can react.
 
 import * as THREE from 'three/webgpu';
+import { CUTSCENE_SCREEN } from '../cutscenes/host.ts';
 import type { Input } from '../core/input.ts';
 import type { GameContext } from '../game/context.ts';
 import type { Inventory, Journal } from '../player/inventory.ts';
@@ -86,7 +87,11 @@ export class Interactables {
     const dot = document.createElement('div');
     Object.assign(dot.style, { position: 'fixed', left: '50%', top: '50%', width: '3px', height: '3px', margin: '-1.5px 0 0 -1.5px', borderRadius: '50%', background: 'rgba(230,223,207,.35)', zIndex: '19', pointerEvents: 'none' });
     document.body.appendChild(dot);
+    this.dot = dot;
   }
+  /** The centre dot (hidden while interaction is inactive: cutscenes, menus — it sat in every C0/C1 frame). */
+  private dot: HTMLElement | null = null;
+  private dotOn = true;
 
   add(it: Interactable): void {
     this.items.push(it);
@@ -95,6 +100,11 @@ export class Interactables {
   }
 
   update(dt: number, active: boolean): void {
+    const dotOn = active && !CUTSCENE_SCREEN.held;
+    if (this.dot && this.dotOn !== dotOn) {
+      this.dotOn = dotOn;
+      this.dot.style.display = dotOn ? '' : 'none';
+    }
     this.focus = active && this.enabled ? this.pick() : null;
     const label = this.focus?.label() ?? null;
     if (!this.focus || !label) {

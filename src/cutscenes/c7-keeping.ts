@@ -6,8 +6,8 @@
 // lifts her own head in one hand, raises the sack by its knot and turns its eyeholes to the doorway. Black. One bell.
 // THE KEEPING. (The story ends the game on cutscene end.)
 
-import { c1Empty } from './c1-empty.ts';
-import { CAM, DOOR, PROP, ROCKER_HEADING, add, every, focusAt } from './stage.ts';
+import { c1Empty, C1_SHOTS } from './c1-empty.ts';
+import { CAM, CAR_SET, DOOR, DRIVER_EYE, PROP, ROCKER_HEADING, add, every, focusAt, inCar } from './stage.ts';
 import type { CameraShot, Cue, TimelineFactory } from './types.ts';
 
 export const C7_DURATION = 34;
@@ -17,9 +17,12 @@ const shift = (s: CameraShot, t: number, d?: number): CameraShot => ({ ...s, t, 
 
 export const c7Keeping: TimelineFactory = (ctx) => {
   const c1 = c1Empty(ctx);
-  const c1Shots = c1.shots!;
-  const interior = c1Shots[0]; // the road ahead in the headlights
-  const signPov = c1Shots[4]; // the ROOMS sign under its lantern (car space)
+  // the interior stays on the static CAR set (the sting dressing: maroon trim, pine freshener, blinking fuel lamp —
+  // C1-OPENING §7.1.2), framed like C1's road POV; the cut to the ROOMS sign POV rides the moving sedan with the
+  // detailed interior mounted (the cut hides the swap)
+  const pov = C1_SHOTS.pov;
+  const interior: CameraShot = { ...pov, space: 'plan', path: [inCar(DRIVER_EYE, CAR_SET)], target: pov.target.map((p) => inCar(p, CAR_SET)) };
+  const signPov = C1_SHOTS.rooms;
   const th = CAM.c7_sting_threshold;
   const gb = CAM.c7_guest_book;
   const sackHead: [number, number, number] = [PROP.P_ROCKER[0] - 0.2, PROP.P_ROCKER[1] - 0.2, 1.55];
@@ -48,6 +51,8 @@ export const c7Keeping: TimelineFactory = (ctx) => {
     { t: 6.8, type: 'voice', trigger: 'c7:sign_seen' },
     { t: 7.2, type: 'sfx', id: 'vacancy_creak', pos: PROP.P_VACANCY_PLATE, room: 'EXT1' },
     { t: 10.0, type: 'loop', key: 'engine', id: null, fade: 0.8 },
+    { t: 3.5, type: 'fx', id: 'car_mount', params: { on: true, pov: true } },
+    { t: 10.2, type: 'fx', id: 'car_mount', params: { on: false } },
     { t: 10.2, type: 'visible', char: 'arms', visible: false },
     { t: 10.2, type: 'fx', id: 'windshield_rain', params: { on: false, intensity: 0 } },
     { t: 10.2, type: 'fx', id: 'wipers', params: { on: false } },

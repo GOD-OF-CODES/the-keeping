@@ -8,7 +8,7 @@
 // Pixel ratio = min(devicePixelRatio, preset cap) — never devicePixelRatio directly. AgX, PCF shadows.
 
 import * as THREE from 'three/webgpu';
-import type { PresetConfig } from './presets.ts';
+import { antialiasingFor, type PresetConfig } from './presets.ts';
 
 export const POWER_PREFERENCE = 'high-performance' as const;
 
@@ -20,11 +20,16 @@ export interface RendererInfo {
   backendReason: string;
 }
 
+/** Per-stage texture/sampler limits the adapter offers (null: use the WebGPU defaults, 16). */
+let adapterTexLimits: { maxSampledTexturesPerShaderStage: number; maxSamplersPerShaderStage: number } | null = null;
+
 async function hasWebGPUAdapter(timeoutMs = 1500): Promise<boolean> {
   const gpu = (navigator as unknown as { gpu?: { requestAdapter(o?: object): Promise<unknown> } }).gpu;
   if (!gpu) return false;
   try {
-    const a = await Promise.race([gpu.requestAdapter({ powerPreference: POWER_PREFERENCE }), new Promise<null>((r) => setTimeout(() => r(null), timeoutMs))]);
+    const a: any = await Promise.race([gpu.requestAdapter({ powerPreference: POWER_PREFERENCE }), new Promise<null>((r) => setTimeout(() => r(null), timeoutMs))]);
+    const L = a?.limits;
+    if (L) adapterTexLimits = { maxSampledTexturesPerShaderStage: Math.min(32, L.maxSampledTexturesPerShaderStage ?? 16), maxSamplersPerShaderStage: Math.min(32, L.maxSamplersPerShaderStage ?? 16) };
     return !!a;
   } catch {
     return false;
@@ -36,9 +41,6 @@ export function effectivePixelRatio(preset: PresetConfig): number {
 }
 
 export async function createRenderer(preset: PresetConfig, opts: { forceWebGL: boolean; parent: HTMLElement }): Promise<RendererInfo> {
-  // TAAU: "MSAA must be disabled when TAAU is in use." Debug/QA override: ?aa=0|1 (only meaningful on the MSAA tier).
-  const aaParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('aa') : null;
-  const antialias = preset.antialiasing === 'msaa' && aaParam !== '0';
   const canvas = document.createElement('canvas');
   canvas.className = 'tk-canvas';
   Object.assign(canvas.style, { display: 'block', width: '100%', height: '100%', outline: 'none' });
@@ -48,8 +50,17 @@ export async function createRenderer(preset: PresetConfig, opts: { forceWebGL: b
   let renderer: any;
   let reason: string;
   const wantWebGPU = !opts.forceWebGL && (await hasWebGPUAdapter());
+  // Canvas MSAA only where the preset asks for it on this backend (PERF-PLAN P0-3: Low = MSAA on WebGL2, FXAA on
+  // WebGPU). TAAU: "MSAA must be disabled when TAAU is in use". Debug/QA override on the Direct tier: ?aa=0|1.
+  // The pipeline follows renderer.samples, so a WebGPU→WebGL2 init fallback without MSAA still gets FXAA.
+  const aaParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('aa') : null;
+  const aaMode = antialiasingFor(preset, wantWebGPU ? 'webgpu' : 'webgl2');
+  const antialias = preset.pipeline === 'direct' && (aaMode === 'msaa' ? aaParam !== '0' : aaParam === '1');
   if (wantWebGPU) {
-    renderer = new THREE.WebGPURenderer({ canvas, antialias, powerPreference: POWER_PREFERENCE });
+    // Character fragments on Max sample albedo + normal + the probe-grid atlases + every shadow map + a reflection
+    // cube: 17 > the default 16 per stage (round 3 Max run: harlan_* pipelines invalid). Every WebGPU adapter we
+    // target offers more (M1: 48) — ask for up to 32 when the adapter has them.
+    renderer = new THREE.WebGPURenderer({ canvas, antialias, powerPreference: POWER_PREFERENCE, requiredLimits: adapterTexLimits ?? undefined });
     reason = 'WebGPU adapter available';
   } else {
     const context = canvas.getContext('webgl2', { powerPreference: POWER_PREFERENCE, antialias, alpha: true, depth: true, stencil: false });

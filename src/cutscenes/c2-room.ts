@@ -35,6 +35,9 @@ export const c2Room: TimelineFactory = (ctx) => {
     { t: 0, type: 'lock', mode: 'full' },
     { t: 0, type: 'light', op: 'storm_auto', on: false },
     { t: 0, type: 'light', op: 'cast_shadow', id: 'L_CANDLE_TABLE', on: true },
+    // R3-5 (runtime lane D): the snap at the room cuts landed at exposure 10.5 (the candle table top and Harlan's hood
+    // clipped; the parlor read as a lit room). Cap the meter for the whole cutscene; reset on camera release.
+    { t: 0, type: 'fx', id: 'exposure', params: { max: 2.8 } }, // look rd (max 5): still a lit room + clipped table top; base build read right at 2.65
     { t: 0, type: 'voice', trigger: 'b03:threshold_freeze' },
     { t: 0, type: 'clip', char: 'arms', clip: 'arms_freeze', fallback: ['arms_idle'] },
     { t: 0, type: 'heartbeat', bpm: 96 },

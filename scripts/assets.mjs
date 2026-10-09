@@ -9,6 +9,7 @@
 //   npm run assets -- --list            list jobs and their cache state
 //   npm run assets -- --manifest        only (re)write public/assets/<tier>/manifest.json
 //   npm run assets -- --dry-run         show what would run
+//   npm run assets -- --only house-review --job-args="--views facade_near"   extra args for the named job(s)
 //   npm run assets -- --touch --only X  mark jobs fresh without running them, ONLY if they were fresh at git HEAD
 //                                       (use after an uncommitted edit that cannot change their outputs)
 // A non-manual job whose outputs a MANUAL job wrote later (dev bake vs release bake) is never re-run implicitly:
@@ -340,12 +341,21 @@ async function runJob(job, hash) {
   const blender = pipeline.blender;
   const bargs = ['--background', '--factory-startup', '--python-exit-code', '1'];
   if (job.cyclesLog) bargs.push('--log', 'cycles', '--log-level', 'info');
-  bargs.push('--python', path.join(ROOT, 'blender/lib/cli.py'), '--', job.script, ...(job.args ?? []));
+  // --job-args="--views facade_near,b_facade": extra script args for a (manual review) job, appended after the job's own
+  const extra = opt('job-args') ? String(opt('job-args')).split(/\s+/).filter(Boolean) : [];
+  bargs.push('--python', path.join(ROOT, 'blender/lib/cli.py'), '--', job.script, ...(job.args ?? []), ...extra);
   const t0 = Date.now();
   await acquireLock();
   let res;
   try {
     res = await runProcess('/usr/bin/time', ['-l', blender, ...bargs], logFile, job.env);
+    // One automatic retry when Blender died from a signal (/usr/bin/time: "command terminated abnormally" — seen as a
+    // sporadic Metal/Cycles crash on the M1 under memory pressure); a Python error (exit code 1) is not retried.
+    if (res.code !== 0 && /terminated abnormally/.test(res.text)) {
+      console.log(`[assets] ${job.id}: Blender terminated abnormally — retrying once`);
+      fs.appendFileSync(logFile, '\n[assets] Blender terminated abnormally — automatic retry\n');
+      res = await runProcess('/usr/bin/time', ['-l', blender, ...bargs], logFile, job.env);
+    }
   } finally {
     releaseLock();
   }

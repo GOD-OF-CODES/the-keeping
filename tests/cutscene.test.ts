@@ -279,7 +279,7 @@ test('data: every Director cutscene id has a timeline; ids match; durations sane
   for (const [id, f] of Object.entries(CUTSCENES)) {
     const tl = f(ctx0);
     assert.equal(tl.id, id);
-    assert.ok(tl.duration > 0 && tl.duration < 60, `${id} duration`);
+    assert.ok(tl.duration > 0 && tl.duration <= 80, `${id} duration`); // C1 is 75 s (docs/C1-OPENING.md §4, lead-approved)
     for (const c of tl.cues) assert.ok(c.t >= 0 && c.t <= tl.duration + 1e-9, `${id}: cue at ${c.t} outside 0..${tl.duration}`);
     for (const s of tl.shots ?? []) {
       assert.ok(s.d > 0 && s.t >= 0 && s.t + s.d <= tl.duration + 1e-6, `${id}: shot ${s.t}+${s.d}`);

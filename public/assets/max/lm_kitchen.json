@@ -4,8 +4,8 @@
   "colorSpace": "linear",
   "atlas": "kitchen",
   "tier": "max",
-  "width": 2048,
-  "height": 2048,
+  "width": 1024,
+  "height": 1024,
   "container": "klm",
   "codec": null,
   "mantissaBits": 10,
@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.00561,
-    "p99": 0.04785,
-    "max": 14.53773,
-    "coverage": 0.4264
+    "mean": 0.00567,
+    "p99": 0.04176,
+    "max": 14.2867,
+    "coverage": 0.4251
   },
   "file": "lm_kitchen.klm"
 }

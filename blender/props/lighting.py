@@ -32,7 +32,7 @@ def _drip(part, rng, rfun, z_top, z_end, angle, rad, mat, m=None):
         r = rfun(z) + rad * 0.35
         pts.append((r * math.cos(a), r * math.sin(a), z))
         radii.append(0.55 + 0.5 * t + (0.35 if i == n else 0))
-    bm = tube(pts, rad, sides=6, radii=radii)
+    bm = tube(pts, rad, sides=8, radii=radii)
     part.add(bm, mat, m)
 
 
@@ -42,7 +42,7 @@ def _candle(part, rng, r, h, z0, mat, guttering=False, drips=2, wick_mat='crepe_
     lop = (0.35 if guttering else 0.12) * r
     prof = [(0, 0), (r, 0), (r * 1.004, h * 0.25), (r * 0.998, h * 0.6), (r * 1.003, h - 0.006),
             (r * 0.99, h - 0.002), (r * 0.9, h), (r * 0.55, h - crater * 0.7), (r * 0.18, h - crater), (0, h - crater)]
-    bm = lathe(prof, n=16)
+    bm = lathe(prof, n=32)         # 22 mm taper seen at 0.5 m: 32 segments (PROPS-FINISH §3.1a hero lathe)
     ang = rng.u(0, math.tau)
     for v in bm.verts:   # lopsided burn: one side of the rim lower, organic wobble
         if v.co.z > h * 0.8:
@@ -52,6 +52,7 @@ def _candle(part, rng, r, h, z0, mat, guttering=False, drips=2, wick_mat='crepe_
     jitter(bm, r * 0.035, freq=90.0, seed=rng.randint(0, 999))
     part.add(bm, mat, T((0, 0, z0)))
     rfun = lambda z: _interp_r(prof, max(0.0, min(h, z - z0)))
+    anchor(part, 'wear_soot', (0, 0, z0 + h - crater), {'r': r * 0.6, 'up': 0.0})   # soot flecks in the melt pool
     for i in range(drips):
         a = ang + rng.j(1.2) if i == 0 else rng.u(0, math.tau)
         zt = z0 + h - lop * 0.8 - 0.002
@@ -74,13 +75,14 @@ def candle(p, rng):
     if holder == 'chamberstick':
         dish = [(0, 0), (0.052, 0), (0.06, 0.0015), (0.066, 0.007), (0.069, 0.015), (0.0715, 0.0185),
                 (0.0695, 0.0205), (0.0665, 0.0165), (0.063, 0.009), (0.055, 0.0045), (0, 0.0035)]
-        part.add(lathe(dish, n=28), 'brass_tarnished')
+        part.add(lathe(dish, n=32), 'brass_tarnished')
         sock = [(0, 0.003), (0.0165, 0.003), (0.0185, 0.007), (0.016, 0.011), (0.0142, 0.040), (0.0168, 0.043),
                 (0.018, 0.047), (0.0165, 0.049), (0.0122, 0.049), (0.0118, 0.012), (0, 0.012)]
-        part.add(lathe(sock, n=20), 'brass_tarnished')
+        part.add(lathe(sock, n=32), 'brass_tarnished')
         ring = [(0.068 + 0.018 * (1 + math.cos(a)) / 2 * 1.2, 0, 0.012 + 0.015 * math.sin(a))
-                for a in [i * math.tau / 14 for i in range(14)]]
-        part.add(tube(ring, 0.0028, sides=6, closed=True), 'brass_tarnished')
+                for a in [i * math.tau / 20 for i in range(20)]]
+        part.add(tube(ring, 0.0028, sides=10, closed=True), 'brass_tarnished')
+        anchor(part, 'wear_handle', (0.07, 0, 0.02), {'r': 0.025})
         part.add(tube([(0.064, 0, 0.018), (0.09, 0, 0.027), (0.098, 0, 0.028)], 0.004, sides=6,
                       section=rect_section(0.013, 0.0025, 0.001)), 'brass_tarnished')
         z0, r = 0.012, 0.0105
@@ -90,12 +92,13 @@ def candle(p, rng):
                 (0.0088, 0.135), (0.0125, 0.148), (0.0085, 0.158), (0.0095, 0.165), (0.024, 0.170), (0.0255, 0.173),
                 (0.0175, 0.177), (0.0138, 0.180), (0.0132, 0.202), (0.0158, 0.207), (0.0118, 0.207), (0.0112, 0.186),
                 (0, 0.186)]
-        part.add(lathe(prof, n=24), 'brass_tarnished')
+        part.add(lathe(prof, n=32), 'brass_tarnished')
+        anchor(part, 'wear_handle', (0, 0, 0.11), {'r': 0.03})       # the stem is where it is picked up
         z0, r = 0.186, 0.0106
     elif holder == 'saucer':
         prof = [(0, 0), (0.042, 0), (0.05, 0.003), (0.062, 0.012), (0.068, 0.017), (0.0685, 0.019), (0.066, 0.0185),
                 (0.058, 0.013), (0.045, 0.006), (0, 0.005)]
-        part.add(lathe(prof, n=28), 'enamel_chipped')
+        part.add(lathe(prof, n=32), 'enamel_chipped')
         puddle = [(0, 0.005), (0.03, 0.005), (0.033, 0.0065), (0.028, 0.009), (0.016, 0.0115), (0, 0.012)]
         bm = lathe(puddle, n=16)
         jitter(bm, 0.004, freq=40.0, seed=rng.randint(0, 999), axes=(1, 1, 0.3))
@@ -114,12 +117,12 @@ def candle(p, rng):
         for i in range(9 if gut else 6):
             _drip(part, rng, rfun, 0.29, rng.u(0.13, 0.26), rng.u(0, math.tau), rng.u(0.0022, 0.0034), wax)
         z0, r = 0.29, 0.0105
-    _candle(part, rng, r, h, z0, wax, guttering=gut, drips=3 if gut else 2)
+    _candle(part, rng, r, h, z0, wax, guttering=gut, drips=5 if gut else 3)
     part.extras['holder'] = holder
     return [part]
 
 
-@prop('kerosene_lamp', budget=6000)
+@prop('kerosene_lamp', budget=8200)   # 6000 -> 8200: 32-seg lathes, 24-knurl wheel, loops (PROPS-FINISH #12)
 def kerosene_lamp(p, rng):
     """Table kerosene lamp (~47 cm) that reads as an OBJECT around its flame: a stamped-brass font (reservoir) on a
     stepped brass foot with a finger-loop handle, a brass burner (collar, wick-raiser wheel, pronged gallery holding
@@ -132,7 +135,7 @@ def kerosene_lamp(p, rng):
     # stepped foot + stem (spun brass, a little dented)
     foot = [(0, 0), (0.068, 0), (0.07, 0.004), (0.069, 0.009), (0.06, 0.013), (0.057, 0.019), (0.046, 0.026),
             (0.032, 0.04), (0.022, 0.06), (0.019, 0.08), (0.024, 0.092), (0.03, 0.1), (0, 0.1)]
-    bm = lathe(foot, n=28)
+    bm = lathe(foot, n=32)
     jitter(bm, 0.0008, freq=30.0, seed=rng.randint(0, 999))
     part.add(bm, brass)
     # font: squat reservoir with a raised seam and a filler cap
@@ -144,22 +147,25 @@ def kerosene_lamp(p, rng):
     part.add(cyl(0.009, 0.008, n=12, bevel_w=0.001), brass, T((0.05, 0.0, 0.192), (0, -0.55, 0)))
     # finger-loop handle on the side (-x)
     loop = [(-0.07, 0, 0.165), (-0.098, 0, 0.17), (-0.108, 0, 0.145), (-0.094, 0, 0.122), (-0.072, 0, 0.125)]
-    part.add(tube(fillet(loop, 0.012, 3), 0.0042, sides=8), brass)
+    part.add(tube(fillet(loop, 0.012, 3), 0.0042, sides=12), brass)
+    anchor(part, 'wear_handle', (-0.1, 0, 0.15), {'r': 0.03})       # finger loop + thumb rest
     part.add(box(0.03, 0.012, 0.004, bevel_w=0.001, segs=1, center=(-0.098, 0, 0.1735)), brass)   # thumb rest
     # burner: threaded collar, body, wick-raiser wheel on its shaft
     collar = [(0.0, 0.211), (0.03, 0.211), (0.0325, 0.216), (0.03, 0.22), (0.0325, 0.224), (0.03, 0.228),
               (0.034, 0.236), (0.037, 0.25), (0.036, 0.258), (0.0, 0.258)]
-    part.add(lathe(collar, n=24), brass)
+    part.add(lathe(collar, n=32), brass)
     part.add(tube([(0.034, 0, 0.243), (0.056, 0, 0.243)], 0.0018, sides=6), brass)
-    wheel = cyl(0.0105, 0.0035, n=16, bevel_w=0.0008)
+    wheel = cyl(0.0105, 0.0035, n=24, bevel_w=0.0008)
     part.add(wheel, brass, T((0.052, 0, 0.243), (0, math.pi / 2, 0)))
-    for k in range(10):      # knurled rim of the wheel
-        a = k * math.tau / 10
+    anchor(part, 'wear_handle', (0.054, 0, 0.243), {'r': 0.014})      # wick-raiser wheel, turned every night
+    anchor(part, 'wear_soot', (0, 0, 0.29), {'r': 0.03, 'up': 0.06})  # gallery/deflector sooted by the flame
+    for k in range(24):      # knurled rim of the wheel (Ø 21 mm, ~2.7 mm pitch)
+        a = k * math.tau / 24
         part.add(box(0.004, 0.0016, 0.0016, bevel_w=0.0, segs=1,
                      center=(0.0538, 0.0105 * math.cos(a), 0.243 + 0.0105 * math.sin(a))), brass)
     # gallery: a perforated ring with 4 spring prongs gripping the chimney base
     gal = [(0.029, 0.256), (0.0355, 0.256), (0.0365, 0.262), (0.035, 0.266), (0.0305, 0.266), (0.029, 0.262)]
-    part.add(lathe(gal, n=24, closed=True), brass)
+    part.add(lathe(gal, n=32, closed=True), brass)
     for k in range(4):
         a = k * math.tau / 4 + 0.4
         c, s_ = math.cos(a), math.sin(a)
@@ -167,7 +173,7 @@ def kerosene_lamp(p, rng):
                       0.0017, sides=5), brass)
     # domed flame deflector (with the wick slot) inside the chimney
     dome = [(0.0, 0.262), (0.021, 0.262), (0.02, 0.272), (0.0155, 0.281), (0.0085, 0.2865), (0.0, 0.2875)]
-    part.add(lathe(dome, n=20, cap_bottom=False), brass)
+    part.add(lathe(dome, n=32, cap_bottom=False), brass)
     part.add(box(0.026, 0.0045, 0.0022, bevel_w=0.0006, segs=1, center=(0, 0, 0.2875)), brass)   # slot lips
     # flat woven wick standing out of the slot; charred, frayed tip
     low = str(p.get('wick', 'low')) == 'low'
@@ -184,6 +190,6 @@ def kerosene_lamp(p, rng):
             (0.0228, 0.462), (0.0242, 0.468), (0.0214, 0.47),
             (0.0203, 0.467), (0.0203, 0.398), (0.034, 0.368), (0.044, 0.33), (0.0395, 0.298), (0.031, 0.276),
             (0.0277, 0.271)]
-    part.add(lathe(chim, n=24, closed=True), glass)
+    part.add(lathe(chim, n=32, closed=True), glass)
     anchor(part, 'kerosene_lamp.flame', (0, 0, top + 0.012), {'flame': True, 'kind': 'lamp', 'wick': 'low' if low else 'high'})
     return [part]

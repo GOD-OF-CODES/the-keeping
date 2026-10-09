@@ -4,8 +4,8 @@
   "colorSpace": "linear",
   "atlas": "upper_hall_flash",
   "tier": "max",
-  "width": 2048,
-  "height": 2048,
+  "width": 1024,
+  "height": 1024,
   "container": "klm",
   "codec": null,
   "mantissaBits": 10,
@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.33713,
-    "p99": 1.84696,
-    "max": 69.49054,
-    "coverage": 0.4887
+    "mean": 0.32671,
+    "p99": 1.80772,
+    "max": 66.89185,
+    "coverage": 0.4945
   },
   "file": "lm_upper_hall_flash.klm"
 }

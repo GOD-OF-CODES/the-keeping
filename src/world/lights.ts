@@ -12,14 +12,34 @@
 // lights are faded by intensity instead.
 
 import * as THREE from 'three/webgpu';
-import { Fn, float, mix, smoothstep, time, uniform, uv, vec2, vec3, vec4, sin } from 'three/tsl';
+import { Fn, If, float, mix, pointShadow, smoothstep, time, uniform, uv, vec2, vec3, vec4, sin } from 'three/tsl';
 import type { LevelLayout, LightDef } from '../shared/layout-types.ts';
 import { planToWorld } from '../shared/coords.ts';
+import { LOOK } from '../render/look.ts'; // LIGHTING lane: moon / lightning peak are live look values
 
 /** Share of the baked light the runtime flicker light swings by. */
 const FLICKER_SHARE = 0.22;
 /** Constant moonlight (directional, lux-like units) under the lightning peak. */
 export const MOONLIGHT = 0.07;
+
+/**
+ * PERF-PLAN P0-2: the one runtime light that ever casts a shadow (C2's candle tableau, C5's shadow-play, C7). It casts
+ * from load — a castShadow toggle changes the LightsNode cache key, so every material on it (parlor atlas, characters,
+ * arms) would be disposed and rebuilt twice per toggle pair. Outside those shots the shadow is muted (shadow.intensity
+ * 0, a uniform) and its map is never re-rendered (autoUpdate false): the same look as an unshadowed light.
+ */
+export const SHADOW_CANDLE_ID = 'L_CANDLE_TABLE';
+
+/** Turns the fixed candle shadow on (map re-rendered every frame, full strength) or off (muted, map frozen). */
+export function setCandleShadow(light: any, on: boolean): void {
+  const sh = light?.shadow;
+  if (!sh) return;
+  sh.intensity = on ? 1 : 0;
+  sh.autoUpdate = on;
+  const u = light.userData?.uShadowOn;
+  if (u) u.value = on ? 1 : 0;
+  if (on) sh.needsUpdate = true;
+}
 
 export interface FlickerLight {
   def: LightDef;
@@ -76,7 +96,9 @@ function flameMaterial(kind: string, uFlicker: any, seed: number): any {
     const core = smoothstep(0.6, 0.0, d).mul(smoothstep(0.75, 0.25, tip));
     const blue = smoothstep(0.3, 0.12, tip).mul(body).mul(0.4);
     const flick = uFlicker.mul(0.25).add(0.8);
-    const col = vec3(1.0, 0.46, 0.12).mul(body).add(vec3(1.0, 0.85, 0.55).mul(core.mul(1.6))).add(vec3(0.1, 0.18, 0.6).mul(blue));
+    // LIGHTING lane: the core is the flame's own ~1900 K white (linear (1, 0.7, 0.3)), not a D65-neutral cream —
+    // under the camera's 3300 K indoor white balance a (1, 0.85, 0.55) core read blue-white once blown out
+    const col = vec3(1.0, 0.46, 0.12).mul(body).add(vec3(1.0, 0.7, 0.3).mul(core.mul(1.6))).add(vec3(0.1, 0.18, 0.6).mul(blue));
     return vec4(col.mul(flick).mul(hot * 6.0), body);
   })();
   return m;
@@ -88,11 +110,23 @@ export class RuntimeLights {
   /** Lightning: directional (exterior) + window spots (interior, tiers without flash maps). */
   readonly lightningDir: any;
   readonly lightningSpots: Array<{ light: any; room: string; peak: number }> = [];
+  /** r3 AD review: room → floor id, and the ground rooms a stair climbs out of (see update()). */
+  private readonly roomFloor = new Map<string, string>();
+  private readonly stairFoot = new Set<string>();
   private readonly lightningPeakDir: number;
   /** Layout `mode: runtime` lights (headlights, dashboard): created dark, driven by the cutscene lane. */
   readonly runtime = new Map<string, { light: any; room: string }>();
+  /** Runtime lights that follow a prop (headlights → gate sedan, dashboard → car interior) without being its child. */
+  private readonly followers: Array<{ light: any; parent: any; local: any; targetLocal: any | null }> = [];
+  private readonly tmpV = new THREE.Vector3();
 
-  constructor(layout: LevelLayout, flameAnchors: Map<string, any>, opts: { lightningSpots: boolean; props?: Map<string, any> }) {
+  constructor(layout: LevelLayout, flameAnchors: Map<string, any>, opts: { lightningSpots: boolean; props?: Map<string, any>; gateShadow?: boolean }) {
+    for (const r of layout.rooms) this.roomFloor.set(r.id, r.floor);
+    for (const st of layout.stairs ?? []) {
+      const e = layout.floors.find((f) => f.id === st.from)?.elevation ?? 0;
+      const foot = roomForTarget(layout, [st.start[0], st.start[1], e + 1]);
+      if (foot) this.stairFoot.add(foot);
+    }
     this.group = new THREE.Group();
     this.group.name = 'runtime-lights';
     let seed = 1;
@@ -103,10 +137,33 @@ export class RuntimeLights {
         const base = def.watts / (4 * Math.PI);
         const light = new THREE.PointLight(new THREE.Color(c[0], c[1], c[2]), 0, def.role === 'lamp' || def.role === 'lantern' ? 7 : 4.5, 2);
         light.castShadow = false;
+        if (def.id === SHADOW_CANDLE_ID) {
+          light.castShadow = true; // fixed for the session (P0-2); muted until a shot needs it
+          light.shadow.mapSize.set(512, 512);
+          light.shadow.bias = -0.002;
+          // R2-2: sample the cube map only while a shot uses it. shadow.intensity 0 still ran the 512² cube PCF in
+          // every parlor/kitchen fragment (≈ 0.5 ms on Medium); a branch on a uniform skips it (coherent, no rebuild).
+          // Not on Max: there the gated node costs Harlan's fragments a 17th sampler (> the M1's 16 per stage).
+          if (opts.gateShadow !== false) {
+            const uShadowOn = uniform(0);
+            light.userData.uShadowOn = uShadowOn;
+            const inner = pointShadow(light);
+            light.shadow.shadowNode = Fn(() => {
+              const s = vec3(1).toVar();
+              If(uShadowOn.greaterThan(0.5), () => { s.assign(inner); });
+              return s;
+            })();
+          }
+          setCandleShadow(light, false);
+          light.shadow.needsUpdate = true; // one render so the map is initialised
+        }
         light.position.set(x, y, z);
         light.name = `flicker_${def.id}`;
         this.group.add(light);
         const uFlicker = uniform(1);
+        // LIGHTING lane (REALISM-BACKLOG item 5): lightmapped surfaces take only this share of the light's DIFFUSE
+        // (render/lightmap-material.ts LightmapLightingModel); its specular runs at the full candela.
+        light.userData.lmDiffuseShare = uniform(FLICKER_SHARE * 0.35);
         let flame: any = null;
         const anchor = nearestAnchor(flameAnchors, x, y, z, 0.6);
         const kind = String(anchor?.userData?.kind ?? def.role);
@@ -164,25 +221,30 @@ export class RuntimeLights {
     for (const l of layout.lights) {
       if (l.mode !== 'runtime') continue;
       const c = new THREE.Color(...kelvinToLinearRGB(l.kelvin));
-      const cd = l.watts / (4 * Math.PI);
+      const cd = l.cd ?? l.watts / (4 * Math.PI); // opening: layout `cd` (photometric, C1-OPENING §5.1) wins
       let light: any;
       if (l.type === 'spot') {
-        light = new THREE.SpotLight(c, 0, 45, Math.PI / 7, 0.55, 2);
+        light = new THREE.SpotLight(c, 0, 45, l.angle ? (l.angle * Math.PI) / 360 : Math.PI / 7, l.angle ? 1 : 0.55, 2);
       } else light = new THREE.PointLight(c, 0, 2.5, 2);
       light.castShadow = false;
       light.name = `runtime_${l.id}`;
-      light.userData.csBase = l.role === 'headlight' ? cd * 0.6 : cd;
-      const parent = l.role === 'dashboard' ? props.get('P_CAR_INTERIOR') : l.role === 'headlight' ? props.get('P_CAR_GATE') : null;
+      light.userData.csBase = l.role === 'headlight' && l.cd === undefined ? cd * 0.6 : cd;
+      // opening: CAR-set lights (dash, dome, cab veil) follow the interior, the truck's lamps follow P_RC9_TRUCK
+      const parent = l.role === 'dashboard' || l.room === 'CAR' ? props.get('P_CAR_INTERIOR') : l.role === 'headlight' ? props.get('P_CAR_GATE') : l.id.startsWith('L_TRUCK') ? props.get('P_RC9_TRUCK') : null;
       const [x, y, z] = planToWorld(l.pos);
       const tgt = l.target ? planToWorld(l.target) : null;
       if (parent) {
+        // PERF (review): the light lives in the always-visible group and follows its prop in update(). Parented to
+        // the car it left the scene's light list whenever room culling hid the car (indoors), which changes the
+        // scene LightsNode key → every visible render object was rebuilt at each indoor/outdoor crossing
+        // (measured: ~40–60 node builds per crossing, see docs/PERF-PLAN.md §8).
         parent.updateWorldMatrix(true, false);
-        light.position.copy(parent.worldToLocal(new THREE.Vector3(x, y, z)));
-        parent.add(light);
-        if (light.isSpotLight && tgt) {
-          light.target.position.copy(parent.worldToLocal(new THREE.Vector3(...tgt)));
-          parent.add(light.target);
-        }
+        const local = parent.worldToLocal(new THREE.Vector3(x, y, z));
+        const targetLocal = light.isSpotLight && tgt ? parent.worldToLocal(new THREE.Vector3(...tgt)) : null;
+        this.group.add(light);
+        if (targetLocal) this.group.add(light.target);
+        this.followers.push({ light, parent, local, targetLocal });
+        this.follow(this.followers[this.followers.length - 1]);
       } else {
         light.position.set(x, y, z);
         this.group.add(light);
@@ -211,10 +273,16 @@ export class RuntimeLights {
   }
 
   /** visible: the culling set; outside: player is outdoors (lightning directional only lights exteriors then). */
-  update(dt: number, t: number, visible: Set<string> | null, lightning: number, outside: boolean): void {
+  update(dt: number, t: number, visible: Set<string> | null, lightning: number, outside: boolean, seen: Set<string> | null = visible, viewer: string | null = null): void {
+    // r3 AD review (R3-4): in cutscenes (`visible` null) every flicker light ran — L_LANTERN (11–14 cd) and LAMP_U2
+    // (5 cd), unshadowed, lit C2/C5 characters through the floors. Gate them like the lightning spots: rooms seen
+    // from the camera, and another floor only from a stair-foot room or outdoors. Gameplay culling is unchanged.
+    const vf = viewer ? this.roomFloor.get(viewer) : undefined;
+    const crossOk = !viewer || this.stairFoot.has(viewer) || vf === 'exterior';
     for (const f of this.flickers) {
-      const want = !visible || visible.has(f.room) ? 1 : 0;
-      f.fade += (want - f.fade) * Math.min(1, dt * 6);
+      const floorOk = visible || !vf || crossOk || this.roomFloor.get(f.room) === vf;
+      const want = (visible ? visible.has(f.room) : (!seen || seen.has(f.room)) && floorOk) ? 1 : 0;
+      f.fade = visible ? f.fade + (want - f.fade) * Math.min(1, dt * 6) : want; // cutscene cuts: snap, no fade-in
       // Layered flicker: slow breathing + fast licks + rare gutters (seeded per light).
       const s = f.seed;
       const slow = Math.sin(t * 1.3 + s) * 0.5 + Math.sin(t * 2.9 + s * 3.1) * 0.35;
@@ -224,13 +292,40 @@ export class RuntimeLights {
       f.uFlicker.value = 1 + k * 0.5;
       // The baked light is the mean: the runtime light only adds the positive half of the swing (never negative
       // light) plus a small constant so the flicker reads on nearby surfaces.
-      f.light.intensity = f.base * FLICKER_SHARE * Math.max(0, 0.35 + k * 0.65) * f.fade;
+      // LIGHTING lane (item 5): the light itself runs at the candle's full candela base × (1 + 0.3k) — that is the
+      // specular (absent from the diffuse-only bake). The diffuse on lightmapped surfaces is scaled back to exactly
+      // the old swing FLICKER_SHARE × max(0, 0.35 + 0.65k) by the per-light share uniform.
+      const full = 1 + 0.3 * k;
+      f.light.intensity = f.base * full * f.fade;
+      f.light.userData.lmDiffuseShare.value = (FLICKER_SHARE * Math.max(0, 0.35 + k * 0.65)) / full;
       if (f.flame) f.flame.visible = f.fade > 0.01 && f.base > 1e-3; // a guttered candle (base 0) stays out
     }
-    // Overcast moonlight: a faint constant through the storm clouds so the ground, the house and her silhouette
-    // read outdoors (the lightning shares the same light; inside, only the windows let a little through).
-    this.lightningDir.intensity = (MOONLIGHT + lightning * this.lightningPeakDir) * (outside ? 1 : 0.15);
-    for (const s of this.lightningSpots) s.light.intensity = lightning * s.peak * (!visible || visible.has(s.room) ? 1 : 0);
+    // LIGHTING lane (REALISM-BACKLOG item 2): indoors the directional would light rooms through the roof (its shadow
+    // map only covers the outdoor strike), so it is 0 there — the window spots / flash lightmaps carry lightning inside; outdoors
+    // only the moon key LOOK.moon (0: the bake already holds the 0.0028-lux moon and 0.024-lux sky) plus
+    // the flash. Its outdoor shadow (drawn once per strike) lives in src/world/atmosphere.ts.
+    this.lightningDir.intensity = outside ? LOOK.moon + lightning * this.lightningPeakDir * (LOOK.lightningPeak / 2.2) : 0;
+    // R2-6: the window spots are unshadowed — gate them by the rooms seen from the CAMERA even while culling is off
+    // (cutscenes): with `visible` null every upstairs spot fired through the floors (C5: U1/U2/U3 at 32 cd lit the
+    // parlor — the cleaver's flat blue-white blade)
+    // r3 AD review: …and by floor. The parlor (G2) 'sees' U2 through the ceiling grate, so U2's east-window spot
+    // (31.8 cd, 7500 K, unshadowed) lit the parlor through the floor in every C5 flash — the cleaver's blue card and
+    // a cold wash on Harlan/Ada (measured at C5-17.62). Another floor's spot stays on only when the viewer stands in
+    // a stair-foot room (the hall looking up the stairwell at the landing window).
+    // outdoors (gate, C1 reveal) the upper windows must still flash from inside: keep every seen spot there (crossOk)
+    for (const s of this.lightningSpots) {
+      const sameFloor = !vf || this.roomFloor.get(s.room) === vf;
+      s.light.intensity = lightning * s.peak * ((!seen || seen.has(s.room)) && (sameFloor || crossOk) ? 1 : 0);
+    }
+    for (const f of this.followers) this.follow(f);
+  }
+
+  /** Places a follower light (and its spot target) at its prop-local offsets, in this group's space. */
+  private follow(f: { light: any; parent: any; local: any; targetLocal: any | null }): void {
+    f.parent.updateWorldMatrix(true, false);
+    this.group.updateWorldMatrix(true, false);
+    f.light.position.copy(this.group.worldToLocal(this.tmpV.copy(f.local).applyMatrix4(f.parent.matrixWorld)));
+    if (f.targetLocal) f.light.target.position.copy(this.group.worldToLocal(this.tmpV.copy(f.targetLocal).applyMatrix4(f.parent.matrixWorld)));
   }
 }
 

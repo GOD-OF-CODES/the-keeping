@@ -9,14 +9,14 @@
   "container": "klm",
   "codec": null,
   "mantissaBits": 6,
-  "floorExp": 8,
+  "floorExp": 13,
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
     "mean": 0.00023,
-    "p99": 0.00342,
-    "max": 6.16184,
-    "coverage": 0.5308
+    "p99": 0.0047,
+    "max": 0.10367,
+    "coverage": 0.4661
   },
   "file": "lm_upper_rooms.klm"
 }

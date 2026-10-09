@@ -336,11 +336,12 @@ def hand_sdf(J, side, S):
     for f, fs in fingers.items():
         r0 = fr * fs
         rad = (1.0, 0.93, 0.86, 0.72) if f != 'thumb' else (1.15, 0.98, 0.9, 0.74)
+        kk = S.get('knuckle_k', 1.0)
         for i in range(3):
             h, t = J[f'{f}_{i + 1:02d}_{side}']
-            prims.append(('cone', h, t, r0 * rad[i], r0 * rad[i + 1]))
+            prims.append(('cone', h, t, r0 * rad[i], r0 * rad[i + 1], f))
             if i > 0:
-                prims.append(('knuck', h - n * (r0 * rad[i] * 0.38), r0 * rad[i] * 0.52))
+                prims.append(('knuck', h - n * (r0 * rad[i] * 0.38 * kk), r0 * rad[i] * 0.52 * kk, f))
         if f != 'thumb':
             mcp = J[f'{f}_01_{side}'][0]
             prims.append(('mcp', mcp - n * 0.0058 * sc, 0.0078 * sc * fs ** 0.5))
@@ -366,13 +367,32 @@ def hand_sdf(J, side, S):
                                       np.stack([l, a, n])), 0.01)
         d = sdf.smin(d, sdf.ellipsoid(X, wr + a * 0.27 * L - l * 0.34 * W + n * 0.0045, (0.0095 * sc, 0.026 * sc, 0.0085 * sc),
                                       np.stack([l, a, n])), 0.008)
-        for p in prims:
-            if p[0] == 'cone':
-                d = sdf.smin(d, sdf.round_cone(X, p[1], p[2], p[3], p[4]), 0.004)
-            elif p[0] == 'mcp':
-                d = sdf.smin(d, sdf.sphere(X, p[1], p[2]), 0.006)
-            else:
-                d = sdf.smin(d, sdf.sphere(X, p[1], p[2]), 0.0035)
+        if S.get('sharp_fingers'):
+            # close-up hands (FP arms): each finger is its own smooth union of segments + knuckle pads, and the
+            # fingers meet each other with a HARD union, so neighbouring fingers keep a crease instead of webbing into
+            # a mitten; only the finger roots blend into the palm (radius 4 mm, like the default path).
+            fingers_d = {}
+            for p in prims:
+                if p[0] == 'mcp':
+                    d = sdf.smin(d, sdf.sphere(X, p[1], p[2]), 0.006)
+                    continue
+                v = sdf.round_cone(X, p[1], p[2], p[3], p[4]) if p[0] == 'cone' else sdf.sphere(X, p[1], p[2])
+                f_ = p[-1]
+                fingers_d[f_] = v if f_ not in fingers_d else sdf.smin(fingers_d[f_], v, 0.004 if p[0] == 'cone' else 0.0035)
+            # the palm blend is applied per finger and the results hard-unioned
+            dp = d
+            d = None
+            for v in fingers_d.values():
+                e = sdf.smin(dp, v, 0.004)
+                d = e if d is None else np.minimum(d, e)
+        else:
+            for p in prims:
+                if p[0] == 'cone':
+                    d = sdf.smin(d, sdf.round_cone(X, p[1], p[2], p[3], p[4]), 0.004)
+                elif p[0] == 'mcp':
+                    d = sdf.smin(d, sdf.sphere(X, p[1], p[2]), 0.006)
+                else:
+                    d = sdf.smin(d, sdf.sphere(X, p[1], p[2]), 0.0035)
         for s0, s1 in tendons:
             d = sdf.smin(d, sdf.capsule(X, s0, s1, 0.0021 * sc), 0.0035)
         return d

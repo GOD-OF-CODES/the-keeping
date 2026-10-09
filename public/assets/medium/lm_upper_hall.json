@@ -4,19 +4,19 @@
   "colorSpace": "linear",
   "atlas": "upper_hall",
   "tier": "medium",
-  "width": 2048,
-  "height": 2048,
+  "width": 1024,
+  "height": 1024,
   "container": "klm",
   "codec": null,
   "mantissaBits": 7,
-  "floorExp": 8,
+  "floorExp": 13,
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.00025,
-    "p99": 0.00951,
-    "max": 0.04507,
-    "coverage": 0.4887
+    "mean": 0.02223,
+    "p99": 0.14395,
+    "max": 10.31036,
+    "coverage": 0.4945
   },
   "file": "lm_upper_hall.klm"
 }

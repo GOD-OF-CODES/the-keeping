@@ -12,6 +12,8 @@
 //  7. per-atlas LightsNodes: lightmapped surfaces see only the flashlight + their rooms' flicker/lightning lights,
 //     probe-lit materials see the flashlight, the grids and the lightning lights.
 
+import { installTreeLod } from './tree-lod.ts';
+import { shareInstancePrograms } from './instance-buckets.ts';
 import * as THREE from 'three/webgpu';
 import { lights } from 'three/tsl';
 import type { GameContext } from '../game/context.ts';
@@ -21,12 +23,15 @@ import type { PresetConfig } from '../render/presets.ts';
 import { planToWorld } from '../shared/coords.ts';
 import { decodeKlm } from '../render/klm.ts';
 import { klmToTexture, type LightmapOptions } from '../render/lightmap-material.ts';
-import { bakeProbeGrid } from '../render/probes.ts';
+import { PROBE_FILE, bakeProbeGrid, decodeProbeFile, gridFromData, probeKey, type ProbeFile } from '../render/probes.ts';
+import materialSpecJson from '../shared/material-spec.json' with { type: 'json' };
+import { perfMark } from '../render/perf.ts';
 import { ByteProgress, assetUrl, fetchBytes, fetchManifest, parseGlb } from './assets.ts';
 import { EYE_HEIGHT, RoomIndex, headingToCameraYaw, partitionGround } from './rooms.ts';
 import { WorldCollision, groundColliderMesh, propColliderMeshes } from './collision.ts';
 import { DoorSystem } from './doors.ts';
 import { RuntimeLights } from './lights.ts';
+import { SkySpecularNode, setExteriorGridBox } from './atmosphere.ts';
 import type { LoadingOverlay } from './loading-overlay.ts';
 import { bindFallbackMaterials } from './fallback-materials.ts';
 
@@ -38,7 +43,7 @@ export interface LevelLoadOptions {
   presetId: PresetId;
   overlay: LoadingOverlay;
   /** Flashlight light (+ beam) — hidden during the probe bake, first in every LightsNode. */
-  flashlight: { light: any; beam: any | null };
+  flashlight: { light: any; beam: any | null; bounce?: any };
 }
 
 export interface SpawnPose {
@@ -57,6 +62,9 @@ export interface GridInfo {
   probes: number;
   ms: number;
   error?: string;
+  /** Built from the shipped public/assets/<tier>/probes.bin (no runtime bake). */
+  shipped?: boolean;
+  spec?: GridSpec;
 }
 
 /** Sky radiance behind everything (linear). The probe grids capture it as the storm sky. */
@@ -79,8 +87,18 @@ export class Level {
   readonly stats: Record<string, number | string> = {};
   /** LightsNode of every probe-lit material (flashlight, lightning, probe grids): characters use it too. */
   probeLightsNode: any = null;
+  /** Staleness key the shipped probe data must carry (levelProbeKey; the probe export writes it). */
+  probeKey = '';
   /** The lights in probeLightsNode (flashlight first). */
   probeLights: any[] = [];
+  /** probeLights without the opening's CAR / RC9 runtime lights (Ada, Harlan, the sack/cleaver props). */
+  houseLights: any[] = [];
+  /** R2-1: LightsNode of exterior probe-lit materials (exterior grid clamped, no interior grids) + its lights. */
+  exteriorLightsNode: any = null;
+  exteriorLights: any[] = [];
+  /** RC9 road set: the exterior lights minus the clamped yard grid twin, plus the open-sky hemisphere fill. */
+  roadLights: any[] = [];
+  readonly exteriorMaterials: any[] = [];
   /** Current camera room (null until known) and the culling set. */
   room: string | null = null;
   visible: Set<string> = new Set();
@@ -161,7 +179,7 @@ export class Level {
 
   update(dt: number, t: number, lightning: number): void {
     this.doors.update(dt);
-    this.lights.update(dt, t, this.cullingEnabled ? this.visible : null, lightning, this.isOutside());
+    this.lights.update(dt, t, this.cullingEnabled ? this.visible : null, lightning, this.isOutside(), this.room ? this.visible : null, this.room);
   }
 
   /** A layout `mode: runtime` light (L_HEADLIGHT_L/R, L_DASH), created dark at load; null if absent. */
@@ -211,6 +229,7 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
   );
   const tDownloaded = performance.now();
   overlay.set('download', 1);
+  perfMark('parse');
 
   // ---- 2. parse + lightmaps
   const glbIds = want.filter((f) => f.path.endsWith('.glb')).map((f) => f.id);
@@ -231,6 +250,7 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
   }
   overlay.set('parse', 1);
   const tParsed = performance.now();
+  perfMark('assemble');
 
   // ---- 3. assemble
   const root = new THREE.Group();
@@ -333,6 +353,7 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
   let bound: { materials: any[]; lightmapped: any[]; missing: string[] };
   let baker: any = undefined;
   const tMat = performance.now();
+  perfMark('materials');
   try {
     const { bindMaterials } = await import('../materials/bind.ts');
     const r = await bindMaterials(bindRoot, {
@@ -349,6 +370,7 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
   }
   overlay.set('materials', 1);
   const tBound = performance.now();
+  perfMark('doors');
   if (bound.missing.length) console.warn(`[level] material ids missing from material-spec.json: ${bound.missing.join(', ')}`);
 
   // reparent into room groups (world transforms are identity/placement already)
@@ -397,18 +419,49 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
     if (i >= 0) unplaced.splice(i, 1);
   });
 
+  const tDoors = performance.now();
+  perfMark('collision');
   overlay.set('collision', 0.2);
   const colGltf = gltfs.get('collision');
   if (colGltf) colliderSources.push(colGltf.scene);
   colliderSources.push(groundColliderMesh([-160, -160, 160, 160], 0)); // the player is kept inside the rooms by bounds
+  // P1-5: layout `box` props become oriented boxes — unless an interactable sits within their bounds (the can on the
+  // shelf, the ledger on the nightstand, the locket at the dress form): interaction line of sight raycasts this
+  // octree (interactables.ts), so those keep their exact triangles.
+  const interactAt: any[] = [];
+  for (const [id, root2] of props) {
+    if (!placements.get(id)?.interaction) continue;
+    root2.updateMatrixWorld(true);
+    interactAt.push(new THREE.Vector3().setFromMatrixPosition(root2.matrixWorld));
+  }
+  const bb = new THREE.Box3();
   for (const [id, root2] of props) {
     const p = placements.get(id)!;
+    const hole = p.type === 'floor_register' ? String((p.params as Record<string, unknown> | undefined)?.hole ?? '').split(',').map(Number) : [];
+    if (hole.length === 4 && hole.every(Number.isFinite)) {
+      // gameplay-d review: the U2 register's floor hole (0.6 m square) is cut from the collision floor and the grate
+      // itself is collider 'none', so a 0.27 m capsule dropped through into the never-free-roamed parlor (G2). Walk on
+      // the cast iron: a 4 cm slab flush with the floor top over the hole (LOS slack 0.12 m keeps the peek usable).
+      const [x0, y0, x1, y1] = hole;
+      const slab = new THREE.BoxGeometry(x1 - x0, 0.04, y1 - y0);
+      slab.translate((x0 + x1) / 2, p.pos[2] - 0.02, -(y0 + y1) / 2);
+      const m = new THREE.Mesh(slab);
+      m.name = `col_${id}_cover`;
+      colliderSources.push(m);
+    }
     if (p.collider === 'none') continue;
-    colliderSources.push(...propColliderMeshes(root2));
+    let kind = p.collider;
+    if (kind === 'box') {
+      bb.setFromObject(root2).expandByScalar(0.15);
+      if (interactAt.some((v) => bb.containsPoint(v))) kind = 'mesh';
+    }
+    colliderSources.push(...propColliderMeshes(root2, kind));
   }
   const collision = new WorldCollision(colliderSources);
   doors.attachCollision(collision);
   overlay.set('collision', 1);
+  const tCollision = performance.now();
+  perfMark('lights');
 
   // the sedans move in cutscenes (vehicle track): keep their matrices live
   for (const id of ['P_CAR_GATE', 'P_CAR_ROW', 'P_CAR_INTERIOR']) {
@@ -417,13 +470,16 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
       n.matrixAutoUpdate = true;
     });
   }
-  const runtimeLights = new RuntimeLights(layout, flameAnchors, { lightningSpots: !preset.lightmaps.lightningFlashMaps, props });
+  const runtimeLights = new RuntimeLights(layout, flameAnchors, { lightningSpots: !preset.lightmaps.lightningFlashMaps, props, gateShadow: preset.id !== 'max' });
   root.add(runtimeLights.group);
 
   scene.add(root);
   scene.background = new THREE.Color(...SKY_COLOR);
 
   const level = new Level({ layout, index, root, roomGroups, alwaysGroup, doors, collision, lights: runtimeLights, props, scene });
+  installTreeLod((id) => props.get(id) ?? null); // runtime lane D item 4: hero-tree far LOD (drawRange prefix)
+  const inst = shareInstancePrograms(root); // runtime lane D (fz3): one vertex program per material, not per instanced mesh
+  console.info(`[level] instanced meshes on the attribute path: ${inst.meshes} (${inst.counts} distinct counts)`);
   level.lightmapped.push(...bound.lightmapped);
   const lmSet = new Set(bound.lightmapped);
   level.probeLit.push(...bound.materials.filter((m) => !lmSet.has(m)), ...doorBound.materials);
@@ -439,42 +495,175 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
     let node = nodeByAtlas.get(atlasId);
     if (!node) {
       const rooms = atlasRooms.get(atlasId) ?? new Set<string>();
-      node = lights([o.flashlight.light, ...runtimeLights.forRooms(rooms, atlasId === 'lm_exterior')]);
+      node = lights([o.flashlight.light, ...(o.flashlight.bounce ? [o.flashlight.bounce] : []), ...runtimeLights.forRooms(rooms, atlasId === 'lm_exterior')]); // LIGHTING lane: + torch bounce (item 11)
       nodeByAtlas.set(atlasId, node);
     }
     m.lightsNode = node;
     m.needsUpdate = true;
   }
 
-  // ---- 6. probe grids (all rooms visible, runtime lights dark, flashlight hidden)
-  level.setCulling(false);
-  const flames = runtimeLights.flickers.map((f) => f.flame).filter(Boolean);
-  const hide = [o.flashlight.light, o.flashlight.beam, ...flames].filter(Boolean);
+  // ---- 6. probe grids: shipped data (PERF-PLAN P1-4), else the runtime bake (all rooms visible, runtime lights
+  //         dark, flashlight hidden) in chunks so the page never blocks for the whole bake
+  const tLights = performance.now();
+  perfMark('probes');
   const specs = gridSpecs(layout, preset);
   const tProbe = performance.now();
+  const key = levelProbeKey(manifest.files, layout, preset, specs);
+  level.probeKey = key;
+  const shipped = probeDataParam() === 'bake' ? null : await fetchProbeFile(o.presetId, key);
+  const flames = runtimeLights.flickers.map((f) => f.flame).filter(Boolean);
+  const hide = [o.flashlight.light, o.flashlight.beam, ...flames].filter(Boolean);
+  let baking = false;
   for (let i = 0; i < specs.length; i++) {
     const s = specs[i];
+    const d = shipped?.grids.find((g) => g.id === s.id && g.counts.join() === s.counts.join());
+    if (d) {
+      try {
+        level.grids.push({ id: s.id, grid: gridFromData(renderer, d), probes: s.counts[0] * s.counts[1] * s.counts[2], ms: 0, shipped: true, spec: s });
+        continue;
+      } catch (e) {
+        console.warn(`[level] shipped probe grid ${s.id} unusable — baking:`, e);
+      }
+    }
+    if (!baking) {
+      baking = true;
+      level.setCulling(false);
+    }
     overlay.set('probes', i / specs.length, s.id);
     await nextFrame();
-    const r = await bakeProbeGrid(renderer, scene, { size: s.size, center: s.center, counts: s.counts, cubemapSize: preset.probes.cubemapSize, near: 0.05, far: s.far, hide });
+    const chunk = renderer.backend?.isWebGPUBackend === true ? 48 : 6;
+    const r = await bakeProbeGrid(renderer, scene, { size: s.size, center: s.center, counts: s.counts, cubemapSize: preset.probes.cubemapSize, near: 0.05, far: s.far, hide, chunk, yieldFn: nextFrame });
     if (r.grid) r.grid.falloff = 0.35;
-    level.grids.push({ id: s.id, grid: r.grid, probes: r.probes, ms: r.totalMs, error: r.error });
+    level.grids.push({ id: s.id, grid: r.grid, probes: r.probes, ms: r.totalMs, error: r.error, spec: s });
     if (r.error) console.warn(`[level] probe grid ${s.id} failed: ${r.error}`);
   }
+  if (baking) level.setCulling(true);
   overlay.set('probes', 1);
   overlay.set('compile', 0, 'first frames');
   const tProbed = performance.now();
+  perfMark('swap');
   const grids = level.grids.map((g) => g.grid).filter(Boolean);
   for (const g of grids) root.add(g);
   const fill = grids.length ? null : new THREE.HemisphereLight(0x2a3040, 0x0c0906, 0.6);
   if (fill) root.add(fill);
-  const probeLights = [o.flashlight.light, runtimeLights.lightningDir, ...runtimeLights.lightningSpots.map((s) => s.light), ...[...runtimeLights.runtime.values()].map((r) => r.light), ...grids, ...(fill ? [fill] : [])];
-  const probeNode = lights(probeLights);
+  const probeLights = [o.flashlight.light, ...(o.flashlight.bounce ? [o.flashlight.bounce] : []), runtimeLights.lightningDir, ...runtimeLights.lightningSpots.map((s) => s.light), ...[...runtimeLights.runtime.values()].map((r) => r.light), ...grids, ...(fill ? [fill] : [])];
+  // Round D perf (runtime lane, bisect bisB in STATUS-r3-review): per-space light sets. The opening's CAR / RC9
+  // runtime spots (L_DOME, L_CAB_VEIL, L_DASH, L_TRUCK_HI_L/R) only ever light the car and the road; in the house
+  // every probe-lit pixel still looped over them (intensity 0, but shadow/cookie fetches and the loop cost +6 ms in the
+  // parlor on Medium). House materials and the characters get a list without them; the cabin (opening.ts) and the FP
+  // arms (story-runtime) keep the full level.probeLights. Fixed for the session (CONTRACT-CHANGES #35 holds).
+  const openingOnly = new Set([...runtimeLights.runtime.values()].filter((r) => r.room === 'CAR' || r.room === 'RC9').map((r) => r.light));
+  level.houseLights = probeLights.filter((l) => !openingOnly.has(l));
+  // r3 AD review (R3-1): interior probe-lit materials never see the EXTERIOR grid. Its box (world z −2.5…32) reaches
+  // 2.5 m into the house and the node is additive, so the hall/parlor front strip got the ground grid's candle
+  // irradiance PLUS the exterior grid's cold sky (b/r 1.47 vs 0.03) — the C2 door rope read lavender under the
+  // 3300 K white balance. Exterior probe-lit materials get their own node below (extNode); characters keep all grids
+  // (they walk outdoors) via level.probeLights.
+  const extGridObj = level.grids.find((g) => g.id === 'exterior')?.grid ?? null;
+  // Interior probe-lit materials also drop the yard's runtime spots (L_HEADLIGHT_L/R, EXT1: cookie + 1024² shadow);
+  // the walls between keep them out of every interior pixel anyway. Characters keep the headlights (C6/C7 in the yard).
+  const allSpots = new Set([...runtimeLights.runtime.values()].map((r) => r.light));
+  // props AD review: house props are probe-lit; the grids hold only candle BOUNCE (captured from lightmapped
+  // surfaces), so add the unshadowed candle/lamp flicker lights for their DIRECT term (else black beside a candle).
+  const probeNode = lights([...probeLights.filter((l) => l !== extGridObj && !allSpots.has(l)), ...runtimeLights.flickers.map((f) => f.light)]);
   level.probeLightsNode = probeNode;
   level.probeLights = probeLights;
   for (const m of level.probeLit) {
     m.lightsNode = probeNode;
     m.needsUpdate = true;
+  }
+  // R2-1 (round 3): exterior probe-lit surfaces get their own LightsNode — the exterior grid CLAMPED (a twin sharing
+  // its atlas with falloff 0, so terrain/trees beyond the grid keep the edge probes' sky irradiance instead of
+  // fading to black 0.35 m past it), the lightning directional and the exterior rooms' runtime lights. Interiors
+  // never see the twin (they keep probeNode); a material shared by both gets an exterior clone.
+  const extGrid = level.grids.find((g) => g.id === 'exterior')?.grid;
+  if (extGrid) {
+    const twin = clampedGridTwin(extGrid); // not added to the scene: only extNode sees it (the node reads its box)
+    setExteriorGridBox(extGrid.boundingBox);
+    const extRooms = atlasRooms.get('lm_exterior') ?? new Set(['EXT1', 'EXT2']);
+    const extAll = [o.flashlight.light, ...(o.flashlight.bounce ? [o.flashlight.bounce] : []), ...runtimeLights.forRooms(extRooms, true)];
+    // runtime lane D (pb4, parlor-table: 270 yard meshes in view carry this list): the RC9-only runtime lights (the
+    // logging truck's shadowed high beams) never reach the yard ≈ 500 m away — only the RC9 road node keeps them.
+    const rc9Only = new Set([...runtimeLights.runtime.values()].filter((r) => r.room === 'RC9').map((r) => r.light));
+    const extLights = [...extAll.filter((l) => !rc9Only.has(l)), twin];
+    const extNode = lights(extLights);
+    level.exteriorLightsNode = extNode;
+    level.exteriorLights = extLights;
+    const fp = index.footprint;
+    const probeSet = new Set(level.probeLit);
+    // runtime lane D (C0 26.5 "pale grey road", diag road3/road4): the RC9 road set sits ≈ 500 m from the yard, so the
+    // clamped twin lit the whole road with the yard grid's EDGE probes (porch lantern + house bounce) — an even grey
+    // from 5 m to 100 m with no fall-off. RC9 gets its own node: the exterior lights minus the twin, plus the open
+    // overcast sky as a hemisphere (irradiance π·L_sky from SKY_COLOR; ground ≈ wet asphalt/grass albedo 0.06 × sky).
+    // The corridor is a slot: clearing 2 × 14 m (road-rc9.json) between ≈ 22 m pine walls, H/W ≈ 0.79 → street-canyon
+    // sky-view factor √(1 + (H/W)²) − H/W ≈ 0.48 at the centreline.
+    const skyPi = SKY_COLOR.map((c) => c * Math.PI * 0.48);
+    const roadFill = new THREE.HemisphereLight(new THREE.Color(skyPi[0], skyPi[1], skyPi[2]), new THREE.Color(skyPi[0] * 0.06, skyPi[1] * 0.06, skyPi[2] * 0.06), 1);
+    roadFill.name = 'RC9_sky_fill';
+    roadFill.updateMatrixWorld(true); // not in the scene: HemisphereLightNode reads the up axis from matrixWorld
+    const roadLights = [...extAll, roadFill];
+    const roadNode = lights(roadLights);
+    level.roadLights = roadLights;
+    const use = new Map<any, { ext: any[]; road: any[]; int: number }>();
+    const box = new THREE.Box3();
+    const c = new THREE.Vector3();
+    root.updateMatrixWorld(true);
+    root.traverse((n: any) => {
+      if (!n.isMesh || n.isSkinnedMesh) return;
+      const mats = Array.isArray(n.material) ? n.material : [n.material];
+      if (!mats.some((m: any) => probeSet.has(m))) return;
+      // room group first (EXT*/CAR outdoors, any other room indoors); unroomed meshes by their bounds: centre
+      // outside the house footprint, or bigger than it (the 320 m far-field ground is centred on the house)
+      let room: string | null = null;
+      for (let p = n.parent; p && room === null; p = p.parent) if (typeof p.name === 'string' && p.name.startsWith('room_')) room = p.name.slice(5);
+      let outside: boolean;
+      if (room !== null) outside = room.startsWith('EXT') || room === 'CAR' || room === 'RC9'; // round D: RC9 (road set) is outdoors — it needs the truck + our headlights, which probeNode no longer has
+      else {
+        box.setFromObject(n).getCenter(c);
+        const px = c.x;
+        const py = -c.z; // plan y = −world z
+        outside = px < fp[0] || px > fp[2] || py < fp[1] || py > fp[3] || box.max.x - box.min.x > fp[2] - fp[0] + 2 || box.max.z - box.min.z > fp[3] - fp[1] + 2;
+      }
+      for (const m of mats) {
+        if (!probeSet.has(m)) continue;
+        const u = use.get(m) ?? { ext: [], road: [], int: 0 };
+        if (room === 'RC9') u.road.push(n);
+        else if (outside) u.ext.push(n);
+        else u.int++;
+        use.set(m, u);
+      }
+    });
+    let own = 0;
+    let cloned = 0;
+    const skySpecular = () => new SkySpecularNode();
+    let road = 0;
+    const bind = (m: any, meshes: any[], shared: boolean, node: any): void => {
+      let target = m;
+      if (shared) {
+        target = m.clone();
+        target.userData = m.userData; // same identity as the original (like reflections.ts' variants)
+        level.probeLit.push(target);
+        cloned++;
+        for (const n of meshes) {
+          if (Array.isArray(n.material)) n.material = n.material.map((x: any) => (x === m ? target : x));
+          else n.material = target;
+        }
+      } else own++;
+      target.lightsNode = node;
+      // + the overcast sky as specular light (glossy ones get the yard reflection cube from reflections.ts instead,
+      // which replaces this override on attach)
+      target.setupEnvironment = skySpecular;
+      target.needsUpdate = true;
+      level.exteriorMaterials.push(target);
+    };
+    for (const [m, u] of use) {
+      if (u.ext.length) bind(m, u.ext, u.int > 0, extNode);
+      if (u.road.length) {
+        bind(m, u.road, u.int > 0 || u.ext.length > 0, roadNode);
+        road++;
+      }
+    }
+    level.stats.exteriorProbeMaterials = `${own}+${cloned} clones (${road} road)`;
   }
 
   Object.assign(level.stats, {
@@ -482,7 +671,13 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
     parseMs: Math.round(tParsed - tDownloaded),
     materialsMs: Math.round(tBound - tMat),
     probesMs: Math.round(tProbed - tProbe),
+    assembleMs: Math.round(tMat - tParsed),
+    doorsMs: Math.round(tDoors - tBound),
+    collisionMs: Math.round(tCollision - tDoors),
+    lightsMs: Math.round(tLights - tCollision),
+    swapMs: Math.round(performance.now() - tProbed),
     probes: level.grids.reduce((a, g) => a + (g.grid ? g.probes : 0), 0),
+    probeSource: level.grids.map((g) => `${g.id}:${g.shipped ? 'shipped' : g.grid ? 'baked' : 'none'}`).join(' '),
     collisionTris: collision.triangles,
     lightmapped: bound.lightmapped.length,
     probeLitMaterials: level.probeLit.length,
@@ -549,7 +744,42 @@ function groundMesh(rects: number[], matId: string): any {
   return m;
 }
 
-interface GridSpec {
+/** ?probes=bake forces the runtime bake (the probe export uses it); anything else uses the shipped data. */
+function probeDataParam(): string | null {
+  return typeof location !== 'undefined' ? new URLSearchParams(location.search).get('probes') : null;
+}
+
+/**
+ * Staleness key of the shipped probe data: everything the bake sees — the level files (manifest hashes), the layout
+ * (placements, doors, lights), the material spec, the grid specs and the cube size. Material *code* changes are not
+ * covered: re-run `npm run probes` after changing materials/bind.ts, the baker or the lightmap material.
+ */
+export function levelProbeKey(files: AssetEntry[], layout: LevelLayout, preset: PresetConfig, specs: GridSpec[]): string {
+  const level = files
+    .filter((f) => f.kind === 'level' || f.kind === 'prop' || f.kind === 'lightmap' || f.kind === 'collision')
+    .map((f) => `${f.path}:${f.hash}`)
+    .sort();
+  return probeKey([`v1`, preset.id, `cube${preset.probes.cubemapSize}`, JSON.stringify(specs), JSON.stringify(layout), JSON.stringify(materialSpecJson), ...level]);
+}
+
+/** The tier's shipped probe grids, or null (missing, not a probe file, or stale → the caller bakes). */
+async function fetchProbeFile(tier: PresetId, key: string): Promise<ProbeFile | null> {
+  try {
+    const res = await fetch(assetUrl(`assets/${tier}/${PROBE_FILE}`));
+    if (!res.ok) return null;
+    const f = decodeProbeFile(await res.arrayBuffer());
+    if (!f) return null;
+    if (f.key !== key) {
+      console.info(`[level] shipped probes are stale (key ${f.key}, want ${key}) — runtime bake; run \`npm run probes\``);
+      return null;
+    }
+    return f;
+  } catch {
+    return null;
+  }
+}
+
+export interface GridSpec {
   id: string;
   size: [number, number, number];
   center: [number, number, number];
@@ -572,6 +802,21 @@ function gridSpecs(layout: LevelLayout, preset: PresetConfig): GridSpec[] {
     box('upper', 0.2, 0.2, u + 0.35, 8.55, 11.45, u + 2.5, 1.45, 12),
     box('exterior', -9, -32, 0.35, 15, 2.5, 3.6, 3.8, 30),
   ];
+}
+
+/** A LightProbeGrid sharing `g`'s baked atlas with falloff 0: LightProbeGridNode clamps the lookup to the box, so
+ *  the twin applies its edge probes everywhere outside it (LightProbeGridNode.js r186: the weight is only built
+ *  when falloff > 0). Same light class → the renderer's node library already knows it. */
+function clampedGridTwin(g: any): any {
+  const t = new g.constructor(g.width, g.height, g.depth, g.resolution.x, g.resolution.y, g.resolution.z);
+  t.name = `${g.name || 'grid'}_clamped`;
+  t.position.copy(g.position);
+  t.intensity = g.intensity;
+  t.updateMatrixWorld(true);
+  t.updateBoundingBox();
+  t.texture = g.texture;
+  t.falloff = 0;
+  return t;
 }
 
 function nextFrame(): Promise<void> {

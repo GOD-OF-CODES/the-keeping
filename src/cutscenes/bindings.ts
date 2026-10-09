@@ -10,7 +10,10 @@ import * as THREE from 'three/webgpu';
 import { planToWorld, worldToPlan } from '../shared/coords.ts';
 import { CutscenePlayer, localSeenStore, type CharacterDirector, type CutsceneDeps, type SeenStore } from './host.ts';
 import { HemOverlay } from './c4-hem.ts';
+import { setCandleShadow } from '../world/lights.ts';
+import { requestExposureSnap } from '../render/exposure.ts';
 import { CUTSCENES } from './index.ts';
+import { TitleCards } from '../ui/title-card.ts'; // C0 date card + byline (opening lane)
 import type { CameraPose, DofSettings, DoorAction, LockMode, P3, TimelineFactory, VehiclePose } from './types.ts';
 
 /** Optional hooks for effects other lanes own (all optional; unknown fx ids are ignored). */
@@ -74,6 +77,7 @@ export class CutsceneOverlay {
   private readonly skip: HTMLElement;
   private readonly skipBar: HTMLElement;
   private readonly lens: HTMLElement;
+  private readonly cards: TitleCards;
 
   constructor(parent: HTMLElement = document.body) {
     const div = (css: Partial<CSSStyleDeclaration>, p: HTMLElement) => {
@@ -96,6 +100,7 @@ export class CutsceneOverlay {
     this.promptEl = div({ position: 'absolute', left: '50%', bottom: '22%', transform: 'translateX(-50%)', color: '#e6dfcf', font: '500 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif', letterSpacing: '.06em', textShadow: '0 1px 3px #000', opacity: '0', transition: 'opacity .25s', maxWidth: 'calc(100% - 32px)', textAlign: 'center' }, this.root);
     this.skip = div({ position: 'absolute', right: '16px', bottom: '16px', color: '#a99f8e', font: '500 12px/1.3 system-ui, -apple-system, sans-serif', letterSpacing: '.1em', textTransform: 'uppercase', opacity: '0', transition: 'opacity .4s' }, this.root);
     this.skip.textContent = 'Hold Space to skip';
+    this.cards = new TitleCards(this.root);
     const track = div({ height: '2px', marginTop: '6px', background: 'rgba(255,255,255,.15)' }, this.skip);
     this.skipBar = div({ height: '100%', width: '0', background: '#d9d2c3' }, track);
   }
@@ -106,7 +111,8 @@ export class CutsceneOverlay {
     this.top.style.height = h;
     this.bottom.style.height = h;
   }
-  setCard(text: string | null, style: 'title' | 'small'): void {
+  setCard(text: string | null, style: string): void {
+    if (this.cards.set(text, style)) return;
     if (text) {
       this.card.textContent = text;
       this.card.style.fontSize = style === 'small' ? 'clamp(16px,2vw,24px)' : '';
@@ -151,6 +157,9 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
   const overlay = typeof document !== 'undefined' ? new CutsceneOverlay() : null;
   const cam = g.camera;
   const tmpT = new THREE.Vector3();
+  const tmpD = new THREE.Vector3();
+  const lastCamPos = new THREE.Vector3();
+  const lastCamDir = new THREE.Vector3(0, 0, -1);
   let camHeld = false;
   let cullWas = false;
   let lockMode: LockMode = 'none';
@@ -187,9 +196,15 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
           cullWas = true;
           g.level.setCulling(false);
         }
-        camHeld = true;
         const w = planToWorld(p.pos);
         const t = planToWorld(p.target);
+        // R2-5 (round 3): a CUT (first held frame, or the pose jumps > 1.2 m (a 15 m/s car moves 0.75 m a frame at 20 fps) or turns > 20° between two frames) adapts the
+        // exposure with it — the auto snap only fires on > 2.5 m moves, so same-room cuts eased in over τ 6 s
+        const dir = tmpD.set(t[0] - w[0], t[1] - w[1], t[2] - w[2]).normalize();
+        if (!camHeld || lastCamPos.distanceToSquared(tmpT.set(w[0], w[1], w[2])) > 1.44 || dir.dot(lastCamDir) < 0.94) requestExposureSnap();
+        lastCamPos.set(w[0], w[1], w[2]);
+        lastCamDir.copy(dir);
+        camHeld = true;
         cam.position.set(w[0], w[1], w[2]);
         cam.up.set(0, 1, 0);
         cam.lookAt(tmpT.set(t[0], t[1], t[2]));
@@ -213,6 +228,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         cam.updateProjectionMatrix();
         applyPlayerCamera();
         g.rig?.snap?.();
+        requestExposureSnap(); // R2-5: back on the player's eye = a cut
       },
     },
     characters: g.characters ?? undefined,
@@ -257,11 +273,9 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         // the shot's key: the candle throws the tableau across the tally wall — raise its runtime share while the
         // shadow is on (still one candle: dark, cinematic), back to normal with the shadow
         scaleLight(f, on ? 4.5 : 1);
-        f.light.castShadow = on;
-        if (on && f.light.shadow?.mapSize) {
-          f.light.shadow.mapSize.set(512, 512);
-          f.light.shadow.bias = -0.002;
-        }
+        // PERF-PLAN P0-2: the candle casts from load (castShadow never toggles — that rebuilds every material on
+        // its LightsNode); this only unmutes / mutes its shadow
+        setCandleShadow(f.light, on);
       },
       flashlight: (on, tremble) => {
         if (!g.rig) return;
@@ -302,6 +316,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         if (!p) return;
         p.teleport?.(planToWorld(eye), heading - Math.PI / 2, pitch);
         if (camHeld) g.rig?.snap?.();
+        requestExposureSnap(); // R2-5: a teleport is a cut
       },
       vehicle: (pose: VehiclePose | null) => {
         const obj = g.level?.prop?.('P_CAR_GATE');

@@ -25,6 +25,8 @@ export class FlashlightRig {
     this.rig.name = 'flashlight-rig';
     scene.add(this.rig);
     this.flashlight = createFlashlight(this.rig, preset);
+    // LIGHTING lane (item 11): the beam-bounce light lives in world space (driven by render/flashlight-bounce.ts)
+    if (this.flashlight.bounce) scene.add(this.flashlight.bounce, this.flashlight.bounce.target);
   }
 
   setOn(v: boolean): void {

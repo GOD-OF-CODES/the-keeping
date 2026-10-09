@@ -543,32 +543,49 @@ def eaves(P, roof, M, holes):
                   bevel=0.003)
 
 
-def gutter(M, a, b, side):
-    """Half-round gutter (open top) with a rolled bead; hangers every 0.8 m."""
+def gutter(M, a, b, side, sag=0.0, loose=0.0, loose_len=1.6):
+    """Half-round gutter (open top) with a rolled bead; hangers every 0.8 m.
+
+    sag: metres the run droops at mid-span between rusted-out hangers (a 30-year-old K-style/half-round run
+    sags 2-6 cm); loose: metres the `b` end has dropped after its last `loose_len` metres of hangers pulled out
+    of the rotten fascia (no hangers there; the run bends down at the last good hanger)."""
     r = 0.065
     th = 0.0025
     outer = [(r * math.cos(t), -r * math.sin(t)) for t in [math.pi * i / 10 for i in range(11)]]
     inner = [((r - th) * math.cos(t), -(r - th) * math.sin(t)) for t in [math.pi * i / 10 for i in range(11)]]
     prof = outer + [(-r - 0.008, 0.0), (-r - 0.008, 0.008), (-r + 0.002, 0.008)] + list(reversed(inner))
-    # profile x across (horizontal, perpendicular to the run), y up
-    sweep(M, [a, b], prof, 'zinc_galvanized', up=UP, side_sign=1.0, closed_profile=True)
     d = b - a
     L = d.length
-    # soldered end caps (half discs, a 2 mm plate: one face outward, one into the trough)
-    t_ = d.normalized()
-    X_ = UP.cross(t_)
+    t0 = max(0.0, 1.0 - loose_len / L) if loose else 1.0
+    n = max(1, int(L / 0.4)) if (sag or loose) else 1
+
+    def at(t):
+        z = -sag * 4.0 * t * (1.0 - t) if t <= t0 else -sag * 4.0 * t0 * (1.0 - t0)
+        if loose and t > t0:
+            z -= loose * ((t - t0) / (1.0 - t0)) ** 1.3
+        return a + d * t + UP * z
+    ts = sorted(set([i / n for i in range(n + 1)] + ([t0] if loose else [])))
+    path = [at(t) for t in ts]
+    # profile x across (horizontal, perpendicular to the run), y up
+    sweep(M, path, prof, 'zinc_galvanized', up=UP, side_sign=1.0, closed_profile=True)
+    # soldered end caps (half discs, a 2 mm plate: one face outward, one into the trough), square to each end
     half = [(r * math.cos(t), -r * math.sin(t)) for t in [math.pi * i / 12 for i in range(13)]]
     from .geom import newell
-    for end, outward in ((a, -t_), (b, t_)):
+    for end, outward in ((path[0], -(path[1] - path[0]).normalized()), (path[-1], (path[-1] - path[-2]).normalized())):
+        X_ = UP.cross(outward).normalized()
+        B_ = outward.cross(X_).normalized()
         for off, facing_ in ((0.0, outward), (-0.002, -outward)):
             c = end + outward * off
-            pts = [c + X_ * px + UP * py for px, py in half]
+            pts = [c + X_ * px + B_ * py for px, py in half]
             if newell(pts).dot(facing_) < 0:
                 pts = list(reversed(pts))
             M.poly(pts, 'zinc_galvanized')
     nh = max(2, int(L / 0.8))
     for i in range(nh + 1):
-        p = a + d * (i / nh)
+        t = i / nh
+        if loose and t > t0 + 1e-6:
+            continue                                  # pulled out with the rotten fascia
+        p = at(t)
         xa_ = d.normalized()
         ya_ = UP.cross(xa_)
         oriented_box(M.d, p + UP * 0.0065, ya_, xa_, UP, r + 0.01, 0.008, 0.0025, 'zinc_galvanized', bevel=0.001)
@@ -814,12 +831,27 @@ def railing(M, a, b, h, mat, rng):
     cap = [(-0.05, 0.0), (0.05, 0.0), (0.05, 0.012), (0.0, 0.03), (-0.05, 0.012)]
     sweep(M, [a + UP * h, b + UP * h], cap, mat, up=UP, side_sign=1.0, closed_profile=True)
     n = max(1, int(L / 0.115))
+    hb = (h - 0.06 - 0.13) / 2 + 0.005            # baluster half-length (bottom rail top -> top rail underside)
     for i in range(n):
         t = (i + 0.5) / n
         c = a + d * t + UP * (0.13 + (h - 0.06 - 0.13) / 2)
-        lean = rng.uniform(-0.01, 0.01)
-        oriented_box(M.d, c, x, y, (UP + x * lean).normalized(), 0.019, 0.019, (h - 0.06 - 0.13) / 2 + 0.005, mat,
-                     bevel=0.003)
+        r = rng.random()
+        # thirty years without paint: square-nailed balusters rot at the bottom rail where water sits. ~5 % are
+        # gone (kicked out, two nail holes left), ~5 % snapped at the rot line and swing from the top nail
+        # (a clear gap under them), the rest lean a little either way.
+        if r < 0.05:
+            continue
+        if r < 0.10:
+            L2 = hb * rng.uniform(0.55, 0.8)
+            top = c + UP * hb
+            sw = rng.uniform(-0.22, 0.22)
+            ax = (-UP + x * sw + y * rng.uniform(-0.06, 0.06)).normalized()
+            zx = -ax
+            xx = (x - zx * x.dot(zx)).normalized()
+            oriented_box(M.d, top + ax * L2, xx, zx.cross(xx), zx, 0.019, 0.019, L2, mat, bevel=0.003)
+            continue
+        lean = rng.uniform(-0.018, 0.018)
+        oriented_box(M.d, c, x, y, (UP + x * lean).normalized(), 0.019, 0.019, hb, mat, bevel=0.003)
 
 
 def lattice(M, a, b, n, z0, z1, mat, rng, pitch=0.11, w=0.036, t=0.008):
@@ -960,7 +992,10 @@ def porch_roof(P, R, M, x0, x1, y_wall, y_beam, z_beam_top, q, rng):
     box(M, (xa, y_wall - 0.035, zs(ya) - 0.02), (xb, y_wall - 0.012, zs(ya) + 0.14), 'zinc_galvanized', bevel=0.001)
     box(M, (xa, y_wall - 0.03, zc(ya) - 0.2), (xb, y_wall - 0.008, zc(ya) + 0.004), 'trim_chipped', bevel=0.003)
     # gutter on the front edge
-    gutter(M, Vector((xb + 0.02, yb - 0.1, edge_z - 0.07)), Vector((xa - 0.02, yb - 0.1, edge_z - 0.085)), -1)
+    # the porch gutter is the one the player sees from the gate: sagging 4 cm between hangers, its west end
+    # torn loose and hanging 0.3 m (the downspout side carries the most water and ice)
+    gutter(M, Vector((xb + 0.02, yb - 0.1, edge_z - 0.07)), Vector((xa - 0.02, yb - 0.1, edge_z - 0.085)), -1,
+           sag=0.04, loose=0.3, loose_len=1.7)
     return
 
 

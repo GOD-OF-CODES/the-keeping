@@ -23,6 +23,21 @@ PUDDLES = [   # (x, y, radius, depth): ruts of the drive, the mud zones, the yar
 ]
 RUTS_X = (0.95, 2.75)                    # drive wheel tracks (drive x -0.7..4.3)
 DRIVE = (-0.7, -28.0, 4.3, -2.8)
+# Overgrown two-track (art-director review 2026-10-07: a 5 m slab of gravel with ruler-straight edges read as a
+# concrete runway). A rural drive nobody has re-gravelled for years: two gravel wheel tracks ~1.3 m wide on the 1.8 m
+# track gauge of a sedan (ruts at RUTS_X), a grass crown 0.55-1.05 m wide between them (tyres never touch it), grass
+# shoulders creeping in from both sides. Every gravel/grass boundary is a wavy line: the terrain vertices on these
+# four grid lines move in x by _drive_jitter(y) (amplitude A, wavelength W metres), so the edge meanders like a real
+# verge instead of following the 0.45 m grid. The layout's gravel rect is unchanged (CONTRACT-CHANGES row 35).
+DRIVE_LINES = (   # (nominal x, jitter amplitude m, wavelength m, noise seed)
+    (0.15, 0.20, 3.4, 11.0),    # grass shoulder | left track
+    (1.45, 0.12, 2.2, 12.0),    # left track | grass crown
+    (2.25, 0.12, 2.5, 13.0),    # grass crown | right track
+    (3.50, 0.20, 3.8, 14.0),    # right track | grass shoulder
+)
+CROWN_PINCH = (1.74, 1.96)       # where the crown lines converge as the crown peters out at the gate / porch ends
+# grid columns across the drive (replace the regular 0.45 m lines there; >= 0.35 m between jittered lines)
+DRIVE_GRID = (-0.7, -0.27, 0.15, 0.55, 0.95, 1.45, CROWN_PINCH[0], CROWN_PINCH[1], 2.25, 2.75, 3.12, 3.50, 3.90, 4.3)
 ROAD = (-36.5, -29.5)                    # asphalt y range
 DITCH = (-38.0, -37.2)
 
@@ -55,12 +70,58 @@ def zones(P):
     return out
 
 
-def mat_at(zs, x, y):
+def _zone_mat(zs, x, y):
     m = 'grass_wet'
     for (x0, y0, x1, y1), mid in zs:
         if x0 <= x <= x1 and y0 <= y <= y1:
             m = mid
     return m
+
+
+def _drive_jitter(k, y):
+    """x offset (m) of drive boundary line k at plan y: two octaves of Perlin noise along the drive, |j| <= A."""
+    _, a, w, seed = DRIVE_LINES[k]
+    n = 0.7 * noise.noise(Vector((seed, y / w, 0.37))) + 0.3 * noise.noise(Vector((seed + 0.5, 2.7 * y / w, 0.81)))
+    return a * max(-1.0, min(1.0, 1.8 * n))
+
+
+def crown_t(y):
+    """1 where the grass crown is full width, 0 where it has petered out (2 m fades at the gate and porch ends)."""
+    return _smooth(DRIVE[1] + 0.3, DRIVE[1] + 2.3, y) * _smooth(DRIVE[3] - 0.6, DRIVE[3] - 2.6, y)
+
+
+def drive_line_x(k, y, jitter=True):
+    """Actual x of drive boundary line k at plan y (k = 0 left shoulder, 1-2 crown, 3 right shoulder).
+    jitter=False: the nominal grid line (the terrain build classifies quads by grid column, then moves the vertices)."""
+    if not jitter:
+        return DRIVE_LINES[k][0]
+    x = DRIVE_LINES[k][0] + _drive_jitter(k, y)
+    if k in (1, 2):
+        pin = CROWN_PINCH[k - 1]
+        x = pin + (x - pin) * crown_t(y)
+    return x
+
+
+def _drive_mat(m, x, y, jitter=True):
+    """The two-track split of the layout's gravel drive rect: shoulders and crown are grass."""
+    if m != 'gravel_wet' or not (DRIVE[0] <= x <= DRIVE[2] and DRIVE[1] <= y <= DRIVE[3]):
+        return m
+    if x < drive_line_x(0, y, jitter) or x > drive_line_x(3, y, jitter):
+        return 'grass_wet'
+    if crown_t(y) > 0.15 and drive_line_x(1, y, jitter) < x < drive_line_x(2, y, jitter):
+        return 'grass_wet'
+    return m
+
+
+def drive_edge_dist(x, y):
+    """Distance (m, along x) from a point inside the drive rect to the nearest gravel/grass boundary."""
+    ks = (0, 1, 2, 3) if crown_t(y) > 0.15 else (0, 3)
+    return min(abs(x - drive_line_x(k, y)) for k in ks)
+
+
+def mat_at(zs, x, y):
+    """Surface material at plan (x, y), following the real (meandering) drive boundaries."""
+    return _drive_mat(_zone_mat(zs, x, y), x, y)
 
 
 def height(x, y, mat, pads):
@@ -126,6 +187,14 @@ def build(P, M):
     cy = [r[1] for r, _ in zs] + [r[3] for r, _ in zs] + [hole[1], hole[3]]
     xs = _lines(x0, x1, CELL, cx)
     ys = _lines(y0, y1, CELL, cy)
+    # the drive band gets its own columns (the jittered boundary lines need clear neighbours on both sides)
+    keep_cuts = {round(c, 5) for c in cx}
+    xs = sorted({v for v in xs if not (DRIVE[0] < v < DRIVE[2]) or round(v, 5) in keep_cuts} | set(DRIVE_GRID))
+    line_ix = {}
+    for k, (nx, *_r) in enumerate(DRIVE_LINES):
+        i = min(range(len(xs)), key=lambda i: abs(xs[i] - nx))
+        gap = min(xs[i] - xs[i - 1], xs[i + 1] - xs[i])
+        line_ix[i] = (k, min(1.0, 0.7 * gap / DRIVE_LINES[k][1]))   # never cross a neighbouring grid line
     idx, verts = {}, []
     mats_at = {}
 
@@ -134,6 +203,13 @@ def build(P, M):
         if k not in idx:
             x, y = xs[i], ys[j]
             idx[k] = len(verts)
+            lk = line_ix.get(i)
+            if lk is not None and DRIVE[1] <= y <= DRIVE[3]:
+                kk, scale = lk
+                pin = CROWN_PINCH[kk - 1] if kk in (1, 2) else None
+                x = DRIVE_LINES[kk][0] + _drive_jitter(kk, y) * scale
+                if pin is not None:
+                    x = pin + (x - pin) * crown_t(y)
             verts.append(Vector((x, y, 0.0)))
         return idx[k]
     faces, fmats, luv = [], [], []
@@ -142,13 +218,14 @@ def build(P, M):
             cxm, cym = (xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2
             if hole[0] < cxm < hole[2] and hole[1] < cym < hole[3]:
                 continue
-            m = mat_at(zs, cxm, cym)
+            # nominal (un-jittered) classification; the boundary vertices move with the lines, so it matches mat_at
+            m = _drive_mat(_zone_mat(zs, cxm, cym), cxm, cym, jitter=False)
             q = [vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)]
             faces.append(q)
             fmats.append(m)
             for v in q:
                 mats_at.setdefault(v, set()).add(m)
-            luv.append([(xs[a], ys[b]) for a, b in ((i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1))])
+            luv.append([(verts[v].x, verts[v].y) for v in q])     # UV0 = actual plan position (no stretch)
     # heights: a vertex shared by several zones takes the mean of each zone's height (no cracks, soft zone edges)
     for v, ms in mats_at.items():
         p = verts[v]

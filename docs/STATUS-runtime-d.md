@@ -1,0 +1,156 @@
+# STATUS — runtime lane, round D (2026-10-08)
+
+Scope: 1 per-space light sets (parlor perf) · 2 opening leftovers · 3 realism leftovers · 4 yard tree LOD · 5 probes.
+
+## Log
+- start: no prior runtime-d status; tree = HEAD 32ca774 + ROADMAP edit.
+- item1: level.ts houseLights (probeLights − CAR/RC9 runtime spots) → interior probeNode + charLights (story-runtime.ts one line). Measuring scratch/rd/ab.sh.
+- restart 13:02: dist-rd already has item1 change (built 12:29); prior ab run was cut off; re-running scratch/rd/ab.sh → scratch/rd/ab.log.
+- queued scratch/rd/q1.sh: pd diag (warm-up vs C0 program diff) on dist-rd → scratch/rd/pd.log
+- R3-5: c2-room.ts t=0 fx exposure {max:5} (opening.ts handler, reset on camera release). UNVERIFIED (look pending).
+- ab (round 1): parlor-table median preB 8.13 · head(r3-base) 9.66 · rd(houseLights − CAR/RC9) 13.49 → not enough.
+- item1 v2: interior probeNode also drops the EXT1 headlight spots (all runtime spots); characters keep headlights (C6/C7). Built scratch/dist-rd2; HEAD 32ca774 baseline built from worktree scratch/wt-head → scratch/dist-head32. Queued scratch/rd/ab2.sh → ab2.log.
+- queued q2.sh: opening look l1 (C0 21.5/26, C1 2/34.4/60.5/61.8) on dist-rd2 (pre-road-change baseline)
+- item4 finding: GLB ships ONE tree node; but Low's twig-cut mesh is an exact triangle PREFIX of Medium/Max (verified scratch/rd/treecmp.mjs, 3/3 trees) → far LOD = geometry.drawRange (no new GLB, no recompile). Low tri counts: T1 24717/64749, T2 26716/64780, T3 23870/64412.
+- item4 code: src/world/tree-lod.ts (onBeforeRender drawRange → Low prefix beyond 35 m, back under 32 m), installed in loadLevel. UNMEASURED. (typecheck: only tests/ai.test.ts:694 error = gameplay lane)
+- advisor fixes: RC9 meshes → outside/extNode (level.ts:584; extRooms has RC9 via LM_EXTERIOR) so the road/truck keep truck+headlights. Built dist-rd3. rd-2 parlor 13.16 (head 10.66, preB 8.41). q2 requeued on rd3: opening look l1 + C2 look (c2cap).
+- pd (warm-up vs C0-21.4 programs): the fresh C0 programs are the MRT{output,velocity} scene-pass variants with 4 shadow depth maps; the first old twin had 1 shadow + cookie → light/shadow config differs, not just context. pd2 (closest-twin diff) queued (q3.sh).
+- restart 13:45: ab2 (preB/head32/rd2) + q2 (look l1 on rd3) + q3 (pd2) still queued behind other lanes' Chrome; working on code meanwhile.
+- item4 verified r186: Renderer.renderObject calls object.onBeforeRender before reading geometry.drawRange (Renderer.js 3721/3856, RenderObject.getDrawParameters reads it live) → tree-lod is per-draw correct incl. shadow passes.
+- restart 13:55: ab2/q2/q3 still queued (preB1 running). WARNING 13:56: machine on BATTERY (98 %, discharging) → perf numbers from now invalid until AC returns. pd reading: the 4-depth-map C0 programs = the shadowed runtime spots (headlamps + L_DOME 512²) — warm-up twin had 1 shadow; next: make warmRoad warm-up render with the C0 lamp/dome shadow state.
+- 14:00 killed ab2 (battery → invalid numbers); rerun scratch/rd/ab2.sh when on AC. q2 (looks) + q3 (pd2) proceed.
+- CONTRACT-CHANGES #58 logged (per-space light sets). Queued q4 (lc.mjs: per-material light-list signature at parlor-table on preB/head32/rd3; battery-safe).
+- item2 road: NEW src/world/road-glints.ts (GGX mirror-point streak quads, σ 0.12 rad meso slopes, L = F·I/(4πσ²d²sinθ)); truck high beams wired in opening.ts (glints.update after truck move, setWarm). UNVERIFIED (needs look C1 34.4).
+- built dist-rd4 (glints + RC9 road-probe capture (reflections.ts) + C0 26 exposure pinned 1.7); queued q5 look l2 (C0 26, C1 2/33/34.4).
+- FINDING l1 (rd3, Medium): C1 60.5 713 draws / 1.40 M, 61.8 676 / 1.34 M (> 400 Medium budget; S9 reframe from the far verge). Queued q6 dr.mjs draw breakdown at 60.5.
+- C1 S9 (c1-empty.ts:110): target end z 1.0→1.6 so the ROOMS board is inside the letterbox (l1 61.8: board cut at the top edge; lantern already reads as a small hot point, car readable). UNVERIFIED.
+- R3-5 look (rd3, cap 5): C2-15.5 still reads as a lit room, table top clips → cap 2.8 (r3 base read right at 2.65). UNVERIFIED.
+- C0 freeze, step 1: warmRoad(true) now renders every lamp shadow map (autoUpdate on; update() re-gates after load). pd3 diag (closest named twin) queued on rd4.
+- built dist-rd5 (rd4 + C2 cap 2.8 + S9 aim + warm lamp shadows). Queued q8: C2-15.5/C6-14/C7-3 looks on dist-rd (headlights in interior node) vs rd5 (advisor: check C6/C7 door/porch headlight regression).
+- lc (battery-safe light lists, parlor-table): preB probe-lit 11/1/1, chars 17/1/0 · head32 probe-lit 15/5/5, chars 24/6/5, arms 23/5/4 · rd3 probe-lit 8/2/1, chars 19/4/3 (headlights kept), arms 23/5/4. lightning-dir now casts (round B) in every list. Next levers if rd3 not enough on AC: arms + chars house variants.
+- l2 (rd4): C0 26 road still pale concrete (exposure pin + RC9 road probe: no visible change). C1 33: truck high beams = a milky full-frame veil (not glare) — glints not visible under it. Queued q9 road.mjs (toggle headlights/probes/fog at C0 26).
+- 14:40 dr run on rd4 STALLED at load ('Compiling shaders — U4T', stall.jpg) and held the chrome lock 20 min → killed. l2 on the same rd4 loaded fine (72.8 s) → watch pd3 (rd4) load.
+- arms: two fixed LightsNodes (house 18 lights / car 23), switched on opening.mounted(); warmRoad wrapper warms the car variant (story-runtime + cutscene-fx mounted()). Built dist-rd6. ab3.sh (AC-gated: preB/head32/rd6) waiting for mains.
+- C0 FREEZE ROOT CAUSE (pd3 on rd4): fresh C0 programs differ from their warmed twins ONLY by the velocity projection: frame = object uniform (TAAU sets velocity.setProjectionMatrix inside its updateBefore), compileView = render.cameraProjectionMatrix → compileView built the wrong twin for every material. Fix: pipeline.ts compileInPass sets velocity.setProjectionMatrix(taauNode._originalProjectionMatrix) during compileAsync (Medium/Max). 52 fresh programs at C0 21.6 on rd4.
+- q8 looks (Medium, 0 console errors): C6-14 rd 33.4 / rd5 33.6 mean, C7-3 11.0 / 13.3 → no headlight regression from dropping runtime spots in interior probe-lit node (advisor check #3 closed). R3-5: C2-15.5 exposure 2.8 (was 10.5 r3 → 5 rd3): mean 30.5→18, black 23→47 %; reads as a candle-lit room; table top beside the flame still near-white (≈ 100 lux at 10 cm — physically bright). caps scratch/rd/c6cap-rd5/.
+- road.mjs: road pale = our low beams' diffuse at exposure 1.7 (without headlights the asphalt reads as true wet asphalt with sparkles; probes/fog no effect). C0 26 pin → 1.0. (asphalt_wet: no env reflection node on the road — env=false.)
+- pd3b (rd7): fresh at C0 21.6 52 → 16, but the rest are the opposite twin (frame drew with velocity proj null: TAAU clears it after each pipeline frame). Fix 2: velocity pinned to taauNode._originalProjectionMatrix for the session (clearViewOffset re-pins); compileInPass restores the previous value. Building rd8.
+- 16:00 typecheck clean, npm test 209/209.
+- dr (rd7, C1 60.5 frustum): 759 draws/1.87 M: RC9 125/530k, P_CAR_GATE(mounted) 107/79k, EXT2 83/611k, wrecks 46/100k, interior props ≈ 150. yard-cull.ts: interior props now hidden for the whole time the opening holds the camera (was: only > 70 m). Building rd9.
+- 16:18 fixed a queue deadlock (q11↔q13), lost ~25 min.
+- restart 16:3x: pd3c (rd8): fresh programs at C0 21.6 now 6 (only Bloom_comp / RenderPipeline post nodes; was 52) → C0 compile freeze essentially fixed by the velocity-projection pin. Queue: q11 glare (rd8) running, q14 look l3 (rd9 Medium), q15 Max look x3 (rd9), ab3 (AC-gated). MACHINE ON BATTERY 2 % — perf numbers invalid; ab3 waits for mains.
+- glare (rd7, C1 33): milky full-frame veil = BLOOM alone (bloomStrength 0 → clean wet road with long truck streaks; cab veil light no visible effect). Fix in bloom (energy-bounded glare), not lights.
+- glare fix: pipeline.ts glareHighPass (bloom highPassFn with saturating excess e/(1+e/24T)). Building dist-rd10 (rd9 + glare). UNVERIFIED.
+- built dist-rd10 (tree incl. glare); dist-rd9 now = rd10 copy (orig in dist-rd9-orig) so q14 l3 / q15 x3 look at it. Queued q16 glare10 (rd10).
+- R3-2 verified CLOSED: rd5 C2-5 / C2-15.5 (scratch/rd/c6cap-rd5/) show no blue patch at Ada's head (FIX 7 + C2 cap 2.8). C2-15.5 table top beside the candle still bright but no longer a clipped white slab.
+- #17 skin chalk: skin_ada avgAlbedo 0.30–0.34 and nightgown 0.40 are already physical; the chalk in scratch/light2/ada/ab3.jpg is torch over-exposure (≈ 1000 lux at 1–2 m vs the wall-adapted meter), not albedo. Not changed this round (needs a clean torch framing of Ada; see requests).
+- 16:28 typecheck clean, npm test 209/209 (with glare fix).
+- 17:15 AC back (charging). Killed q11 (glare on rd8 — redundant; q16 checks rd10).
+- l3 (rd10, Medium, 0 errors, gpu 28 ms under charging@1 %): C0 26 road still pale grey w/ dark puddles (wrong: asphalt should be the dark one); C1 34.4 no veil now but the frame is underexposed (truck lamp small, cabin unlit). Glare fix confirmed qualitatively.
+- road.mjs re-read: its a-base frame was metered at t=25.9998 with exposure 2.49 (pin not yet applied) → l1–l3 'C0 26' captures sit on the cut frame BEFORE the 1.0 pin. Queued q17 look l4 at C0 26.5/28 (rd10).
+- l3 metrics (rd10 Medium): C0 21.5 337 d/682k · C0 26 206/573k · C1 34.4 208/560k · C1 54 378/746k (tree LOD in) · C1 60.5 477/1.22M (was 713/1.40M) · 61.8 440/1.15M (was 676/1.34M). 60.5/61.8 still > 400 draws.
+- glare10 (rd10, Medium, C1 33, 0 errors): VERIFIED — the milky full-frame veil is gone; glare is a localized halation round the two high beams, the wet road shows the long specular streak, rain lit in the beams, dash + hands front-lit by the truck. Meter exp 0.67. scratch/rd/glare10/a-base.jpg.
+- l3 61.8 VERIFIED: ROOMS board inside the letterbox, lantern a small hot point, car + gate + house read (S9 aim ok). l3 C1 54: trees read as trees, no visible LOD step; BUT the beam-lit road is as light as the grass verge (asphalt 0.04 vs grass 0.1–0.2 → should be ~3× darker) → diag road2 queued.
+- C1 S9 budget: opening.ts hides the mounted interior's dash/console detail (≈ 55 draws: cluster, needles, lamps, radio, cassettes, receipts…) in exterior shots with the camera > 6 m from the car; seats/wheel/mirror/visors/shell kept. UNMEASURED (rd11).
+- built dist-rd11 (rd10 + cab detail hide). Queued q19: l5 look (C0 26.5/28, C1 34/60.5/61.8) + fz.mjs real-time C0 freeze dt (Medium, Max).
+- 17:35 npm run build OK (verify-boot OK, boot 12.4 kB gz).
+- veil / 2nd lamp shadow: NOT restored. Characters' list now excludes CAR lights (veil would be legal for them), but the car-variant arms list (23 lights) + cabin would take the extra sampler on Max with no measured headroom, and the C1 frames are draw-bound already; Max 2nd lamp shadow would hit Harlan (characters keep the headlights for C6/C7) → 17 samplers. Left off by design.
+- queued q20: playthrough gate (Medium, rd11) + WebGL2 CP1 --fps check.
+- 18:03 Chrome lock starved: ab3/x3/road2/l5/fz/pt queued 40+ min behind props + gameplay jobs.
+- 18:04 x3 (Max) TIMED OUT waiting for the lock; ab3 killed (preB-1 13.2 ms = throttled at 1 % battery — discarded). Requeued with --timeout 9000: q19 (l5 + fz Medium/Max + x5 Max look on rd11), q20 (pt gate + WebGL2), ab4 (preB/head32/rd11 ×2, AC-gated).
+- 18:24 still waiting for the lock (road2 queued 25 min).
+
+## Open (as of 18:35) — pending Chrome-lock time
+- item1 verdict: ab4 (preB/head32/rd11 ×2, alternating, mains) not yet run — no parlor delta claimed.
+- road: road2 diag (C1 54: spec-only vs no-gloss) queued; C0 26.5/28 look (l5) queued. Road material not changed.
+- C1 60.5/61.8 draws after the cab-detail hide: l5; Max budget: x5; C0 freeze per frame: fz (Medium + Max).
+- gate: pt playthrough (Medium rd11) + WebGL2 queued (q20). probes.bin NOT regenerated yet.
+
+## Requests for the lead
+1. Chrome lock is not FIFO: runtime-d jobs waited 40–60 min while props/gameplay jobs re-acquired it (x3 Max look timed out). Please serialise lanes or make shot.mjs's lock a ticket queue.
+2. probes.bin (all tiers) must be regenerated AFTER this lane's light-set change (level.ts houseLights / interior probeNode) and after any gameplay-lane house job — run `npm run probes` last.
+3. #17 skin chalk: skin_ada 0.30–0.34 / nightgown 0.40 albedo are physical; the chalk is torch over-exposure. Needs a scenario that frames Ada cleanly under the torch (Harlan `setVisible` doesn't stick, per REALISM-BACKLOG) — gameplay/characters to provide.
+4. glareHighPass (pipeline.ts) changes bloom for all scenes: excess above the threshold saturates at 24 T. Candle flames keep ≥ 83 %; lightning windows (~20–50 T) lose some halation — please eyeball in the next AD review.
+- road2 (C1 54, rd10): spec-only frame = dark wet asphalt with streaks → the pale road is DIFFUSE from the low beams. Headlight spots: I=15000 cd, angle 0.87 rad (50° half), penumbra 0.15, NO map — i.e. ~15 kcd over the whole cone; the near road at 3–8 m (8–12° below) gets ≈ 100–330 lux vs ≈ 10–40 lux from a real low beam (15–20 kcd only in the hot zone just below the cut-off, 1–3 kcd at 5–15° down).
+- road fix 1: c1-empty.ts POV_MAX 1.2 → 0.85 (on-screen 2.4 → 1.7, §5.2's value). Building rd12.
+- built rd12 (rd11 + POV_MAX 0.85) and synced it INTO dist-rd11 before the queued l5/fz/x5/pt/ab4 jobs started — their 'rd11' results = rd12 code.
+- 19:05 l5 still waiting for the lock (queued since ~18:10).
+- 20:24 RESTART. Queued jobs (l5/fz/x5/pt/ab4) never ran (agent stopped). Machine on BATTERY 46 % → looks/gates only, no perf claims. Running l5 now on a fresh build scratch/dist-rd13 (current tree).
+- 20:35 l5 (rd13 = current tree, Medium, battery, 0 errors): C0 26.5 203 d/581k · C0 28 188/588k · C1 34 344/580k · C1 60.5 450/1.21M · 61.8 413/1.15M (cab-detail hide only −27 draws; 60.5/61.8 still > 400). C0 26.5 look: road still pale grey with black puddles while the car is ~100 m away → not the low beams; diag road3 (C0 26.5: spec-only / no-gloss / no-lightmap) running.
+- 20:57 road3 still waiting for the Chrome lock (gameplay/props jobs); queued q21 dr13 (C1 60.5 draw breakdown, rd13).
+- 21:05 road3 still queued for the lock (since 20:26).
+- 21:25 road3 still waiting for the lock (60+ min).
+- 21:37 typecheck clean, npm test 216/216 (current tree). BATTERY 10 % (29 min left) and road3 has waited 70 min for the Chrome lock (props look.mjs has held it since 21:13) → stopping this attempt. Nothing new measured beyond l5.
+
+## Open (as of 21:37) — next attempt starts here (needs MAINS + the Chrome lock)
+- build: scratch/dist-rd13 = current tree (20:24). Scenarios ready: scratch/rd/road3.mjs (CS=C0 T=26.5: a base · b spec-only · c no-gloss · d no-lightmap → which term makes the C0 road pale), dr.mjs (T=60.5 draw breakdown, q21.sh), fz.mjs (C0 freeze per frame, q22.sh), ab4.sh (item1 parlor A/B, mains only), q20.sh (playthrough gate + WebGL2), x5 Max look (in q19.sh).
+- item1: code done (houseLights / interior probeNode / charLights, CONTRACT-CHANGES #58); verdict needs ab4 on mains — NO parlor delta claimed.
+- road: C0 26.5 still pale grey asphalt with black puddles while the car is ~100 m off → not the low beams; road3 decides (IBL/probe sheen vs lightmap vs diffuse). Asphalt generator (ground.ts, props lane) albedo is already 0.035–0.07 and roughness 0.2–0.3.
+- C1 60.5 450 draws / 61.8 413 (> 400 Medium) — dr13 decides the next cut (RC9 road set 125 draws, EXT2 83, wrecks 46 in rd7).
+- C0 freeze (fz), Max budget (x5), probes.bin (item 5), gate playthrough: not run this attempt.
+
+## Review (art director + perf, 2026-10-08 ~21:40) — BLOCKED: battery 10 % (29 min), Chrome lock held
+- Environment at start: on BATTERY 10 %, discharging; Chrome lock held by gameplay review (gdr r11, 39 min) with props l3 and
+  runtime dr13 queued behind it. No new shot.mjs run was possible; no perf number counts (battery). Judged the newest frames
+  that exist: scratch/rd/l5 (rd13 = current tree, Medium, 0 errors). Downscaled copies: scratch/rd-review/*.jpg.
+- NOT reviewed (no frames exist on the current tree, no Chrome time): C0 4.5/9.25/15.6/21.5, C1 2/13.5/20/24.5/41/49.5/63/74,
+  parlor perf on mains, first-person gloves/arms (torch, C1 wheel grip, held map), upstairs key candle, armoire slat view,
+  Ada in the torch. These stay OPEN — no verdict claimed.
+- C0 26.5 (l5/medium-01) — FAIL, worst frame. vs a real photo of a wet rural road at night: (1) the road is an EVEN mid-grey
+  from 5 m to 100 m — no inverse-square fall-off (a 0.64 m low beam gives E ∝ h/d³: ~6 lux at 10 m → ~0.5 lux at 30 m, a
+  >10× gradient), so the grey is NOT from a light; (2) the puddles are pitch-BLACK while the asphalt around them is grey — the
+  inverse of reality (puddles are the brightest mirrors: they must carry long streaks of the two oncoming headlights and the
+  sky glow). Both point at the reflection term: puddles (rough 0.035 → probe lod 0.25) sample the sharp, dark cube; the
+  asphalt (rough 0.2–0.3 → lod 1.4–2.1) samples blurrier mips/bent R that are grey. Hypothesis (code-read only): RC9 probe
+  content near the horizon / lower hemisphere (captured at 1.2 m on the road — headlit road or fog in the cube) or GGX glare
+  from the headlights. road3.mjs (b spec-only / c no-gloss / d no-lightmap) decides — still unrun. (3) Rain streaks are lit
+  uniformly over the whole frame incl. the black tree walls — real rain is only visible where it crosses a light (the beam
+  cones / backlit by the oncoming lamps). (4) The title reads at ~10 % contrast — fine as a ghost, but it sits ON the lamps.
+- C1 60.5 (l5/medium-04) — PASS-with-notes for composition (sign, lantern, house silhouette, car). Notes: headlamps read as
+  cold flat white LED panels — 1980s sealed-beam halogen is 3200 K warm and the lens is a bright lit disc with a hot core,
+  not a uniform slab; car paint shows no wet sheen / no lantern specular along the roofline; the fog is a uniform grey veil
+  with no lantern scatter cone. Perf: 450 draws (> 400 Medium) — unchanged by the cab-detail hide (−27).
+- C1 61.8: 413 draws (> 400). C1 34: 344 d / 580k — OK.
+- No code changed in this review (no way to verify a change: no Chrome, battery dying). Ranked remainder → REALISM-BACKLOG #21.
+- Leading hypothesis for C0 road (code read): capture() leaves scene.fog on → grey fog horizon ring in the RC9 cube, smeared by the blurred mips the asphalt samples. dr13 (pid 54802) still queued for the lock → next attempt checks scratch/rd/dr13/ before re-queueing.
+- 21:42 RESTART on MAINS (16 %, charging). dr13 now holds the Chrome lock (pid 54802).
+- 21:46 queued q23 (road3 C0 26.5 diag → ab5 preB vs rd13 ×2 mains → fz Medium), all on dist-rd13.
+- 21:50 dr13 (C1 60.5, rd13, battery-throttled when it started): frustum 496 draws / 1.68M tris. RC9 road set 125 d/530k, EXT2 83/611k, P_CAR_GATE 80/78k, P_WRECK 46/100k, '?' 35/16k, EXT1 20. 2 console errors = headless AudioContext device errors.
+- 22:22 RESTART on MAINS (60 %, charging). Lock free, no job running (q23 died with the previous agent). Re-running q23 (road3 → ab5 → fz) on dist-rd13.
+- 22:35 road3 (rd13, C0 26.5, mains, 0 errors): road-region mean a 24.9 · b spec-only 8.6 · c no-gloss 38.9 · d no-lightmap 26.9 → the pale road is DIFFUSE and NOT the lightmap/probe. Next: road4 (headlights off / ambient-hemi-probe off / albedo const 0.05).
+- 22:50 FIX (level.ts): RC9 road meshes get their own LightsNode (roadLights = exterior lights minus the clamped yard-grid twin + RC9_sky_fill hemisphere, π·SKY_COLOR / ground 0.06×). Code-read cause: the clamped twin applied the yard grid's edge probes over the whole 500 m-distant road. Built dist-rd14. road4 (twin toggle on rd13) queued to confirm.
+- 23:00 headlamp lens (cutscene-fx.ts): chrome bezel no longer emissive (was a glowing slab); glass = 3200 K halogen with a hot filament core (exp falloff, peak ×10.2, mean ≈ old ×6). UNVERIFIED.
+- 23:35 ab5 (mains, alternating ×2, Medium): parlor-table preB 8.21/7.99 · rd13 10.71/10.53 (+2.5 ms; was +6.3 at 16.7 → the opening-light regression is gone, rd13 ≈ HEAD-32ca774's 10.4–10.6). upper-torch preB 6.89/6.74 · rd13 7.60/7.66 (+0.8). Target +1.5 NOT met — remaining +2.5 is round B's own cost; bisecting next.
+- 23:45 queued (serial): fz (q23) → road4 (twin toggle, rd13) → pb3 (parlor bisect: reflections / shadows, rd14) → dr14 (C1 60.5 draws with RC9 per-node breakdown).
+- 23:55 roadFill: + updateMatrixWorld (out-of-scene hemisphere had identity matrixWorld → zero up axis; rd14's road is INVALID for looks) + sky-view factor 0.48 (clearing 2×14 m, pines ≈ 22 m). Built dist-rd15 (= tree incl. the headlamp lens). NOTE: the queued waiters fell through — road4/fz/pb3/dr14 all wait on the Chrome lock concurrently, not in order.
+- 00:00 queued lk15 (rd15 look: C0 26.5 road + C1 60.5 lens, logs asphalt light list + lens bbox) and q25 (gate playthrough Medium + WebGL2 CP1 --fps on rd15).
+- 00:15 fz (rd13, Medium, mains, real-time rAF dt): C0 stalls 12.62 = 1333 ms, 19.12 = 1017, 22.22 = 1467 (+22.32 633), 15.85 = 483, 20.12 = 133, 1.37 = 183. NOT fixed. Stepped pd3c found only 6 fresh programs → not shader compiles; 12.5/19.0 are shot cuts. Only C0 lazy sound is score_reveal (20.0 → the 133 ms). Queued fz2 (stepped: per-frame wall ms + new render pipelines / geometries / textures / attribute MB) on rd15.
+- 00:25 lk15 (rd15, Medium, 0 errors): C0 26.5 road STILL pale grey (road mesh light list has neither twin nor sky fill → the twin was NOT the cause; road4 never ran: self-matching pgrep waiters, killed). Lens bbox confirms the hot-core axes (lateral ±0.86, vertical 0.48–0.71). Queued q26 (serial script): road5 (C0 26.5: lightning-dir off / + head+truck off / all lights off) → pb3 → dr15, all rd15.
+- 00:27 lk15 C1 60.5 look: headlamps now small warm 3200 K hot cores in a dim lens + lit chrome bezel (was flat cold slabs) — PASS. Car body still lacks wet sheen (open).
+- 23:16 (NB: STATUS lines stamped 23:45–00:27 above were mis-stamped; real time ≈ 23:00–23:10) GATE pt15 (rd15 = current tree, Medium, mains): playthrough ended=true beat=B13 game 409 s, deaths 0, console errors 0, exceptions 0, gpu ≈ 9.07 ms; a stray '[shot] TIMEOUT' line printed after the screenshots (exit path) — run itself complete. Shots scratch/rd/pt15/.
+- 23:17 fz2 (rd15 stepped): C0 12.48 1365 ms + 57 NEW render pipelines · 18.98 1106 ms +52 · 21.98–22.18 ≈ 1.7 s +90 · 15.65 967 ms with 0 new pipelines (lightning stroke 15.6). No geometry/texture uploads. → the cut stalls are pipeline creation (programs released + recompiled, or new render states). Queued fz3 (pipeline names at each cut).
+- 23:17 road5 (rd15, C0 26.5): road-region mean base 40 / 24 · headlights+truck off 2.2 · all lights off 1.6 → the pale road is OUR LOW BEAMS (15 kcd, 50° cone, no beam pattern at Medium). Not probes/twin/lightmap. (RC9 own light set kept: harmless, removes a wrong yard-grid term.)
+- 23:18 road verdict: headlamps.ts already has the photometric low-beam pattern (colorNode cookie; map=false is expected). Estimated road E: 10 m ≈ 5 lux, 30 m ≈ 0.4 lux (12× fall-off), so the beam itself is physical; black puddles with headlights from BEHIND the camera are also physical (mirrors of the dark sky ahead). Remaining lever = the wet asphalt's diffuse albedo (ground.ts, props lane; wet asphalt ≈ 0.03–0.05) → request. No road change this lane.
+- 23:35 pb3 (rd15 parlor-table, mains, BUT 1 Blender process running — relative only): base 10.92 · no reflections 10.22 (−0.7) · + no shadows 8.91 (−1.3). Light lists: 604 meshes × 9 lights, 249 × 8, 22 × 19, 7 × 18. Queued pb4 (list names, per-shadow-light toggles).
+- 23:52 fz3 (rd15): the C0 cut stalls are NEW VERTEX programs for bark_wet — 51 at 12.5, 51 at 19.0, 86 at 21.9 (+ a few glass_grimy, arms at 12.5). One vertex program per tree mesh → something bakes per-mesh constants into the bark vertex shader.
+- 23:54 FIX C0 freeze: src/world/instance-buckets.ts — r186 Instance.js bakes the instance count into the vertex shader (uniform array<mat4,N> when N×64 B ≤ 64 KiB), so each corridor chunk = its own vertex program. Pad instanceMatrix/instanceColor to capacities 16/64/256/1024 (mesh.count unchanged → same draws). Called in loadLevel. Built dist-rd16; queued q28: fz2 (stepped pipelines) + fz real-time Medium + Max.
+- 23:55 pb4 (rd15 parlor-table): 270 YARD meshes in the parlor view carry the exterior list incl. the RC9 truck's shadowed L_TRUCK_HI_L*; castShadow-off deltas (noisy ±0.3): lightning-dir −1.5 ms, headlight −1.1, truck −1.1, dome −1.2 (all intensity 0 but their shadow maps are sampled). FIX: yard extNode drops RC9-only runtime lights (truck) — only the RC9 road node keeps them (opening cabin adds them explicitly). Built rd17; queued q29: ab6 (preB vs rd17 ×2, mains, Blender count logged) + dr17 (C1 60.5 full draw list).
+- 00:03 fz2b (rd16 buckets): NO change (57/52/90 new bark_wet vertex programs) though sizes went 76 → 4: WGSLNodeBuilder names each uniform buffer 'NodeBuffer_<node id>' → per-mesh code regardless of size. FIX v2 (instance-buckets.ts → shareInstancePrograms): raise instanceMatrix.count (a plain property, only read by Instance.js' size test; copy()/clone() carry it to the velocity previous-matrix) past any limit → three's instanced-attribute path, shared code, no extra memory. Built rd18; queued q30: fz2 stepped + fz real-time Medium + Max. (q28 killed.)
+- 00:06 fz2c (rd18): new pipelines at the cuts 57/52/90 → 2/0/0 (instanced attribute path works: 287 meshes) BUT the stepped frame times are unchanged (12.48 1360 ms, 18.98 1051, 22.0–22.2 ≈ 200–350 each) → pipelines were a correlate, not the cost. Next suspect: setCutscene dof switch → rp.needsUpdate → JS rebuild of the whole post node graph.
+- 00:17 ab6-1 (mains, 0 Blender): preB 8.05/6.72 · rd17 11.03/8.24 — rd17 (bucket-padding v1 + truck drop) is WORSE than rd13 (10.6/7.6): the padded 64 KiB uniform arrays per draw likely cost. v1 is gone in rd18 (attribute path). Queued q31 = ab7 (preB vs rd18 ×2).
+- 00:18 fz4 (rd18): the cut stalls are 100 % in NodeManager.getForRender (12.53 1322/1367 ms, 19.03 1321/1363, 22.0–22.2 ≈ 155–530 ms/frame) — JS node builds. r186 RenderObject.getMaterialCacheKey adds object.uuid for every InstancedMesh → each instanced mesh needs its own node build the first time it is drawn in a context, even when the WGSL is shared. Corridor chunks first seen at the cuts → build there. Fix = node-build every corridor mesh during the load warm-up (frustum culling off for the rc9 warm step).
+- 00:18 FIX v3 (opening.ts warmRoad): frustum culling off for every InstancedMesh during the rc9-road warm step (restored on warmRoad(false)) → all corridor chunks node-built at load. Built rd19; queued q32: fz4 stepped + fz real-time Medium + Max. fz18 (rd18 real-time Medium): unchanged 12.62 = 1367 ms (expected: node builds remain).
+- 00:28 logged CONTRACT-CHANGES #68.
+- 00:29 probes: the current tree logs 'shipped probes are stale (key 00d507c1…, want bad07b8d…) — runtime bake' → queued npm run probes (all tiers, --dist scratch/dist-probes-rd) behind q32.
+- 00:35 fz4b (rd19, warm v3): NO change (12.53 2.9 s, 19.00 1.7 s, 22.x 0.2–0.6 s/frame in node builds) → the objects built at the cuts are not covered by the warm step. Queued fz5 (names of the render objects built >3 ms: object/material/room/shadow/camera).
+- 00:52 fz5 (rd19): objects node-built at the cuts = RC9 corridor InstancedMeshes (pine_L0/L1/L2 bark_wet + pine_needles, understory, snags, reflector posts) AND non-instanced RC9 props (diner, signs); the SAME object is rebuilt on consecutive frames 22.02–22.18 and 3× in one frame at 12.52 → render objects are being INVALIDATED (key change / material.version), not first-seen. Queued fz6 (per rebuild: which of material key / dynamic key / material.version / lights key / context changed).
+- 00:52 ab6-2 NOISY: preB-2 8.69/13.18, rd17-2 13.94/13.55 (spread 12.3–16.6, machine loaded) → ab6 discarded; ab7 (rd18) pending. fz19 real-time (rd19 Medium): 12.62 still 1333 ms (expected — v3 didn't address the invalidation).
+- 01:21 fz6: rebuilt objects show why=first (first draw since the C0 hook) — uninformative about load warm-up. Queued fz7 (hook RenderObjects.get: every NEW render object for pine_L2_2 / diner during C0 with its pass, context, lightsNode, camera, material, dynamic key).
+- 01:21 local gate on the current tree: typecheck clean · npm test 220/220 · npm run build OK (verify-boot OK, boot 12.5 kB gz). gl15 (WebGL2 CP1) TIMED OUT in the lock queue (no --timeout given) — must re-run.
+- 01:38 fz7 ROOT CAUSE: the scene pass draws in render context 10 without the DOF chain and context 15 with it (first DOF cue 12.5). Every corridor object warmed at load (ctx10) is node-built AGAIN in ctx15 at 12.53/19.03/22.x. The load DOF warm (main.ts) only covers the spawn view. Fix: render each warm step's headings with the DOF chain too.
+- 01:38 FIX v4 (main.ts afterCompile step): rc9 / rc9-road warm steps also draw their headings through the DOF chain (setCutscene dof → render ×headings → null). Built dist-rd20 (= final tree). Queued q33 (serial): fz4 stepped → fz real-time Medium → playthrough Medium → WebGL2 CP1 --fps → WebGL2 C0 26.5 + C1 60.5 frames → Max C0 26.5 + C1 60.5 --fps → fz real-time Max.
+- 01:49 ab7-1 (mains, 0 Blender): preB 7.97/6.70 · rd18 11.16/8.19 (rd13 was 10.6/7.6 — +0.5 since; the tree also carries other lanes' changes, e.g. props wear shaders). Queued q34 = ab8: rd20 vs rd20n (identical but shareInstancePrograms disabled) ×2 to isolate my instancing change.
+- 01:49 fz4c (rd20, Medium, stepped): C0 freeze FIXED — 12.53 2.9 s → 0.22 s (204 ms node build left = the first DOF switch itself), 19.03 1.7 s → < 40 ms, 22.0–22.2 (0.2–0.65 s/frame) → < 40 ms. Load 52 s (unchanged range). Real-time fz Medium/Max pending in q33.
+- 02:02 fz20 (rd20, Medium, REAL-TIME rAF, mains): C0 worst frame 1333 ms → 183 ms (12.62, first DOF switch); 19.12 (1017) and 22.22 (1467) and 15.85 (483) gone; only >50 ms frames left: 12.62 = 183, 20.12 = 117, 20.23 = 133 (20.0 = the lazy score_reveal synth, audio lane). w20–23 worst 16.8 ms.
+- 02:14 GATE pt20 (rd20 = final tree, Medium, mains): playthrough ended=true beat=B13 (C7 → title), game 438 s, deaths 0, console errors 0, exceptions 0. ab7-2: preB 8.07/6.73 · rd18 10.86/8.14 (consistent with ab7-1: +2.9 / +1.4 vs preB).
+- 02:33 gl20 (rd20, WebGL2 Medium CP1 --fps, mains): avg 60 fps, 1 % low 22, gpu ≈ 12.2 ms, console errors 0, load 252 s (WebGL compile; no earlier WebGL load number in this lane to compare).

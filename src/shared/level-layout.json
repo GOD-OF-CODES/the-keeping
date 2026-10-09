@@ -484,6 +484,39 @@
    "note": "Narrow boarded landing behind Ada's wardrobe; the flight drops away east from its north end."
   },
   {
+   "id": "RC9",
+   "name": "County Road 9 corridor (opening set)",
+   "floor": "exterior",
+   "kind": "set",
+   "rect": [
+    70,
+    -420,
+    1500,
+    -10
+   ],
+   "ceiling": 0,
+   "floorMat": "asphalt_wet",
+   "wallMat": "bark_wet",
+   "ceilingMat": "none",
+   "trimMat": "none",
+   "floorHoles": [],
+   "ceilingHoles": [],
+   "reverb": {
+    "size": 60,
+    "damping": 0.92,
+    "wet": 0.04
+   },
+   "visibleRooms": [
+    "RC9",
+    "EXT1",
+    "EXT2"
+   ],
+   "atlas": "LM_EXTERIOR",
+   "playable": false,
+   "milestone": "M1",
+   "note": "C0/C1 only: 1550 m of road east of the gate (scripts/layout/rc9.mjs), details_corridor.glb + props_road.glb, all runtime-lit (no atlas texels). No gameplay room lists it, so it is culled in play."
+  },
+  {
    "id": "CAR",
    "name": "Sedan interior set",
    "floor": "car",
@@ -494,7 +527,7 @@
     101.6,
     2.8
    ],
-   "ceiling": 1.15,
+   "ceiling": 1.34,
    "floorMat": "car_interior_tan",
    "wallMat": "car_interior_tan",
    "ceilingMat": "car_interior_tan",
@@ -1999,7 +2032,7 @@
    ],
    "yaw": 1.571,
    "params": {
-    "text": "NEXT SERVICES 48 MI"
+    "text": "CARVEL 48"
    },
    "lighting": "static",
    "collider": "none",
@@ -2042,6 +2075,176 @@
    },
    "lighting": "static",
    "collider": "box",
+   "milestone": "M1"
+  },
+  {
+   "id": "P_RC9_NEXT_SERVICES",
+   "type": "road_card",
+   "room": "RC9",
+   "pos": [
+    275.304,
+    -27.183,
+    0
+   ],
+   "yaw": 1.323,
+   "params": {
+    "text": "NEXT SERVICES 48 MI",
+    "hero": true,
+    "w": 2.4,
+    "h": 1.2
+   },
+   "lighting": "dynamic",
+   "collider": "none",
+   "milestone": "M1"
+  },
+  {
+   "id": "P_RC9_CR9_A",
+   "type": "county_shield",
+   "room": "RC9",
+   "pos": [
+    510.792,
+    -124.456,
+    0
+   ],
+   "yaw": 0.85,
+   "params": {
+    "text": "COUNTY|9"
+   },
+   "lighting": "dynamic",
+   "collider": "none",
+   "milestone": "M1"
+  },
+  {
+   "id": "P_RC9_BILLBOARD",
+   "type": "billboard",
+   "room": "RC9",
+   "pos": [
+    872.635,
+    -343.809,
+    0
+   ],
+   "yaw": 2.11,
+   "params": {
+    "text": "58 · CARVEL EXIT 4 · EAT · SLEEP · GAS|STROUD'S · ROOMS ½ MI"
+   },
+   "lighting": "dynamic",
+   "collider": "none",
+   "milestone": "M1"
+  },
+  {
+   "id": "P_RC9_DINER",
+   "type": "diner",
+   "room": "RC9",
+   "pos": [
+    684.337,
+    -203.868,
+    0
+   ],
+   "yaw": -0.524,
+   "lighting": "dynamic",
+   "collider": "none",
+   "milestone": "M1"
+  },
+  {
+   "id": "P_RC9_EAT",
+   "type": "eat_sign",
+   "room": "RC9",
+   "pos": [
+    667.694,
+    -208.693,
+    0
+   ],
+   "yaw": 1.047,
+   "lighting": "dynamic",
+   "collider": "none",
+   "milestone": "M1"
+  },
+  {
+   "id": "P_RC9_TRUCK",
+   "type": "logging_truck",
+   "room": "RC9",
+   "pos": [
+    1345.552,
+    -340.135,
+    0
+   ],
+   "yaw": 1.571,
+   "params": {
+    "note": "parked at its track start; the C1 S5 track moves it (§7)"
+   },
+   "lighting": "dynamic",
+   "collider": "none",
+   "milestone": "M1"
+  },
+  {
+   "id": "P_RC9_DEER_1",
+   "type": "deer",
+   "room": "RC9",
+   "pos": [
+    218,
+    -20.5,
+    0
+   ],
+   "yaw": 0.15,
+   "params": {
+    "headYaw": 0,
+    "pose": "alert"
+   },
+   "lighting": "dynamic",
+   "collider": "none",
+   "milestone": "M1"
+  },
+  {
+   "id": "P_RC9_DEER_2",
+   "type": "deer",
+   "room": "RC9",
+   "pos": [
+    225,
+    -19.5,
+    0
+   ],
+   "yaw": -0.25,
+   "params": {
+    "headYaw": 0.35,
+    "pose": "alert"
+   },
+   "lighting": "dynamic",
+   "collider": "none",
+   "milestone": "M1"
+  },
+  {
+   "id": "P_RC9_DEER_3",
+   "type": "deer",
+   "room": "RC9",
+   "pos": [
+    232,
+    -20,
+    0
+   ],
+   "yaw": 0.9,
+   "params": {
+    "headYaw": -0.7,
+    "pose": "mid_turn"
+   },
+   "lighting": "dynamic",
+   "collider": "none",
+   "milestone": "M1"
+  },
+  {
+   "id": "P_RC9_CR9_B",
+   "type": "county_shield",
+   "room": "RC9",
+   "pos": [
+    1045.552,
+    -344.385,
+    0
+   ],
+   "yaw": 1.771,
+   "params": {
+    "text": "COUNTY|9"
+   },
+   "lighting": "dynamic",
+   "collider": "none",
    "milestone": "M1"
   },
   {
@@ -3641,6 +3844,25 @@
    "milestone": "M1"
   },
   {
+   "id": "P_CANDLE_LANDING",
+   "type": "candle",
+   "room": "U1",
+   "pos": [
+    1.2,
+    4.6,
+    5.27
+   ],
+   "yaw": 0,
+   "params": {
+    "holder": "saucer",
+    "height": 0.12,
+    "mat": "wax_candle"
+   },
+   "lighting": "dynamic",
+   "collider": "none",
+   "milestone": "M2"
+  },
+  {
    "id": "P_BED",
    "type": "iron_bed",
    "room": "U2",
@@ -4251,8 +4473,8 @@
     4.1
    ],
    "eye": [
-    3.3,
-    4.2,
+    3.12,
+    4.45,
     5.65
    ],
    "eyeYaw": 3.142,
@@ -4321,7 +4543,7 @@
     -28.45,
     2.15
    ],
-   "watts": 60,
+   "watts": 150,
    "kelvin": 1900,
    "radius": 0.03,
    "mode": "bake_flicker"
@@ -4522,6 +4744,21 @@
    "mode": "bake_flicker"
   },
   {
+   "id": "L_CANDLE_LANDING",
+   "room": "U1",
+   "role": "candle",
+   "type": "point",
+   "pos": [
+    1.2,
+    4.6,
+    5.43
+   ],
+   "watts": 12,
+   "kelvin": 1850,
+   "radius": 0.012,
+   "mode": "bake_flicker"
+  },
+  {
    "id": "L_LAMP_U2",
    "room": "U2",
    "role": "lamp",
@@ -4542,17 +4779,19 @@
    "role": "headlight",
    "type": "spot",
    "pos": [
-    0.5,
-    -29.6,
-    0.7
+    0.37,
+    -30.78,
+    0.64
    ],
    "target": [
-    -12,
-    -30,
-    0
+    -29.63,
+    -30.78,
+    0.64
    ],
-   "watts": 3000,
-   "kelvin": 4200,
+   "watts": 188495.559,
+   "cd": 15000,
+   "beam": "halogen_low",
+   "kelvin": 3200,
    "radius": 0.08,
    "mode": "runtime"
   },
@@ -4562,17 +4801,19 @@
    "role": "headlight",
    "type": "spot",
    "pos": [
-    0.5,
-    -30.8,
-    0.7
+    0.37,
+    -29.62,
+    0.64
    ],
    "target": [
-    -12,
-    -30.6,
-    0
+    -29.63,
+    -29.62,
+    0.64
    ],
-   "watts": 3000,
-   "kelvin": 4200,
+   "watts": 188495.559,
+   "cd": 15000,
+   "beam": "halogen_low",
+   "kelvin": 3200,
    "radius": 0.08,
    "mode": "runtime"
   },
@@ -4580,15 +4821,110 @@
    "id": "L_DASH",
    "room": "CAR",
    "role": "dashboard",
-   "type": "point",
+   "type": "spot",
+   "pos": [
+    100.43,
+    2.1,
+    0.84
+   ],
+   "target": [
+    100.43,
+    1.3,
+    0.8
+   ],
+   "watts": 1.257,
+   "cd": 0.1,
+   "angle": 35,
+   "kelvin": 6500,
+   "radius": 0.1,
+   "mode": "runtime"
+  },
+  {
+   "id": "L_DOME",
+   "room": "CAR",
+   "role": "other",
+   "type": "spot",
    "pos": [
     100.8,
-    2,
-    0.85
+    1,
+    1.29
    ],
-   "watts": 0.8,
-   "kelvin": 2700,
-   "radius": 0.1,
+   "target": [
+    100.8,
+    1,
+    0
+   ],
+   "watts": 477.522,
+   "cd": 38,
+   "angle": 170,
+   "kelvin": 2800,
+   "radius": 0.04,
+   "mode": "runtime"
+  },
+  {
+   "id": "L_CAB_VEIL",
+   "room": "CAR",
+   "role": "other",
+   "type": "spot",
+   "pos": [
+    100.8,
+    2.75,
+    1.15
+   ],
+   "target": [
+    100.8,
+    0.8,
+    0.8
+   ],
+   "watts": 12.566,
+   "cd": 1,
+   "angle": 120,
+   "kelvin": 3400,
+   "radius": 0.5,
+   "mode": "runtime"
+  },
+  {
+   "id": "L_TRUCK_HI_L",
+   "room": "RC9",
+   "role": "other",
+   "type": "spot",
+   "pos": [
+    1355.852,
+    -339.285,
+    1.22
+   ],
+   "target": [
+    1415.552,
+    -339.285,
+    0.696
+   ],
+   "watts": 439822.972,
+   "cd": 35000,
+   "beam": "halogen_high",
+   "kelvin": 3300,
+   "radius": 0.09,
+   "mode": "runtime"
+  },
+  {
+   "id": "L_TRUCK_HI_R",
+   "room": "RC9",
+   "role": "other",
+   "type": "spot",
+   "pos": [
+    1355.852,
+    -340.985,
+    1.22
+   ],
+   "target": [
+    1415.552,
+    -340.985,
+    0.696
+   ],
+   "watts": 439822.972,
+   "cd": 35000,
+   "beam": "halogen_high",
+   "kelvin": 3300,
+   "radius": 0.09,
    "mode": "runtime"
   }
  ],
@@ -4647,6 +4983,17 @@
    ],
    "surface": "grass",
    "mat": "grass_wet"
+  },
+  {
+   "room": "RC9",
+   "rect": [
+    70,
+    -420,
+    1500,
+    -10
+   ],
+   "surface": "asphalt",
+   "mat": "asphalt_wet"
   },
   {
    "room": "EXT2",
@@ -6288,7 +6635,8 @@
    "id": "LM_EXTERIOR",
    "rooms": [
     "EXT1",
-    "EXT2"
+    "EXT2",
+    "RC9"
    ],
    "maxResolution": 2048,
    "flash": false

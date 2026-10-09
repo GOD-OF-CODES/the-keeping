@@ -178,7 +178,7 @@ def body_bones(P):
 # right hand relaxed, low right. Hands are placed by frame, elbows solved with a 2-bone IK.
 ARMS = dict(
     name='arms', shoulder=(0.19, -0.08, -0.26), upperarm=0.32, forearm=0.27, hand=0.19, palm_w=0.088,
-    flash_center=(-0.135, 0.44, -0.235), flash_dir=(0.04, 1.0, -0.05),
+    flash_center=(-0.135, 0.44, -0.235), flash_dir=(0.04, 1.0, -0.05), hold_roll_deg=-28.0,
     right_wrist=(0.2, 0.3, -0.36), right_a=(-0.25, 0.9, 0.25), right_n=(-0.75, 0.05, -0.65),
 )
 
@@ -211,6 +211,10 @@ def arms_bones(P=ARMS):
             F = Vector(P['flash_dir']).normalized()
             a0 = Vector((0.95, -0.05, -0.3))
             a0 = (a0 - F * a0.dot(F)).normalized()
+            # ROADMAP round C: the grip is rolled about the barrel so the hand sits up-and-LEFT of the torch instead of
+            # on top of it; from the eye (up-right of the torch) the barrel, bezel and switch then show beside the
+            # knuckles instead of only the tail behind the fist. Negative = hand rolls toward -X (outboard).
+            a0 = Matrix.Rotation(math.radians(P.get('hold_roll_deg', 0.0)), 3, F) @ a0
             n = F.cross(a0).normalized()
             if n.z > 0:
                 n = -n

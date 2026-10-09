@@ -81,10 +81,15 @@ function setup(o: { seen?: string[] } = {}) {
 test('host: C1 through the real Director — started via playCutscene, one start + one end on the bus, B02 after', () => {
   const s = setup();
   s.dir.start();
-  assert.equal(s.player.active, 'C1');
+  // C0 (the 30 s title cinematic, C1-OPENING §3) runs first as C1's preroll; the Director only ever sees C1
+  assert.equal(s.player.active, 'C0');
   assert.equal(s.player.canSkip(), false, 'first view is not skippable');
   assert.equal(s.player.skip(), false);
-  s.step(56);
+  s.step(30.2);
+  assert.equal(s.player.active, 'C1');
+  assert.deepEqual(s.bus, ['beat:B01', 'start:C1'], 'no Director event between C0 and C1');
+  assert.equal(s.player.canSkip(), false, 'first view of C1 is not skippable');
+  s.step(77); // C1 is 75 s (C1-OPENING §4)
   assert.equal(s.player.active, null);
   assert.deepEqual(s.bus, ['beat:B01', 'start:C1', 'end:C1', 'beat:B02']);
   // teardown order: camera released and input unlocked before the story moved on
@@ -98,10 +103,15 @@ test('host: C1 through the real Director — started via playCutscene, one start
 });
 
 test('host: skippable after the first view; skip → cutscene:end(skipped) once; world ends in the end state', () => {
-  const s = setup({ seen: ['C1'] });
+  const s = setup({ seen: ['C0', 'C1'] });
   s.dir.start();
   s.step(2);
+  assert.equal(s.player.active, 'C0');
   assert.equal(s.player.canSkip(), true);
+  assert.equal(s.player.skip(), true, 'skipping C0 goes straight to C1');
+  assert.equal(s.player.active, 'C1');
+  assert.deepEqual(s.bus, ['beat:B01', 'start:C1']);
+  s.step(2);
   const before = s.log.length;
   assert.equal(s.player.skip(), true);
   assert.equal(s.player.active, null);

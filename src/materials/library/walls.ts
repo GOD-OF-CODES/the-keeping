@@ -160,31 +160,55 @@ const wallTally: Generator = (c) => {
   const k = Math.max(1, Math.round(c.tile / (baseSpec?.tileMetres ?? 0.53)));
   const paper = wallpaper({ ...bc, uv: fract(c.uv.mul(k)), tile: c.tile / k, size: Math.round(c.size / k) * 4 }, true);
   const uv = c.uv;
-  // Tally grid: groups of 4 strokes + a diagonal; cell = one group.
+  // Tally marks (R2-6): hand-written rows of groups (4 strokes + a diagonal), NOT a lattice. Round 2 widened the
+  // 3 mm strokes to 1.3 texels (≈ 6 mm at 1024 px / 5 m), so each 3 cm group filled in solid and the aligned
+  // cells read as a halftone grid of squares. Now: strokes keep their true width and are box-filtered over one
+  // texel (a sub-texel stroke is a lighter line of the right area, never a fatter one); every row drifts, wanders
+  // and restarts at its own offset; groups vary in width/height/slant, some are unfinished (1–4 strokes, no
+  // strike) and some are missing, so the columns never line up.
   const sl = c.num('strokeLength', 0.045);
-  // Strokes narrower than ~1.3 texels would vanish at 5 m/tile: widen to stay visible (coverage stays plausible).
-  const sw = Math.max(c.num('strokeWidth', 0.003), (1.3 * c.tile) / c.size);
-  const gw = sl * 1.35; // group width (m)
+  const texel = c.tile / c.size;
+  const swTrue = c.num('strokeWidth', 0.003);
+  const sw = max(float(swTrue), float(texel)); // drawn width (≥ 1 texel) …
+  const inkW = Math.min(1, swTrue / texel); // … carrying the stroke's true area
+  const gw = sl * 1.35; // nominal group pitch (m)
+  const rowH = sl * 1.5;
   const cols = Math.max(1, Math.round(c.tile / gw));
-  const rowsN = Math.max(1, Math.round(c.tile / (sl * 1.5)));
-  const g = v2(uv.x.mul(cols), uv.y.mul(rowsN));
-  const cell = floor(g);
-  const f = fract(g);
+  const rowsN = Math.max(1, Math.round(c.tile / rowH));
+  // rows: a slow vertical wander along x (the hand drifts), then a per-row horizontal restart + slow pitch drift
+  const wander = fbm(v2(uv.x, uv.y.mul(0.25)), c.cells(0.6), 2, c.seed + 9).mul(0.35);
+  const gy = uv.y.mul(rowsN).add(wander);
+  const row = floor(gy);
+  const hr = hashf(row, c.seed + 4);
+  const drift = fbm(v2(uv.x, row.mul(0.137)), c.cells(0.35), 2, c.seed + 10).mul(1.6);
+  const gx = uv.x.mul(cols).add(hr.mul(17.3)).add(drift);
+  const cell = v2(floor(gx), row);
+  const f = v2(fract(gx), fract(gy));
   const h = hashf(cell.x.add(cell.y.mul(997)), c.seed + 5);
-  const jit = v2(hashf(cell.x.mul(3).add(cell.y.mul(13)), c.seed + 6).sub(0.5).mul(0.15), h.sub(0.5).mul(0.2));
-  const q = f.add(jit).mul(v2(gw, sl * 1.5)); // metres within the cell
+  const h2 = hashf(cell.x.mul(7).add(cell.y.mul(131)), c.seed + 11);
+  const h3 = hashf(cell.x.mul(29).add(cell.y.mul(53)), c.seed + 12);
+  const sx = h2.mul(0.35).add(0.8); // stroke spacing scale
+  const sy = h3.mul(0.3).add(0.8); // stroke length scale
+  const q = v2(f.x.sub(h.sub(0.5).mul(0.2)).mul(gw), f.y.sub(h2.sub(0.5).mul(0.25)).mul(rowH)); // metres in cell
+  const slant = h.sub(0.5).mul(0.3);
+  const nStrokes = floor(h3.mul(5)).clamp(1, 4).max(h2.greaterThan(0.25).select(float(4), float(1))); // ~75 % full
+  const keep = h.greaterThan(0.1).select(float(1), float(0)); // ~10 % missing
+  const y0 = float(sl * 0.2);
+  const y1 = y0.add(sy.mul(sl));
+  const line = (dist: N): N => float(1).sub(smoothstep(sw.mul(0.5).sub(texel * 0.5), sw.mul(0.5).add(texel * 0.5), dist));
   let ink: N = float(0);
-  const slant = h.sub(0.5).mul(0.25);
   for (let i = 0; i < 4; i++) {
-    const x0 = 0.006 + i * sl * 0.22;
-    const dx = abs(q.x.sub(x0).sub(q.y.sub(sl * 0.2).mul(slant)));
-    const onY = smoothstep(sl * 0.2 - 0.001, sl * 0.2, q.y).mul(float(1).sub(smoothstep(sl * 1.2, sl * 1.2 + 0.001, q.y)));
-    ink = max(ink, float(1).sub(smoothstep(sw * 0.3, sw * 0.6, dx)).mul(onY));
+    const x0 = sx.mul(sl * 0.22 * i).add(0.006);
+    const dx = abs(q.x.sub(x0).sub(q.y.sub(y0).mul(slant)));
+    const onY = smoothstep(y0.sub(0.001), y0, q.y).mul(float(1).sub(smoothstep(y1, y1.add(0.001), q.y)));
+    ink = max(ink, line(dx).mul(onY).mul(float(i).lessThan(nStrokes).select(float(1), float(0))));
   }
-  // The fifth: a diagonal through the four.
-  const dd = abs(q.y.sub(sl * 0.2).sub(q.x.sub(0.0).mul(0.72)));
-  const onX = smoothstep(0.0, 0.002, q.x).mul(float(1).sub(smoothstep(sl * 0.9, sl * 0.9 + 0.002, q.x)));
-  ink = max(ink, float(1).sub(smoothstep(sw * 0.3, sw * 0.6, dd)).mul(onX));
+  // The fifth: a diagonal through the four (only on finished groups).
+  const span = sx.mul(sl * 0.9);
+  const dd = abs(q.y.sub(y0).sub(q.x.mul(sy.mul(0.72))));
+  const onX = smoothstep(0.0, 0.002, q.x).mul(float(1).sub(smoothstep(span, span.add(0.002), q.x)));
+  ink = max(ink, line(dd).mul(onX).mul(nStrokes.greaterThan(3.5).select(float(1), float(0))));
+  ink = ink.mul(keep).mul(inkW);
   // Pencil texture: broken strokes, pressure variation; density thins toward the top limit (v in metres = z).
   const grainP = fbm01(uv, [c.cells(0.004), c.cells(0.001)], 2, c.seed + 7);
   const heightM = uv.y.mul(c.tile);

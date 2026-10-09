@@ -195,6 +195,8 @@ export class Director {
     if (this.inCutscene !== id) return;
     this.inCutscene = null;
     if (this.fallback?.id === id) this.fallback = null;
+    // difficulty 2026-10-08: nobody is caught within 6 s of a cutscene ending (C3 → B08 left her 3.3 m away)
+    this.brain.calm();
     this.apply(this.story.handle({ type: 'cutscene_end', id, skipped }));
   }
 

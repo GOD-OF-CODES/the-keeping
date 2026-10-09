@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --experimental-strip-types --no-warnings --test \"tests/**/*.test.ts\"",
     "assets": "node scripts/assets.mjs",
-    "voices": "node scripts/voices.mjs"
+    "voices": "node scripts/voices.mjs",
+    "probes": "node scripts/qa/probes-export.mjs"
   },
   "dependencies": {
     "three": "0.186.1"

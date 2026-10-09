@@ -16,7 +16,8 @@
 //   --beat B01..B13 | --spawn <id>                    --query "<extra url params>"
 //   --wait <s>  settle time after start (default 6)   --fps <s> measure real frame rate for s seconds via __game.stats()
 //   --shots <n> screenshots at the end (default 1)     --width/--height viewport (default 1280x800; width multiple of 64)
-//   --dev (use vite dev instead of a production build) --no-build (reuse existing dist/)
+//   --dev (use vite dev instead of a production build) --no-build (reuse the existing build)
+//   --dist <dir>  build into / serve from <dir> instead of dist/ (each parallel lane uses its own, e.g. scratch/dist-perf)
 //   --out <dir> (default scratch/shots)                --name <prefix>
 //   --console    stream every page console message (all are kept in report.console)
 //   --start-timeout <s> max loading time before the game counts as stuck (default 300)
@@ -30,7 +31,7 @@
 // page exceptions, failed assertions or (for boot) any asset/three request before Start.
 
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, mkdtempSync, statSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, mkdtempSync, statSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -60,6 +61,7 @@ const width = Number(opt('width', 1280));
 const height = Number(opt('height', 800));
 const useDev = flag('dev');
 const noBuild = flag('no-build');
+const distDir = opt('dist', 'dist'); // per-lane build output, e.g. scratch/dist-cutscenes (parallel lanes never share one)
 const bootOnly = flag('boot-only');
 const noStart = flag('no-start');
 const scenarioPath = opt('scenario', null);
@@ -88,18 +90,45 @@ function blenderBusy() {
 // One headless Chrome at a time, and never alongside a Blender job (8 GB machine). We never wait while holding our
 // own lock: if a Blender job holds its lock we back off, so assets.mjs (which waits for us holding its lock) can't
 // deadlock with us. A release bake can take ~80 min, hence the long timeout.
+// First come, first served: every waiter files a ticket (.cache/chrome.queue/<ms>-<pid>) and only the oldest live
+// ticket may take the lock. Without it a lane running shot.mjs back to back re-grabbed the lock within milliseconds
+// of releasing it and starved the other lanes for over an hour.
+const QUEUE = join(ROOT, '.cache', 'chrome.queue');
+function oldestTicket() {
+  let names = [];
+  try { names = readdirSync(QUEUE).sort(); } catch {}
+  for (const n of names) {
+    const pid = Number(n.split('-')[1]);
+    if (pid && pidAlive(pid)) return n;
+    rmSync(join(QUEUE, n), { force: true }); // a waiter that died
+  }
+  return '';
+}
 async function acquireLock() {
   const t0 = Date.now();
   let lastMsg = 0;
   const say = (m) => { if (Date.now() - lastMsg > 30000) { console.log(`[shot] ${m}`); lastMsg = Date.now(); } };
+  mkdirSync(QUEUE, { recursive: true });
+  const ticket = `${String(Date.now()).padStart(15, '0')}-${process.pid}`;
+  writeFileSync(join(QUEUE, ticket), '');
+  const dropTicket = () => rmSync(join(QUEUE, ticket), { force: true });
+  process.once('exit', dropTicket);
   for (;;) {
-    if (Date.now() - t0 > 120 * 60 * 1000) throw new Error('waited >120 min for the headless-Chrome / Blender locks');
+    if (Date.now() - t0 > 120 * 60 * 1000) { dropTicket(); throw new Error('waited >120 min for the headless-Chrome / Blender locks'); }
     const b = blenderBusy();
     if (b) { say(`waiting: a Blender job is running (pid ${b > 0 ? b : '?'}) …`); await sleep(2000 + Math.random() * 1000); continue; }
+    const first = oldestTicket();
+    if (first !== ticket) {
+      const n = (() => { try { return readdirSync(QUEUE).filter((x) => x < ticket).length; } catch { return 0; } })();
+      say(`waiting for the headless-Chrome lock (${n} ahead in the queue) …`);
+      await sleep(1000 + Math.random() * 500);
+      continue;
+    }
     try {
       mkdirSync(LOCK);
       writeFileSync(join(LOCK, 'pid'), String(process.pid));
       if (blenderBusy()) { rmSync(LOCK, { recursive: true, force: true }); continue; } // raced a Blender job: back off
+      dropTicket();
       return;
     } catch {
       let pid = 0;
@@ -130,10 +159,10 @@ async function startServer() {
   const port = freePortish();
   if (!useDev && !noBuild) {
     console.log('[shot] building production bundle…');
-    execFileSync('npx', ['vite', 'build', '--logLevel', 'error'], { cwd: ROOT, stdio: ['ignore', 'inherit', 'inherit'] });
+    execFileSync('npx', ['vite', 'build', '--outDir', distDir, '--emptyOutDir', '--logLevel', 'error'], { cwd: ROOT, stdio: ['ignore', 'inherit', 'inherit'] });
   }
   const args = useDev ? ['vite', '--port', String(port), '--strictPort', '--host', '127.0.0.1']
-    : ['vite', 'preview', '--port', String(port), '--strictPort', '--host', '127.0.0.1'];
+    : ['vite', 'preview', '--outDir', distDir, '--port', String(port), '--strictPort', '--host', '127.0.0.1'];
   const proc = spawn('npx', args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   let buf = '';
   proc.stdout.on('data', (d) => (buf += d));
@@ -148,6 +177,10 @@ async function startServer() {
   }
   killTree(proc);
   throw new Error('server did not start:\n' + buf.slice(-2000));
+}
+// Chrome can still be flushing its profile for a moment after SIGTERM (ENOTEMPTY): retry, and never crash on it.
+function rmProfile(dir) {
+  try { rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }); } catch (e) { console.error(`[shot] could not remove ${dir}: ${e.code ?? e.message}`); }
 }
 function killTree(proc) {
   if (!proc || proc.exitCode !== null) return;
@@ -168,6 +201,7 @@ async function startChrome() {
   const proc = spawn(CHROME, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
   let err = '';
   proc.stderr.on('data', (d) => (err += d));
+  proc.on('exit', (code, sig) => { if (cdp && chrome?.proc === proc) cdp.fail(`headless Chrome exited (code ${code}, signal ${sig})`); });
   const portFile = join(profile, 'DevToolsActivePort');
   for (let i = 0; i < 200 && !existsSync(portFile); i++) await sleep(100);
   if (!existsSync(portFile)) { killTree(proc); throw new Error('Chrome did not start:\n' + err.slice(-1500)); }
@@ -182,6 +216,12 @@ class CDP {
     this.id = 0;
     this.pending = new Map();
     this.handlers = new Map();
+    this.dead = '';
+    // If headless Chrome dies (or its tab crashes) mid-run, fail every pending and future call at once instead of
+    // waiting forever on replies that will never come (the run would hold the Chrome lock until --timeout).
+    ws.addEventListener('close', () => this.fail('the headless Chrome connection closed'));
+    ws.addEventListener('error', () => this.fail('the headless Chrome connection failed'));
+    for (const m of ['Inspector.targetCrashed', 'Target.targetCrashed']) this.on(m, () => this.fail('the game tab crashed (' + m + ')'));
     ws.addEventListener('message', (ev) => {
       const m = JSON.parse(typeof ev.data === 'string' ? ev.data : Buffer.from(ev.data).toString());
       if (m.id && this.pending.has(m.id)) {
@@ -198,7 +238,15 @@ class CDP {
     await new Promise((res, rej) => { ws.addEventListener('open', res, { once: true }); ws.addEventListener('error', rej, { once: true }); });
     return new CDP(ws);
   }
+  fail(why) {
+    if (this.dead) return;
+    this.dead = why;
+    console.error('[shot] ' + why);
+    for (const { rej } of this.pending.values()) rej(new Error(why));
+    this.pending.clear();
+  }
   send(method, params = {}, sessionId) {
+    if (this.dead) return Promise.reject(new Error(this.dead));
     const id = ++this.id;
     this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
     return new Promise((res, rej) => this.pending.set(id, { res, rej }));
@@ -207,7 +255,7 @@ class CDP {
     if (!this.handlers.has(method)) this.handlers.set(method, []);
     this.handlers.get(method).push(fn);
   }
-  close() { try { this.ws.close(); } catch {} }
+  close() { this.dead ||= 'closed by shot.mjs'; try { this.ws.close(); } catch {} } // a deliberate close is quiet
 }
 
 // ---------------------------------------------------------------- main
@@ -226,7 +274,7 @@ async function cleanup() {
   killTree(chrome?.proc);
   killTree(server?.proc);
   await sleep(300);
-  if (chrome?.profile) rmSync(chrome.profile, { recursive: true, force: true });
+  if (chrome?.profile) rmProfile(chrome.profile);
   releaseLock();
 }
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => cleanup().then(() => process.exit(130)));
@@ -239,7 +287,7 @@ async function evaluate(expr, awaitPromise = true) {
 async function waitFor(expr, timeoutS = 60, what = expr) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeoutS * 1000) {
-    try { if (await evaluate(`!!(${expr})`)) return true; } catch {}
+    try { if (await evaluate(`!!(${expr})`)) return true; } catch (e) { if (cdp?.dead) throw e; }
     await sleep(250);
   }
   throw new Error(`timed out after ${timeoutS}s waiting for ${what}`);
@@ -261,7 +309,7 @@ async function closeSession() {
   try { cdp?.close(); } catch {}
   killTree(chrome?.proc);
   await sleep(400);
-  if (chrome?.profile) rmSync(chrome.profile, { recursive: true, force: true });
+  if (chrome?.profile) rmProfile(chrome.profile);
   cdp = null;
   chrome = null;
 }
@@ -346,6 +394,18 @@ async function openGame(attempt) {
     await sleep(waitS * 1000);
   }
 }
+
+// Power check: on battery macOS Chrome caps rAF at 30 fps and the M1 GPU clocks down, so fps / gpu-ms numbers are
+// not comparable with mains-power runs. Never refuse (agents must keep working), but flag it in the report and output.
+try {
+  const batt = execFileSync('pmset', ['-g', 'batt'], { encoding: 'utf8' });
+  if (/discharging|Battery Power/i.test(batt)) {
+    const pct = /(\d+)%/.exec(batt)?.[1];
+    report.onBattery = true;
+    report.notes.push(`ON BATTERY (${pct ?? '?'}%): fps capped at 30 and GPU throttled — perf numbers from this run are NOT comparable`);
+    console.log(`[shot] WARNING: running on battery (${pct ?? '?'}%) — fps/gpu numbers are not comparable with mains power`);
+  }
+} catch {}
 
 try {
   await acquireLock();

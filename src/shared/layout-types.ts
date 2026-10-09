@@ -205,6 +205,12 @@ export interface LightDef {
   watts: number;
   kelvin: number;
   radius: number;
+  /** Optional photometric override (docs/C1-OPENING.md §5.1): peak candela at runtime (replaces watts / 4π). */
+  cd?: number;
+  /** Optional beam-cookie id for spots (runtime lobe table, e.g. 'halogen_low', 'halogen_high'). */
+  beam?: string;
+  /** Optional spot full cone angle in degrees (runtime). */
+  angle?: number;
   /** How the light is realised: baked into the base lightmap, into the lightning-flash lightmap, runtime only, or baked + small runtime flicker light. */
   mode: 'bake' | 'flash' | 'runtime' | 'bake_flicker';
 }

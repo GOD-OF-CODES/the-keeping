@@ -67,6 +67,22 @@ class Coll:
         return self.m[k]
 
 
+# Collision-only head clearance for door openings that open straight onto a stair foot. O_BACKSTAIR: the ST_BACK
+# winders start at the wall's north face (y 10.85), so the 1.78 m capsule (r 0.27, top = feet + 1.78) steps onto
+# kite 1 (z +0.25) while its rounded top still overlaps the 1.95 m lintel (2.55) -> the push-gate stall at
+# (8.42, 10.74, 0.77) going up and (8.42, 11.12, 1.10) coming down, on every tier (lane A round C, item 1). A person
+# ducks / is through the frame before the first riser; the capsule cannot. The VISIBLE lintel is unchanged: the eye
+# (feet + 1.65) is <= 2.50 everywhere inside the wall's thickness, and is >= 0.26 m north of the wall before it rises
+# above 2.55 (kite 2 starts at y >= 11.1 for x >= 8.4), so the camera never enters the lintel.
+HEAD_CLEAR = {'O_BACKSTAIR': 0.45}
+# ...and the same doorway is only 0.70 m wide: the open leaf's runtime collider is its whole bounding box, knobs
+# included (0.20 m thick, 2 x 80 mm knob projection), standing in the opening's west 0.14 m, which leaves ~0.56 m
+# for the 0.54 m capsule -> pinned between leaf and east jamb on the riser lip (probe3: (8.42, 10.72, 0.82)).
+# The collision jambs sit 0.06 m outside the visible ones (the body is never drawn; the eye stays >= 0.21 m from
+# the visible jamb), giving 0.62 m.
+JAMB_CLEAR = {'O_BACKSTAIR': 0.06}
+
+
 def build(P):
     C = Coll()
     # ---------------------------------------------------------------- walls
@@ -79,8 +95,9 @@ def build(P):
         cuts = []
         for o in w['openings']:
             if o['kind'] in ('door', 'arch'):
-                cuts.append((o['offset'] - o['width'] / 2, o['offset'] + o['width'] / 2, z0 + o['sill'],
-                             z0 + o['sill'] + o['height']))
+                jc = JAMB_CLEAR.get(o.get('id'), 0.0)
+                cuts.append((o['offset'] - o['width'] / 2 - jc, o['offset'] + o['width'] / 2 + jc, z0 + o['sill'],
+                             z0 + o['sill'] + o['height'] + HEAD_CLEAR.get(o.get('id'), 0.0)))
         # full-height pieces between openings
         spans = subtract_intervals(0.0, L, [(c[0], c[1]) for c in cuts])
         pieces = [(s0, s1, z0, z1) for s0, s1 in spans]

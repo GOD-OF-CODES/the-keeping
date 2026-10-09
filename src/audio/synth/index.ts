@@ -7,6 +7,7 @@ import { DOOR_RECIPES } from './doors.ts';
 import { BELL_RECIPES } from './bells.ts';
 import { HARLAN_RECIPES } from './harlan.ts';
 import { CAR_RECIPES } from './car.ts';
+import { ROAD_RECIPES } from './road.ts';
 import { PROP_RECIPES } from './props.ts';
 import { PLAYER_RECIPES } from './player.ts';
 import { SCORE_RECIPES } from './score.ts';
@@ -20,6 +21,7 @@ export const RECIPES: readonly Recipe[] = [
   ...BELL_RECIPES,
   ...HARLAN_RECIPES,
   ...CAR_RECIPES,
+  ...ROAD_RECIPES,
   ...PROP_RECIPES,
   ...PLAYER_RECIPES,
   ...SCORE_RECIPES,

@@ -77,7 +77,10 @@ const asphalt: Generator = (c) => {
   const lowN = fbm01(c.uv, c.cells(1.5), 5, c.seed + 6);
   const puddle = smoothstep(1 - pud * 0.55, 1.02 - pud * 0.5, lowN);
   height = height.sub(lowN.mul(0.3));
-  return { albedo: alb, roughness: mix(float(0.55), float(0.3), patch).add(chip.mul(0.1)), height, heightDepthM: 0.006, cavity: 0.5, puddle };
+  // AD review (opening, C0 26 s / C1 2 s): at 0.55 → ≈ 0.25 after the baker's wetness gloss, the beams' forward
+  // scatter spread into a broad pale sheen and County Road 9 read as dry concrete. CLAUDE.md wet asphalt: roughness
+  // 0.05–0.2 — dry binder 0.3 / patches 0.2 → ≈ 0.135 / 0.09 wet (chips ≈ 0.17): the lamps now reflect as streaks.
+  return { albedo: alb, roughness: mix(float(0.3), float(0.2), patch).add(chip.mul(0.08)), height, heightDepthM: 0.006, cavity: 0.5, puddle };
 };
 
 // ---------------------------------------------------------------- mud -----------------------------------
@@ -133,6 +136,11 @@ const grass: Generator = (c) => {
   const weeds = { mask: leafM };
   alb = mix(alb, mix(vec3(0.04, 0.07, 0.02), vec3(0.07, 0.1, 0.03), wA.z), weeds.mask.mul(0.85));
   const height = blades.mul(0.5).add(weeds.mask.mul(0.3)).add(fbm01(c.uv, c.cells(0.3), 3, c.seed + 6).mul(0.3));
+  // The palette above averages ≈ [0.045, 0.06, 0.03] (the original grass_wet). Scale it onto each spec's avgAlbedo so
+  // one generator serves dark wet pasture (0.09/0.12/0.06), straw verges (grass_dead ≈ 0.2) and the near-black
+  // conifer canopy (canopy_far ≈ 0.02) with near-unity calibration (opening round, 2026-10-08).
+  const a = c.spec.avgAlbedo as number[];
+  alb = alb.mul(vec3(a[0] / 0.045, a[1] / 0.06, a[2] / 0.03));
   return { albedo: alb, roughness: mix(float(0.7), float(0.85), deadM), height, heightDepthM: 0.012, cavity: 0.7 };
 };
 

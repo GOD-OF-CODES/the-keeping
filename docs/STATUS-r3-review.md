@@ -1,0 +1,73 @@
+# STATUS — round-3 AD review (lane: r3-review)
+
+Reviewer of the round-3 runtime realism builder (docs/STATUS-realism-r3.md). Dist: scratch/dist-r3-review (current),
+scratch/dist-r3-base (HEAD e2a888a build by builder). Work dir: scratch/r3r/.
+
+## Log
+- started; no prior attempt.
+- battery at start (30%, discharging) — perf numbers this attempt are battery numbers unless noted
+- built scratch/dist-r3-review (now) and scratch/dist-r3-headdata (HEAD code + current src/shared json + current public/assets, from git archive in scratch/r3r/headsrc) to split code vs opening-lane data in R2-2
+- R2-2 A/B pair 1 (battery 30%, Medium 1280x800?, abperf): parlor-table HEAD 10.07 / HEAD-code+current-data 15.28 / now pending; upper-torch 7.39 / 8.84. => opening-lane data alone adds ≈ +5.2 ms parlor
+- R2-2 A/B pair 2 (battery 22-25%): parlor HEAD 10.07 / headdata 15.39 / now 16.53 (pair1 now 15.13); upper-torch 7.35/8.78/9.64 (pair1 8.93). VERDICT: round-3 code ≈ +0.5 ms (±0.7) parlor; the opening lane's data (layout/props/lights) ≈ +5.2 ms. Next: scratch/r3r/vis.mjs (what is drawn) on base vs headdata.
+- vis diag (battery): parlor view HEAD 360k tris/19 lights 9.3 ms; headdata 301k tris/23 lights 15.3 ms. Fewer tris, +4 runtime spots (L_DOME, L_CAB_VEIL, L_TRUCK_HI_L/R, intensity 0 but in the scene light list). Testing light removal in-session.
+- tog.mjs (headdata): hiding the 4 new + 3 old runtime spots + lightning spots: ±0.3 ms → NOT the lights. Bisecting scene groups.
+- grp.mjs (headdata): hiding room_G2 alone 15.37 → 9.82 ms; G1/doors/U2 ±0.1 each. The +5.5 ms is inside the parlor group. Bisecting G2 by material.
+- g2.mjs (headdata): hiding G2 materials one by one lowers cost gradually (15.3 → 11.0), no single culprit → per-fragment cost on all G2 materials (light list / atlas?).
+- sh.mjs (headdata): shadow maps already autoUpdate=false; disabling shadowMap ±0 → not the shadow pass. Layout: nothing in G2 changed (only RC9/CAR props+lights, surfaces). Hypothesis: GPU memory/residency from the opening content (RC9 347 meshes, CAR 94) on the 8 GB M1. Testing dispose.
+- mem.mjs (headdata): disposing RC9/CAR/EXT (769 meshes, -55 MB) ±0.2 ms → not residency. Spec diff: only floor_varnished (albedo/roughness 0.42→0.35) + grass_wet changed. R2-2 CLOSED for this review: +5.2 ms is data-driven, inside room_G2, per-pixel across all G2 materials, cause unknown (opening-lane data; off-limits). Round-3 code ≈ +0.5–1.4 ms on top (battery). Moving to visuals.
+- REALISM-BACKLOG.md: round-3 section started (R2-2 attribution table). Battery 4 %.
+- CONTRACT-CHANGES row 44 (hides.ts + requiredLimits). Medium visual session running (scratch/r3r/med).
+- 06:58 laptop now CHARGING (mains). Medium session queued behind the opening lane's Max run.
+- 07:27 still queued: opening lane's Max shot.mjs (pid 26629) holds the chrome lock for 40+ min (its --timeout 3000 s).
+- med session done (scratch/r3r/med, 0 console errors). ada-torch: Ada vis=false upstairs (not framed again); ada-parlor-torch framed (Ada 1.4 m ahead). Base session started (scratch/r3r/base).
+- qa.shot frames are BLACK in cutscenes (DOM cutscene screen?) while __game.capture has content → look.mjs now writes capture(960) jpgs to CAPDIR. Running scratch/r3r/look2.sh (now + base, Medium).
+- medium now+base captures done (scratch/r3r/cap/medium-{now,base}), pairs scratch/r3r/p-*.jpg (left base, right now). 0 console errors both.
+- LOOK 1 (Medium, base|now): field-east + C5-17.62 exterior: HUGE win (ground/path/grass read under the sky, fog depth; base black). C2-10.2 hair: base black helmet w/ blob highlight → now dark strand-textured hair (better). C2-15.5 exposure 3.1→10.2 after the cut (R2-5 works). New: rope_hemp has blue-white specular stripes; blue glow at Ada's eye in C2 (both builds). Ada torch framing failed again (Harlan in the way) → ada.mjs.
+- torch-1m (both builds): the hot spot reads as a hazy luminous disc (fog/halation look), wallpaper texture washed out inside it — new finding. Armoire: confirms builder (95 % black, exposure 24, lit balusters through slots).
+- LOOK 2: C5-17.62 Medium: shadow-play now reads (exposure snap 1.8→4.3, both heads + raised arm + damask) = R2-5 win. Cleaver on Medium STILL a blue-grey slab against the orange wall (smear/patina visible, cast not fixed). Ada torch framing: Harlan reappears (setVisible doesn't stick).
+- FIX 1 (R2-6 cleaver/C5): cutscene-fx.ts scales the 'ground' probe grid intensity with uParlorBake (c5Bake 0.18) while the C5 silhouette light is on, back to 1 after. Typecheck OK. Rebuilding to verify.
+- C2-5 (both builds): the door rope is saturated BLUE in the candle-orange parlor (and a blue spot at Ada's face) — glaring; NOPROBE diag running (fix1).
+- fix1 verify: C5 cleaver still blue with ALL probe grids at 0 → source is the G2 cube (RoomEnvNode). FIX 2: reflections.ts RoomEnvNode × uParlorBake for G2. (Probe-grid scaling kept: physically consistent, characters no longer lit by guttered candles.)
+- FIX 2 built; running scratch/r3r/fix2.sh (Medium C5 verify + Max now/base).
+- npm test: 200 pass / 0 fail (after fixes).
+- fix2 verify: blade STILL blue with the G2 cube × 0.18 and probes 0 → not env. Suspect a direct cold light (U2 lightning spot via the grate / C5 scripted flash). Logging lit lights at C5-17.62 next.
+- LOOK 3 (Max, base|now, 0 console errors both): C2-10.2 hair helmet → strand-textured dark hair (yes); blue glow spot at Ada's face in both builds; Max C5 shadow-play reads, darker (exp 2.1), cleaver dark with faint cold edge (no cube on Max). field-east Max: black 57 % → 25 %.
+- DIAG: at C5-17.62 lightning_L_LTN_U2E is lit at full 31.8 cd (cold 0.64/0.74/1), unshadowed, through the G2 ceiling — the cleaver's blue. Builder's 'seen rooms' gate lets U2 through because G2 sees U2 via the grate.
+- FIX 3: lights.ts lightning spots gated by viewer floor too (other-floor spots only from stair-foot rooms); level.ts passes this.room. Typecheck OK.
+- fix3 verify: U2E spot now OFF at C5-17.62 (was 31.8 cd). 0 console errors. Note: in cutscenes (culling off) every flicker light is on (L_LANTERN 11–14 cd, LAMP_U2 5 cd …) → they reach probe-lit/characters across floors too (finding).
+- LOOK 4 (fix3): cleaver now dark steel reflecting the dim room (faint cool residue = window in the ×0.18 cube) — R2-6 cleaver YES on Medium. C5-20.62: Harlan/Ada no longer glow against the dimmed room. New nit: hard-edged bright patch on the cornice above the shadow-play (Max-now + Medium-now; not in base).
+- REALISM-BACKLOG.md round-3 verdict, fixes R3-F1/F2, findings R3-1..8, ranked remainder written.
+- npm run build OK (verify-boot OK, boot 12.5 kB gz). Playthrough running.
+- playthrough (Medium WebGPU, fixed build, charging): ended=true B13, 0 deaths, game 427 s / wall 221 s, 0 console errors.
+- FIX 3b: exterior viewers keep every seen lightning spot (upper windows still flash from the yard/C1). Rebuilt.
+- (restart) attempt resumed 09:34: mains (AC, 79 %). In flight: ab.sh mains A/B (head-1 parlor 9.42 / upper 7.32 done), then queued look sessions shots-maxfix (Max, fix3b) + shots-c2t (Medium C2 tally).
+- FIX 4 (R3-4): lights.ts flicker lights in cutscenes gated by seen rooms + floor (same rule as lightning spots), fade snaps when culling is off. Typecheck run.
+- queued scratch/r3r/look3.sh (dist-r3-review2 = fix4 build vs base; Medium tally/arms-moon/arms-candle/C2-5/C5-17.62, Max arms/tally/C2-5) → cap/*-c
+- fix3 C2-5 (Medium): rope no longer blue (R3-1 was the U2 lightning spot through the floor too → fixed by FIX 3). Blue spot remains at lower centre (R3-2).
+- queued pick session (C2-5, raycast-ish pick of the blue spot + lit lights) → scratch/r3r/pick.log
+- mains A/B so far: parlor HEAD 9.42 / headdata 15.64 (data +6.2 ms on mains). Built scratch/dist-r3-headjson (HEAD code + HEAD layout/spec json + CURRENT public/assets) to split layout-json vs assets; queued scratch/r3r/ab2.sh → ab2.log
+- FIX 5 (R3-3): pipeline.ts bloom threshold exposure-relative (1.5 exposed, was 0.9 scene radiance). Built scratch/dist-r3-review3 (fix4+fix5).
+- mains pair 1: parlor HEAD 9.42 / headdata 15.64 / now(fix3b) 18.38 → round-3 code ≈ +2.7 ms on mains (battery estimate was +0.5–1.4). Pair 2 running. Blender (opening lane) is holding shot.mjs between sessions.
+- queued tog3.sh (after ab2): parlor-table cumulative removal (arms, chars, G2, fog/bg) on now(review3) vs headdata ×2 → tog3.log
+- mains pair 2: parlor HEAD 9.39 / headdata 15.33 / now 18.23; upper-torch see ab-mains.log. CONFIRMED on mains: data +6.0 ms, code (round-3 + opening-lane code) +2.8 ms.
+- ab2 headjson-1 (HEAD code + HEAD json + CURRENT assets) parlor 9.75 ≈ HEAD → the +6 ms is in the JSON (layout/spec), not the assets.
+- built dist-r3-hjL (HEAD code+CURRENT layout+HEAD spec) and dist-r3-hjS (HEAD code+HEAD layout+CURRENT spec); queued ab3.sh → ab3.log
+- pick (C2-5): bounding-sphere pick inconclusive (rocker/Ada hair/gown); lit lights at C2-5 all warm (candles, LAMP_U2) — viewer is a stair-foot room so U1/U2 flickers stay on (by design). Blue = neutral-white light under 3300 K WB → suspect probe grid/env. Queued NOPROBE C2-15.5 test.
+- look3 (Medium, base|now review3) done, 0 console errors both; pairs scratch/r3r/pc-*.jpg
+- LOOK 5 (Medium base|review3): torch-1m haze gone with FIX 5 (crisp disc, glove lit by the arm env light); tally-close halftone grid gone; C2-15.5 now exposure 11.1 vs base 2.65 (R3-5, R2-5 snap + dark-foreground meter) — reads as daylight; rope + candle dish still lavender in C2-15.5 (R3-1 not fully fixed: FIX 3 cured C2-5 only).
+- FIX 6 (R3-1): level.ts interior probe node excludes the exterior grid (its box reaches 2.5 m into the house; additive → cold sky on the hall/parlor front strip; shipped-probe decode: ground b/r 0.03, exterior b/r 1.47). NOPROBE test: rope goes dark without grids, candle dish + bed item stay blue (other cause). Built dist-r3-review4 (fix4-6).
+- (restart 2) resumed: AC 100 %. ab3 hjL (HEAD code + CURRENT layout + HEAD spec) parlor 16.74 / upper 9.37 → the +6 ms is the opening lane's LAYOUT json. hjS pending. Queued: tog3 (pid 86413), f6 look (pid 86947), blc lane run ahead.
+- (restart 3) 11:05 AC 100 %. ab3 hjS (HEAD code + HEAD layout + CURRENT spec) parlor 10.37 ≈ HEAD → spec innocent; the +6 ms is the opening lane's LAYOUT json (hjL 16.74). tog3 now(review3) cumulative: base 16.72 / -arms 15.15 (arms 1.57 ms) / -chars 14.41 (0.74) / -G2 10.74 / -fog,bg 11.89 (±noise). headdata half running.
+- backlog R2-2 section rewritten with mains table (layout json = +6 ms; code +2.8 ms; arms 1.57).
+- built dist-r3-bisA (HEAD code + current layout − RC9 room/props/lights), bisB (current layout with HEAD lights), bisC (current layout); queued bis.sh → bis.log. Suspect: RC9 rect 1430×410 m.
+- tog3 headdata (HEAD code): base 15.33 / -arms 14.12 (arms 1.21) / -chars 14.14 (0) / -G2 9.55 / -fog,bg 8.78. vs now(review3) 16.72/arms 1.57/chars 0.74. In-session code delta +1.4 ms = arms +0.36, characters +0.74, rest +0.27. (ab pairs said +2.8 across sessions.)
+- typecheck clean on current tree (fix4-6). Waiting on bis.sh (pid queue).
+- backlog: R3-F3..F6 added under Fixed in this review.
+- checked: shipped probes.bin are stale in EVERY build (HEAD too) → all runtime-bake probes; not the R2-2 discriminator. Also every build logs it: request 'npm run probes' for the lead.
+- f6 look (dist-r3-review4, 0 console errors): C2-15.5 rope = hemp brown, candle dish no longer blue → R3-1 FIXED by FIX 6. Remaining blue patch at Ada's head; C2-15.5 exposure 10.5, table top + Harlan hood clip (R3-5 stands). FIX 7 (R3-2): loader.ts removed the sss skin cold emissive lift (×exposure 10 × WB blue gain → blue face). Needs verify.
+- built dist-r3-review5 (fix4-7); queued f7.sh (Medium C2-10.2/15.5 + C3 4,9 for FIX 4 upper-floor check) → cap/medium-f7
+- backlog findings: R3-1/3/4 marked FIXED, R3-5 rewritten with concrete fix (opening-lane handler).
+- 11:29 queue busy (other lanes: blc playthrough, open-review pd). bis + f7 waiting.
+- bisC (HEAD code + current layout) parlor 16.21 / upper 9.20 (reproduces hjL 16.74).
+- bisA (current layout − RC9 room/props/lights/surfaces) parlor 13.33 → RC9 ≈ −2.9 ms of the +6.8.
+- bisB (current layout with HEAD lights) parlor 10.62 / upper 7.53 ≈ HEAD → the ENTIRE +6 ms is the layout's light changes (new runtime spots L_DOME/L_CAB_VEIL/L_TRUCK_HI_L/R, changed headlights/dash/lantern, L_CANDLE_LANDING). RC9 truck pair ≈ 2.9 ms.

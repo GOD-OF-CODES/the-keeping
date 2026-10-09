@@ -223,19 +223,19 @@ test('light: beam cone touches her body; beam landing within 6 m; lit near a fla
   assert.ok(isPlayerLit({ pos: [1, 1, 0.6], beam: { ...off, on: true } }, flames));
 });
 
-test('sight: 60° cone; 14 m lit / 5 m dark / 2 m dark+crouched; head hanging = blind; hidden = never', () => {
-  assert.equal(sightRange(true, false), 14);
-  assert.equal(sightRange(false, false), 5);
+test('sight: 60° cone; 8 m lit / 4 m dark / 2 m dark+crouched (difficulty 2026-10-08); head hanging = blind; hidden = never', () => {
+  assert.equal(sightRange(true, false), 8);
+  assert.equal(sightRange(false, false), 4);
   assert.equal(sightRange(false, true), 2);
   assert.ok(inCone([0, 0, 0], 0, [10, 5, 0]));
   assert.ok(!inCone([0, 0, 0], 0, [10, 6.2, 0]));
   const eye: P3 = [0, 0, 5.6];
   const s = { headLifted: true, eye, lookYaw: 0, los: () => true };
   const at = (x: number, o: Partial<PlayerView> = {}) => player([x, 0, 4.1], o);
-  assert.ok(seesPlayer(s, at(4.5), false));
-  assert.ok(!seesPlayer(s, at(5.5), false));
-  assert.ok(seesPlayer(s, at(13.5), true));
-  assert.ok(!seesPlayer(s, at(14.5), true));
+  assert.ok(seesPlayer(s, at(3.5), false));
+  assert.ok(!seesPlayer(s, at(4.5), false));
+  assert.ok(seesPlayer(s, at(7.5), true));
+  assert.ok(!seesPlayer(s, at(8.5), true));
   assert.ok(seesPlayer(s, at(1.8, { crouched: true }), false));
   assert.ok(!seesPlayer(s, at(2.5, { crouched: true }), false));
   assert.ok(!seesPlayer({ ...s, headLifted: false }, at(2), true), 'head hanging = blind');
@@ -314,7 +314,7 @@ test('brain: a bell never breaks a CHASE (it is queued); a bell cancels a LOOK; 
   // lit player in the corridor 4 m south, beam on her → fast LOOK → sees → CHASE
   const p = player([3.0, 4.2, 4.1]);
   const lit = { ...p, beam: { on: true, origin: p.eye, dir: [0.05, 1, -0.1] as P3, range: 14, halfAngle: 0.3, hit: null } };
-  const r1 = run(b, lit, 1.5);
+  const r1 = run(b, lit, 3.0); // wind-up + notice dwell (difficulty 2026-10-08)
   assert.ok(states(r1.events).includes('CHASE'), states(r1.events).join(','));
   assert.equal(b.bell(), 'queued', 'bell queued behind the CHASE');
   assert.ok(b.chase && b.lureQueued && !b.lure);
@@ -395,7 +395,7 @@ test('brain: hiding right after being seen → she tears the hide open (CATCH)',
   const pos: P3 = [2.55, 4.2, 4.1]; // at the armoire
   const p = player(pos);
   const lit = { ...p, beam: { on: true, origin: p.eye, dir: [0.1, 1, -0.1] as P3, range: 14, halfAngle: 0.3, hit: null } };
-  run(b, lit, 1.2); // beam → fast LOOK → CHASE
+  run(b, lit, 3.0); // beam → LOOK → notice → CHASE (difficulty 2026-10-08 timings)
   assert.equal(b.state, 'CHASE');
   const { events } = run(b, { ...player(pos), hiddenIn: 'H_ARMOIRE' }, 6);
   assert.ok(events.some((e) => e.type === 'hide_found' && e.hideId === 'H_ARMOIRE'));
@@ -454,7 +454,7 @@ test('brain: post-sprint panting (2.5 m, 4 s) gives a hider away within 2 m', ()
 
 // ------------------------------------------------------------------ grace, relocation, determinism
 
-test('grace: farthest anchor not in view, PATROL-only, hearing −30 % for 20 s', () => {
+test('grace: farthest anchor not in view, PATROL-only, hearing −30 % for 30 s (difficulty 2026-10-08)', () => {
   const canSee = (p: P3) => Math.hypot(p[0] - 1.8, p[1] - 0.45) < 0.1; // the player can see the south window only
   const b = new AdaBrain(layout, world(initialDoors(), () => true, canSee), { seed: 1 });
   run(b, FAR_PLAYER, 1);
@@ -467,7 +467,7 @@ test('grace: farthest anchor not in view, PATROL-only, hearing −30 % for 20 s'
   const r = run(b, FAR_PLAYER, 1);
   assert.ok(!states(r.events).includes('LISTEN'));
   assert.equal((b as any).hearingMul(), TUNING.grace.hearingMul);
-  run(b, FAR_PLAYER, 20);
+  run(b, FAR_PLAYER, TUNING.grace.hearingS);
   assert.ok(!b.graceActive);
   assert.equal((b as any).hearingMul(), 1);
   const b2 = new AdaBrain(layout, world(), { seed: 1 });
@@ -632,4 +632,89 @@ test("search: beside Harlan's bed (U2) she plays search_bed for the whole 4 s cl
   assert.equal(o2.tells.loop, 'nails_plaster');
   run(b2, FAR_PLAYER, TUNING.search.betweenLooksS + 0.1);
   assert.equal(b2.search?.phase, 'look');
+});
+
+// ------------------------------------------------------------------ difficulty tuning 2026-10-08 (ROADMAP "Difficulty")
+
+test('difficulty: a glance across her cone is a near miss — she must hold you in sight for noticeS before a CHASE', () => {
+  const b = new AdaBrain(layout, world(), { seed: 5 });
+  b.update(0.05, FAR_PLAYER());
+  const at = b.pos;
+  const pv = player([at[0], at[1] - 3.2, at[2]]); // dark, 3.2 m away (beyond closeM), straight ahead of her look
+  (b as any).startLook('patrol', (b as any).yawTo(pv.eye), true, null, 0);
+  run(b, FAR_PLAYER, TUNING.look.windupFast + 0.05); // head lifted, sight phase
+  const brief = run(b, pv, TUNING.sight.noticeS * 0.5);
+  run(b, FAR_PLAYER, 0.3);
+  assert.ok(!states(brief.events).includes('CHASE') && !b.chase, 'a brief glance is not a chase');
+  const held = run(b, pv, TUNING.sight.noticeS + 0.2);
+  assert.ok(b.chase || states(held.events).includes('CHASE'), 'held in sight → CHASE');
+});
+
+test('difficulty: post-cutscene calm — nothing is perceived (sight, noise, beam, contact) for 6 s, then rules resume', () => {
+  const b = new AdaBrain(layout, world(), { seed: 6 });
+  b.update(0.05, FAR_PLAYER());
+  const at = b.pos;
+  b.calm();
+  const close = () => {
+    const pv = player([at[0] + 0.3, at[1], at[2]]);
+    return { ...pv, beam: { on: true, origin: pv.eye, dir: [-1, 0, -0.1] as P3, range: 14, halfAngle: 0.3, hit: null } };
+  };
+  b.noise({ pos: at, room: b.room, radius: 10, source: 'player' });
+  const r = run(b, close, TUNING.grace.calmS - 0.2);
+  assert.ok(!r.events.some((e) => e.type === 'catch'), 'no catch inside the calm window');
+  assert.ok(!['LISTEN', 'LOOK', 'CHASE', 'INVESTIGATE'].some((s) => states(r.events).includes(s)), states(r.events).join(','));
+  // (gameplay review) the bump first startles her (fast LOOK wind-up, the tell), then the grab
+  const after = run(b, close, 3);
+  assert.ok(after.events.some((e) => e.type === 'catch'), 'standing in her path after the calm is a catch');
+});
+
+test('difficulty: she abandons a chase after giveUpS even while she still senses you', () => {
+  const b = new AdaBrain(layout, world(), { seed: 7 });
+  b.update(0.05, FAR_PLAYER());
+  const far = FAR_PLAYER();
+  (b as any).startChase(far.pos, far.room);
+  let t = 0;
+  while (t < TUNING.chase.giveUpS + 1 && b.chase) {
+    (b as any).chase.lastSenseT = (b as any).t; // she keeps sensing you every tick
+    b.update(0.05, far);
+    t += 0.05;
+  }
+  assert.ok(!b.chase, `chase still on after ${t.toFixed(1)} s`);
+  assert.ok(t > TUNING.chase.giveUpS - 0.1 && t <= TUNING.chase.giveUpS + 0.2, t.toFixed(2));
+});
+
+test('difficulty: the beam on her body is a FAST wind-up only within fastBeamM; from across the room a normal LOOK', () => {
+  for (const [d, fast] of [[3, true], [6, false]] as const) {
+    const b = new AdaBrain(layout, world(), { seed: 8 });
+    b.update(0.05, FAR_PLAYER());
+    const at = b.pos;
+    const pv = player([at[0], at[1] - d, at[2]]);
+    const lit = { ...pv, beam: { on: true, origin: pv.eye, dir: [0, 1, -0.05] as P3, range: 14, halfAngle: 0.3, hit: null } };
+    b.update(0.05, lit);
+    assert.ok(b.look, `LOOK at ${d} m`);
+    assert.equal(b.look!.windup, fast ? TUNING.look.windupFast : TUNING.look.windup, `${d} m`);
+  }
+});
+
+test('difficulty (gameplay review): an unaware bump is a tell first — she stops and looks (fast wind-up); step away and you live, stay and she grabs', () => {
+  const mk = () => {
+    const b = new AdaBrain(layout, world(), { seed: 9 });
+    b.update(0.05, FAR_PLAYER());
+    return b;
+  };
+  // stay: caught within a few seconds, and the first state after the bump is a LOOK (not an instant catch)
+  const b1 = mk();
+  const at = b1.pos;
+  const stay = () => player([at[0] + 0.3, at[1], at[2]]);
+  const r1 = run(b1, stay, 0.3);
+  assert.ok(!r1.events.some((e) => e.type === 'catch'), 'no instant catch on the bump');
+  assert.ok(states(r1.events).includes('LOOK'), 'the bump starts a LOOK: ' + states(r1.events).join(','));
+  const r1b = run(b1, stay, 3);
+  assert.ok(r1b.events.some((e) => e.type === 'catch'), 'staying in contact after the wind-up is a catch');
+  // step away during the wind-up: no catch
+  const b2 = mk();
+  const at2 = b2.pos;
+  run(b2, () => player([at2[0] + 0.3, at2[1], at2[2]]), 0.2);
+  const r2 = run(b2, FAR_PLAYER, 3);
+  assert.ok(!r2.events.some((e) => e.type === 'catch'), 'stepping away during the wind-up survives');
 });

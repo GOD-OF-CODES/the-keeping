@@ -9,14 +9,14 @@
   "container": "klm",
   "codec": null,
   "mantissaBits": 6,
-  "floorExp": 8,
+  "floorExp": 13,
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.01442,
-    "p99": 0.03393,
-    "max": 125.36713,
-    "coverage": 0.515
+    "mean": 0.00817,
+    "p99": 0.0092,
+    "max": 108.87514,
+    "coverage": 0.4527
   },
   "file": "lm_exterior.klm"
 }

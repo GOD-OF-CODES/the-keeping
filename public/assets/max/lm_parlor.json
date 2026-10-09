@@ -4,8 +4,8 @@
   "colorSpace": "linear",
   "atlas": "parlor",
   "tier": "max",
-  "width": 2048,
-  "height": 2048,
+  "width": 1024,
+  "height": 1024,
   "container": "klm",
   "codec": null,
   "mantissaBits": 10,
@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.03965,
-    "p99": 0.2032,
-    "max": 7.88392,
-    "coverage": 0.5592
+    "mean": 0.03983,
+    "p99": 0.20401,
+    "max": 6.03382,
+    "coverage": 0.5637
   },
   "file": "lm_parlor.klm"
 }

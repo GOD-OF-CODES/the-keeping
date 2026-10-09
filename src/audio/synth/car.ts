@@ -396,4 +396,77 @@ const fuelGlug: Recipe = {
   },
 };
 
-export const CAR_RECIPES: Recipe[] = [engineIdle, engineSputter, engineStall, engineCrank, engineCatch, wiper, radioStatic, radioSong, tyresGravel, fuelGlug];
+
+/**
+ * Opening (C1-OPENING §4 S1): a 1980s cassette deck's SEEK — a button click, then the tuner sweeps: static with a
+ * chirp each time it brushes a carrier (heterodyne whistle gliding through), stopping on nothing. 2.4 s.
+ */
+const radioSeek: Recipe = {
+  id: 'radio_seek',
+  label: 'Radio seek (FM/AM sweep)',
+  category: 'car',
+  bus: 'sfx',
+  variants: 2,
+  level: 0.45,
+  params: { dur: { min: 1.5, max: 3, default: 2.4 } },
+  gen(sr, rng, p) {
+    const n = Math.floor(sr * p.dur);
+    const x = white(n, rng);
+    const fade = smoothNoise(n, sr, 3, rng);
+    for (let i = 0; i < n; i++) x[i] *= 0.25 * (0.6 + 0.4 * fade[i]);
+    // carrier brushes: short whistles gliding down as the tuner passes each one
+    let t = 0.15;
+    while (t < p.dur - 0.3) {
+      const len = Math.floor(sr * rng.range(0.05, 0.12));
+      const f0 = rng.range(900, 2600);
+      const w = sineOsc(len, sr, (i) => f0 * (1 - (0.7 * i) / len));
+      for (let i = 0; i < len; i++) w[i] *= Math.sin((Math.PI * i) / len);
+      mixInto(x, w, Math.floor(t * sr), rng.range(0.08, 0.2));
+      t += rng.range(0.12, 0.35);
+    }
+    mixInto(x, click(sr, rng, 6), 0, 0.9);
+    filt(x, 'highpass', sr, 250);
+    filt(x, 'lowpass', sr, 4000);
+    return [x];
+  },
+};
+
+/**
+ * Opening (C1-OPENING §4 S5): a loaded logging truck passing the other way at 25 m/s on a wet road — diesel growl and
+ * tyre hiss rising with a Doppler drop at the pass (≈ f·(1 ± v/c) = ±7 %), the air horn's two notes, the spray. 4 s.
+ */
+const truckPass: Recipe = {
+  id: 'truck_pass',
+  label: 'Logging truck passes (horn, spray)',
+  category: 'car',
+  bus: 'sfx',
+  variants: 1,
+  level: 0.8,
+  params: { dur: { min: 3, max: 5, default: 4 } },
+  gen(sr, rng, p) {
+    const n = Math.floor(sr * p.dur);
+    const pass = 0.45 * p.dur; // the pass moment
+    const amp = (i: number) => {
+      const d = Math.abs(i / sr - pass) * 25 + 4; // distance, m
+      return 4 / d;
+    };
+    const dop = (i: number) => (i / sr < pass ? 1.07 : 0.93);
+    const growl = sawOsc(n, sr, (i) => 46 * dop(i));
+    const hiss = pink(n, rng);
+    const x = new Float32Array(n);
+    for (let i = 0; i < n; i++) x[i] = (growl[i] * 0.5 + hiss[i] * 0.8) * amp(i);
+    filt(x, 'lowpass', sr, 2200);
+    // two-note air horn, starting 1.2 s before the pass
+    const h0 = Math.floor(Math.max(0, pass - 1.2) * sr);
+    const hl = Math.floor(1.3 * sr);
+    const horn = new Float32Array(hl);
+    const a = sawOsc(hl, sr, () => 311 * 1.07);
+    const b = sawOsc(hl, sr, () => 370 * 1.07);
+    for (let i = 0; i < hl; i++) horn[i] = (a[i] + b[i]) * 0.25 * Math.min(1, i / (0.03 * sr)) * Math.min(1, (hl - i) / (0.08 * sr));
+    filt(horn, 'lowpass', sr, 2800);
+    mixInto(x, horn, h0, 0.5);
+    return [x];
+  },
+};
+
+export const CAR_RECIPES: Recipe[] = [radioSeek, truckPass, engineIdle, engineSputter, engineStall, engineCrank, engineCatch, wiper, radioStatic, radioSong, tyresGravel, fuelGlug];

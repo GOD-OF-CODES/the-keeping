@@ -13,7 +13,7 @@
 //    and its done(true) fires before the new one begins. Overlays (C4, no done) are cancelled instead.
 
 import { Sequencer } from './sequencer.ts';
-import { isStateCue, type CameraPose, type CharId, type Cue, type CutsceneContext, type DofSettings, type DoorAction, type LockMode, type P3, type Timeline, type TimelineFactory, type VehiclePose } from './types.ts';
+import { isStateCue, type CameraPose, type CardStyle, type CharId, type Cue, type CutsceneContext, type DofSettings, type DoorAction, type LockMode, type P3, type Timeline, type TimelineFactory, type VehiclePose } from './types.ts';
 
 // ------------------------------------------------------------------ injected interfaces
 
@@ -77,7 +77,7 @@ export interface CutsceneWorld {
 export interface CutsceneUi {
   /** fade 0..1 (black), letterbox 0..1. */
   overlay?(fade: number, letterbox: number): void;
-  card?(text: string | null, style: 'title' | 'small'): void;
+  card?(text: string | null, style: CardStyle): void;
   subtitle?(speaker: string, text: string, durationMs: number, caption: boolean): void;
   prompt?(text: string | null): void;
   /** "Hold to skip" hint: visible while a skippable cutscene runs, progress 0..1 while held. */
@@ -143,6 +143,13 @@ export function localSeenStore(key = 'keeping.cutscenesSeen'): SeenStore {
 
 /** Seen-ness is shared between a cutscene and its replay variant. */
 const SEEN_ALIAS: Record<string, string> = { C2_replay: 'C2' };
+
+/** Preroll: a Director request for the key first plays the value (C1-OPENING §3: the C0 title cinematic runs before
+ *  C1; C0's end or skip starts C1 with a matched cut). The Director's done() fires once, after the real cutscene. */
+const PREROLL: Record<string, string> = { C1: 'C0' };
+
+/** Live state for DOM that must step aside while a (non-overlay) cutscene holds the screen (the centre dot). */
+export const CUTSCENE_SCREEN = { held: false };
 
 // ------------------------------------------------------------------ the player
 
@@ -211,9 +218,13 @@ export class CutscenePlayer {
    * Start a cutscene. `done` = the Director's callback (omit for overlays such as C4, which run alongside gameplay
    * and never block the story). Returns false for unknown ids.
    */
-  play(id: string, done?: (skipped: boolean) => void, o: { timeline?: Timeline } = {}): boolean {
+  play(id: string, done?: (skipped: boolean) => void, o: { timeline?: Timeline; chained?: boolean; noPreroll?: boolean } = {}): boolean {
     const factory = this.library[id];
     if (!factory && !o.timeline) return false;
+    const pre = PREROLL[id];
+    if (done && pre && !o.timeline && !o.noPreroll && !o.chained && this.library[pre]) {
+      return this.play(pre, () => this.play(id, done, { chained: true }));
+    }
     // finish whatever runs (a done() callback may synchronously start yet another cutscene: finish those too)
     for (let guard = 0; this.cur && guard < 8; guard++) {
       if (this.cur.overlay) this.cancel();
@@ -221,7 +232,7 @@ export class CutscenePlayer {
     }
     if (this.cur) this.cancel();
     const base = this.deps.context?.() ?? { player: { eye: [0, 0, 1.6] as P3, heading: 0, pitch: 0 }, ada: null, flags: new Map() };
-    const tl = o.timeline ?? factory!({ ...base, seen: this.wasSeen(id) });
+    const tl = o.timeline ?? factory!({ ...base, seen: this.wasSeen(id), chained: !!o.chained });
     const run: Running = {
       id,
       seq: null as unknown as Sequencer,
@@ -251,7 +262,10 @@ export class CutscenePlayer {
     });
     this.cur = run;
     this.skipHeld = 0;
-    if (!run.overlay) this.deps.input?.lock(tl.lock);
+    if (!run.overlay) {
+      this.deps.input?.lock(tl.lock);
+      CUTSCENE_SCREEN.held = true;
+    }
     this.deps.ui?.skipHint?.(this.canSkip(), 0);
     run.seq.update(0); // t = 0 cues + first camera pose, this frame
     return true;
@@ -474,6 +488,7 @@ export class CutscenePlayer {
       d.ui?.overlay?.(0, 0);
       d.ui?.card?.(null, 'title');
       d.input?.lock('none');
+      CUTSCENE_SCREEN.held = false;
     }
     d.ui?.prompt?.(null);
     d.ui?.skipHint?.(false, 0);

@@ -11,6 +11,9 @@ import type { PlayerController } from '../player/controller.ts';
 import type { SoundSink } from './doors.ts';
 import { headingToCameraYaw } from './rooms.ts';
 
+/** Initial hide pitch behind louvred doors (rad): the 12 mm slots between 35° slats look ≈ 7° down. */
+const LOUVRE_PITCH = -0.12;
+
 const LOOK_YAW = 0.55;
 const LOOK_PITCH = 0.35;
 const PEEK = 0.07;
@@ -49,7 +52,9 @@ export class HideSystem {
     if (!h || this.active) return;
     this.active = h;
     this.dyaw = 0;
-    this.dpitch = 0;
+    // R2-7: louvres tilt 35° outer-edge-down (blender/props/cabinets.py), so level or rising sight lines end on the
+    // slat backs (black) and only falling ones reach the room: start looking down the slots, not into the slats
+    this.dpitch = h.kind === 'closet' ? 0 : LOUVRE_PITCH;
     this.peek = 0;
     this.t = 0;
     this.justEntered = true;

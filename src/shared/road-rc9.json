@@ -1,0 +1,83 @@
+{
+ "version": 1,
+ "space": "PLAN",
+ "chainage": "eastbound from x = 20; n positive = left of eastbound",
+ "width": {
+  "asphalt": 3.5,
+  "shoulder": 4.7,
+  "ditch": 7.5,
+  "backslope": 9.5,
+  "clearing": 14
+ },
+ "lanes": {
+  "westbound": 1.75,
+  "eastbound": -1.75
+ },
+ "crown": 0.02,
+ "gate_s": -17.2,
+ "detail_end_s": 1250,
+ "end_s": 1550,
+ "segments": [
+  {
+   "id": "A",
+   "s0": 0,
+   "s1": 240,
+   "kind": "straight",
+   "start": [
+    20,
+    -33
+   ],
+   "heading": 0
+  },
+  {
+   "id": "B",
+   "s0": 240,
+   "s1": 397.08,
+   "kind": "arc",
+   "turn": "cw",
+   "centre": [
+    260,
+    -333
+   ],
+   "radius": 300,
+   "heading0": 0,
+   "heading1": -0.523599
+  },
+  {
+   "id": "C",
+   "s0": 397.08,
+   "s1": 847.08,
+   "kind": "straight",
+   "start": [
+    410,
+    -73.192
+   ],
+   "heading": -0.523599
+  },
+  {
+   "id": "D",
+   "s0": 847.08,
+   "s1": 1004.159,
+   "kind": "arc",
+   "turn": "ccw",
+   "centre": [
+    949.711,
+    -38.385
+   ],
+   "radius": 300,
+   "heading0": -0.523599,
+   "heading1": 0
+  },
+  {
+   "id": "E",
+   "s0": 1004.159,
+   "s1": 1550,
+   "kind": "straight",
+   "start": [
+    949.711,
+    -338.385
+   ],
+   "heading": 0
+  }
+ ]
+}

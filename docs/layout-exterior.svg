@@ -169,6 +169,8 @@
 <text x="459.0" y="1010.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#8a7a5a" text-anchor="middle" opacity="0.85">EXT1</text>
 <rect x="269.0" y="79.0" width="1520.0" height="836.0" fill="#e9efe2" stroke="#bbb" stroke-width="0.8"/>
 <text x="1029.0" y="497.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#8a7a5a" text-anchor="middle" opacity="0.85">EXT2</text>
+<rect x="1789.0" y="573.0" width="27170.0" height="7790.0" fill="#e9efe2" stroke="#bbb" stroke-width="0.8"/>
+<text x="15374.0" y="4468.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#8a7a5a" text-anchor="middle" opacity="0.85">RC9 1430.00x410.00</text>
 <rect x="79.0" y="943.5" width="760.0" height="133.0" fill="#555" fill-opacity="0.18" stroke="none"/>
 <rect x="79.0" y="924.5" width="760.0" height="19.0" fill="#9e9e9e" fill-opacity="0.18" stroke="none"/>
 <rect x="79.0" y="1091.7" width="760.0" height="13.3" fill="#6b4f2a" fill-opacity="0.18" stroke="none"/>
@@ -206,6 +208,26 @@
 <text x="517.2" y="952.8" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#1f618d">CAR_GATE</text>
 <rect x="218" y="1090.1" width="7" height="7" fill="#444"/><line x1="221.5" y1="1093.6" x2="221.5" y2="1087.9" stroke="#444" stroke-width="1.2"/>
 <text x="226.5" y="1089.6" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444">UTILITY_POLE</text>
+<rect x="5686.3" y="896" width="7" height="7" fill="#7d3c98"/><line x1="5689.8" y1="899.5" x2="5695.3" y2="900.9" stroke="#7d3c98" stroke-width="1.2"/>
+<text x="5694.8" y="895.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#7d3c98">RC9_NEXT_SERVICES</text>
+<rect x="10160.5" y="2744.2" width="7" height="7" fill="#7d3c98"/><line x1="10164.0" y1="2747.7" x2="10168.3" y2="2751.4" stroke="#7d3c98" stroke-width="1.2"/>
+<text x="10169" y="2743.7" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#7d3c98">RC9_CR9_A</text>
+<rect x="17035.6" y="6911.9" width="7" height="7" fill="#7d3c98"/><line x1="17039.1" y1="6915.4" x2="17044.0" y2="6912.4" stroke="#7d3c98" stroke-width="1.2"/>
+<text x="17044.1" y="6911.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#7d3c98">RC9_BILLBOARD</text>
+<rect x="13457.9" y="4253" width="7" height="7" fill="#7d3c98"/><line x1="13461.4" y1="4256.5" x2="13458.6" y2="4261.4" stroke="#7d3c98" stroke-width="1.2"/>
+<text x="13466.4" y="4252.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#7d3c98">RC9_DINER</text>
+<rect x="13141.7" y="4344.7" width="7" height="7" fill="#7d3c98"/><line x1="13145.2" y1="4348.2" x2="13150.1" y2="4351.0" stroke="#7d3c98" stroke-width="1.2"/>
+<text x="13150.2" y="4344.2" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#7d3c98">RC9_EAT</text>
+<rect x="26021" y="6842.1" width="7" height="7" fill="#7d3c98"/><line x1="26024.5" y1="6845.6" x2="26030.2" y2="6845.6" stroke="#7d3c98" stroke-width="1.2"/>
+<text x="26029.5" y="6841.6" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#7d3c98">RC9_TRUCK</text>
+<rect x="4597.5" y="769" width="7" height="7" fill="#7d3c98"/><line x1="4601.0" y1="772.5" x2="4601.9" y2="778.1" stroke="#7d3c98" stroke-width="1.2"/>
+<text x="4606" y="768.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#7d3c98">RC9_DEER_1</text>
+<rect x="4730.5" y="750" width="7" height="7" fill="#7d3c98"/><line x1="4734.0" y1="753.5" x2="4732.6" y2="759.0" stroke="#7d3c98" stroke-width="1.2"/>
+<text x="4739" y="749.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#7d3c98">RC9_DEER_2</text>
+<rect x="4863.5" y="759.5" width="7" height="7" fill="#7d3c98"/><line x1="4867.0" y1="763.0" x2="4871.5" y2="766.5" stroke="#7d3c98" stroke-width="1.2"/>
+<text x="4872" y="759" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#7d3c98">RC9_DEER_3</text>
+<rect x="20321" y="6922.8" width="7" height="7" fill="#7d3c98"/><line x1="20324.5" y1="6926.3" x2="20330.1" y2="6925.2" stroke="#7d3c98" stroke-width="1.2"/>
+<text x="20329.5" y="6922.3" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#7d3c98">RC9_CR9_B</text>
 <rect x="538.6" y="408.9" width="7" height="7" fill="#444"/><line x1="542.1" y1="412.4" x2="542.1" y2="418.2" stroke="#444" stroke-width="1.2"/>
 <text x="547.1" y="408.4" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444">PORCH</text>
 <rect x="538.6" y="384.3" width="7" height="7" fill="#444"/><line x1="542.1" y1="387.8" x2="542.1" y2="393.4" stroke="#444" stroke-width="1.2"/>
@@ -252,13 +274,15 @@
 <rect x="445.7" y="611.0" width="95.0" height="76.0" fill="none" stroke="#27ae60" stroke-dasharray="4 3" stroke-width="1"/><text x="447.7" y="685" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#27ae60">b02:pump_passed</text>
 <rect x="470.4" y="388.7" width="45.6" height="47.5" fill="none" stroke="#27ae60" stroke-dasharray="4 3" stroke-width="1"/><text x="472.4" y="434.2" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#27ae60">b02:at_door</text>
 <rect x="679.4" y="379.2" width="68.4" height="68.4" fill="none" stroke="#27ae60" stroke-dasharray="4 3" stroke-width="1"/><text x="681.4" y="445.6" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#27ae60">b12:at_car</text>
-<circle cx="424.8" cy="923.6" r="6" fill="#f4d03f" stroke="#b7950b" stroke-width="1"/><text x="431.8" y="933.6" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">LANTERN 60W bake_flicker</text>
+<circle cx="424.8" cy="923.6" r="6" fill="#f4d03f" stroke="#b7950b" stroke-width="1"/><text x="431.8" y="933.6" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">LANTERN 150W bake_flicker</text>
 <circle cx="535.0" cy="573.0" r="6" fill="#f4d03f" stroke="#b7950b" stroke-width="1"/><text x="542" y="583" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">SKY 600W bake</text>
 <circle cx="493.2" cy="405.8" r="6" fill="#85c1e9" stroke="#b7950b" stroke-width="1"/><text x="500.2" y="415.8" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">LTN_U1S 800W flash</text>
 <circle cx="649.0" cy="358.3" r="6" fill="#85c1e9" stroke="#b7950b" stroke-width="1"/><text x="656" y="368.3" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">LTN_U2E 800W flash</text>
 <circle cx="649.0" cy="246.2" r="6" fill="#85c1e9" stroke="#b7950b" stroke-width="1"/><text x="656" y="256.2" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">LTN_U3E 800W flash</text>
-<circle cx="468.5" cy="945.4" r="6" fill="#f4d03f" stroke="#b7950b" stroke-width="1"/><text x="475.5" y="955.4" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">HEADLIGHT_L 3000W runtime</text>
-<circle cx="468.5" cy="968.2" r="6" fill="#f4d03f" stroke="#b7950b" stroke-width="1"/><text x="475.5" y="978.2" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">HEADLIGHT_R 3000W runtime</text>
+<circle cx="466.0" cy="967.8" r="6" fill="#f4d03f" stroke="#b7950b" stroke-width="1"/><text x="473" y="977.8" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">HEADLIGHT_L 188495.559W runtime</text>
+<circle cx="466.0" cy="945.8" r="6" fill="#f4d03f" stroke="#b7950b" stroke-width="1"/><text x="473" y="955.8" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">HEADLIGHT_R 188495.559W runtime</text>
+<circle cx="26220.2" cy="6829.4" r="6" fill="#f4d03f" stroke="#b7950b" stroke-width="1"/><text x="26227.2" y="6839.4" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">TRUCK_HI_L 439822.972W runtime</text>
+<circle cx="26220.2" cy="6861.7" r="6" fill="#f4d03f" stroke="#b7950b" stroke-width="1"/><text x="26227.2" y="6871.7" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">TRUCK_HI_R 439822.972W runtime</text>
 <polygon points="493.2,897.0 490.9,906.6 495.5,906.6" fill="#2c3e50"/><text x="489.2" y="917.6" font-family="Helvetica, Arial, sans-serif" font-size="9" font-weight="bold" fill="#2c3e50" text-anchor="end">CP1</text>
 <polygon points="566.4,981.5 576.0,983.8 576.0,979.2" fill="#2c3e50"/><text x="569" y="995.5" font-family="Helvetica, Arial, sans-serif" font-size="9" font-weight="bold" fill="#2c3e50" text-anchor="end">debug_road</text>
 <polygon points="493.2,414.4 490.9,424.0 495.5,424.0" fill="#2c3e50"/><text x="489.2" y="435" font-family="Helvetica, Arial, sans-serif" font-size="9" font-weight="bold" fill="#2c3e50" text-anchor="end">debug_porch</text>

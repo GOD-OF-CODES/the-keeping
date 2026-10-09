@@ -73,7 +73,7 @@ export async function createStoryRuntime(d: StoryDeps) {
   // the kitchen / bedroom encounters get a flickering warm key instead of reading as flat silhouettes.
   const { lights: lightsOf } = await import('three/tsl');
   const flickerLights = level.lights.flickers.map((f) => f.light);
-  const charLights = lightsOf([...level.probeLights, ...flickerLights]);
+  const charLights = lightsOf([...(level.houseLights?.length ? level.houseLights : level.probeLights), ...flickerLights]); // round D perf: no CAR/RC9 spots
   const lopt = { presetId: ctx.presetId, preset: ctx.preset, lightsNode: charLights };
   const [adaC, harlanC, armsC] = await Promise.all(
     (['ada', 'harlan', 'arms'] as const).map((id) =>
@@ -86,11 +86,26 @@ export async function createStoryRuntime(d: StoryDeps) {
   const ada = adaC ? new AdaCharacter(adaC) : null;
   const harlan = harlanC ? new HarlanCharacter(harlanC) : null;
   const arms = armsC ? new FpArms(armsC, rig.rig) : null;
+  let armsCar = false;
+  let setArmsCar = (_car: boolean): void => {};
   if (armsC) {
     // The SpotLight sits INSIDE the torch head: the arms must not see it (the bezel lit up like a ring from
     // behind). They keep the probes, lightning and runtime lights.
     const armLights = lightsOf([...level.probeLights.filter((l) => l !== rig.flashlight.light), ...flickerLights]);
-    for (const m of armsC.materials) m.lightsNode = armLights;
+    // runtime lane D perf: in the house the arms drop the opening's CAR/RC9 spots (L_DOME / L_TRUCK_HI_L shadows,
+    // cookies) — 23 → 18 lights per arm pixel. The full list comes back only while the interior is mounted (C0/C1
+    // gloves on the wheel). Two fixed LightsNodes, switched at the mount (both warmed at load: rc9-road step).
+    const house = level.houseLights?.length ? level.houseLights : level.probeLights;
+    const armHouse = lightsOf([...house.filter((l) => l !== rig.flashlight.light), ...flickerLights]);
+    for (const m of armsC.materials) m.lightsNode = armHouse;
+    setArmsCar = (car: boolean) => {
+      if (car === armsCar) return;
+      armsCar = car;
+      for (const m of armsC.materials) {
+        m.lightsNode = car ? armLights : armHouse;
+        m.needsUpdate = true;
+      }
+    };
   }
   if (ada) {
     scene.add(ada.group);
@@ -116,6 +131,7 @@ export async function createStoryRuntime(d: StoryDeps) {
     pipeline: () => pipelineRef,
     lightningLevel: () => lightning?.level ?? 0,
     cameraHeld: () => camHeldByCutscene,
+    preset: ctx.preset, // opening: lamp/dome shadow tiers
   });
   /** Cutscene fx (docs/CUTSCENES.md fx table): src/world/cutscene-fx.ts; unknown ones are logged once. */
   const cutsceneFx = (id: string, p: Record<string, number | string | boolean>) => {
@@ -198,14 +214,6 @@ export async function createStoryRuntime(d: StoryDeps) {
   const tmpA = new THREE.Vector3();
   const tmpB = new THREE.Vector3();
   const tmpD = new THREE.Vector3();
-  const upW = new THREE.Vector3();
-  const sideW = new THREE.Vector3();
-  const RING = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ] as const;
   const frustum = new THREE.Frustum();
   const projView = new THREE.Matrix4();
   let lastOut: AdaOutput | null = null;
@@ -227,28 +235,8 @@ export async function createStoryRuntime(d: StoryDeps) {
     const range = 14;
     const hitD = level.collision.rayDistance(lensW, dirW, range);
     const hit = Number.isFinite(hitD) ? P(tmpA.copy(lensW).addScaledVector(dirW, hitD)) : null;
-    // eye adaptation: a wall at arm's length would clip the hot spot to white — the pupil closes down. The nearest
-    // of the centre ray and four rays at ~60 % of the cone decides (a door frame beside the beam counts too).
-    let near = Number.isFinite(hitD) ? hitD : 99;
-    const sa = Math.tan(L.angle * 0.6);
-    upW.set(0, 1, 0);
-    if (Math.abs(dirW.y) > 0.95) upW.set(1, 0, 0);
-    sideW.crossVectors(dirW, upW).normalize();
-    upW.crossVectors(sideW, dirW).normalize();
-    for (const [a, b] of RING) {
-      tmpB.copy(dirW).addScaledVector(sideW, a * sa).addScaledVector(upW, b * sa).normalize();
-      near = Math.min(near, level.collision.rayDistance(lensW, tmpB, 3) * (1 + sa * 0.5));
-    }
-    // she is not in the collision octree: a close figure in the cone (her pale gown) counts as a near surface too
-    if (lastOut?.visible && ada) {
-      const w = planToWorld(lastOut.pos);
-      tmpB.set(w[0], w[1] + 1.1, w[2]).sub(lensW);
-      const d = tmpB.length();
-      if (d > 1e-3 && tmpB.dot(dirW) / d > Math.cos(L.angle)) near = Math.min(near, d);
-    }
-    const adapt = Math.max(0.28, Math.min(1, Math.pow(near / 1.8, 1.4)));
-    const fl = rig.flashlight;
-    fl.gain += (adapt - fl.gain) * Math.min(1, ctx.time.dt * (adapt < fl.gain ? 6 : 1.5));
+    // LIGHTING lane (REALISM-BACKLOG item 11): the torch is no longer dimmed near walls (the old `gain` "pupil"
+    // here) — the camera's eye adaptation (src/render/exposure.ts) meters the hot spot instead.
     const dp = worldToPlan([dirW.x, dirW.y, dirW.z]) as P3;
     return { on: rig.on, origin: P(lensW), dir: dp, range, halfAngle: L.angle, hit };
   };
@@ -679,7 +667,8 @@ export async function createStoryRuntime(d: StoryDeps) {
     if (ada && tableauOn && ada.overridden) ada.group.visible = !level.cullingEnabled || level.visible.has('G2');
     harlan?.update(cdt);
     characters.update();
-    if (arms) arms.update(cdt, rig.flashlight.light, rig.flashlight.beam, rig.on, rig.on ? rig.flashlight.light.intensity / 30 : 0);
+    setArmsCar(!!fxw.mounted?.());
+    if (arms) arms.update(cdt, rig.flashlight.light, rig.flashlight.beam, rig.on, rig.on ? rig.flashlight.light.intensity / rig.flashlight.intensity : 0);
     for (let i = hintMarkers.length - 1; i >= 0; i--) {
       const h = hintMarkers[i];
       h.t -= dt;
@@ -716,7 +705,14 @@ export async function createStoryRuntime(d: StoryDeps) {
     rain: () => (fxw.blueHour() > 0.5 ? 0 : 1),
     /** After the level's light update (overrides that must win over the flicker loop). */
     lateUpdate: () => fxw.lateUpdate(),
-    fx: fxw,
+    fx: {
+      ...fxw,
+      // runtime lane D: the road warm-up mounts the interior — compile the arms with the CAR list there too
+      warmRoad: (on: boolean, at?: number) => {
+        setArmsCar(on);
+        return fxw.warmRoad(on, at);
+      },
+    },
     m2,
     /** Load warm-up (C2/C5 candle shadow on the characters): show Ada + Harlan at the tableau, or hide them again. */
     warmTableau: (on: boolean) => {

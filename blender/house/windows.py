@@ -5,6 +5,7 @@ Glass panes are separate objects (glass_<opening>) with slightly wavy crown-glas
 """
 import math
 import random
+import zlib
 
 from mathutils import Vector, noise
 
@@ -85,7 +86,7 @@ def window(P, oid, meshes, ext, glass_factory):
     M = meshes[room]
     X = ext['trim']
     G = glass_factory(room, '_glass_' + oid, glass=True, opening=oid, lm_weight=0.35)
-    rng = random.Random(hash(oid) & 0xffff)
+    rng = random.Random(zlib.crc32(oid.encode()) & 0xffff)     # stable across processes (hash() is salted)
     hw = W / 2
     trim_mat = P.rooms[room]['trimMat']
     st = o['window']['state']

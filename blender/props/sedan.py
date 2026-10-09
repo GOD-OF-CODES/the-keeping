@@ -264,6 +264,8 @@ def _exterior_bits(part, rng, body, paint, glass, opts, plate):
                        section=rect_section(0.03, 0.15, 0.01)), 'glass_grimy')
     tails.extras = {'lamp': 'tail', 'emissive_color': [0.8, 0.03, 0.02]}
     part.children.append((tails, None))
+    if opts.get('hero'):          # the opening's lamp anchors / tail lenses: hero car only (Low budget)
+        _lamp_nodes(part, rng, zg)
     part.add(box(0.012, 0.32, 0.17, 0.003, 1), 'chrome_pitted', T((-0.012, 0, 0.56)))
     if plate:
         decal(part, 'sedan.plate', 0.3, 0.15, T((-0.02, 0, 0.56), (0, 0, -math.pi / 2)), plate, style='plate',
@@ -305,8 +307,34 @@ def _exterior_bits(part, rng, body, paint, glass, opts, plate):
                   sides=4), 'chrome_pitted')
 
 
-def _cabin_interior(part, rng, trim):
-    """Low-detail cabin seen through the windows: two benches, dash, wheel (the close-up set is sedan_interior)."""
+def _lamp_nodes(part, rng, zg):
+    """ADDED nodes (C1-OPENING §6.2): light anchors at the lamp centres, three-chamber tail-lamp lenses, hood steam.
+    Anchors carry `aim_local` (node-local Blender axes: +x is the nose before the prop's turn) and `aim_car`
+    (car space, nose +y): 1.5 deg down."""
+    aim = {'aim_local': [1.0, 0.0, -0.026], 'aim_car': [0.0, 1.0, -0.026]}
+    for side, yy in (('l', 1), ('r', -1)):
+        anchor(part, f'sedan.light_low_{side}', (L + 0.01, yy * 0.66, zg), {'light': 'low_beam', **aim})
+        anchor(part, f'sedan.light_hi_{side}', (L + 0.01, yy * 0.48, zg), {'light': 'high_beam', **aim})
+        # tail lens: a bezel, two dividers (stop/tail | reverse | marker) and horizontal flutes, 2 mm proud
+        t = Part(f'sedan.tail_{side}', rng)
+        y0 = yy * 0.5
+        t.add(box(0.006, 0.52, 0.15, 0.002, 1), 'glass_grimy', T((-0.025, y0, 0.74)))
+        for dy in (-0.09, 0.13):
+            t.add(box(0.008, 0.008, 0.15, 0.002, 1), 'chrome_pitted', T((-0.03, y0 + yy * dy, 0.74)))
+        for k in range(14):
+            t.add(box(0.004, 0.50, 0.003, 0.0, 1), 'glass_grimy', T((-0.0295, y0, 0.74 - 0.065 + k * 0.01)))
+        t.add(box(0.004, 0.10, 0.15, 0.002, 1), 'lens_flashlight', T((-0.0285, y0 + yy * 0.02, 0.74)))   # reverse
+        t.extras = {'lamp': 'tail', 'emissive_color': [0.8, 0.03, 0.02], 'chambers': 3}
+        part.children.append((t, None))
+    anchor(part, 'sedan.hood_steam', (L - 0.10, 0.0, 0.80), {'fx': 'hood_steam'})
+
+
+def _cabin_interior(parent, rng, trim):
+    """Low-detail cabin seen through the windows: two benches, dash, wheel (the close-up set is sedan_interior).
+    Its own child node `sedan.cabin_lo` so the runtime can hide it when the detailed interior is mounted."""
+    part = Part('sedan.cabin_lo', rng)
+    part.extras = {'cabin': 'low', 'hide_when': 'sedan_interior mounted'}
+    parent.children.append((part, None))
     for x, zc, h in ((1.5, 0.46, 0.5), (2.55, 0.46, 0.5)):
         part.add(box(0.5, 1.4, 0.16, 0.05, 2, base=True), trim, T((x, 0, zc - 0.12)))
         part.add(box(0.14, 1.4, h, 0.05, 2, base=True), trim, T((x - 0.3, 0, zc), (0, math.radians(-12), 0)))
@@ -359,10 +387,49 @@ def build_car(p, rng, opts):
     return part
 
 
+def _driver_proxy(parent, rng):
+    """ADDED node `sedan.driver_proxy` (C1-OPENING §6.2): the driver as a dark silhouette for the exterior shots and
+    the windscreen-reflection probe. Head-and-shoulders under a flat cap, coat, forearms to the wheel; no face
+    (a smooth ovoid, never lit from the front). Body space: driver eye = car (-0.35, -0.05, 1.12) = body
+    (2.375, 0.35, 1.12); wheel rim centre (2.88, 0.38, 0.80). Hidden in the POV shots (extras hide_in 'pov')."""
+    d = Part('sedan.driver_proxy', rng)
+    d.extras = {'hide_in': 'pov', 'driver': True, 'faceless': True, 'probe_lit': True,
+                'low_ratio': 0.5, 'low_min_tris': 600}   # no LM islands
+    hx, hy = 2.30, 0.35                               # head centre (the eye sits at its front, x 2.375)
+
+    def torso(u, v):
+        # v 0 = seat (z 0.60, hips back against the bench), v 1 = shoulder line (z 1.00); leaning back ~15 deg
+        a = u * math.tau
+        z = 0.60 + 0.40 * v
+        x = 2.36 - 0.12 * v
+        w = 0.17 + 0.07 * math.sin(math.pi * 0.5 * v) ** 2 - 0.05 * max(0.0, v - 0.85) / 0.15   # shoulder roll
+        dd = 0.13 - 0.02 * v
+        return (x + dd * math.cos(a), hy + w * math.sin(a), z)
+    d.add_grid(14, 6, torso, 'cloth_dark', uv_size=(1.2, 0.5), closed_u=True, flip=True)
+    # collar + neck, then the head: an ovoid 0.19 x 0.15 x 0.23 m, slightly forward
+    d.add(cyl(0.07, 0.10, n=10), 'cloth_dark', T((2.27, hy, 0.99)))
+    d.add(sphere(1.0, seg=14, rings=9), 'cloth_dark', T((hx, hy, 1.12), (0, math.radians(-8), 0), (0.095, 0.075, 0.115)))
+    # flat cap: crown pad + short brim to the front (+x)
+    d.add(sphere(1.0, seg=14, rings=6), 'cloth_dark', T((hx - 0.005, hy, 1.205), (0, math.radians(-6), 0),
+                                                       (0.11, 0.095, 0.045)))
+    d.add(box(0.07, 0.15, 0.012, 0.004, 1), 'cloth_dark', T((hx + 0.11, hy, 1.19), (0, math.radians(10), 0)))
+    # arms: shoulder -> elbow (by the ribs) -> hand on the rim at ~10 and ~2 o'clock (gloved mitts)
+    for sy in (-1, 1):
+        sh = (2.26, hy + sy * 0.20, 0.97)
+        el = (2.50, hy + sy * 0.23, 0.76)
+        hd = (2.82, 0.38 + sy * 0.16, 0.90)
+        d.add(tube([sh, el, hd], 0.05, sides=8, radii=[1.0, 0.85, 0.62]), 'cloth_dark')
+        d.add(sphere(1.0, seg=8, rings=5), 'cloth_dark', T(hd, (0, 0, 0), (0.05, 0.035, 0.045)))
+    d.add(box(0.30, 0.34, 0.12, 0.04, 1), 'cloth_dark', T((2.62, hy, 0.62)))     # lap / thighs on the bench
+    d.apply(T((0, 0, 0), (0, 0, -math.pi / 2)) @ T((-L / 2, 0, 0)))   # the same turn build_car gives its parts
+    parent.children.append((d, None))
+
+
 @prop('sedan', instance_keys=('plate', 'state'), budget=60000)
 def sedan(p, rng):
     """Hero sedan RVX-318 (faded steel blue): opening car at the gate and later pushed into the wreck row."""
-    part = build_car(p, rng, {'dents': 0.002})
+    part = build_car(p, rng, {'dents': 0.002, 'hero': True})
+    _driver_proxy(part, rng)
     part.extras.update({'plate': str(p.get('plate', '')), 'state': str(p.get('state', ''))})
     return [part]
 
@@ -390,111 +457,4 @@ def wreck_sedan(p, rng):
     q['plate'] = ''
     part = build_car(q, rng, opts)
     part.extras.update({'variant': v})
-    return [part]
-
-
-@prop('sedan_interior', instance_keys=('fuelNeedle',), budget=40000,
-      preview={'eye': (-0.33, -0.1, 1.08), 'target': (0.1, 0.8, 0.8), 'lens': 18})
-def sedan_interior(p, rng):
-    """Close-up interior set for the car cutscenes (C1/C6/C7). Nose at +y: the dash's user-facing side is its
-    front (-y), matching the CAR set (driver eye ~(-0.35, -0.05, 1.1)). Split bench seats, padded dash with a
-    cluster hood (speedo + fuel gauge decals: needle below E), cassette radio, glovebox, column shifter, 2-spoke
-    wheel, pedals, door cards, headliner, A/B pillars, windscreen (glass_rain) with wipers outside, rear-view
-    mirror (air freshener mount). Re-trim for the sting via extras.alt_trim."""
-    trim = p.get('trim', 'car_interior_tan')
-    part = Part('sedan_interior', rng)
-    W = 1.46
-    # floor pan + transmission tunnel + carpet
-    part.add(box(W, 2.4, 0.03, 0.01, 2, base=True), trim, T((0, -0.4, 0.0)))
-    part.add(box(0.28, 1.8, 0.12, 0.05, 2, base=True), trim, T((0, 0.0, 0.02)))
-    # front split bench + rear bench
-    for x, w in ((-0.33, 0.78), (0.4, 0.62)):
-        cush = box(w, 0.52, 0.14, 0.05, 3, cuts={0: 3, 1: 2}, base=True)
-        for v in cush.verts:
-            if v.co.z > 0.1:
-                v.co.z -= 0.02 * (1 - (2 * v.co.x / w) ** 2)
-        part.add(cush, trim, T((x, -0.12, 0.2)))
-        back = box(w, 0.14, 0.62, 0.05, 3, cuts={0: 3, 2: 3}, base=True)
-        part.add(back, trim, T((x, -0.42, 0.32), (math.radians(-14), 0, 0)))
-        for k in range(1, 4):   # pleats
-            part.add(box(0.008, 0.5, 0.012, 0.004, 1), trim, T((x - w / 2 + w * k / 4, -0.12, 0.345)))
-    part.add(box(W - 0.06, 0.55, 0.14, 0.05, 3, base=True), trim, T((0, -1.2, 0.18)))
-    part.add(box(W - 0.06, 0.14, 0.6, 0.05, 3, base=True), trim, T((0, -1.5, 0.3), (math.radians(-18), 0, 0)))
-    # dashboard
-    dz = 0.64
-    dash = box(W, 0.42, 0.22, 0.06, 3, cuts={0: 6}, base=True)
-    part.add(dash, trim, T((0, 0.58, dz)))
-    part.add(box(W, 0.3, 0.07, 0.03, 3, base=True), trim, T((0, 0.66, dz + 0.22)))
-    part.add(box(0.46, 0.18, 0.08, 0.035, 3, base=True), trim, T((-0.35, 0.44, dz + 0.2)))
-    part.add(box(0.42, 0.02, 0.13, 0.004, 1, base=True), 'rubber_black', T((-0.35, 0.36, dz + 0.1)))
-    cluster = Part('sedan_interior.cluster', rng)
-    cluster.add_grid(1, 1, lambda u, v: ((u - 0.5) * 0.4, 0.0, (v - 0.5) * 0.12), 'rubber_black')
-    cluster.extras = {'decal': 'gauges', 'fuelNeedle': str(p.get('fuelNeedle', 'below_E')), 'text_param': 'fuelNeedle',
-                      'lamp': 'dashboard'}
-    part.children.append((cluster, T((-0.35, 0.358, dz + 0.165))))
-    part.add(box(0.32, 0.2, 0.3, 0.02, 2, base=True), trim, T((0.02, 0.5, dz - 0.25)))
-    radio = Part('sedan_interior.radio', rng)
-    radio.add(box(0.18, 0.02, 0.05, 0.004, 1), 'rubber_black')
-    radio.add(box(0.08, 0.004, 0.012, 0.001, 1), 'chrome_pitted', T((0.0, -0.011, 0.0)))
-    for sx in (-1, 1):
-        radio.add(cyl(0.009, 0.012, n=10), 'chrome_pitted', T((sx * 0.07, -0.012, 0.0), (math.pi / 2, 0, 0)))
-    radio.extras = {'part': 'radio', 'kind': str(p.get('radio', 'cassette')), 'lamp': 'dashboard'}
-    part.children.append((radio, T((0.02, 0.39, dz + 0.02))))
-    gb = Part('sedan_interior.glovebox', rng)
-    gb.add(box(0.36, 0.02, 0.15, 0.01, 2), trim)
-    gb.add(box(0.05, 0.01, 0.015, 0.003, 1), 'chrome_pitted', T((0, -0.012, 0.05)))
-    gb.extras = {'part': 'glovebox', 'hinge_axis': [1, 0, 0]}
-    part.children.append((gb, T((0.4, 0.37, dz + 0.1))))
-    # steering column, wheel, stalks, shifter
-    col_top = Vector((-0.35, 0.3, 0.78))
-    part.add(tube([(-0.35, 0.55, 0.64), tuple(col_top)], 0.035, sides=12, radii=[1.3, 1.0]), 'rubber_black')
-    sw = Part('sedan_interior.steering', rng)
-    ring = [(0.19 * math.cos(a), 0.0, 0.19 * math.sin(a)) for a in [math.tau * k / 32 for k in range(32)]]
-    sw.add(tube(ring, 0.016, sides=8, closed=True), 'rubber_black')
-    for s in (-1, 1):
-        sw.add(tube([(0, 0, 0), (s * 0.18, 0.0, -0.03)], 0.012, section=rect_section(0.03, 0.012, 0.005)), 'rubber_black')
-    sw.add(box(0.12, 0.05, 0.09, 0.03, 3), trim, T((0, 0.0, -0.01)))
-    sw.extras = {'part': 'steering_wheel', 'spin_axis': [0, 0.42, 0.9]}
-    part.children.append((sw, T(tuple(col_top + Vector((0, -0.03, 0.02))), (math.radians(-65), 0, 0))))
-    part.add(tube([(-0.3, 0.33, 0.8), (-0.12, 0.33, 0.78)], 0.006, sides=6), 'rubber_black')
-    part.add(tube([(-0.4, 0.33, 0.8), (-0.52, 0.32, 0.8)], 0.006, sides=6), 'rubber_black')
-    for i, x in enumerate((-0.43, -0.3, -0.2)):
-        part.add(box(0.07 if i else 0.05, 0.02, 0.09, 0.006, 2), 'rubber_black', T((x, 0.62, 0.14), (0.5, 0, 0)))
-    # doors (cards + armrests + window cranks), pillars, headliner
-    for s in (-1, 1):
-        part.add(box(0.06, 1.0, 0.5, 0.02, 2, base=True), trim, T((s * (W / 2 + 0.03), -0.1, 0.2)))
-        part.add(box(0.09, 0.4, 0.06, 0.025, 3, base=True), trim, T((s * (W / 2 - 0.02), -0.1, 0.52)))
-        part.add(tube([(s * W / 2, -0.25, 0.6), (s * (W / 2 - 0.05), -0.25, 0.6), (s * (W / 2 - 0.06), -0.3, 0.53)],
-                      0.006, sides=6), 'chrome_pitted')
-        part.add(tube([(s * (W / 2 + 0.01), 0.72, 0.86), (s * (W / 2 - 0.06), 0.18, 1.14)], 0.04,
-                      section=rect_section(0.07, 0.05, 0.02)), trim)
-        part.add(box(0.08, 0.14, 0.52, 0.03, 2, base=True), trim, T((s * (W / 2 + 0.01), -0.62, 0.65)))
-        part.add(box(0.006, 0.9, 0.36, 0.002, 1), p.get('glassMat', 'glass_rain'), T((s * (W / 2 + 0.05), -0.12, 0.92)))
-    part.add(box(W + 0.04, 2.0, 0.02, 0.01, 2, cuts={0: 4, 1: 4}, base=True), trim, T((0, -0.8, 1.15)))
-    # windscreen + wipers (outside)
-    ws = [(-W / 2 + 0.02, 0.74, 0.865), (W / 2 - 0.02, 0.74, 0.865), (W / 2 - 0.06, 0.2, 1.14), (-W / 2 + 0.06, 0.2, 1.14)]
-    part.add_grid(4, 4, lambda u, v: tuple(Vector(ws[0]).lerp(Vector(ws[1]), u).lerp(
-        Vector(ws[3]).lerp(Vector(ws[2]), u), v) + Vector((0, 0, 0.012 * math.sin(u * math.pi)))),
-        p.get('glassMat', 'glass_rain'))
-    if p.get('wipers', True):
-        for x in (-0.35, 0.2):
-            w = Part(f'sedan_interior.wiper_{"d" if x < 0 else "p"}', rng)
-            w.add(tube([(0, 0, 0), (0.45, -0.02, 0.2)], 0.006, section=rect_section(0.012, 0.006, 0.002)), 'rubber_black')
-            w.add(tube([(0.05, -0.02, 0.03), (0.5, -0.03, 0.23)], 0.005, section=rect_section(0.01, 0.01, 0.002)),
-                  'rubber_black')
-            w.extras = {'part': 'wiper', 'pivot_at': 'spindle', 'sweep_deg': 95}
-            part.children.append((w, T((x - 0.2, 0.8, 0.86))))
-    mir = Part('sedan_interior.mirror', rng)
-    mir.add(tube([(0, 0, 0), (0, 0.02, -0.06)], 0.006, sides=6), 'rubber_black')
-    mir.add(box(0.22, 0.03, 0.06, 0.02, 2), 'rubber_black', T((0, 0.0, -0.09)))
-    mir.add(box(0.2, 0.003, 0.045, 0.01, 1), 'glass_grimy', T((0, -0.016, -0.09)))
-    part.children.append((mir, T((0.0, 0.28, 1.13))))
-    anchor(part, 'sedan_interior.air_freshener_mount', (0.0, 0.26, 1.03), {'mount': 'air_freshener'})
-    # driving gloves left on the passenger seat
-    gl = p.get('gloveMat', 'leather_worn')
-    for k in range(2):
-        g = box(0.1, 0.2, 0.025, 0.012, 3, cuts={1: 3}, base=True)
-        jitter(g, 0.006, freq=12.0, seed=rng.randint(0, 999))
-        part.add(g, gl, T((0.35 + 0.03 * k, -0.08 + 0.05 * k, 0.345 + 0.02 * k), (0, 0, rng.j(0.4))))
-    part.extras.update({'trim': trim, 'alt_trim': str(p.get('altTrim', '')), 'nose': '+y (dash front faces -y)'})
     return [part]

@@ -24,11 +24,18 @@ import bpy
 
 from lib.scene import CACHE, REPO, SHARED, job_args, log, reset, result, select, write_json
 from lib import export as gexport
-from props import kit, registry
+from props import kit, registry, wear
 from props import lightmap as plm
 
 TIERS = ('low', 'medium', 'max')
 ARGS = job_args()
+# --export-dir <scratch dir>: write GLBs/report there only (never public/assets or .cache/props) — measurement runs
+EXPORT_DIR = (REPO / ARGS['export_dir']) if isinstance(ARGS.get('export_dir'), str) else None
+wear.ENABLED = not ARGS.get('no_wear')   # props only: the house/corridor jobs import kit.py with wear OFF
+if ARGS.get('no_loops'):
+    wear.LOOPS = False
+# props-only glTF override: the 'wear' colour attribute -> COLOR_0 (docs/PROPS-FINISH.md §5.1); COMMON stays NONE
+WEAR_EXPORT = dict(export_vertex_color='NAME', export_vertex_color_name=wear.ATTR, export_all_vertex_colors=False)
 
 
 def _local_name(ob):
@@ -38,6 +45,8 @@ def _local_name(ob):
 def build_variant(type_id, params, coll, pos=(0, 0, 0), yaw=0.0):
     key = registry.variant_key(type_id, params)
     seed = registry.seed_for(key)
+    wear.CURRENT_TYPE = type_id
+    wear.CURRENT_KEY = key
     # path props (bell_wire, door_rope) need the placement to express absolute plan paths relative to their origin
     parts = registry.parts(type_id, dict(params or {}, _pos=list(pos), _yaw=float(yaw)), seed)
     roots = []
@@ -104,14 +113,31 @@ def low_lod(objs):
             continue
         me = o.data
         n = sum(len(p.vertices) - 2 for p in me.polygons)
-        if n < LOW_DECIMATE['min_tris']:
+        # per-part overrides (extras low_ratio / low_min_tris): far, glare-lit roadside props (props/roadside.py)
+        if n < float(o.get('low_min_tris', LOW_DECIMATE['min_tris'])):
             continue
+        if me.name not in done and o.get('lod_twig_from'):
+            # trees (props/trees.py): drop the twig/spur tail instead of collapsing thin tubes into spikes
+            import bmesh
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            bm.faces.ensure_lookup_table()
+            cut = int(o['lod_twig_from'])
+            bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.index >= cut], context='FACES')
+            new = bpy.data.meshes.new(me.name + '_low')
+            bm.to_mesh(new)
+            bm.free()
+            for m in me.materials:
+                new.materials.append(m)
+            done[me.name] = new
+            before += n
+            after += sum(len(p.vertices) - 2 for p in new.polygons)
         if me.name not in done:
             t = bpy.data.objects.new('__lod_' + me.name, me)
             tmp_coll.objects.link(t)
             md = t.modifiers.new('dec', 'DECIMATE')
             md.decimate_type = 'COLLAPSE'
-            md.ratio = LOW_DECIMATE['ratio']
+            md.ratio = float(o.get('low_ratio', LOW_DECIMATE['ratio']))
             md.use_collapse_triangulate = True
             dg = bpy.context.evaluated_depsgraph_get()
             new = bpy.data.meshes.new_from_object(t.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
@@ -130,7 +156,59 @@ def low_lod(objs):
     return {'meshes': len(done), 'tris_before': before, 'tris_after': after}
 
 
+def low_dissolve_loops(objs):
+    """Low tier, non-HERO meshes: dissolve the coplanar support rings again (planar limited dissolve, 0.5°,
+    delimited by UV seams/materials/sharp edges so UV0/UV2 island borders stay exact). Returns verts before/after."""
+    import bmesh
+    import math as _m
+    done, before, after = set(), 0, 0
+    for o in objs:
+        if o.type != 'MESH' or o.data.name in done or o.get('decal'):
+            continue
+        root = o
+        while root.parent is not None:
+            root = root.parent
+        if root.get('prop_type') in wear.HERO:
+            continue
+        done.add(o.data.name)
+        me = o.data
+        before += len(me.vertices)
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bmesh.ops.dissolve_limit(bm, angle_limit=_m.radians(0.5), use_dissolve_boundaries=False,
+                                 verts=list(bm.verts), edges=list(bm.edges), delimit={'UV', 'MATERIAL', 'SHARP'})
+        bm.to_mesh(me)
+        bm.free()
+        after += len(me.vertices)
+    log(f'low dissolve: {before} -> {after} verts')
+    return {'verts_before': before, 'verts_after': after}
+
+
+def strip_low_wear(objs):
+    """Low tier: only HERO props keep the 'wear' attribute (PROPS-FINISH §1.5). Runs after the Medium/Max export,
+    so removing it from shared mesh data is safe. Returns the vertex counts kept/stripped."""
+    kept, stripped, done = 0, 0, set()
+    for o in objs:
+        if o.type != 'MESH' or o.data.name in done:
+            continue
+        done.add(o.data.name)
+        root = o
+        while root.parent is not None:
+            root = root.parent
+        attr = o.data.color_attributes.get(wear.ATTR)
+        if attr is None:
+            continue
+        if root.get('prop_type') in wear.HERO:
+            kept += len(o.data.vertices)
+        else:
+            stripped += len(o.data.vertices)
+            o.data.color_attributes.remove(attr)
+    log(f'low wear: kept on {kept} HERO verts, stripped from {stripped}')
+    return {'kept_verts': kept, 'stripped_verts': stripped}
+
+
 def main():
+    wear.color_meshopt_patch()       # props exports only: meshopt-compress COLOR_0 (8.0 -> ? B/vert)
     layout = json.loads((SHARED / 'level-layout.json').read_text())
     only = set(ARGS['types'].split(',')) if isinstance(ARGS.get('types'), str) else None
     reset()
@@ -166,7 +244,8 @@ def main():
             skipped[pl['id']] = registry.HOUSE_BUILT[t]
             continue
         objs = instance(pl, variants[key], inst_coll)
-        by_ms.setdefault(pl.get('milestone', 'M2'), []).append(objs)
+        # the County Road 9 opening set (room RC9) ships as its own library: props_road.glb (docs/C1-OPENING.md §6.3)
+        by_ms.setdefault('ROAD' if pl.get('room') == 'RC9' else pl.get('milestone', 'M2'), []).append(objs)
         placed.append((pl, objs))
 
     # budgets
@@ -197,15 +276,16 @@ def main():
     files = {}
     if not ARGS.get('no_export'):
         var_coll.hide_viewport = False
-        stage = CACHE / 'props'
+        stage = EXPORT_DIR or (CACHE / 'props')
+        stage.mkdir(parents=True, exist_ok=True)
         for ms, groups in sorted(by_ms.items()):
             objs = [o for g in groups for o in g]
             name = f'props_{ms.lower()}.glb'
             p = stage / name
-            size = gexport.export_glb(p, objs, preset='static')
+            size = gexport.export_glb(p, objs, preset='static', **WEAR_EXPORT)
             info = gexport.inspect_glb(p)
             files[name] = {'bytes': size, 'meshes': len(info['meshes']), 'roots': len(groups)}
-            for tier in ('medium', 'max'):
+            for tier in (() if EXPORT_DIR else ('medium', 'max')):
                 dst = REPO / 'public' / 'assets' / tier / name
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(p, dst)
@@ -215,22 +295,27 @@ def main():
         # Low tier: decimated copies of the big non-lightmapped meshes
         low = low_lod([o for g in by_ms.values() for grp in g for o in grp])
         report['low_lod'] = low
+        report['low_wear'] = strip_low_wear([o for g in by_ms.values() for grp in g for o in grp])
+        if ARGS.get('low_dissolve'):
+            report['low_dissolve'] = low_dissolve_loops([o for g in by_ms.values() for grp in g for o in grp])
         for ms, groups in sorted(by_ms.items()):
             objs = [o for g in groups for o in g]
             name = f'props_{ms.lower()}.glb'
             p = stage / f'low_{name}'
-            size = gexport.export_glb(p, objs, preset='static')
+            size = gexport.export_glb(p, objs, preset='static', **WEAR_EXPORT)
             files[name]['low_bytes'] = size
-            dst = REPO / 'public' / 'assets' / 'low' / name
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(p, dst)
+            if not EXPORT_DIR:
+                dst = REPO / 'public' / 'assets' / 'low' / name
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(p, dst)
             log(f'exported low {name}: {size / 1024:.0f} KiB')
     report['files'] = files
-    write_json(CACHE / 'props' / 'props.json', report)
+    report['wear'] = {f'{t}/{n}': v for (t, n), v in sorted(wear.STATS.items(), key=lambda kv: str(kv[0]))}
+    write_json((EXPORT_DIR or (CACHE / 'props')) / 'props.json', report)
 
     # review renders
     renders = []
-    if not ARGS.get('no_render'):
+    if not ARGS.get('no_render') or ARGS.get('render'):
         from props import preview
         for o in inst_coll.objects:
             o.hide_render = True
@@ -239,6 +324,14 @@ def main():
         items = []
         for key, v in sorted(variants.items(), key=lambda kv: (kv[1]['type'], kv[1]['first'])):
             fname = f"{v['type']}__{v['first']}.png"
+            if ARGS.get('wear_tiles'):     # PROPS-FINISH §6.2: beauty + 4 mask channels in one row per prop
+                stem = (EXPORT_DIR or shots) / 'wear' / f"{v['type']}__{v['first']}"
+                tiles = preview.render_wear(studio, v['objs'], stem, shot=registry.REGISTRY[v['type']].get('preview'))
+                if tiles:
+                    preview.contact_sheet([(t, f"{v['type']} {t.stem.split('_')[-1]}", '') for t in tiles],
+                                          Path(f'{stem}_sheet.png'), cols=5, thumb=256)   # 512/256: whole render
+                    renders.append(f'{stem}_sheet.png')
+                continue
             dims = studio.render(v['objs'], shots / fname, shot=registry.REGISTRY[v['type']].get('preview'))
             if dims is None:
                 continue

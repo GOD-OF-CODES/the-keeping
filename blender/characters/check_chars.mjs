@@ -28,7 +28,7 @@ const SPEC = {
   harlan: { bones: [...CORE, 'cleaver'], prefixes: ['sack_', 'apron_'], morphs: {},
     meshes: ['harlan_body', 'harlan_shirt', 'harlan_trousers', 'harlan_boots', 'harlan_gloves', 'harlan_apron', 'harlan_suspenders',
       'harlan_sack', 'harlan_twine', 'harlan_void', 'harlan_cleaver', 'harlan_cleaver_handle'], maxTris: 75000, textures: ['harlan_albedo.webp', 'harlan_normal.png'] },
-  arms: { bones: ARMS, prefixes: [], morphs: {}, meshes: ['arms_gloves', 'arms_sleeves', 'arms_flashlight', 'arms_flashlight_lens'], maxTris: 40000,
+  arms: { bones: ARMS, prefixes: [], morphs: {}, meshes: ['arms_gloves', 'arms_sleeves', 'arms_flashlight', 'arms_flashlight_lens', 'arms_flashlight_switch', 'arms_glove_snaps', 'arms_coat_buttons'], maxTris: 48000,
     textures: ['arms_albedo.webp', 'arms_normal.png'] },
 };
 

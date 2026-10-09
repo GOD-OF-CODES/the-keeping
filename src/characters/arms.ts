@@ -5,12 +5,39 @@
 // hide push, freeze) crossfaded back to idle, breath-hold loop while Space is held.
 
 import * as THREE from 'three/webgpu';
+import { mix, normalWorld, reflectVector, roughness, smoothstep } from 'three/tsl';
 import type { LoadedCharacter } from './loader.ts';
+import { TORCH_POOL, torchPoolRadiance } from '../render/flashlight-bounce.ts';
+import { SKY_U, skyIrradiance, skyRadiance } from '../world/atmosphere.ts';
+
+/**
+ * Round 3 (R2-3): the arms' own environment. They rendered as black cut-outs in every torch view: the barrel is
+ * metal and the glove/snaps glossy, but nothing gave them anything to reflect, and the hand's back faces away from
+ * the bounce spot. Radiance = the torch's lit pool (render/flashlight-bounce.ts TORCH_POOL) + outdoors the overcast
+ * sky along the lobe's dominant direction; irradiance = the analytic sky once the camera is beyond the exterior probe
+ * grid (inside it the grid lights them, as before), plus indoors the torch's interreflected fill (TORCH_POOL.fill). Candles / lamps / probes stay in the LightsNode (story-runtime).
+ */
+class ArmsEnvNode extends (THREE as any).LightingNode {
+  setup(builder: any): void {
+    const ctx = builder.context;
+    const a2 = roughness.mul(roughness);
+    const d = mix(reflectVector, normalWorld, a2).normalize();
+    const w = roughness.mul(0.35).add(0.03);
+    const sky = mix(SKY_U.ground, skyRadiance(d), smoothstep(w.negate(), w, d.y)).mul(SKY_U.outside);
+    // the room's interreflected field is (near) isotropic: it lights the diffuse (E) AND is what the glossy leather /
+    // snaps / barrel reflect wherever the pool isn't in their lobe (L = E/π) — the worn edges' sheen in torch views
+    const fill = TORCH_POOL.fill.mul(TORCH_POOL.gain).mul(SKY_U.outside.oneMinus());
+    ctx.radiance.addAssign(torchPoolRadiance().add(sky).add(fill.mul(1 / Math.PI)));
+    ctx.irradiance.addAssign(skyIrradiance(normalWorld).mul(SKY_U.beyondGrid).add(fill));
+  }
+}
 
 const ONE_SHOTS = new Set(['arms_flashlight_toggle', 'arms_knock', 'arms_bell_pull', 'arms_door_rattle', 'arms_freeze', 'arms_hide_push', 'arms_key', 'arms_pickup_read', 'arms_pry_board', 'arms_cut_hem', 'arms_raise_locket', 'arms_slide_bolt', 'arms_pour_can']);
 
 export class FpArms {
   readonly c: LoadedCharacter;
+  /** The uniforms of the arms' environment (ArmsEnvNode), for the ?debug console. */
+  readonly env = { pool: TORCH_POOL, sky: SKY_U };
   readonly mixer: any;
   private readonly actions = new Map<string, any>();
   private base = 'arms_idle';
@@ -32,6 +59,8 @@ export class FpArms {
       m.receiveShadow = false;
       m.renderOrder = 5;
     }
+    const env = () => new ArmsEnvNode();
+    for (const m of c.materials) if (!m.isMeshBasicNodeMaterial) m.setupEnvironment = env;
     parent.add(c.root);
     this.mixer = new THREE.AnimationMixer(c.root);
     this.mixer.addEventListener('finished', (e: any) => {

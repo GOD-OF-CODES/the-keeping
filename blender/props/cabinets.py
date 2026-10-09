@@ -189,8 +189,8 @@ def coat_hooks(p, rng):
     part.add(box(0.9, 0.022, 0.12, 0.004, 2), 'wood_raw_plank', T((0, -0.011, 0)))
     for k, x in enumerate((-0.32, -0.11, 0.11, 0.32)):
         hk = [(x, -0.022, 0.02), (x, -0.07, 0.0), (x, -0.085, 0.03), (x, -0.075, 0.05)]
-        part.add(tube(fillet(hk, 0.015, 4), 0.005, sides=6, radii=[1.2, 1.0, 0.9, 0.8]), 'cast_iron')
-        part.add(tube([(x, -0.03, 0.0), (x, -0.06, -0.05), (x, -0.07, -0.06)], 0.0045, sides=6), 'cast_iron')
+        part.add(tube(fillet(hk, 0.015, 4), 0.005, sides=16, radii=[1.2, 1.0, 0.9, 0.8]), 'cast_iron')
+        part.add(tube([(x, -0.03, 0.0), (x, -0.06, -0.05), (x, -0.07, -0.06)], 0.0045, sides=16), 'cast_iron')
     items = str(p.get('items', ''))
     if 'oilskin' in items:   # coat hung by its loop, back to the wall: shoulders run along x
         coat = Part('tmp', rng)

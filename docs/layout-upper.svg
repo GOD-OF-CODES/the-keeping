@@ -176,6 +176,8 @@
 <text x="225.7" y="1116.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#1f618d">PUMP_PHOTO</text>
 <rect x="245.5" y="1243" width="7" height="7" fill="#444"/><line x1="249.0" y1="1246.5" x2="280.5" y2="1246.5" stroke="#444" stroke-width="1.2"/>
 <text x="254" y="1242.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444">HALL_CONSOLE_U1</text>
+<rect x="340" y="886" width="7" height="7" fill="#7d3c98"/><line x1="343.5" y1="889.5" x2="343.5" y2="921.0" stroke="#7d3c98" stroke-width="1.2"/>
+<text x="348.5" y="885.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#7d3c98">CANDLE_LANDING</text>
 <rect x="1012" y="1001.5" width="7" height="7" fill="#444"/><line x1="1015.5" y1="1005.0" x2="1015.5" y2="1036.5" stroke="#444" stroke-width="1.2"/>
 <text x="1020.5" y="1001" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444">BED</text>
 <rect x="901.8" y="925.9" width="7" height="7" fill="#444"/><line x1="905.3" y1="929.4" x2="905.3" y2="960.9" stroke="#444" stroke-width="1.2"/>
@@ -238,8 +240,9 @@
 <circle cx="406.5" cy="1498.5" r="6" fill="#85c1e9" stroke="#b7950b" stroke-width="1"/><text x="413.5" y="1508.5" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">LTN_U1S 800W flash</text>
 <circle cx="1267.5" cy="1236.0" r="6" fill="#85c1e9" stroke="#b7950b" stroke-width="1"/><text x="1274.5" y="1246" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">LTN_U2E 800W flash</text>
 <circle cx="1267.5" cy="616.5" r="6" fill="#85c1e9" stroke="#b7950b" stroke-width="1"/><text x="1274.5" y="626.5" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">LTN_U3E 800W flash</text>
+<circle cx="343.5" cy="889.5" r="6" fill="#f4d03f" stroke="#b7950b" stroke-width="1"/><text x="350.5" y="899.5" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">CANDLE_LANDING 12W bake_flicker</text>
 <circle cx="916.8" cy="917.9" r="6" fill="#f4d03f" stroke="#b7950b" stroke-width="1"/><text x="923.8" y="927.9" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9a7d0a">LAMP_U2 60W bake_flicker</text>
-<circle cx="564.0" cy="931.5" r="5" fill="none" stroke="#1abc9c" stroke-width="2"/><line x1="564.0" y1="931.5" x2="501.0" y2="931.5" stroke="#1abc9c" stroke-width="2"/><text x="558" y="924.5" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#117a65" text-anchor="end">H_ARMOIRE</text>
+<circle cx="545.1" cy="905.3" r="5" fill="none" stroke="#1abc9c" stroke-width="2"/><line x1="545.1" y1="905.3" x2="482.1" y2="905.3" stroke="#1abc9c" stroke-width="2"/><text x="539.1" y="898.3" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#117a65" text-anchor="end">H_ARMOIRE</text>
 <circle cx="644.9" cy="1173.0" r="5" fill="none" stroke="#1abc9c" stroke-width="2"/><line x1="644.9" y1="1173.0" x2="707.9" y2="1173.0" stroke="#1abc9c" stroke-width="2"/><text x="638.9" y="1166" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#117a65" text-anchor="end">H_COATS</text>
 <circle cx="742.5" cy="443.3" r="5" fill="none" stroke="#1abc9c" stroke-width="2"/><line x1="742.5" y1="443.3" x2="742.5" y2="506.2" stroke="#1abc9c" stroke-width="2"/><text x="736.5" y="436.3" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#117a65" text-anchor="end">H_ADA_WARDROBE</text>
 <polygon points="485.2,968.2 497.8,914.7 472.7,914.7" fill="#2c3e50"/><text x="481.3" y="945.5" font-family="Helvetica, Arial, sans-serif" font-size="9" font-weight="bold" fill="#2c3e50" text-anchor="end">CP3</text>

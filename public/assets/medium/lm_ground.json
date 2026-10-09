@@ -4,8 +4,8 @@
   "colorSpace": "linear",
   "atlas": "ground",
   "tier": "medium",
-  "width": 2048,
-  "height": 2048,
+  "width": 1024,
+  "height": 1024,
   "container": "klm",
   "codec": null,
   "mantissaBits": 7,
@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.01189,
-    "p99": 0.06949,
-    "max": 7.85747,
-    "coverage": 0.4025
+    "mean": 0.01276,
+    "p99": 0.07094,
+    "max": 7.0895,
+    "coverage": 0.4019
   },
   "file": "lm_ground.klm"
 }

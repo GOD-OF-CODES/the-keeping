@@ -4,19 +4,19 @@
   "colorSpace": "linear",
   "atlas": "exterior",
   "tier": "medium",
-  "width": 2048,
-  "height": 2048,
+  "width": 1024,
+  "height": 1024,
   "container": "klm",
   "codec": null,
   "mantissaBits": 7,
-  "floorExp": 8,
+  "floorExp": 13,
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.01206,
-    "p99": 0.03414,
-    "max": 171.81532,
-    "coverage": 0.4032
+    "mean": 0.00633,
+    "p99": 0.00917,
+    "max": 117.68157,
+    "coverage": 0.393
   },
   "file": "lm_exterior.klm"
 }

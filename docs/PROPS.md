@@ -12,7 +12,8 @@ and peaks at about 1.1 GB RSS.
 |---|---|
 | `public/assets/{medium,max}/props_m1.glb` (≈2.9 MB) | Every `milestone: M1` placement in `level-layout.json` `props[]` |
 | `public/assets/{medium,max}/props_m2.glb` (≈4.2 MB) | Every M2 placement |
-| `public/assets/low/props_m*.glb` | Low LOD: same nodes/extras; non-lightmapped meshes ≥ 1500 tris decimated to 45 % (sedan, wrecks, trees, …) |
+| `public/assets/low/props_m*.glb` | Low LOD: same nodes/extras; non-lightmapped meshes ≥ 1500 tris decimated to 45 % (sedan, wrecks, trees, …). A part may override this with extras `low_ratio` / `low_min_tris` (the opening set, `sedan_interior-shell_details` 0.32) |
+| `public/assets/*/props_road.glb` | Every placement in room `RC9` (County Road 9 set, `lighting:'dynamic'`, no lightmap): see *Opening set* below |
 | `.cache/props/props.json` | Per-variant triangle counts, budgets, placements, skipped ids, `lightmap`, `low_lod` |
 | `.cache/props/props.blend` | The placed instances with their Lightmap UVs (the bake jobs append them) |
 | `.cache/props/lightmap.json` | Per-atlas props-band packing: islands, fill, texel/m, placements |
@@ -57,6 +58,33 @@ and peaks at about 1.1 GB RSS.
 - UV0 is in **metres**: a box projection in each primitive's local frame, with u along its longest axis, so wood
   grain follows planks.
 - Runtime repeat = `1 / tileMetres`. `check_props` measures uv/surface area at 0.995.
+
+**Wear masks: COLOR_0 (round D finishing, docs/PROPS-FINISH.md §5, CONTRACT-CHANGES #59/#60)** — `blender/props/wear.py`
+- Blender `wear` attribute (BYTE_COLOR, POINT; linear values) → glTF `COLOR_0` VEC4 UNSIGNED_SHORT normalized → three
+  `geometry.attributes.color` (Uint16Array, itemSize 4, normalized). Read it with `attribute('color','vec4')`,
+  never `vertexColor()` (white when absent).
+- Channels 0..1 (0 = pristine), already × the prop's scalars (`wear.SCALARS`, §3.2): **R edge** (convex curvature:
+  full at ≤ 2.5 mm radius, none at ≥ 10 mm — counted only within 3 edge hops of a real ≥ 4 mm face, so thin round
+  sections (chain links, shear bows, wire) are not 'all edge' — or a 45→75° hard edge; vertices of real faces carry 0), **G cavity** (8-ray occlusion within 3 cm, or
+  concave curvature; + soot near `wear_soot` anchors), **B handled** (Gaussians around `wear_handle` anchors),
+  **A dust** (n_z 0.35→0.85 × open to +Z × (1 − B)). `wear_protect` anchors subtract from R and A.
+- Which meshes: every prop part (Medium/Max) except decal children and print canvases (`extras.print`), trees (`sharp_angle` override) and parts
+  that are all glass/skin/hair. **Low: only `wear.HERO` props** (rows 1–20); `check_props` fails a non-HERO mask on Low.
+- **Glass in a mixed mesh carries COLOR_0 = 0**: the exporter gives the attribute to every primitive of a mesh that
+  has it, so the runtime must gate wear by material family too, not by the attribute alone.
+- Anchors (`wear_handle {r}`, `wear_soot {r, up}`, `wear_protect {r}`) are consumed by the bake and never exported.
+- Geometry finishing applied with it (props builds only; `wear.ENABLED` is off for the house/corridor jobs):
+  support loops (planar faces next to a ≥ 20° edge inset by 8 / 5 / 3 / 2 mm by part size) on `wear.LOOP_TYPES`
+  only (HERO minus sedan_interior/dress_dummy — loops on every prop cost +25–250 % tris: rag_rug 9k→27k,
+  bricked_doorway 12k→45k) and an applied `WEIGHTED_NORMAL` (FACE_AREA, weight 50, keep sharp) on every finished
+  part, so the runtime `toCreasedNormals` pass is no longer needed for props.
+- Size: values quantised to 16 levels per channel and COLOR_0 meshopt-encoded by `wear.color_meshopt_patch()` (Blender
+  5.2's exporter writes COLOR_n raw, bypassing EXT_meshopt: 8.0 → 1.9 B/vert measured).
+- `check_props` (wear contract): unorm16×4, no COLOR_0 on decal/print canvases, every masked primitive resolves a spec
+  `material_id`, Low non-HERO has none; warns when the AREA-weighted edge mean of a prop > 0.25 (a vertex mean
+  over-reports bevel-dense thin props) or dust > 2 % on downward faces.
+- Tools: manual job `props-wear-review` (scratch only: `--job-args="--types a,b [--render --wear-tiles]"`) renders
+  beauty + edge/cavity/handled/dust tiles; `scratch/props-wear/inspect.mjs` prints COLOR_0 bytes and channel means.
 
 **Decal and canvas children** (quads with normalised 0–1 UV, `userData.decal`)
 - Styles: `sign_painted`, `hand_lettered`, `stencil`, `road_sign`, `plate`, `chalk`, `handwriting`, `photo`,
@@ -142,6 +170,26 @@ runtime then needs nothing new: same lightmap file, same per-atlas lights node, 
 - `fx_drip_emitter` and `harlan_pose_marker` are runtime-only and have no mesh.
 - Doors (`doors[]`, including Ada's 3 boards and the passage bolt) are the house kit's `doors.glb`.
 
+## Opening set (docs/C1-OPENING.md §6.2–6.3)
+
+Nodes the runtime looks up by name (`<placement id>-<part>`). Nothing existing was renamed.
+- `sedan` (hero only, not the wrecks): `-cabin_lo` (low cabin; `hide_when`), `-light_low_l/_r`, `-light_hi_l/_r`
+  (anchors, `light`, `aim_local` node-local / `aim_car`), `-tail_l/_r` (`lamp:'tail'`, `chambers: 3`),
+  `-hood_steam` (`fx`), `-driver_proxy` (`hide_in:'pov'`, `driver`, `faceless`; dark silhouette, no face, probe-lit:
+  show it only in exterior shots and hide it once the player steps out).
+- `logging_truck` (`P_RC9_TRUCK`): `-axle_1..5` (`part:'wheel'`, `spin_axis` [1,0,0], `radius` 0.52), `-hi_l/_r`
+  (`lamp:'head'`, `beam:'high'`, `lm` 1500, `kelvin` 3300, `aim_local`), `-clearance`, `-markers`, `-tail`
+  (`lamp`, `emissive_color`), `-logs`, anchors `-spray_l/_r`.
+- `deer` (`P_RC9_DEER_1..3`, one shared mesh): `-deer-head` (`turn_joint:'neck'`, `yaw_param:'headYaw'`) with
+  anchors `-deer-eye_l/_r` (`eye_glint`, `glint_color`). Per-deer values are NOT on the shared nodes: read
+  `headYaw` and `pose` from the root's `params` JSON and turn the head node about its local up axis.
+- `billboard`: `-billboard-face` (decal `billboard`, two text layers), `-billboard-peel` (`flutter`, `peel_strips`:
+  weight the flutter by height above the bottom so the fallen sheets stay put).
+- `diner`: `-diner-payphone` (`no_handset`). `eat_sign`: `-eat_sign-neon`, `-neon_back` (`neon`, `neon_color`,
+  `lit:false`).
+- `road_card` hero (`P_RC9_NEXT_SERVICES`), `county_shield` (`P_RC9_CR9_A/B`): decal styles `guide_green` and
+  `county_shield` (the latter is new for `src/world/decals.ts`).
+
 ## Open issues
 
 - **Material gaps.** Stand-ins are marked in extras:
@@ -159,7 +207,11 @@ runtime then needs nothing new: same lightmap file, same per-atlas lights node, 
 - **Weak items:**
   - `coat_hooks` oilskin and the wardrobe coats are sack-like.
   - Brooms in `closet_interior` are crude.
-  - `dead_tree` branching is sparse at distance.
+  - `dead_tree` (`trees.py`): recursive bare deciduous trees (pipe model, phyllotaxis, gravitropism, snapped
+    limbs). Styles `oak`, `elm` (the layout's hero trees) and, for the treeline, `ash`, `hedge`, `snag`, `shrub`
+    (params `style`, `r0` radius override, `fitHeight: false` keeps a snag's broken height). 1.8 mm spurs (order 5)
+    are grown for the random stream but not emitted (`emitOrder` 4: sub-pixel beyond ~2 m); the hero cap is 64k
+    triangles (was 80k with spurs) so the twigs that read keep their density inside the 1.5 M view budget.
   - `claw_hammer` claw is long.
   - `rag_rug` is a single spiral with no colour bands (bands are a runtime texture).
   - `dust_sheet` and `rubber_sheet` drape procedurally with no cloth sim.
@@ -175,3 +227,23 @@ runtime then needs nothing new: same lightmap file, same per-atlas lights node, 
   the house surfaces (same lights node) — consistent. Dynamic props stay probe-lit.
 - The exterior props band packs at only ~21 % fill (long fence rails/pole limit the shelf scale); density still
   matches the facade (23 vs 19 texel/m @1024).
+
+## First-person arms: car clips + close-up gloves (round C, docs/C1-OPENING.md §7.1/§10.9)
+Built by `characters` (`--only arms`) + `anims` into `arms.glb` (every tier). Existing clip names are unchanged.
+
+| Clip | s | What happens (camera space = car − driver eye (−0.35, −0.05, 1.12)) |
+|---|---|---|
+| `arms_wheel` (loop) | 3.0 | Now BOTH hands IK onto the rim at ten-to-two (rim r 0.1765 m, hub car (−0.37, 0.42, 0.80), column tilt 25°); the runtime hides the torch mesh in the car. |
+| `arms_radio_seek` | 2.4 | Right index presses SEEK (radio_seek_up) at 0.8 s and 1.3 s, back on the rim by 2.4 s. |
+| `arms_headlamp_knob` | 1.6 | Left thumb+index pull the push-pull knob out 12 mm (click 0.85 s); play reversed for off. |
+| `arms_stalk_flick` | 1.0 | Left fingers flick the turn/high-beam stalk toward the driver at 0.45 s. |
+| `arms_brace` | 1.2 | Hands clamp the rim at quarter-to-three by 0.25 s, arms locked, tremble; clamp the last frame. |
+| `arms_map` | 6.0 | Map on socket **`prop_l`** (attach 0.6 s, detach 5.8 s): picked off the bench 0–1.2, unfolded against the upper rim 1.2–2.8, right index traces 2.8–5.0, lowered 5.0–6.0. |
+
+- Socket `prop_l` (child of `hand_l`): the map's left-edge pinch; in the map hold +X runs along the map toward its
+  centre, +Y away from the player (printed face looks back at the eye), +Z up the sheet (`clips_arms.map_socket_rest`).
+- Torch hold: the grip is rolled −28° about the barrel (`skeleton.ARMS.hold_roll_deg`), so the barrel/bezel show beside
+  the knuckles; the beam direction is unchanged.
+- Gloves: chestnut calf driving gloves, perforated finger backs, **knuckle holes** over the four MCP knuckles (bound
+  edge + stitch row, skin inside), wrist vent + snap tab. Fingers are a per-finger smooth union, hard-unioned to each
+  other (`body.hand_sdf(sharp_fingers=True)`), 1.1 mm voxels, 12k tris per glove.

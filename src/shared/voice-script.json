@@ -93,6 +93,45 @@
    "milestone": "M1"
   },
   {
+   "id": "c1_preacher",
+   "speaker": "driver",
+   "text": "[flat, tired, to the radio] Nothing. Not even a preacher.",
+   "subtitle": "Nothing. Not even a preacher.",
+   "beat": "B01",
+   "trigger": "c1:radio_seek",
+   "chain": "in_head",
+   "kind": "line",
+   "variants": 1,
+   "priority": 5,
+   "milestone": "M1"
+  },
+  {
+   "id": "c1_interstate",
+   "speaker": "driver",
+   "text": "[under his breath, finger on the map] Should've stayed on the interstate.",
+   "subtitle": "Should've stayed on the interstate.",
+   "beat": "B01",
+   "trigger": "c1:map",
+   "chain": "in_head",
+   "kind": "line",
+   "variants": 1,
+   "priority": 5,
+   "milestone": "M1"
+  },
+  {
+   "id": "c1_dim",
+   "speaker": "driver",
+   "text": "[squinting, sharp] Dim your lights—",
+   "subtitle": "Dim your lights—",
+   "beat": "B01",
+   "trigger": "c1:truck",
+   "chain": "in_head",
+   "kind": "line",
+   "variants": 1,
+   "priority": 7,
+   "milestone": "M1"
+  },
+  {
    "id": "b02_hello",
    "speaker": "driver",
    "text": "[raising his voice over the rain, hesitant] Hello? [short pause] ...Sorry to bother you this late. My car ran out of gas.",

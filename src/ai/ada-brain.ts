@@ -10,7 +10,7 @@
 //
 // Rule 1 (no cheating): the player's position is only used through sense checks — hearing (noise events, synthesized
 // post-sprint panting), light (beam cone / beam landing point / flames) and sight (head lifted, cone, range, LOS),
-// plus contact (bump, the 1 m chase grab). The only exception is SCRIPTED B04 (DESIGN: she is *held* 2–4 m behind).
+// plus contact (the chase grab; an UNAWARE bump starts a fast LOOK first and only a bump during sight catches — #67). The only exception is SCRIPTED B04 (DESIGN: she is *held* 2–4 m behind).
 
 import type { LevelLayout, LightDef, P3 } from '../shared/layout-types.ts';
 import { AiGraph, dist3, dist2 } from './graph.ts';
@@ -54,7 +54,7 @@ const PARK: { pos: P3; room: string } = { pos: [5.6, 2.3, 0.6], room: 'G2' };
 const ALWAYS_LOOK = new Set(['U_STAIRTOP', 'U_SWINDOW', 'U2_BEDLOOK', 'G_STAIRFOOT', 'G_KITCHEN_C']);
 const LURE_NODE = 'G_PARLOR_LURE';
 
-type LookReason = 'patrol' | 'investigate' | 'search' | 'hide' | 'beam' | 'chase_lost';
+type LookReason = 'patrol' | 'investigate' | 'search' | 'hide' | 'beam' | 'chase_lost' | 'bump';
 
 interface LookLayer {
   phase: 'windup' | 'sight' | 'lower';
@@ -88,6 +88,11 @@ interface InvLayer {
   t: number;
   dur: number;
   hideId: string | null;
+  /** Route generation: bumped only when a new stimulus really moves the target (keys nav.toPoint). */
+  plan?: number;
+  /** Where the current route was planned to: a new stimulus re-plans only once it is > stimulusReplanM from HERE
+   *  (not from the last stimulus — a creeping source, e.g. footsteps < 1 m apart, must still pull her along). */
+  planPos?: P3;
 }
 
 interface SearchLayer {
@@ -164,6 +169,9 @@ export interface AdaSnapshot {
   escalation: number;
   assist: { slow: boolean; finaleWait: boolean };
   graceT: number;
+  /** Optional for saves made before difficulty tuning 2026-10-08. */
+  calmUntil?: number;
+  seenAcc?: number;
   thunder: { from: number; to: number }[];
   firstHideDone: boolean;
   lastSeenT: number;
@@ -248,6 +256,10 @@ export class AdaBrain {
   assist = { slow: false, finaleWait: false };
   /** Time grace started (−∞ = none). */
   graceT = -Infinity;
+  /** Post-cutscene calm (difficulty 2026-10-08): she perceives nothing until this time. */
+  calmUntil = -Infinity;
+  /** Continuous time the player has been in her sight while not chasing (the notice dwell). */
+  seenAcc = 0;
   lastSeenT = -Infinity;
   private pantUntil = -Infinity;
   private runAccum = 0;
@@ -447,6 +459,21 @@ export class AdaBrain {
     return chosen;
   }
 
+  /**
+   * Post-cutscene calm (difficulty 2026-10-08, ROADMAP "Difficulty"): for `seconds` she perceives nothing — no sight,
+   * hearing, beam or contact — and keeps whatever the cutscene left her doing (no relocation). Nobody may be caught
+   * within 6 s of a cutscene ending.
+   */
+  calm(seconds: number = TUNING.grace.calmS): void {
+    this.calmUntil = Math.max(this.calmUntil, this.t + seconds);
+    this.seenAcc = 0;
+    this.noiseQueue = [];
+  }
+
+  get calmActive(): boolean {
+    return this.t < this.calmUntil;
+  }
+
   get graceActive(): boolean {
     return this.t - this.graceT < TUNING.grace.hearingS;
   }
@@ -637,6 +664,13 @@ export class AdaBrain {
       }
     }
 
+    // post-cutscene calm: nothing is perceived (hide bookkeeping above still runs)
+    if (this.calmActive) {
+      this.noiseQueue = [];
+      this.seenAcc = 0;
+      return;
+    }
+
     // hearing
     const h: HearingContext = { links: this.layout.roomLinks, doors, pos: this.nav.pos, room: this.nav.room, mul: this.hearingMul(), masked: this.thunder.isMasked(this.t), portals: this.portals };
     const queue = this.noiseQueue;
@@ -656,8 +690,11 @@ export class AdaBrain {
     if (canReact && !this.chase && p.beam.on) {
       if (!this.look && beamTouches(p.beam, this.chest(), TUNING.light.bodyRadius, this.world.lineOfSight)) {
         if (this.scripted) this.endScripted();
-        this.startLook('beam', this.yawTo(p.beam.origin), true, null, 0);
-      } else if (!this.look && !this.scripted && this.t >= this.beamCooldownT && beamNear(p.beam, this.nav.pos)) {
+        // toward the holder: the lens sits ~0.5 m ahead of the eye. Fast wind-up only when lit up close (difficulty
+        // 2026-10-08: lighting her face up close is a clear mistake; a sweep across the room is a normal LOOK).
+        const close = dist3(this.chest(), p.eye) <= TUNING.look.fastBeamM;
+        this.startLook('beam', this.yawTo(p.eye), close, null, 0);
+      } else if (!this.look && !this.scripted && this.t >= this.beamCooldownT && beamNear(p.beam, this.nav.pos, this.world.lineOfSight, this.chest())) {
         this.beamCooldownT = this.t + TUNING.light.beamInvestigateCooldownS;
         const hit = p.beam.hit!;
         const at: P3 = [hit[0], hit[1], this.nav.pos[2]];
@@ -670,8 +707,13 @@ export class AdaBrain {
     if (lifted) {
       const sc = { headLifted: true, eye: this.eye(), lookYaw: this.lookYawNow, los: this.world.lineOfSight };
       if (!this.finale && !this.caught && seesLocket(sc, p)) this.startFinale();
-      else if (!this.finale && !this.caught && seesPlayer(sc, p, isPlayerLit(p, this.flames))) this.onSeen(p);
-    }
+      else if (!this.finale && !this.caught && seesPlayer(sc, p, isPlayerLit(p, this.flames))) {
+        // notice dwell (difficulty 2026-10-08): a glance across her cone is a near miss; she must hold you in sight
+        // for sight.noticeS (instant within closeM, or once a chase is on) before she comes for you
+        this.seenAcc += dt;
+        if (this.chase || this.seenAcc >= TUNING.sight.noticeS || dist3(this.eye(), p.eye) <= TUNING.sight.closeM) this.onSeen(p);
+      } else this.seenAcc = Math.max(0, this.seenAcc - dt);
+    } else this.seenAcc = 0;
 
     // hide rules: breath at the slats
     const cur = this.hides.current;
@@ -690,7 +732,14 @@ export class AdaBrain {
       const dz = Math.abs(this.nav.pos[2] - p.pos[2]);
       if (dz < 1.2) {
         if (this.chase && !this.assist.finaleWait && dh <= TUNING.chase.catchDist) this.doCatch('chase');
-        else if (!this.scripted && dh <= TUNING.bumpDist) this.doCatch('bump');
+        else if (!this.scripted && dh <= TUNING.bumpDist) {
+          // gameplay review (difficulty): her head-bowed patrol walking into a still, silent player was an instant,
+          // tell-less death (respawned player on her patrol line: bumped ~13 s after the respawn). An UNAWARE bump now
+          // startles her — she stops, the head cracks up (fast wind-up, 1 s) and she looks at you; stay and the look
+          // turns into a chase and the grab. A bump while she is already looking at you (sight phase) still catches.
+          if (this.look && this.look.phase !== 'windup') this.doCatch('bump');
+          else if (!this.look) this.startLook('bump', this.yawTo(p.eye), true, null, 0);
+        }
       }
     }
   }
@@ -722,14 +771,22 @@ export class AdaBrain {
   private stimulus(pos: P3, room: string | null, listen: number | null): void {
     const listenS = listen ?? TUNING.listenS[this.escalation];
     if (this.inv && this.inv.phase !== 'listen') {
+      // the same spot again (a torch held on one wall re-fires every 2.5 s): refresh the timer but keep the route —
+      // re-planning from a free leg walks her back to the nearest graph edge first, and a repeated re-plan made her
+      // oscillate in place forever (B08 stall). A stimulus that moved re-plans as before.
+      const moved = dist3(this.inv.planPos ?? this.inv.pos, pos) > TUNING.stimulusReplanM || this.inv.room !== room;
       this.inv.t0 = this.t;
       this.inv.pos = [...pos] as P3;
       this.inv.room = room;
+      if (this.inv.phase !== 'go' || moved) {
+        this.inv.plan = (this.inv.plan ?? 0) + 1;
+        this.inv.planPos = [...pos] as P3;
+        this.nav.goalKey = '';
+      }
       if (this.inv.phase !== 'go') {
         this.inv.phase = 'go';
         this.inv.t = 0;
       }
-      this.nav.goalKey = '';
       return;
     }
     if (this.inv) {
@@ -838,7 +895,9 @@ export class AdaBrain {
   // =================================================================== layers
 
   private startLook(reason: LookReason, yaw: number, fast: boolean, hideId: string | null, owner: number): void {
-    this.look = { phase: 'windup', t: 0, windup: this.windup(fast), yaw, reason, hideId, owner, seen: false };
+    // a slat look at a hide keeps the short wind-up: windup + sight must stay inside a calm 4.5 s breath hold
+    const windup = reason === 'hide' ? Math.min(this.windup(fast), TUNING.look.windupHide) : this.windup(fast);
+    this.look = { phase: 'windup', t: 0, windup, yaw, reason, hideId, owner, seen: false };
     this.tells.crack = true;
     this.nav.stop();
   }
@@ -897,7 +956,8 @@ export class AdaBrain {
   private tickChase(dt: number, p: PlayerView): [number, AdaAnim, string] {
     const C = this.chase!;
     this.head = 'lifted';
-    if (!C.hideId && this.t - C.lastSenseT > TUNING.chase.lostS) {
+    // lost for lostS, or (difficulty 2026-10-08) she abandons any open chase after giveUpS
+    if (!C.hideId && (this.t - C.lastSenseT > TUNING.chase.lostS || C.burstT > TUNING.chase.giveUpS)) {
       this.chase = null;
       this.head = 'hanging';
       if (this.lureQueued) {
@@ -996,13 +1056,14 @@ export class AdaBrain {
       if (I.t >= I.dur) {
         I.phase = 'go';
         I.t = 0;
+        I.planPos = [...I.pos] as P3;
         this.nav.goalKey = '';
         this.voice('ai:listen_end');
       }
       return [0, 'listen', 'listen', 'LISTEN'];
     }
     if (I.phase === 'go') {
-      this.nav.toPoint(`inv:${I.id}:${I.t0}`, I.pos, I.room, this.doors);
+      this.nav.toPoint(`inv:${I.id}:${I.plan ?? 0}`, I.pos, I.room, this.doors);
       const arrived = this.nav.follow(dt, TUNING.speed.investigate * this.speedMul(), this.doors, this.t, this.events);
       this.noteDoorEvents();
       if (arrived || this.nav.blocked) {
@@ -1347,7 +1408,7 @@ export class AdaBrain {
       case 'look_windup':
         this.head = 'lifting';
         this.lookYawNow = S.lookYaw;
-        if (S.t >= TUNING.look.windup) {
+        if (S.t >= TUNING.look.windupHide) {
           S.phase = 'look_sight';
           S.t = 0;
           S.lookT = 0;
@@ -1428,7 +1489,7 @@ export class AdaBrain {
         this.nav.facing = S.lookYaw;
         this.head = 'lifting';
         this.lookYawNow = S.lookYaw;
-        if (S.t >= this.windup(false)) {
+        if (S.t >= Math.min(this.windup(false), TUNING.look.windupHide)) {
           S.phase = 'look_sight';
           S.t = 0;
           S.lookT = 0;
@@ -1564,6 +1625,8 @@ export class AdaBrain {
       escalation: this.escalation,
       assist: { ...this.assist },
       graceT: Number.isFinite(this.graceT) ? this.graceT : -1e9,
+      calmUntil: Number.isFinite(this.calmUntil) ? this.calmUntil : -1e9,
+      seenAcc: this.seenAcc,
       thunder: c(this.thunder.windows),
       firstHideDone: this.hides.firstHideDone,
       lastSeenT: Number.isFinite(this.lastSeenT) ? this.lastSeenT : -1e9,
@@ -1596,6 +1659,8 @@ export class AdaBrain {
     this.escalation = s.escalation;
     this.assist = { ...s.assist };
     this.graceT = s.graceT;
+    this.calmUntil = s.calmUntil ?? -Infinity;
+    this.seenAcc = s.seenAcc ?? 0;
     this.thunder.windows = c(s.thunder);
     this.hides.firstHideDone = s.firstHideDone;
     this.hides.exit();

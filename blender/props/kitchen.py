@@ -4,7 +4,7 @@ import math
 
 from mathutils import Vector
 
-from .kit import (Part, T, box, cyl, extrude, fillet, jitter, lathe, prop, rect_section, sphere, tube)
+from .kit import (Part, T, anchor, box, cyl, extrude, fillet, jitter, lathe, nail_head, prop, rect_section, screw_head, sphere, tube)
 
 
 @prop('iron_stove', budget=14000)
@@ -39,27 +39,29 @@ def iron_stove(p, rng):
     fd.add(box(0.3, 0.03, 0.2, 0.01, 2), mat, T((0.15, -0.015, 0)))
     for k in range(5):
         fd.add(box(0.012, 0.012, 0.12, 0.003, 1), mat, T((0.06 + k * 0.045, -0.032, 0)))
+    anchor(fd, 'wear_soot', (0.15, -0.03, 0.1), {'r': 0.12, 'up': 0.15})    # smoke-blacked above the draft slots
+    anchor(fd, 'wear_handle', (0.27, -0.035, 0.0), {'r': 0.05})              # latch side, opened with a poker/rag
     fd.extras = {'part': 'fire_door', 'hinge_axis': [0, 0, 1]}
     part.children.append((fd, T((-W / 2 + 0.05, -D / 2, lh + 0.42))))
     part.add(box(0.3, 0.03, 0.12, 0.008, 2), mat, T((-W / 2 + 0.2, -D / 2 - 0.01, lh + 0.14)))
-    part.add(tube([(-W / 2 - 0.02, -D / 2 - 0.07, H - 0.12), (W / 2 + 0.02, -D / 2 - 0.07, H - 0.12)], 0.009, sides=8),
+    part.add(tube([(-W / 2 - 0.02, -D / 2 - 0.07, H - 0.12), (W / 2 + 0.02, -D / 2 - 0.07, H - 0.12)], 0.009, sides=16),
              'chrome_pitted')
     for sx in (-1, 1):
         part.add(tube([(sx * (W / 2 + 0.02), -D / 2 - 0.07, H - 0.12), (sx * (W / 2 - 0.02), -D / 2 + 0.01, H - 0.12)],
-                      0.008, sides=6), 'chrome_pitted')
+                      0.008, sides=12), 'chrome_pitted')
     # high back with warming closet
     part.add(box(W, 0.06, 0.55, 0.008, 2, base=True), mat, T((0, D / 2 - 0.03, H)))
     part.add(box(W, 0.3, 0.3, 0.01, 2, base=True), mat, T((0, D / 2 - 0.13, H + 0.55)))
     for sx in (-1, 1):
         part.add(tube(fillet([(sx * (W / 2 - 0.05), D / 2 - 0.03, H + 0.55), (sx * (W / 2 - 0.05), D / 2 - 0.2, H + 0.45),
-                              (sx * (W / 2 - 0.05), D / 2 - 0.26, H + 0.55)], 0.04, 3), 0.008, sides=6), mat)
+                              (sx * (W / 2 - 0.05), D / 2 - 0.26, H + 0.55)], 0.04, 3), 0.008, sides=12), mat)
     part.add(box(W - 0.08, 0.01, 0.2, 0.004, 1), 'chrome_pitted', T((0, D / 2 - 0.28, H + 0.7)))
     # stovepipe with damper, up to the flue (runs to +y chimney)
     px, py = 0.3, D / 2 - 0.2
     pipe = [(px, py, H + 0.85), (px, py, 2.35), (px, py + 0.45, 2.5)]
     part.add(tube(fillet(pipe, 0.12, 5), 0.075, sides=16), mat)
     part.add(cyl(0.08, 0.02, n=16), mat, T((px, py, H + 1.4)))
-    part.add(tube([(px - 0.11, py, H + 1.3), (px + 0.1, py, H + 1.3)], 0.004, sides=5), mat)
+    part.add(tube([(px - 0.11, py, H + 1.3), (px + 0.1, py, H + 1.3)], 0.004, sides=12), mat)
     part.jitter(0.001, freq=2.0, zmin=0.001)
     part.extras['cold'] = bool(p.get('cold', True))
     return [part]
@@ -82,7 +84,7 @@ def pump_sink(p, rng):
         d.add(box(dw, 0.02, H - 0.24, 0.003, 2), 'wood_raw_plank', T((-sx * dw / 2, -0.01, (H - 0.24) / 2)))
         for k in range(5):
             d.add(box(0.006, 0.004, H - 0.3, 0.001, 1), 'wood_raw_plank', T((-sx * dw * (k + 1) / 6, -0.021, (H - 0.24) / 2)))
-        d.add(tube([(-sx * (dw - 0.04), -0.03, 0.3), (-sx * (dw - 0.04), -0.03, 0.4)], 0.006, sides=6), 'cast_iron')
+        d.add(tube([(-sx * (dw - 0.04), -0.03, 0.3), (-sx * (dw - 0.04), -0.03, 0.4)], 0.006, sides=12), 'cast_iron')
         d.extras = {'part': 'door', 'hinge_axis': [0, 0, 1]}
         part.children.append((d, T((sx * (W / 2 - 0.02), -D / 2 - 0.001, 0.12))))
     # counter + basin
@@ -105,7 +107,7 @@ def pump_sink(p, rng):
     handle.add(sphere(0.016, 8, 6), pm, T((0, 0.33, 0.1)))
     handle.extras = {'part': 'handle', 'pivot_at': 'fulcrum', 'rotate_axis': [1, 0, 0]}
     part.children.append((handle, T((0.3, 0.12, pz + 0.3))))
-    part.add(tube([(0.3, 0.14, pz + 0.26), (0.3, 0.14, pz + 0.32)], 0.012, sides=6), pm)
+    part.add(tube([(0.3, 0.14, pz + 0.26), (0.3, 0.14, pz + 0.32)], 0.012, sides=12), pm)
     # tiled splashback on the wall: 15 cm tiles, a few cracked/misaligned
     ts = 0.15
     for i in range(int(W / ts)):
@@ -119,7 +121,7 @@ def pump_sink(p, rng):
     return [part]
 
 
-@prop('can_shelf', budget=8000)
+@prop('can_shelf', budget=13500)   # 8000 -> 13500: 24-seg cans/jars at 1 m, bracket screws, nail heads (PROPS-FINISH #24)
 def can_shelf(p, rng):
     """Two wall shelves on iron brackets with tin cans, mason jars and a coil of wire. ORIGIN = floor-level centre
     on the wall; shelves at 1.1 and 1.45 m project -y."""
@@ -136,20 +138,25 @@ def can_shelf(p, rng):
             part.add(tube(br, 0.01, section=rect_section(0.006, 0.03, 0.001)), 'cast_iron')
             part.add(tube([(x, -0.005, z - 0.17), (x, -0.17, z - 0.005)], 0.004, section=rect_section(0.005, 0.02)),
                      'cast_iron')
+            for zs in (z - 0.06, z - 0.15):     # two #10 wood screws into the stud per bracket
+                part.add(screw_head(0.0095), 'cast_iron', T((x, -0.003, zs), (math.pi / 2, 0, rng.u(0, 3.1))))
+        for sx in (-1, 1):                       # cut nails through the plank into the end brackets
+            for yy in (-0.06, -0.18):
+                part.add(nail_head(0.005), 'rust', T((sx * (L / 2 - 0.15) + rng.j(0.01), yy, z + 0.025 - 0.006 * 0.1)))
         x = -L / 2 + 0.1
         while x < L / 2 - 0.1:
             kind = rng.random()
             if kind < 0.45:
                 h, r = rng.u(0.1, 0.13), rng.u(0.035, 0.045)
                 part.add(lathe([(0, 0), (r, 0), (r + 0.002, 0.004), (r, 0.01), (r, h - 0.01), (r + 0.002, h - 0.004),
-                                (r, h), (0, h)], n=14), 'zinc_galvanized' if rng.chance(0.6) else 'rust',
+                                (r, h), (0, h)], n=24), 'zinc_galvanized' if rng.chance(0.6) else 'rust',
                          T((x, -0.12 + rng.j(0.04), z + 0.02)))
                 x += 2 * r + rng.u(0.01, 0.06)
             elif kind < 0.75:
                 h, r = 0.17, 0.04
-                part.add(lathe([(0, 0), (r, 0), (r, h * 0.8), (r * 0.8, h * 0.88), (r * 0.8, h), (0, h)], n=14),
+                part.add(lathe([(0, 0), (r, 0), (r, h * 0.8), (r * 0.8, h * 0.88), (r * 0.8, h), (0, h)], n=24),
                          'glass_grimy', T((x, -0.12 + rng.j(0.04), z + 0.02)))
-                part.add(cyl(r * 0.85, 0.015, n=14), 'zinc_galvanized', T((x, -0.12, z + 0.02 + h)))
+                part.add(cyl(r * 0.85, 0.015, n=24), 'zinc_galvanized', T((x, -0.12, z + 0.02 + h)))
                 x += 2 * r + rng.u(0.02, 0.08)
             else:
                 x += rng.u(0.1, 0.3)

@@ -162,6 +162,18 @@ export function woodGrain(c: GenCtx, b: Boards, o: GrainOpts): { late: N; streak
 export const rot45 = (uv: N): N => vec2(uv.x.add(uv.y), uv.x.sub(uv.y));
 
 /**
+ * Octave count for an fbm whose BASE frequency is `freq` cells/tile, capped so the top octave stays at or below the
+ * texel Nyquist limit (size/2 cells). The baker point-samples each texel: anything finer aliases into a regular
+ * lattice that shows as a faint square grid when the tile is magnified ~1:1 (clapboard under the torch, round D).
+ */
+export function nyqOctaves(c: GenCtx, freq: number | [number, number], octaves: number): number {
+  const f = Array.isArray(freq) ? Math.max(freq[0], freq[1]) : freq;
+  let n = octaves;
+  while (n > 1 && f * 2 ** (n - 1) > c.size / 2) n--;
+  return n;
+}
+
+/**
  * Chipped / flaking paint mask: 1 where paint is MISSING. Irregular warped flakes plus small pop-off chips.
  * `amount` 0..1 ≈ area fraction. `sizeM` ≈ flake size in metres.
  */
@@ -195,7 +207,9 @@ export function paintOver(
   o: { color: RGB; under: N; underRough: N; chip: number; chipSizeM: number; gloss: number; dir: 'u' | 'v'; seed: number; thicknessFrac?: number; aniso?: [number, number] },
 ): { albedo: N; rough: N; height: N; chip: N } {
   const along = c.cells(0.25);
-  const across = Math.min(c.cells(0.0025), Math.round(c.size * 0.6));
+  // Brush ridges ≈ 2.5 mm, but both octaves stay at or below the texel Nyquist limit (size/2 cells): the old cap
+  // (0.6·size, octave 2 at 1.2·size) aliased into a regular grid on magnified siding.
+  const across = Math.min(c.cells(0.0025), Math.floor(c.size * 0.25));
   const f: [number, number] = o.dir === 'u' ? [along, across] : [across, along];
   const brush = gn(c.uv, f, o.seed + 21).mul(0.6).add(gn(c.uv, [f[0] * 2, f[1] * 2], o.seed + 22).mul(0.4));
   const mott = fbm(c.uv, c.cells(0.3), 4, o.seed + 23);
