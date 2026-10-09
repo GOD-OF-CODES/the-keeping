@@ -106,15 +106,17 @@ export class Director {
 
   /** Debug: jump to a beat with the flags a normal run would have (then respawn at its checkpoint). */
   startAt(beat: BeatId): void {
+    if (beat === 'B04') beat = 'B05'; // C2-ESCAPE: B04 is the C2c cutscene only — a debug start begins at its end
     this.story.restore(Story.debugStateAt(beat));
     this.brain.clearScripted();
     // before C2 she is offstage (on the table, a cutscene/tableau prop); after C5 she is gone
     const early = beat === 'B01' || beat === 'B02' || beat === 'B03';
     if (early || beat === 'B12' || beat === 'B13') this.brain.setScripted('hidden');
     this.apply(this.story.resumeCommands());
-    if (beat === 'B04' || beat === 'B05') {
-      // the scripted chase normally starts at C2's end: start it as C2 would
-      this.brain.setScripted('b04_chase', { node: 'G_PARLOR_LURE', force: true });
+    if (beat === 'B05') {
+      // C2-ESCAPE: B04 is the C2c cutscene only; a debug start there plays from B05's first frame at the stair top —
+      // her return below (b05_return) starts as C2c's end would start it
+      this.brain.setScripted('b05_return', { node: 'G_PARLOR_LURE', force: true });
     } else if (!early) this.brain.grace(this.host.player().pos, this.host.player().room);
   }
 

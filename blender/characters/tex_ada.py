@@ -58,7 +58,7 @@ def finger_masks(P, J):
     return nail, pad, free_edge, crease
 
 
-def skin(P, N, AO, J, wound_c, seed=101):
+def skin(P, N, AO, J, wound_c, seed=101, cap=None, head_side=False):
     n = len(P)
     base = np.array([0.27, 0.31, 0.36])      # grey-blue (spec avg 0.30/0.32/0.34)
     alb = np.tile(base, (n, 1))
@@ -73,6 +73,15 @@ def skin(P, N, AO, J, wound_c, seed=101):
     rv = noise.ridged(P * np.array([28.0, 28.0, 20.0]), 4, seed + 11)
     vein = ss(0.8, 0.95, rv) * (0.55 + 0.45 * ss(-0.2, 0.4, noise.fbm(P * 8, 2, seed + 12)))
     alb = _mix(alb, [0.1, 0.15, 0.22], vein * 0.7)
+    # REALISM #17 / A11: drowned-body variation — large blotchy mottling (cyanotic patches, paler pressure areas) and
+    # post-mortem venous MARBLING (dark green-grey branching along the superficial veins: neck, shoulders, thighs)
+    mot = noise.fbm(P * 3.2, 3, seed + 41)
+    alb = _mix(alb, [0.30, 0.30, 0.38], ss(0.15, 0.6, mot) * 0.45)
+    alb = _mix(alb, [0.34, 0.36, 0.38], ss(-0.2, -0.6, mot) * 0.35)
+    rm = noise.ridged(P * np.array([11.0, 11.0, 7.0]), 4, seed + 42)
+    zone = ss(1.05, 1.25, z) + ss(0.75, 0.55, z) * ss(0.35, 0.5, z)
+    marb = ss(0.86, 0.97, rm) * np.clip(zone, 0, 1) * (0.5 + 0.5 * ss(-0.1, 0.4, noise.fbm(P * 5, 2, seed + 43)))
+    alb = _mix(alb, [0.13, 0.17, 0.17], marb * 0.55)
     # cistern silt and dirt: soles, between toes, creases (AO), under the nails
     sole = ss(-0.3, -0.75, N[:, 2]) * ss(0.06, 0.0, z)
     ground = ss(0.07, 0.0, z) * 0.6
@@ -88,9 +97,21 @@ def skin(P, N, AO, J, wound_c, seed=101):
     ring = np.exp(-((z - (neck0[2] + 0.03)) / 0.004) ** 2) * (np.linalg.norm(P[:, :2] - neck0[:2], axis=1) < 0.07)
     alb = _mix(alb, [0.42, 0.43, 0.44], ring * 0.45)
     # the wound: black-red gash, bruised lips
-    dw = np.linalg.norm((P - wound_c) * np.array([0.8, 1.0, 2.6]), axis=1)
-    gash = ss(0.03, 0.012, dw)
-    bruise = ss(0.06, 0.02, dw)
+    if cap is not None:
+        # C2-ESCAPE A1: the first stroke is a dark wet seam ON the oblique cut plane, deepest at the nape and fading
+        # toward the throat (it hides the split seam before C2); bruised, swollen lips 2-3 cm either side
+        cc, cn, cf, cs = (np.asarray(x, float) for x in cap[:4])
+        sd = (P - cc) @ cn
+        back = np.clip(-((P - cc) @ cf) / 0.05, 0, 1)              # 0 at the throat .. 1 at the nape
+        wob = 0.0015 * noise.fbm(P * 160.0, 2, seed + 40)
+        dw = np.abs(sd + wob) / (0.0035 + 0.006 * back)
+        near = np.linalg.norm((P - cc) - np.outer(sd, cn), axis=1) < 0.075
+        gash = ss(1.0, 0.35, dw) * (0.35 + 0.65 * back) * near
+        bruise = ss(0.035, 0.008, np.abs(sd)) * near * (0.4 + 0.6 * back)
+    else:
+        dw = np.linalg.norm((P - wound_c) * np.array([0.8, 1.0, 2.6]), axis=1)
+        gash = ss(0.03, 0.012, dw)
+        bruise = ss(0.06, 0.02, dw)
     alb = _mix(alb, [0.2, 0.12, 0.17], bruise * 0.6)
     alb = _mix(alb, [0.07, 0.012, 0.012], gash)
     rough = 0.42 + 0.08 * m1 + 0.25 * dirt - 0.12 * nail - 0.2 * gash
@@ -103,6 +124,19 @@ def skin(P, N, AO, J, wound_c, seed=101):
     h += 0.00018 * pad * wr
     h += 0.0002 * nail - 0.00025 * crease
     h -= 0.0012 * gash
+    if cap is not None:
+        # the cut faces (A2): texels on the plane facing along +-n get the §3.2 section (characters/neck_anatomy.py)
+        from . import neck_anatomy
+        cen = np.asarray(cap[4], float)
+        sd = (P - cc) @ cn
+        on = (np.abs(sd) < 0.012) & (np.abs(N @ cn) > 0.55) & (np.linalg.norm(P - cen, axis=1) < 0.075)
+        if on.any():
+            d = P[on] - cen
+            u, v = d @ cs, d @ cf
+            hh, ca, cr, film = neck_anatomy.fields(u + (0.002 if head_side else 0.0), v)
+            alb[on] = ca
+            rough[on] = cr
+            h[on] = 0.6 * hh
     return np.clip(alb, 0, 1), np.clip(rough, 0.05, 1), h
 
 
@@ -115,11 +149,18 @@ def gown(P, N, AO, body_fn, J, hem_z, seed=87):
     # wet cotton goes translucent where it clings: grey-blue skin shows through
     d = body_fn(P)
     cling = ss(0.012, 0.004, d)
-    alb = _mix(alb, [0.36, 0.37, 0.36], cling * 0.16)   # wet cotton greys a little where it clings; stays cloth
-    # cistern silt: heavier toward the hem, splotched, with dried tide lines
-    silt_amt = np.clip(ss(1.3, 0.3, z) * 0.85 + 0.4 * f + 0.2, 0, 1)
+    # REALISM #17 / C2-ESCAPE A11: soaked cotton is translucent where it clings — the grey-blue skin shows through
+    # (wet thin cotton transmits ~50-60 % against skin; the albedo trends to cloth x skin), softly graded with the
+    # contact distance so the body reads under it without hard patches
+    through = np.array([0.24, 0.27, 0.31])
+    cl2 = ss(0.016, 0.003, d) * (0.75 + 0.25 * noise.fbm(P * 18.0, 2, seed + 11))
+    alb = _mix(alb, through, np.clip(cl2, 0, 1) * 0.55)
+    # cistern silt: heavier toward the hem, splotched, with dried tide lines (low contrast on the bodice: the round-1
+    # review read high-contrast silt patches on the chest as flat white blotches)
+    up = ss(0.9, 1.25, z)
+    silt_amt = np.clip(ss(1.3, 0.3, z) * 0.85 + (0.4 - 0.25 * up) * f + 0.2 - 0.08 * up, 0, 1)
     silt = ss(0.35, 0.75, silt_amt + 0.25 * noise.fbm(P * 11, 3, seed + 2))
-    alb = _mix(alb, [0.13, 0.135, 0.085], silt * 0.72)
+    alb = _mix(alb, [0.13, 0.135, 0.085], silt * (0.72 - 0.3 * up))
     tide = ss(0.94, 0.99, noise.ridged(P * np.array([4.0, 4.0, 9.0]), 3, seed + 3)) * (silt_amt > 0.3)
     alb = _mix(alb, [0.09, 0.09, 0.06], tide * 0.5)
     # rust-brown drips from the neckline (the wound)
@@ -145,7 +186,7 @@ def gown(P, N, AO, body_fn, J, hem_z, seed=87):
     seam = ss(0.004, 0.0015, np.abs(z - 1.175)) * (np.abs(P[:, 1]) < 0.2)
     alb = _mix(alb, [0.2, 0.19, 0.15], seam * 0.6)
     alb *= (0.55 + 0.45 * AO)[:, None]
-    rough = 0.64 + 0.12 * silt - 0.2 * cling + 0.05 * f
+    rough = 0.64 + 0.12 * silt - 0.24 * cl2 + 0.05 * f
     h = 0.00012 * noise.fbm(P * 220.0, 2, seed + 6) - 0.0005 * holes + 0.00025 * band
     h += 0.0003 * noise.ridged(P * np.array([30.0, 30.0, 12.0]), 3, seed + 7)
     return np.clip(alb, 0, 1), np.clip(rough, 0.05, 1), h
@@ -158,9 +199,12 @@ def eye(P, N, center, seed=7):
     cornea = ss(0.72, 0.8, fwd)
     haze = noise.fbm(P * 900.0, 3, seed)
     radial = noise.fbm(np.stack([np.arctan2(v[:, 0], v[:, 2]) * 3.0, fwd * 2, np.zeros(len(P))], 1) * 4.0, 3, seed + 1)
-    milky = np.array([0.6, 0.63, 0.66]) * (1 + 0.06 * haze + 0.05 * radial)[:, None]
-    milky = _mix(milky, [0.46, 0.52, 0.58], ss(0.8, 0.98, fwd) * 0.5)
-    milky = _mix(milky, [0.38, 0.42, 0.47], ss(0.975, 0.995, fwd) * 0.3)   # the ghost of a pupil
+    # C2-ESCAPE A3: post-mortem clouding — opaque grey-white (0.55, 0.57, 0.58) with a faint darker GHOST of the
+    # iris ring (0.45) and pupil, so it never reads as a Halloween contact lens
+    milky = np.array([0.55, 0.57, 0.58]) * (1 + 0.06 * haze + 0.05 * radial)[:, None]
+    iris = ss(0.905, 0.925, fwd) * ss(0.985, 0.97, fwd) * (0.75 + 0.25 * radial)
+    milky = _mix(milky, [0.45, 0.46, 0.47], iris * 0.7)
+    milky = _mix(milky, [0.47, 0.48, 0.49], ss(0.985, 0.997, fwd) * 0.4)   # the ghost of a pupil
     sclera = np.array([0.55, 0.51, 0.44]) * (1 + 0.05 * haze)[:, None]
     veins = ss(0.9, 0.98, noise.ridged(P * 700.0, 3, seed + 2)) * ss(0.7, 0.2, fwd)
     sclera = _mix(sclera, [0.35, 0.1, 0.08], veins * 0.6)

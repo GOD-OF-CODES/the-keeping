@@ -23,7 +23,7 @@ import { BEATS, CHECKPOINTS, type BeatId, type CheckpointId } from '../src/story
 import type { P3 } from '../src/shared/layout-types.ts';
 
 const DIRECTOR_CUTSCENES = ['C1', 'C2', 'C3', 'C5', 'C6', 'C7'] as const;
-const ALL_SEEN = [...DIRECTOR_CUTSCENES, 'C2_replay', 'death'];
+const ALL_SEEN = [...DIRECTOR_CUTSCENES, 'death'];
 const EYE = 1.65;
 
 interface GameOpts {
@@ -324,7 +324,7 @@ class Game {
     if (!cp || !want.includes(cp) || this.deaths.some((d) => d.cp === cp)) return;
     const t0 = this.cpFirst.get(cp);
     if (t0 === undefined || sim.t - t0 < 2 || s.dead || s.cutscene || sim.cutscene || this.directorCutscene) return;
-    if (cp === 'CP2' && s.beat !== 'B04') return;
+    if (cp === 'CP2' && s.beat !== 'B05') return; // C2-ESCAPE: CP2 is the stair top (B05)
     this.deaths.push({ cp, beat: s.beat, flags: { ...s.flags }, items: [...sim.items].sort(), t: sim.t });
     sim.director.apply(sim.director.story.handle({ type: 'ai', event: { type: 'catch', cause: 'bump' } }));
   }
@@ -429,9 +429,9 @@ test('e2e: a forced death at EVERY checkpoint CP1–CP8 respawns there with ever
     assert.deepEqual(d.flagsAfter, d.flags, `${d.cp}: story flags unchanged`);
     assert.deepEqual(d.itemsAfter, d.items, `${d.cp}: inventory unchanged`);
   }
-  // one death cutaway per death, and CP2 (B04) replays C2 behind you
+  // one death cutaway per death; nothing replays C2 any more (C2-ESCAPE: C2_replay retired)
   assert.equal(g.started.filter((id) => id === 'death').length, all.length);
-  assert.equal(g.started.filter((id) => id === 'C2_replay').length, 1);
+  assert.equal(g.started.filter((id) => id === 'C2_replay').length, 0);
   // the story fade: black under each death, clear again after each respawn (checked 1.6 s after every respawn)
   assert.equal(g.respawnTimes.length, all.length);
 });

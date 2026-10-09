@@ -255,7 +255,14 @@ export class Sim {
       this.deaths.push({ cp, cause, t: this.t, beat: this.director.story.beat });
     });
     this.events.on('cutscene:start', ({ id }) => (this.cutscene = id));
-    this.events.on('cutscene:end', () => (this.cutscene = null));
+    this.events.on('cutscene:end', ({ id }) => {
+      this.cutscene = null;
+      // C2-ESCAPE: C2 (+ the chained C2c) hands control back at the stair top (the C2c 'player' cue = CP2)
+      if (id === 'C2') {
+        const cp2 = layout.spawns.find((x) => x.id === 'CP2')!;
+        host.teleport?.('CP2', cp2.pos, cp2.yaw, cp2.pitch);
+      }
+    });
   }
 
   // ------------------------------------------------------------------ world model
@@ -502,11 +509,11 @@ export class Sim {
     if (cp === 'CP6') return null;
     if (this.dyingAt === null) {
       // die only once the checkpoint's section is actually under way and she is on stage
-      if (cp === 'CP2' && s.beat !== 'B04') return null;
-      if (cp !== 'CP2' && (!this.ada || !this.ada.visible || this.ada.state === 'SCRIPTED' || this.ada.state === 'FINALE')) return null;
+      // C2-ESCAPE: CP2 (the stair top) has no death — b05_return never catches and the first hide is unfailable
+      if (cp === 'CP2') return null;
+      if ((!this.ada || !this.ada.visible || this.ada.state === 'SCRIPTED' || this.ada.state === 'FINALE')) return null;
       this.dyingAt = cp;
     }
-    if (cp === 'CP2') return { kind: 'wait', label: 'die:CP2' }; // stand still > 2 s
     if (cp === 'CP8') {
       this.beamOn = true;
       this.locketRaised = false;
@@ -535,11 +542,12 @@ export class Sim {
       case 'B03':
         return this.go('threshold');
       case 'B04':
-        this.running = true;
-        return this.go('u_armoire', () => this.hide('H_ARMOIRE'), 'flee to the armoire', 3.6);
+        return { kind: 'wait', label: 'C2c' }; // C2-ESCAPE: B04 is the C2c cutscene only
       case 'B05':
         this.running = false;
         if (this.hiddenIn) return f('first_hide_done') ? { kind: 'wait', label: 'unhide' } : { kind: 'wait', label: 'slats' };
+        // from the stair top: the armoire the lightning showed (her return starts ≥ 10 s after control)
+        if (!f('first_hide_done')) return this.go('u_armoire', () => this.hide('H_ARMOIRE'), 'to the armoire', 1.6);
         return this.go('u2_mid', undefined, 'sneak to U2', 1.6);
       case 'B06':
         if (!f('ledger_read') || s.ledgerPages < 3) return this.go('u2_ledger', () => this.interact('P_LEDGER', 'read_ledger'), 'ledger');

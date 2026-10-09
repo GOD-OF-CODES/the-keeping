@@ -36,7 +36,6 @@ export const AI_VOICE_TRIGGERS = [
 
 export const STORY_VOICE_TRIGGERS = [
   'b02:first_knock',
-  'b04:front_door_rattle',
   'b05:hide_enter',
   'b07:grate_peek',
   'b10:bell_nonstop_start',

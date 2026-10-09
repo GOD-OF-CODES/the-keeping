@@ -38,6 +38,11 @@ def load(char):
     return rig, meshes
 
 
+def parts(char):
+    """Extra armatures exported with the character (C2-ESCAPE A0: ada_head_rig, bone-parented to ada_rig.head)."""
+    return [o for o in bpy.data.objects if o.type == 'ARMATURE' and str(o.get('character_part', '')).startswith(char)]
+
+
 def clips_for(char, rig):
     if char == 'ada':
         from anim import clips_ada, gait
@@ -137,6 +142,10 @@ def export_low(char, rig, meshes):
     Call after the anim .blend is saved: this edits the meshes in place."""
     before = after = 0
     for ob in meshes:
+        # C2-ESCAPE: after the neck split the jaw/gurgle morphs that matter live on ada_head + ada_hair; Low drops them
+        # from ada_body so the body can be decimated like the garments (Low download budget, 27 MB)
+        if ob.name == 'ada_body' and ob.data.shape_keys:
+            ob.shape_key_clear()
         me = ob.data
         n = sum(len(p.vertices) - 2 for p in me.polygons)
         before += n
@@ -155,7 +164,8 @@ def export_low(char, rig, meshes):
         bpy.ops.object.modifier_apply(modifier=md.name)
         after += sum(len(p.vertices) - 2 for p in ob.data.polygons)
     path = OUT / f'{char}_low.glb'
-    n = gexport.export_glb(path, [rig] + meshes, 'character', export_tangents=True, export_frame_step=LOW['frame_step'])
+    n = gexport.export_glb(path, [rig] + parts(char) + meshes, 'character', export_tangents=True,
+                           export_frame_step=LOW['frame_step'])
     d = REPO / 'public' / 'assets' / 'low'
     d.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(path, d / f'{char}.glb')
@@ -187,6 +197,25 @@ def main():
             act = clipmod.bake_clip(rig, c, meshes)
             baked.append((c, act))
             log(f'{char}: {c.name} {c.duration:.2f} s ({c.frames} f) {"loop " if c.loop else ""}{"IK " if c.ik else ""}in {time.time() - t1:.1f} s')
+        for k, (c, a) in enumerate(baked):
+            if c.name == 'harlan_c2':
+                from anim import clips_escape
+                d, at = clips_escape.contact_check(rig, a, c)
+                for it in range(3):          # correct the IK target by the measured miss and re-bake
+                    if d <= 0.004:
+                        break
+                    log(f'harlan_c2 contact pass {it}: miss {d * 100:.2f} cm at {at}')
+                    clips_escape.CONTACT_FIX -= np.array(at) - np.array(clips_escape.NECK_L)
+                    tr = next((t for t in rig.animation_data.nla_tracks if t.strips and t.strips[0].action == a), None)
+                    if tr:
+                        rig.animation_data.nla_tracks.remove(tr)
+                    bpy.data.actions.remove(a)
+                    a = clipmod.bake_clip(rig, c, meshes)
+                    baked[k] = (c, a)
+                    d, at = clips_escape.contact_check(rig, a, c)
+                log(f'harlan_c2 CONTACT: cleaver_edge {at} vs neck {tuple(round(x, 4) for x in clips_escape.NECK_L)} '
+                    f'-> {d * 100:.2f} cm (gate <= 1 cm)')
+                report.setdefault('contact', {})['harlan_c2_cm'] = round(d * 100, 2)
         actions.prune_actions([a.name for _, a in baked])
         clipmod.clear_pose(rig)
         table = [{'name': c.name, 'seconds': round((c.frames - 1) / 30.0, 4), 'frames': c.frames, 'loop': c.loop,
@@ -195,7 +224,7 @@ def main():
         strip_private([rig] + meshes)
         if not ARGS.get('no_export'):
             path = OUT / f'{char}.glb'
-            n = gexport.export_glb(path, [rig] + meshes, 'character', export_tangents=True)
+            n = gexport.export_glb(path, [rig] + parts(char) + meshes, 'character', export_tangents=True)
             for tier in ('medium', 'max'):
                 d = REPO / 'public' / 'assets' / tier
                 d.mkdir(parents=True, exist_ok=True)

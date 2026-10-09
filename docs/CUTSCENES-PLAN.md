@@ -79,8 +79,9 @@ gate fails (§4). None of them is needed to progress.
 | 1 | **C0** | County Road 9 | New game, before C1 (C0 → C1) | 30 s | full | M |
 | 2 | C1 | Empty (upgraded) | as now | 54 s | full | S |
 | 3 | **C2a** | Eleven Names | B03, first `read_guest_book` (optional) | 9 s | full | S |
-| 4 | C2 | The First Room on the Right (render-only upgrade) | as now | 21.6 s | full | S |
-| 5 | C2_replay | (unchanged) | B04 death | 3 s | full | – |
+| 4 | C2 | The First Room on the Right (**rewritten, C2-ESCAPE §2.1**: the beheading shown clearly) | `b03:threshold`; chains C2c on the same camera | 29.0 s | full | L |
+| 5 | **C2c** | Up (C2-ESCAPE §2.2: the stair run, two glances, the empty stair) | chained from C2 (never requested by the Director; a skip in C2 lands at C2c 10.4) | 13.9 s | full | L |
+| – | ~~C2_replay~~ | retired (C2-ESCAPE: no B04 chase, no B04 death) | – | – | – | – |
 | 6 | **C2b** | Her Door | B05, first hide exit while Ada is in VIGIL | 11 s | full | S |
 | 7 | **C3a** | Six Thousand Nights | B06, first `peek_grate` before `c3_done` | 16 s | full | M |
 | 8 | C3 | He Looks Up (unchanged; optional window rain later) | as now | 12.5 s | look | – |
@@ -179,8 +180,10 @@ as now. The pre-C2 tableau stays as it is (no AI involved).
 - **Realism tricks:** candlelight with flame bokeh; paper and ink at 50 mm; a moving lightning specular on glass;
   characters never in frame.
 
-### C2: The First Room on the Right (render-only upgrade)
+### C2: The First Room on the Right — superseded by docs/C2-ESCAPE.md (rev 2, approved 2026-10-09)
 
+- C2 is rewritten (29.0 s, the beheading shown clearly) and chains C2c 'Up' (13.9 s); C2_replay is retired. The notes
+  below were the pre-ESCAPE render-only upgrade and are kept for the record.
 - Content, timing and the client's beat are unchanged.
 - Add a DOF focus pull from the raised cleaver edge (~1.3 m) to Ada's clouded eye at the eye close-up (DOF values are
   already uniforms).
@@ -564,6 +567,9 @@ Unchanged: 3 s, never skippable.
 | C4b | both | reverse angle: the back of the sack and the back of her hair, both in bokeh |
 | C4c | Ada | the design's own out-of-focus face behind the locket; on Low (no DOF), the beam's glare plus a 26° crop keeps her at hair and eye shape |
 | C6b, C5 insert | Ada | hands only |
+| C2 (C2-ESCAPE) | Harlan, Ada | Harlan: the sack throughout. Ada: face-down on the sawbuck, hair to the floor; after the stroke the head lands face-down in its hair and the boot nudge rolls it cut-end toward the lamp; lifted by the hair, the hair hangs over the face and only the left eye opens through it (the 100 mm eye insert shows the eye and wet hair, no resolved face) |
+| C2c (C2-ESCAPE) | Ada | headless: glance #1 a back-lit silhouette (lightning through the fanlight), glance #2 her hand on the rail; the head is offstage with Harlan |
+| B05+ gameplay (C2-ESCAPE §4.6) | Ada | the carried head is gripped by the crown, face toward her thigh; the six free hair groups cover ≥ 90 % of the face from every gameplay angle (A14 12-view check); lifted, the hair stays over the face and only the visible eye is open |
 
 QA must capture each of these shots on Low, Medium and Max (scripts/qa when it is free) before shipping.
 

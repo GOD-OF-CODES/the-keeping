@@ -52,6 +52,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
   console.info(`[game] ${GAME_CHUNK_MARKER} three r${THREE.REVISION}`);
   const params = new URLSearchParams(location.search);
   const debug = params.has('debug');
+  if (params.has('tslstack')) (THREE as any).Node.captureStackTrace = true; // debug: TSL build errors name their source
   LightmapMaterial.stockModel = params.get('lmmodel') === '0'; // LIGHTING lane debug A/B (item 5 load cost)
   const settings = h.settings;
   const presetId = settings.preset;
@@ -596,6 +597,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
     const cp = coords.worldToPlan([camera.position.x, camera.position.y, camera.position.z]);
     const feetZ = hides.active ? hides.active.entry[2] : player.planFeet()[2];
     const changed = level.setViewer(cp[0], cp[1], feetZ);
+    level.updateWindowCull(camera.position, t); // RUNTIME F2
     const outside = level.isOutside();
     if (changed || lastRoom === null) {
       lastRoom = level.room;
@@ -786,6 +788,22 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
             warmPipe.setCutscene(null);
             if (arms) arms.visible = !!armsWas;
           }
+          // C2-ESCAPE B11: C2 / C2c draw through the DOF chain, the DOF + motion-blur chain (C2 switches the blur variant in
+          // at t = 0 and only moves its amount) and the blur-only chain (C2c): build the parlor + characters + the blood
+          // in those scene-pass contexts now, not at C2's first frame / the strike / the whip
+          if (label === 'tableau' && warmPipe?.kind === 'post' && preset.post.cutsceneDof) {
+            const chains: Array<{ dof?: { focusDistance: number; focalLength: number; bokehScale: number }; motionBlur?: number }> = [{ dof: { focusDistance: 2.73, focalLength: 0.8, bokehScale: 2 } }];
+            if (preset.post.cutsceneMotionBlur) chains.push({ dof: { focusDistance: 2.73, focalLength: 0.8, bokehScale: 2 }, motionBlur: 0 }, { motionBlur: 0 });
+            for (const c of chains) {
+              warmPipe.setCutscene(c);
+              for (const rot of headings) {
+                camera.rotation.set(-0.15, rot, 0);
+                camera.updateMatrixWorld(true);
+                render();
+              }
+            }
+            warmPipe.setCutscene(null);
+          }
           console.info(`[game] warm ${label} ${(performance.now() - ts).toFixed(0)} ms builds=${perfBuilds() - b0}`);
           await nextFrame();
         };
@@ -813,7 +831,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
           story.warmTableau(true);
           // PERF (review): unmute the candle's cube shadow for this step so its shadow-pass render objects (parlor
           // props, Ada, Harlan) build now — measured ~470 node builds / +146 programs at C2's first shadow frame else
-          const candle = level.lights.flickers.find((f) => f.def.id === SHADOW_CANDLE_ID)?.light;
+          const candle = (level.lights.shadow ?? level.lights.flickers.find((f) => f.def.id === SHADOW_CANDLE_ID))?.light; // C2-ESCAPE K3: the lamp
           if (candle) setCandleShadow(candle, true);
           const e = level.index.elevationOf('G2');
           await step(

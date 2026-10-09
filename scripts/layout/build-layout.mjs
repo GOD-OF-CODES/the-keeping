@@ -278,7 +278,7 @@ const doors = [
   { id: 'D_FRONT', openingId: 'O_FRONT', style: 'front', hinge: 'right', swingInto: 'G1', initial: 'bolted', interactive: true, mat: 'door_front',
     note: 'Opened only by the rope (B02 pull, B11 finale). Knock / bell knob / rattle are interactions on the outside/inside faces.' },
   { id: 'D_PARLOR', openingId: 'O_PARLOR', style: 'panel', hinge: 'left', swingInto: 'G2', initial: 'ajar', interactive: false, mat: 'door_painted',
-    note: 'Ajar and candlelit in B03; shut and key-locked by C2 (story), cracked by Harlan in C5.' },
+    note: 'Ajar and candlelit in B03; locked by Harlan in C2; opened by him for her at B05 +10-20 s (C2-ESCAPE K6); cracked by Harlan in C5.' },
   { id: 'D_PASSAGE', openingId: 'O_PASSAGE', style: 'passage_bolted', hinge: 'left', swingInto: 'G3P', initial: 'bolted', unlockFlag: 'passage_unbolted', interactive: true, mat: 'door_painted',
     note: 'Bolt on the passage side: dead end in B04, slid from the kitchen side in B10.' },
   { id: 'D_CLOSET', openingId: 'O_CLOSET', style: 'closet', hinge: 'right', swingInto: 'G3P', initial: 'closed', interactive: true, mat: 'wood_raw_plank' },
@@ -398,11 +398,16 @@ p('P_MIRROR_MANTEL', 'mirror_crepe', 'G2', [8.7, 3.0, zG + 1.25], FACE.W, { para
 p('P_CANDLE_MANTEL', 'candle', 'G2', [8.6, 3.4, zG + 1.2], 0, { params: { holder: 'brass_stick', height: 0.22, mat: 'wax_candle', leansTowardAda: true }, lighting: 'dynamic', collider: 'none' });
 p('P_CANDLE_TABLE', 'candle', 'G2', [5.6, 2.3, zG + 0.82], 0, { params: { holder: 'saucer', height: 0.14, mat: 'wax_candle', castsShadowInCutscenes: true }, lighting: 'dynamic', collider: 'none' });
 p('P_CANDLE_SILL', 'candle', 'G2', [5.0, 0.18, zG + 0.78], 0, { params: { holder: 'saucer', height: 0.1, mat: 'wax_candle' }, lighting: 'dynamic', collider: 'none' });
-p('P_STOOL', 'stool', 'G2', [5.3, 0.75, zG], 0.3, { params: { mat: 'wood_raw_plank' } });
-p('P_WHETSTONE', 'whetstone', 'G2', [5.3, 0.75, zG + 0.55], 0.3, { params: { mat: 'stone_foundation' }, lighting: 'dynamic', collider: 'none' });
+// C2-ESCAPE K1: the stool moves to the NW of the sawbuck and carries the parlor lamp (the C2 hard side-key, flame
+// 0.75 m above the floor); the whetstone goes to the floor beside it
+p('P_STOOL', 'stool', 'G2', [4.6, 4.25, zG], 0.3, { params: { mat: 'wood_raw_plank', height: 0.45 }, note: 'C2-ESCAPE A8: seat top z 1.05 (stool generator height 0.45; flame anchor of P_LAMP_PARLOR wick high = base + 0.309 = z 1.359).' });
+p('P_WHETSTONE', 'whetstone', 'G2', [4.85, 4.5, zG], 0.3, { params: { mat: 'stone_foundation' }, lighting: 'dynamic', collider: 'none' });
+p('P_LAMP_PARLOR', 'kerosene_lamp', 'G2', [4.6, 4.25, zG + 0.45], 0.4, { params: { wick: 'high', mat: 'glass_grimy', burnerMat: 'brass_tarnished' }, lighting: 'dynamic', collider: 'none',
+  note: 'C2-ESCAPE K1: on the stool seat (z 1.05); flame anchor (4.60, 4.25, 1.35) = L_LAMP_PARLOR.' });
 p('P_SPRING_BELL', 'spring_bell', 'G2', [3.85, 1.45, zG + 2.8], FACE.E, { params: { mat: 'brass_tarnished', ringsFor: 'P_BELL_KNOB,P_BELL_PULL' }, lighting: 'dynamic', collider: 'none' });
 p('P_CLEAT', 'rope_cleat', 'G2', [3.8, 1.9, zG + 1.6], FACE.E, { params: { mat: 'cast_iron' }, collider: 'none' });
-p('P_CLEAVER', 'hog_cleaver', 'G2', [5.95, 3.95, zG + 0.83], 1.2, { params: { mat: 'steel_cleaver', handleMat: 'wood_furniture_dark' }, lighting: 'dynamic', collider: 'none' });
+p('P_CLEAVER', 'hog_cleaver', 'G2', [5.95, 3.95, zG + 0.83], 1.2, { params: { mat: 'steel_cleaver', handleMat: 'wood_furniture_dark', state: 'bitten' }, lighting: 'dynamic', collider: 'none',
+  note: 'C2-ESCAPE K6: state bitten = after C2 the blade is left bitten in the sawbuck edge at the neck point (5.31, 3.25, 1.40); before C2 it lies here.' });
 p('P_PARLOR_RUG', 'rag_rug', 'G2', [7.2, 4.4, zG], 0.2, { params: { mat: 'rag_rug', w: 1.6, d: 1.1 }, collider: 'none' });
 
 // G3 — kitchen
@@ -516,6 +521,9 @@ const lights = [
   { id: 'L_LTN_U3E', room: 'EXT2', role: 'lightning', type: 'area', pos: [10.0, 7.2, zU + 1.6], target: [5, 7.2, zU + 0.5], watts: 800, kelvin: 9000, radius: 0.6, mode: 'flash' },
   { id: 'L_CANDLE_HALL', room: 'G1', role: 'candle', type: 'point', pos: [3.4, 4.5, zG + 1.0], watts: 12, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   { id: 'L_CANDLE_TABLE', room: 'G2', role: 'candle', type: 'point', pos: [5.6, 2.3, zG + 0.98], watts: 12, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
+  // C2-ESCAPE K2: the parlor kerosene lamp on the stool — flat-wick lamp ≈ 10–15 cd (CLAUDE.md) → 12 cd = 151 W / 4π,
+  // 1950 K. Baked indirect-only (bakePass) once the release bake lands; until then runtime-only (CONTRACT-CHANGES)
+  { id: 'L_LAMP_PARLOR', room: 'G2', role: 'lamp', type: 'point', pos: [4.6, 4.25, zG + 0.75], watts: 151, kelvin: 1950, radius: 0.012, mode: 'runtime', bakePass: 'indirect' },
   { id: 'L_CANDLE_MANTEL', room: 'G2', role: 'candle', type: 'point', pos: [8.6, 3.4, zG + 1.44], watts: 10, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   { id: 'L_CANDLE_SILL', room: 'G2', role: 'candle', type: 'point', pos: [5.0, 0.18, zG + 0.9], watts: 10, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   { id: 'L_CANDLE_KITCHEN', room: 'G3', role: 'candle', type: 'point', pos: [6.75, 9.6, zG + 0.86], watts: 6, kelvin: 1800, radius: 0.01, mode: 'bake_flicker' },
@@ -692,6 +700,7 @@ const cameras = [
   { id: 'c1_house_reveal', pos: [2.6, -30.1, 1.15], target: [3.5, 0, 5.5], fovDeg: 50, note: 'C1: from the dead car at the gate, lightning reveals the house on the rise.' },
   { id: 'c3_field', pos: [8.45, 1.3, zU + 1.6], target: [18, 0.5, 0.6], fovDeg: 55, note: 'C3 reference view from the U2 east window over the wreck row (player keeps look control). Your car ends at the near end, ~5 m below-right of the window.' },
   { id: 'c7_guest_book', pos: [2.85, 4.1, zG + 1.55], target: [3.33, 4.1, zG + 0.8], fovDeg: 38, note: 'C7: the waiting line now reads HARLAN, ruled through.' },
+  { id: 'parlor_lean', pos: [3.7, 1.26, zG + 1.57], target: [5.31, 3.25, zG + 0.8], fovDeg: 27, note: 'C2-ESCAPE K5: the lean eye D inside the doorway reveal (50 mm = 27 deg vertical); aims at the neck on the sawbuck.' },
   { id: 'c7_sting_threshold', pos: THRESHOLD_POS, target: THRESHOLD_TARGET, fovDeg: 50, note: 'C7 final tableau: identical to parlor_threshold (Ada in the rocker, the sack raised).' },
 ];
 
@@ -699,7 +708,7 @@ const cameras = [
 const s = (id, room, x, y, yaw, pitch, note, eye = EYE) => ({ id, room, pos: [x, y, ROOM[room].floor === 'upper' ? zU + eye : ROOM[room].floor === 'ground' ? zG + eye : eye], yaw, pitch, note });
 const spawns = [
   s('CP1', 'EXT2', 1.8, -27.4, H.N, 0.05, 'At the gate after C1, facing the drive.'),
-  s('CP2', 'G1', 3.05, 1.6, H.N, 0, 'Hall at the parlor threshold as she rises (C2 replays in 3 s).'),
+  s('CP2', 'U1', 0.55, 8.25, H.S, -0.87, 'Stair top after C2c (C2-ESCAPE K4; x 0.55 = the flight centreline, C6 prototype + B-CINE, CONTRACT-CHANGES): looking down the flight, pitch -50 deg.'),
   s('CP3', 'U1', 2.55, 4.2, H.S, 0, 'Out of the armoire after the first hide; her vigil is north.'),
   s('CP4', 'U2', 5.6, 2.3, H.E, -0.05, 'Harlan\'s bedroom on taking the hammer or the ledger.'),
   s('CP5', 'U1', 2.5, 7.3, heading(1, 0.4), 0, 'Before Ada\'s door, after each pried board.'),
@@ -730,8 +739,7 @@ const triggers = [
   t('T_B02_PORCH', 'EXT2', [0.6, -2.8, 3.0, -0.3], 'b02:at_door'),
   t('T_B03_HALL', 'G1', [0.2, 0.05, 3.4, 1.0], 'b03:hall_enter'),
   t('T_B03_THRESHOLD', 'G1', [2.75, 1.0, 3.6, 2.0], 'b03:threshold'),
-  t('T_B04_STAIRTOP', 'U1', [0, 7.8, 1.2, 9.0], 'b04:stair_top'),
-  t('T_B04_ARMOIRE_FLASH', 'U1', [1.2, 5.2, 3.6, 7.8], 'b04:armoire_flash'),
+  // C2-ESCAPE K6: T_B04_STAIRTOP / T_B04_ARMOIRE_FLASH retired (B04 is the C2c cutscene only; B05 starts at the stair top)
   t('T_B05_ENTER_U2', 'U2', [3.75, 0, 5.3, 4.5], 'b05:enter_u2'),
   t('T_B06_GRATE', 'U2', [5.4, 2.6, 6.6, 3.8], 'b06:near_grate'),
   t('T_B06_WINDOW', 'U2', [7.9, 0.4, 8.75, 2.2], 'b06:east_window'),

@@ -791,30 +791,84 @@ test("B11 'let her look' stall (round E): beam on her body but her eyes can't re
   assert.ok(!events.some((e) => e.type === 'catch'));
 });
 
-test('C2 → B04 handover (round E, measured 5.17 s in-game): a frozen player released 1.47 m from her is not grabbed within the 6 s calm, and is grabbed after it', () => {
-  const b = new AdaBrain(layout, world(), { seed: 1 });
-  b.setScripted('b04_chase', { node: 'G_PARLOR_LURE', force: true });
-  b.calm(); // cutscene end
-  const P = player([2.35, 2.7, 0.6]);
-  let caughtAt = -1;
-  let t = 0;
-  for (; t < 12 && caughtAt < 0; t += 1 / 30) if (b.update(1 / 30, P).events.some((e: any) => e.type === 'catch')) caughtAt = t;
-  assert.ok(caughtAt >= TUNING.grace.calmS, `grabbed at ${caughtAt.toFixed(2)} s`);
-  assert.ok(caughtAt > 0 && caughtAt < 9, `a frozen player is still caught (at ${caughtAt.toFixed(2)} s)`);
+// ---- C2-ESCAPE §4.5: b05_return (B05 from the stair top; b04_chase is retired)
+const TOP: P3 = [0.55, 8.25, 4.1]; // CP2 feet (the stair-top eye S = (1.05, 8.25, 5.75))
+function b05(seed = 1) {
+  const doors = initialDoors({ D_PARLOR: 'locked' } as DoorMap);
+  const b = new AdaBrain(layout, world(doors), { seed });
+  b.setScripted('b05_return', { node: 'G_PARLOR_LURE', force: true });
+  b.calm();
+  return b;
+}
+function runB05(b: AdaBrain, pv: (t: number) => PlayerView, seconds: number) {
+  const log: { t: number; e: any }[] = [];
+  let firstVisible = -1;
+  let out: any = null;
+  const dt = 1 / 30;
+  for (let t = 0; t < seconds; t += dt) {
+    const p = pv(t);
+    out = b.update(dt, p);
+    if (out.visible && firstVisible < 0) firstVisible = t;
+    for (const e of out.events) log.push({ t, e });
+  }
+  return { log, firstVisible, out };
+}
+
+test('b05_return idle (player stays in the open at the stair top): offstage 15 s, key → door → hall → stops blind at tread 10 until 45 s → tops the stair; never catches', () => {
+  const b = b05();
+  const { log, firstVisible, out } = runB05(b, () => player(TOP), 70);
+  const ph = (p: string) => log.find((x) => x.e.type === 'b05_return' && x.e.phase === p)?.t ?? -1;
+  assert.ok(Math.abs(ph('key') - TUNING.b05.maxStartS) < 0.1, `key at ${ph('key')}`);
+  assert.ok(firstVisible >= TUNING.b05.minStartS, `first seen at ${firstVisible}`);
+  assert.ok(ph('door') > ph('key') && ph('hall') > ph('door') && ph('climb') > ph('hall'), 'phase order');
+  assert.ok(ph('rocker') > ph('hall'), 'the rocker after the hall');
+  const wait = ph('blind_wait');
+  assert.ok(wait > 0 && wait < TUNING.b05.blindUntilS, `blind wait at ${wait}`);
+  assert.ok(ph('top') >= TUNING.b05.blindUntilS, `tops the stair at ${ph('top')}`);
+  assert.ok(log.some((x) => x.e.type === 'door' && x.e.doorId === 'D_PARLOR'), 'she pushes the parlor door');
+  assert.ok(log.some((x) => x.e.type === 'scripted_done' && x.e.mode === 'b05_return'));
+  const top = ph('top');
+  assert.ok(!log.some((x) => x.e.type === 'catch' && x.t < top + TUNING.grace.calmS), 'no catch inside the mode nor in the 6 s calm after it');
+  assert.ok(!log.some((x) => x.e.type === 'relocated' && x.t >= top - 0.01), 'no relocation when she tops the stair (she stays where the player can see her)');
+  assert.ok(out.pos[2] > 3.5, `upstairs at the end (${out.pos.map((v: number) => v.toFixed(2))})`);
 });
 
-test('C2 → B04 handover (round E, measured 4.27 s in-game): a player who moves and then stops is not grabbed within the 6 s calm', () => {
-  const b = new AdaBrain(layout, world(), { seed: 1 });
-  b.setScripted('b04_chase', { node: 'G_PARLOR_LURE', force: true });
-  b.calm();
-  let pos: P3 = [2.35, 2.7, 0.6];
-  let caughtAt = -1;
-  for (let t = 0; t < 6 && caughtAt < 0; t += 1 / 30) {
-    const moving = t > 1 && t < 1.8; // a short dash toward the stair, then frozen at its foot
-    if (moving) pos = [pos[0] - 0.08, pos[1] + 0.02, 0.6];
-    if (b.update(1 / 30, player(pos, { speed: moving ? 2.4 : 0 })).events.some((e: any) => e.type === 'catch')) caughtAt = t;
+test('b05_return: the head is carried hanging (blind) the whole return; the carried head knocks on her thigh while she walks', () => {
+  const b = b05(3);
+  let lifted = false;
+  let knocks = 0;
+  for (let t = 0; t < 40; t += 1 / 30) {
+    const o = b.update(1 / 30, player(TOP, { beam: { on: true, origin: [1.05, 8.0, 5.75], dir: [0, -0.6, -0.8], range: 14, halfAngle: 0.3, hit: null } }));
+    if (o.head !== 'hanging') lifted = true;
+    if (o.tells.knock) knocks++;
   }
-  assert.equal(caughtAt, -1, `grabbed at ${caughtAt.toFixed(2)} s`);
+  assert.equal(lifted, false);
+  assert.ok(knocks >= 3, `knocks ${knocks}`);
+});
+
+test('b05_return hidden early (armoire at +3 s): the return starts at +10 s and turns into the unfailable slat demo', () => {
+  const b = b05(2);
+  const { log } = runB05(b, (t) => (t < 3 ? player(TOP) : player([2.55, 4.2, 4.1], { hiddenIn: 'H_ARMOIRE' })), 60);
+  const key = log.find((x) => x.e.type === 'b05_return' && x.e.phase === 'key')!.t;
+  assert.ok(Math.abs(key - TUNING.b05.minStartS) < 0.1, `key at ${key}`);
+  assert.ok(log.some((x) => x.e.type === 'scripted_done' && x.e.mode === 'b05_return'), 'handed to the demo');
+  assert.ok(log.some((x) => x.e.type === 'scripted_done' && x.e.mode === 'hide_demo'), 'the demo finished');
+  assert.ok(!log.some((x) => x.e.type === 'catch' || x.e.type === 'hide_found'), 'unfailable');
+});
+
+test('b05_return hidden at +12 s: the key turns as the player hides (between 10 and 15 s)', () => {
+  const b = b05(4);
+  const { log } = runB05(b, (t) => (t < 12 ? player(TOP) : player([2.55, 4.2, 4.1], { hiddenIn: 'H_ARMOIRE' })), 20);
+  const key = log.find((x) => x.e.type === 'b05_return' && x.e.phase === 'key')!.t;
+  assert.ok(key >= 12 - 0.05 && key <= 12.1, `key at ${key}`);
+});
+
+test('b05_return flee: a player who runs down the stair into her path is never caught inside the mode', () => {
+  const b = b05(5);
+  // down the flight to the foot, then stand in the hall between her and the stair
+  const { log } = runB05(b, (t) => (t < 4 ? player([0.55, 8.0 - t, 4.1 - t * 0.85], { speed: 3, running: true }) : player([1.2, 2.6, 0.6], { speed: 0 })), 40);
+  const done = log.find((x) => x.e.type === 'scripted_done')?.t ?? Infinity;
+  assert.ok(!log.some((x) => x.e.type === 'catch' && x.t < done), 'no catch inside b05_return');
 });
 
 test('far sighting (round E careless gate): a lit player seen at 7 m makes her come and look (INVESTIGATE), not chase; at 3 m she chases', () => {

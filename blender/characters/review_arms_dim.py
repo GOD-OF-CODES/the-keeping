@@ -64,11 +64,26 @@ plane('__wall', (0, 1.9, 0), (math.radians(90), 0, 0), 8, principled('__plaster'
 plane('__floor', (0, 0, -1.65), (0, 0, 0), 8, principled('__boards', (0.1, 0.07, 0.045), 0.3))
 plane('__side', (-1.4, 0, 0), (0, math.radians(90), 0), 8, principled('__paper', (0.25, 0.27, 0.2), 0.85))
 
-# the torch at the flashlight_beam bone
+# the torch at the flashlight_beam bone (posed: --pose clip:seconds on the anims blend, e.g.
+#   --job-args="--blend .cache/anims/arms_anim.blend --pose arms_stumble_catch:0.4 --tread 1")
 rig = bpy.data.objects['arms_rig']
-bb = rig.data.bones['flashlight_beam']
-beam_o = rig.matrix_world @ bb.head_local
-beam_d = (rig.matrix_world.to_3x3() @ (bb.tail_local - bb.head_local)).normalized()
+if A.get('pose'):
+    clip, tt = str(A['pose']).split(':')
+    ad = rig.animation_data or rig.animation_data_create()
+    ad.use_nla = False
+    act = bpy.data.actions[clip]
+    ad.action = act
+    if act.slots:
+        ad.action_slot = act.slots[0]
+    sc.frame_set(1 + int(round(float(tt) * 30)))
+    bpy.context.view_layer.update()
+pbb = rig.pose.bones['flashlight_beam']
+beam_o = rig.matrix_world @ pbb.head
+beam_d = (rig.matrix_world.to_3x3() @ (pbb.tail - pbb.head)).normalized()
+if A.get('tread'):
+    # C2c 6.62: the gloves slapped onto tread 13 (dark varnished pine, wet prints), 0.4-0.5 m from the eye
+    hz = min((rig.matrix_world @ rig.pose.bones[b].head).z for b in ('hand_l', 'hand_r'))
+    plane('__tread', (0, 0.45, hz - 0.035), (math.radians(28), 0, 0), 1.2, principled('__varnish', (0.09, 0.055, 0.035), 0.28))
 sp = bpy.data.lights.new('__torch', 'SPOT')
 sp.energy = 46.0
 sp.color = kelvin_rgb(2900)
@@ -135,8 +150,8 @@ def view(loc, tgt, vfov_deg, exposure, lamp_w):
 
 
 lh = bpy.data.bones if False else None
-hand_l = rig.matrix_world @ rig.data.bones['hand_l'].head_local
-hand_r = rig.matrix_world @ rig.data.bones['hand_r'].head_local
+hand_l = rig.matrix_world @ rig.pose.bones['hand_l'].head
+hand_r = rig.matrix_world @ rig.pose.bones['hand_r'].head
 fl_mid = beam_o - beam_d * 0.12
 EV = float(A.get('ev') or 5.0)   # eye adapted to a lamp-lit room (~8 lux) vs the beam spot (~700 lux)
 views = [

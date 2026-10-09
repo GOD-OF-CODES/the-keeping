@@ -84,7 +84,7 @@ bend, finger curl toward the palm, clavicle shrug, jaw open). Rest = A-pose (arm
 | Arms | 41 (37 deform) | `prop_r` + `locket` sockets (non-deform, `anim/sockets.py`); `root` = the camera (eye); `upperarm/forearm/hand_{l,r}` + fingers; `flashlight` (child of `hand_l`), `flashlight_beam` (non-deform, at the lens, +Y along the beam: attach the SpotLight here) |
 
 **Runtime overrides** (clips key them lightly so the GLB looks right without runtime physics):
-- Ada `neck_02`/`head`: spring joint (head loll) — clips key a plausible hang; add the spring on top.
+- Ada `neck_02`/`head`: spring joint (head loll) — clips key a plausible hang; add the spring on top. **Off after C2** (severed; see below).
 - `hair_*`, `sack_*`, `apron_*`: clips bake a gravity damped-track (85 %/60 %/50 %) — replace with verlet chains.
 - `gown_*`: clips key a follow-the-thighs motion (front panels ride the knee, back panels the heel); a verlet chain
   colliding with thigh/calf capsules can replace it. Without it the hem clips on the largest chase strides.
@@ -103,6 +103,33 @@ throat).
 - Interaction clips assume, in camera space (m): door plane ~0.55 ahead (knock at (0.08, 0.43, −0.10)), bell knob at
   (0.16, 0.44, −0.06) pulled 0.17 down, door handle at (0.13, 0.42, −0.36), ignition at (0.24, 0.36, −0.42), wheel
   centre (0, 0.43, −0.30). Use CCDIK on `hand_r` for other geometry.
+
+## Severed Ada (C2-ESCAPE K11, Phase 1)
+
+- **Split (lane A, `blender/characters/sever.py`):** one oblique C4–C5 bisect of the finished body; both sides capped
+  (body 600 / head 64 tris, 3–8 mm relief), the rim's custom normals averaged (no seam line before C2). The body keeps
+  the same 114-bone `ada_rig`; the head is its own glTF node, the armature **`ada_head_rig`** (33 bones: `head_root` +
+  the 8 × 4 `hair_<g>_NN` chains, names unchanged) carrying the meshes `ada_head` (+ cap), `ada_hair`, `ada_eye`. Until
+  C2 it is bone-parented to `ada_rig.head` with an identity rest offset, so every clip moves it exactly as before.
+- **Morph / node:** `eyelid_l_open` (the left eye opens, C2 13.6); node `ada_cornea_l`. Guarded by presence at runtime.
+- **Runtime (lane B-STORY, `src/characters/head-carry.ts` + `ada.ts`):** `ada.sever(true)` (C2's `fx adaHead sever`,
+  and the story flag `ada_severed` on a debug start / restore) re-parents `ada_head_rig` into the world, keeping its
+  transform; the neck spring is off from then on. **One head-carry mechanism for every later clip:** the head hangs
+  by the hair from a hand socket (`attach harlan ada_head prop_l` in C2 10.6; her own `prop_r` in gameplay) as a damped
+  pendulum (L 0.17 m fist → head centre, ω² = g / L; the node's origin is at the crown grip, A0), its face toward her thigh, a 0.11 m sphere kept out of her
+  right-thigh capsule (restitution 0.3); the brain's head state drives a lift weight: `hanging` (hip, blind) →
+  `lifting`/`lifted` (both hands, centre 1.48 m up and 0.25 m in front of the stump — where the brain's `eye()` is) →
+  `placed` (set down in front of her feet, blind). A world-space two-bone IK arm layer (independent of the rig's local
+  axes) puts the right fist at the hip carry point and both hands at the sides of the lifted head, after the sampled
+  clip pose; the arm bones are in the stop-motion PoseCache so it never accumulates. Phase 2 retrofits a clip only
+  where this layer reads wrong.
+- **API:** `ada.sever(on)`, `ada.severed`, `ada.headNode()` (null until the split GLB exists), `ada.carryHeadBy(socket)`,
+  `ada.eyeOpen(on)`; `CharacterBank.attach(char, 'ada_head', bone)` hangs the head from Harlan's or Ada's socket
+  (bone null = free in the world for a cutscene to place).
+- **New clip names (lane A, A4–A6):** `harlan_c2`, `ada_c2`, `ada_rise_headless`, `ada_chase_headless`,
+  `ada_climb_headless` (rail IK), `arms_run_torch`, `arms_stumble_catch`, `arms_newel_knock`.
+- **Until the split GLB lands** there is no `ada_head_rig`: a stand-in node keeps the cues and the arm layer running and
+  the body stays whole (logged once, `[ada] severed: no ada_head_rig …`).
 
 ## The opening (C2) staging
 

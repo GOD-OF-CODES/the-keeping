@@ -763,7 +763,9 @@ def car_clips():
 
 
 def m2_clips():
-    return [pickup_read(), pry_board(), cut_hem(), raise_locket(), locket_hold(), slide_bolt(), pour_can()]
+    from . import clips_escape
+    return [pickup_read(), pry_board(), cut_hem(), raise_locket(), locket_hold(), slide_bolt(), pour_can()] + \
+        clips_escape.arms_clips()
 
 
 M2_TODO = []

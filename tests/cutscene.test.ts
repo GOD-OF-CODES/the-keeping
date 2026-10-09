@@ -11,7 +11,7 @@ import type { VoiceScript } from '../src/shared/voice-types.ts';
 import { Sequencer, type SequencerSink } from '../src/cutscenes/sequencer.ts';
 import { ArcPath, catmullRomPoint, carToPlan, handheld } from '../src/cutscenes/math.ts';
 import { isStateCue, type CameraPose, type Cue, type CutsceneContext, type Timeline } from '../src/cutscenes/types.ts';
-import { CUTSCENES, DIRECTOR_CUTSCENES, KNOWN_CLIPS, PENDING_CLIPS } from '../src/cutscenes/index.ts';
+import { CUTSCENES, DIRECTOR_CUTSCENES, KNOWN_CLIPS, PENDING_CLIPS, PENDING_SFX } from '../src/cutscenes/index.ts';
 import { ADA_TABLE, CAM, HARLAN_TABLE, PROP, SPAWN, NODE, CAR_GATE, CAR_ROW, ROCKER_HEADING, yawToHeading, DOOR } from '../src/cutscenes/stage.ts';
 import { hasRecipe } from '../src/audio/synth/index.ts';
 import { AI_VOICE_TRIGGERS, STORY_VOICE_TRIGGERS } from '../src/story/voice-cues.ts';
@@ -290,7 +290,7 @@ test('data: every Director cutscene id has a timeline; ids match; durations sane
   }
   assert.equal(CUTSCENES.death(ctx0).skippable, false);
   assert.equal(CUTSCENES.death(ctx0).duration, 3);
-  assert.equal(CUTSCENES.C2_replay(ctx0).duration, 3);
+  assert.ok(!('C2_replay' in CUTSCENES), 'C2_replay retired (C2-ESCAPE K8)');
 });
 
 test('data: every voice trigger referenced by a cutscene exists in voice-script.json', () => {
@@ -311,8 +311,8 @@ test('data: every voice trigger referenced by a cutscene exists in voice-script.
 
 test('data: every sfx / loop / stinger id exists in the synthesized bank', () => {
   for (const { id, c } of allCues()) {
-    if (c.type === 'sfx') assert.ok(hasRecipe(c.id), `${id}: sfx ${c.id}`);
-    if (c.type === 'loop' && c.id) assert.ok(hasRecipe(c.id), `${id}: loop ${c.id}`);
+    if (c.type === 'sfx') assert.ok(hasRecipe(c.id) || PENDING_SFX.includes(c.id), `${id}: sfx ${c.id}`);
+    if (c.type === 'loop' && c.id) assert.ok(hasRecipe(c.id) || PENDING_SFX.includes(c.id), `${id}: loop ${c.id}`);
     if (c.type === 'score' && c.stinger) assert.ok(hasRecipe(c.stinger), `${id}: stinger ${c.stinger}`);
   }
 });

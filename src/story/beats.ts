@@ -11,7 +11,9 @@ import type { RoutineKind } from '../ai/ada-brain.ts';
 import { DOCUMENTS, DOC_FOR_ACTION, type DocId } from './documents.ts';
 import { beatIndex, boardsPried, cloneState, newEscapeState, type BeatId, type CheckpointId, type EscapeState } from './escape-state.ts';
 
-export type CutsceneId = 'C1' | 'C2' | 'C2_replay' | 'C3' | 'C5' | 'C6' | 'C7' | 'death';
+// C2-ESCAPE K8: + C2c (chained by the host after C2 — the Director requests only 'C2'; its end = C2c's end),
+// − C2_replay (B04 is the C2c cutscene only: no chase, no death, nothing to replay)
+export type CutsceneId = 'C1' | 'C2' | 'C2c' | 'C3' | 'C5' | 'C6' | 'C7' | 'death';
 
 export type AiCommand =
   | { op: 'scripted'; mode: ScriptedMode; node?: string; hideId?: string; force?: boolean }
@@ -75,6 +77,14 @@ export interface StoryView {
 }
 
 export const HINT_AFTER_S = 90;
+/** C2-ESCAPE §4.5: the lightning flash through the U1 window that shows the armoire ajar, after control at the stair top. */
+export const B05_ARMOIRE_FLASH_S = 2.5;
+export const B05_ARMOIRE_FLASH2_S = 30;
+/** PLAN points in the parlor (C2-ESCAPE §2.0): the neck on the sawbuck; the pool under the table's west edge. */
+const PARLOR_NECK: P3 = [5.31, 3.25, 1.4];
+const PARLOR_POOL: P3 = [5.12, 3.18, 0.6];
+const PARLOR_DOOR: P3 = [3.68, 1.5, 1.6];
+const PARLOR_ROCKER: P3 = [7.4, 4.95, 1.0];
 export const DEATH_CUTAWAY_S = 3;
 const FRONT_DOOR_OPEN_DELAY = 2.6;
 const PRY_NOISE = 14;
@@ -182,7 +192,8 @@ export class Story {
     const s = newEscapeState();
     const order: [BeatId, string[]][] = [
       ['B03', ['knocked', 'rang_front_bell', 'front_door_open']],
-      ['B04', ['parlor_locked']],
+      ['B04', ['parlor_locked', 'ada_severed']],
+      ['B05', ['cs_C2c_done']],
       ['B06', ['first_hide_done']],
       ['B07', ['ledger_read', 'has_hammer']],
       ['B08', ['c3_done']],
@@ -355,9 +366,13 @@ export class Story {
         return;
       case 'b03:hall_enter':
         if (b === 'B02' && this.f('front_door_open')) this.goBeat('B03');
+        if (this.s.beat === 'B03') this.b03Hall();
         return;
       case 'b03:threshold':
-        if (b === 'B03' && !s.cutscene) this.cutscene('C2');
+        if (b === 'B03' && !s.cutscene) {
+          this.emit({ type: 'sfx', id: 'parlor_drip_stop' }); // C2 owns the parlor's sound from here
+          this.cutscene('C2');
+        }
         return;
       // ---- B04
       case 'rattle_front_door':
@@ -366,10 +381,7 @@ export class Story {
           this.passageTried();
           return;
         }
-        if (at('B04') && !this.f('front_door_open')) this.once('voice:rattle', () => this.emit({ type: 'voice', trigger: 'b04:front_door_rattle' }));
-        return;
-      case 'b04:armoire_flash':
-        if (b === 'B04') this.once('flash:armoire', () => this.emit({ type: 'lightning', reason: 'armoire' }));
+        // C2-ESCAPE K10: b04_door_rattle is retired (B04 is the C2c cutscene; the front door is never reached in it)
         return;
       case 'b05:enter_u2':
         if (b === 'B05' && this.f('first_hide_done')) this.goBeat('B06');
@@ -493,6 +505,7 @@ export class Story {
     if (s.beat === 'B06' && !this.f('c3_done')) {
       this.checkpoint('CP4');
       this.goBeat('B07');
+      this.emit({ type: 'sfx', id: 'rocker_stop' }); // C3 owns the parlor (its own rocker cues)
       this.cutscene('C3');
     }
   }
@@ -540,6 +553,16 @@ export class Story {
       if (this.s.flags[name] === true && (name === 'has_locket' || name === 'front_door_open')) this.s.flags[name] = false;
       return;
     }
+    // C2-ESCAPE: cutscene markers (timeline `mark` cues 'c2:strike' at the blade contact and 'c2c:start' at C2c t=0,
+    // arriving as flags 'mark:<name>'; the names c2_struck / c2c_started are accepted too) — only while C2 plays
+    const marker = name === 'mark:c2:strike' || name === 'c2_struck' ? 'strike' : name === 'mark:c2c:start' || name === 'c2c_started' ? 'c2c' : name.startsWith('mark:') ? 'other' : null;
+    if (marker) {
+      if (this.s.cutscene === 'C2' && beatIndex(this.s.beat) <= beatIndex('B04')) {
+        if (marker === 'strike') this.c2Struck();
+        else if (marker === 'c2c') this.c2cStarted();
+      }
+      return;
+    }
     if (this.f(name)) return; // already known (our own echo, or a repeat)
     this.s.flags[name] = true;
     this.progress();
@@ -561,10 +584,9 @@ export class Story {
 
   private onHide(hideId: string, inside: boolean): void {
     const s = this.s;
-    if (inside && s.beat === 'B04') {
-      this.goBeat('B05');
-      this.emit({ type: 'voice', trigger: 'b05:hide_enter' });
-    }
+    // C2-ESCAPE §4.5: B05 starts at the stair top (control after C2c); the first hide is entered in B05 — the brain's
+    // b05_return turns into the unfailable slat demo at that hide
+    if (inside && s.beat === 'B05' && !this.f('first_hide_done')) this.once('voice:hide_enter', () => this.emit({ type: 'voice', trigger: 'b05:hide_enter' }));
     if (!inside && s.beat === 'B05' && this.f('first_hide_done')) this.once('cp:CP3', () => this.checkpoint('CP3'));
     void hideId;
   }
@@ -585,6 +607,11 @@ export class Story {
           if (!this.view.hidden && s.beat === 'B05') this.once('cp:CP3', () => this.checkpoint('CP3'));
         }
         if (e.mode === 'dress') this.setFlag('dress_visit_done');
+        // her return topped the stair with the player in the open: the brain applies the 6 s calm in place (no grace
+        // relocation — she would pop away in view); the normal rules after it
+        return;
+      case 'b05_return':
+        this.onB05Return(e.phase);
         return;
       case 'catch':
         this.onCatch(e.cause);
@@ -637,16 +664,13 @@ export class Story {
         this.goBeat('B02');
         return;
       case 'C2':
-        this.setFlag('front_door_open', false);
-        this.emit({ type: 'door', id: 'D_FRONT', action: 'rope_close' });
-        this.setFlag('parlor_locked');
-        this.emit({ type: 'door', id: 'D_PARLOR', action: 'lock' });
+        // the host chains C2 → C2c and reports 'C2' once, at C2c's end (skips included): control at the stair top
+        this.c2Struck();
+        this.c2cStarted();
+        this.setFlag('cs_C2c_done');
         this.checkpoint('CP2');
-        this.goBeat('B04');
-        this.ai({ op: 'scripted', mode: 'b04_chase', node: 'G_PARLOR_LURE', force: true });
-        return;
-      case 'C2_replay':
-        this.ai({ op: 'scripted', mode: 'b04_chase', node: 'G_PARLOR_LURE', force: true });
+        this.goBeat('B05');
+        this.b05Start();
         return;
       case 'C3':
         this.setFlag('c3_done');
@@ -682,13 +706,10 @@ export class Story {
     const cp = s.checkpoint ?? 'CP1';
     const deaths = s.deathsAt[cp] ?? 0;
     this.emit({ type: 'respawn', checkpoint: cp });
-    if (s.beat === 'B04') {
-      // C2 replays in 3 s: she rises again behind you
-      this.cutscene('C2_replay');
-      return;
-    }
     this.ai({ op: 'grace' });
     if (deaths >= 1) this.ai({ op: 'assist', slow: true }); // difficulty 2026-10-08: from the first death (was 2)
+    // C2-ESCAPE: a respawn at the stair top before the first hide replays her return below (offstage ≥ 10 s again)
+    if (s.beat === 'B05' && !this.f('first_hide_done')) this.ai({ op: 'scripted', mode: 'b05_return', node: 'G_PARLOR_LURE', force: true });
     if (cp === 'CP6' && s.beat === 'B09' && this.f('has_locket') && !this.f('locket_given')) this.ai({ op: 'scripted', mode: 'dress' });
     if (s.beat === 'B11' && !this.f('locket_given')) {
       if (s.finaleDeaths >= 1) {
@@ -702,7 +723,69 @@ export class Story {
     }
   }
 
+  // ------------------------------------------------------------------ C2-ESCAPE (B03 → C2 → C2c → B05)
+
+  /** B03 at the hall (§1): the first stroke is heard from the parlor, then a slow drip into a deepening pool. */
+  private b03Hall(): void {
+    this.once('b03:first_stroke', () => {
+      this.emit({ type: 'sfx', id: 'cleaver_chop_partial', pos: PARLOR_NECK, room: 'G2' });
+      this.emit({ type: 'sfx', id: 'parlor_drip_loop', pos: PARLOR_POOL, room: 'G2' });
+    });
+  }
+
+  /** C2's strike (cutscene flag/mark 'c2_struck', or C2's end when the cue never came): she is severed. */
+  private c2Struck(): void {
+    if (this.f('ada_severed')) return;
+    this.setFlag('ada_severed');
+    this.s.c2StrikeTime = this.s.time;
+    // the front door is shut on the rope and bolted, the parlor door locked behind her (C2 shows both)
+    this.setFlag('front_door_open', false);
+    this.emit({ type: 'door', id: 'D_FRONT', action: 'rope_close' });
+  }
+
+  /** C2c begins (cutscene flag 'c2c_started', or C2's end): B04 is the story beat while C2c plays — no AI, no catch. */
+  private c2cStarted(): void {
+    this.c2Struck();
+    if (!this.f('parlor_locked')) {
+      this.setFlag('parlor_locked');
+      this.emit({ type: 'door', id: 'D_PARLOR', action: 'lock' });
+    }
+    if (beatIndex(this.s.beat) < beatIndex('B04')) {
+      this.goBeat('B04');
+      this.ai({ op: 'scripted', mode: 'hidden' }); // the C2c body is a cutscene puppet; the brain stays offstage
+    }
+  }
+
+  /** B05's first frame of control at the stair top (§4.5): her return below, the armoire flash at +2.5 s. */
+  private b05Start(): void {
+    this.ai({ op: 'scripted', mode: 'b05_return', node: 'G_PARLOR_LURE', force: true });
+    this.addTimer('b05_armoire_flash', B05_ARMOIRE_FLASH_S);
+    this.addTimer('b05_armoire_flash2', B05_ARMOIRE_FLASH2_S); // only if still in the open (§4.5)
+  }
+
+  /** b05_return progress → the sounds below the stair top (C2-ESCAPE §4.5; positions PLAN). */
+  private onB05Return(phase: string): void {
+    if (this.s.beat !== 'B05') return;
+    switch (phase) {
+      case 'key':
+        // Harlan lets her out: the parlor key turns, then the hinge as she pushes the door
+        this.emit({ type: 'sfx', id: 'parlor_key_turn', pos: PARLOR_DOOR, room: 'G1' });
+        this.emit({ type: 'door', id: 'D_PARLOR', action: 'unlock' });
+        return;
+      case 'rocker':
+        // he has sat down again: the rocker, slow (0.55 Hz)
+        this.emit({ type: 'sfx', id: 'rocker_slow', pos: PARLOR_ROCKER, room: 'G2' });
+        return;
+      default:
+        return;
+    }
+  }
+
   private onTimer(id: string): void {
+    if ((id === 'b05_armoire_flash' || id === 'b05_armoire_flash2') && this.s.beat === 'B05' && !this.f('first_hide_done') && !this.view.hidden) {
+      this.once(`flash:${id}`, () => this.emit({ type: 'lightning', reason: 'armoire' }));
+      return;
+    }
     if (id === 'front_door_opens' && !this.f('front_door_open') && this.s.beat === 'B02') {
       this.setFlag('front_door_open');
       this.emit({ type: 'sfx', id: 'rope_pulleys' });
@@ -722,7 +805,7 @@ export class Story {
       case 'B04':
         return 'P_ARMOIRE';
       case 'B05':
-        return 'D_HARLAN';
+        return f('first_hide_done') ? 'D_HARLAN' : 'P_ARMOIRE';
       case 'B06':
         return f('ledger_read') ? 'P_HAMMER' : 'P_LEDGER';
       case 'B08': {

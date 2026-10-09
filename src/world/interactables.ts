@@ -50,6 +50,15 @@ export class Interactables {
   private readonly centres = new Map<Interactable, { c: any; r: number }>();
   private readonly _o = new THREE.Vector3();
   private readonly _d = new THREE.Vector3();
+  private readonly _p = new THREE.Vector3();
+  private readonly _inv = new THREE.Matrix4();
+  private readonly _lr = new THREE.Ray();
+  private readonly proxyMeshes = new Map<Interactable, any[]>();
+  private readonly cands: Interactable[] = [];
+  private exactAge = 0;
+  private exactBoxBest: Interactable | null = null;
+  private exactBest: Interactable | null = null;
+  private exactDist = Infinity;
 
   constructor(camera: any, input: Input, level: Level) {
     this.camera = camera;
@@ -160,6 +169,44 @@ export class Interactables {
     this.onHold?.(it, phase);
   }
 
+  /**
+   * RUNTIME F4 (lead ruling: raycast proxies instead of full-mesh per-frame picks). `Raycaster.intersectObject` walked
+   * every triangle of each interactable whose box the 3 m ray entered — every frame (heap-med, u1-armoire: three
+   * getVertexPosition 87 MB + intersectTriangle 14 MB of the 316 MB allocated in 6 s → GC pressure). Now each mesh of
+   * an item is a proxy box (its geometry's local bounding box, tested in the mesh's space: an exact OBB, no
+   * allocation) that pre-filters the items; the exact triangle test then runs on the box candidates only every
+   * EXACT_EVERY-th frame (or at once when the nearest box changes), so the prompt still means "aimed at the surface".
+   */
+  private proxies(it: Interactable): any[] {
+    let list = this.proxyMeshes.get(it);
+    if (!list) {
+      list = [];
+      it.object.traverse((m: any) => {
+        if (!m.isMesh || !m.geometry) return;
+        if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+        if (m.geometry.boundingBox && !m.geometry.boundingBox.isEmpty()) list!.push(m);
+      });
+      this.proxyMeshes.set(it, list);
+    }
+    return list;
+  }
+
+  /** Nearest proxy-box entry distance along the current ray (Infinity if none within reach). */
+  private boxDistance(it: Interactable, reach: number): number {
+    let best = Infinity;
+    for (const m of this.proxies(it)) {
+      if (!isShown(m)) continue;
+      this._inv.copy(m.matrixWorld).invert();
+      this._lr.copy(this.ray.ray).applyMatrix4(this._inv);
+      const p = this._lr.intersectBox(m.geometry.boundingBox, this._p);
+      if (!p) continue;
+      p.applyMatrix4(m.matrixWorld);
+      const d = p.distanceTo(this._o);
+      if (d <= reach && d < best) best = d;
+    }
+    return best;
+  }
+
   private pick(): Interactable | null {
     const cam = this.camera;
     cam.updateMatrixWorld();
@@ -168,21 +215,55 @@ export class Interactables {
     this.ray.set(this._o, this._d);
     let best: Interactable | null = null;
     let bd = Infinity;
+    let n = 0;
+    const cands = this.cands;
+    cands.length = 0;
     for (const it of this.items) {
       const reach = it.reach ?? REACH;
       const cs = this.centres.get(it);
       if (cs && cs.c.distanceTo(this._o) > reach + cs.r + 0.5) continue;
       if (!isShown(it.object)) continue;
-      const hits = this.ray.intersectObject(it.object, true);
-      for (const h of hits) {
-        if (h.distance > reach) break;
-        if (!isShown(h.object)) continue;
-        if (h.distance < bd) {
-          bd = h.distance;
-          best = it;
-        }
-        break;
+      const d = this.boxDistance(it, reach);
+      if (!Number.isFinite(d)) continue;
+      cands.push(it);
+      n++;
+      if (d < bd) {
+        bd = d;
+        best = it;
       }
+    }
+    if (n === 0) {
+      this.exactAge = 0;
+      this.exactBoxBest = null;
+      return null;
+    }
+    // Exact surface test (the pre-F4 rule) on the box candidates — every EXACT_EVERY-th frame, or at once when the
+    // nearest box changes; between those the last exact answer is held (≤ 3 frames = 50 ms at 60 fps).
+    const boxBest = best;
+    if (boxBest === this.exactBoxBest && this.exactAge > 0 && this.exactAge < EXACT_EVERY) {
+      this.exactAge++;
+      best = this.exactBest;
+      bd = this.exactDist;
+    } else {
+      this.exactAge = 1;
+      this.exactBoxBest = boxBest;
+      best = null;
+      bd = Infinity;
+      for (const it of cands) {
+        const reach = it.reach ?? REACH;
+        const hits = this.ray.intersectObject(it.object, true);
+        for (const h of hits) {
+          if (h.distance > reach) break;
+          if (!isShown(h.object)) continue;
+          if (h.distance < bd) {
+            bd = h.distance;
+            best = it;
+          }
+          break;
+        }
+      }
+      this.exactBest = best;
+      this.exactDist = bd;
     }
     if (!best) return null;
     // line of sight: static collision closer than the hit (minus slack for the prop's own collider surface) blocks it
@@ -191,6 +272,9 @@ export class Interactables {
     return best;
   }
 }
+
+/** RUNTIME F4: exact pick cadence (frames) while the nearest proxy box stays the same. */
+const EXACT_EVERY = 4;
 
 function isShown(o: any): boolean {
   for (let n = o; n; n = n.parent) if (n.visible === false) return false;

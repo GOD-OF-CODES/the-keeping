@@ -94,9 +94,7 @@ L('c1_dim', 'driver', 'B01', 'c1:truck',
 L('b02_hello', 'driver', 'B02', 'b02:first_knock',
   "[raising his voice over the rain, hesitant] Hello? [short pause] ...Sorry to bother you this late. My car ran out of gas.",
   "Hello? …Sorry to bother you this late. My car ran out of gas.", { priority: 7 });
-L('b04_door_rattle', 'driver', 'B04', 'b04:front_door_rattle',
-  "[panicked, breathless whisper] No, no, no, come on, open—",
-  "No, no, no, come on, open—", { chain: 'whisper_in_head', priority: 7 });
+// C2-ESCAPE K10: b04_door_rattle retired (B04 is the C2c cutscene; the front door is never reached in it)
 L('b05_dont_breathe', 'driver', 'B05', 'b05:hide_enter',
   "[whispers, shaking] Don't breathe. [short, shaky breath] Don't breathe.",
   "Don't breathe. Don't breathe.", { chain: 'whisper_in_head', priority: 8 });
@@ -165,8 +163,9 @@ L('doc_letter', 'ada', 'B09', 'doc:letter_read',
   { kind: 'reading', chain: 'memory', priority: 6, ms: 'M2' });
 
 // ------------------------------------------------------------ HARLAN (5–7 rare, slow lines + his ledger)
+// C2-ESCAPE K10: the cue moves to C2 17.3 (the rope slips, the headless body is on its feet); said to her, winded
 L('b03_go_on', 'harlan', 'B03', 'c2:rope_slip',
-  '[low, slow, flat, through a burlap sack] Go on, then.', 'Go on, then.', { priority: 10 });
+  '[low, slow, flat, winded from the work, through a wet burlap sack] Go on, then.', 'Go on, then.', { priority: 10 });
 L('b07_grate', 'harlan', 'B07', 'b07:grate_peek',
   '[slow, muffled, tilting his head up toward the ceiling] She\'ll find you, friend. [a long breath through the sack] She always does.',
   "She'll find you, friend. She always does.", { chain: 'through_floor', priority: 8, ms: 'M2' });

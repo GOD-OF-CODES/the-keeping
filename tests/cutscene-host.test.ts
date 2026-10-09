@@ -134,6 +134,10 @@ test('host: hold-to-skip needs the input held for 0.8 s (released = reset)', () 
   for (let i = 0; i < 20; i++) s.player.holdSkip(true, 1 / 30);
   assert.equal(s.player.active, 'C2');
   for (let i = 0; i < 6; i++) s.player.holdSkip(true, 1 / 30);
+  // C2-ESCAPE §1: a skip inside C2 lands in the chained C2c at 10.4 (the slow turn to the empty stair)
+  assert.equal(s.player.active, 'C2c');
+  assert.ok(Math.abs(s.player.time - 10.4) < 1e-6);
+  s.step(3.6);
   assert.equal(s.player.active, null);
   assert.ok(s.bus.includes('end:C2(skipped)'));
   assert.ok(s.bus.includes('beat:B04'));
@@ -176,15 +180,15 @@ test('host: death — camera released and input unlocked BEFORE the respawn tele
   assert.deepEqual(s.bus.filter((b) => b.includes('death')), ['start:death', 'end:death']);
 });
 
-test('host: B04 death replays C2_replay (3 s) and hands Ada to the chase', () => {
+test('host: no C2 replay (C2-ESCAPE) — a debug start at B04 begins at the stair top (B05, her return below); a forced death there only plays the death cutaway', () => {
   const s = setup();
   s.dir.startAt('B04');
-  s.dir.apply(s.dir.story.handle({ type: 'ai', event: { type: 'catch', cause: 'scripted' } as any }));
+  assert.equal(s.dir.story.beat, 'B05');
+  s.dir.apply(s.dir.story.handle({ type: 'ai', event: { type: 'catch', cause: 'bump' } as any }));
   s.step(3.2);
-  assert.equal(s.player.active, 'C2_replay');
   s.step(3.2);
   assert.equal(s.player.active, null);
-  assert.deepEqual(s.bus.filter((b) => b.startsWith('end:')), ['end:death', 'end:C2_replay']);
+  assert.deepEqual(s.bus.filter((b) => b.startsWith('end:')), ['end:death']);
 });
 
 test('host: a new Director cutscene while one runs → the running one is skipped first (its done fires once)', () => {

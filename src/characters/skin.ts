@@ -20,6 +20,34 @@ const SKIN_OFF = typeof location !== 'undefined' && new URLSearchParams(location
 export const uSkinWrap = uniform(0.3);
 export const uSkinTint = uniform(new THREE.Vector3(0.6, 0.25, 0.2));
 
+// ---- C2-ESCAPE B13 (#17 runtime side): the wet cotton nightgown. Water fills the air gaps between the fibres, so
+// a soaked cotton sheet scatters far less: it darkens and lets light THROUGH (translucent / see-through where wet).
+// A thin sheet: light arriving from behind (N·L < 0 on the viewer's side) is transmitted diffusely, tinted by the
+// cloth and by the grey-blue drowned skin it lies on. T = translucencyWet × wetness (material-spec nightgown_silt:
+// 0.4 × 0.9 = 0.36) — the fraction of back irradiance re-emitted diffusely on the front. Cotton's forward-scattering
+// wrap (w 0.5) keeps the terminator soft like fabric, not plastic.
+export const uGownTrans = uniform(0.36);
+export const uGownWrap = uniform(0.5);
+/** Mean colour of what the wet sheet transmits: the cloth's own albedo × the skin under it (skin_ada tone 0.33/0.35/0.37). */
+export const uGownTransTint = uniform(new THREE.Vector3(0.85, 0.88, 0.95));
+
+export class GownLightingModel extends (THREE as any).PhysicalLightingModel {
+  direct(input: any, builder: any): void {
+    super.direct(input, builder);
+    const dotNL = normalView.dot(input.lightDirection);
+    const lam = dotNL.clamp(0, 1);
+    const wrap = dotNL.add(uGownWrap).div(uGownWrap.add(1)).clamp(0, 1);
+    const back = dotNL.negate().clamp(0, 1);
+    const extra = wrap.sub(lam).max(0).add(back.mul(uGownTrans).mul(uGownTransTint));
+    input.reflectedLight.directDiffuse.addAssign(input.lightColor.mul(extra).mul(diffuseColor.rgb).mul(1 / Math.PI));
+  }
+}
+
+// ---- C2-ESCAPE B14: the player's gloves in the rain. Porous leather wets darker (water fills the pores: ≈ −25 %
+// albedo at full wetness) and smoother (the film fills the grain: roughness × 0.55); on Max a water film lobe
+// (clearcoat, F0 0.02 ≈ water n 1.33, roughness 0.12) sits on top. Wetness 0.6: he walked up the drive in the storm.
+export const uGloveWet = uniform(0.6);
+
 export class SkinLightingModel extends (THREE as any).PhysicalLightingModel {
   direct(input: any, builder: any): void {
     super.direct(input, builder);
@@ -126,6 +154,17 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
     p.userData = m.userData;
     p.colorNode = m.colorNode;
     p.roughnessNode = m.roughnessNode;
+    if (String(ud.material_id) === 'skin_ada' && m.colorNode && m.roughnessNode) {
+      // C2-ESCAPE reviewer fix (cut faces read as flat salmon discs): the cut tissue lane A paints into the atlas
+      // (muscle ≈ 0.17/0.07/0.06 linear, r/g ≈ 2.4; her grey-blue skin r/g ≈ 0.95, lividity ≲ 1.3) is fresh meat under
+      // a blood film: whole blood absorbs green/blue in < 0.1 mm (Hb), so the film darkens and deepens it to
+      // ≈ 0.09/0.016/0.014, and the plasma film is a smooth dielectric (roughness ≈ 0.08–0.12, F0 ≈ 0.02):
+      // sharp glints of the lamp/torch instead of a matte disc. Bone/cartilage (low r/g) is left as painted.
+      const c = m.colorNode;
+      const cut = smoothstep(1.55, 2.1, c.r.div(c.g.max(1e-3)));
+      p.colorNode = c.mul(vec3(1).sub(vec3(0.45, 0.78, 0.78).mul(cut)));
+      p.roughnessNode = m.roughnessNode.mul(float(1).sub(cut)).add(cut.mul(0.1));
+    }
     p.normalMap = m.normalMap;
     p.normalScale = m.normalScale;
     p.side = m.side;
@@ -153,8 +192,9 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
     // (scratch/re: brown texels of public/assets/medium/arms_albedo.webp) — 2× material-spec leather_worn
     // (0.035 / 0.022 / 0.015: dark brown driving-glove leather). Under the 2700 K dome, with the eye adapted to the
     // cream cabin, that read as a tanned bare hand (C1 20.5). Calibrated to the spec, like every generated material.
-    p.colorNode = m.colorNode ? m.colorNode.mul(vec3(0.035 / 0.0704, 0.022 / 0.0376, 0.015 / 0.0217)) : m.colorNode;
-    p.roughnessNode = m.roughnessNode;
+    p.colorNode = m.colorNode ? m.colorNode.mul(vec3(0.035 / 0.0704, 0.022 / 0.0376, 0.015 / 0.0217)).mul(float(1).sub(uGloveWet.mul(0.25))) : m.colorNode;
+    // C2-ESCAPE B14: wet leather is smoother (the film fills the grain); floor 0.22 (a wet hide is never a mirror)
+    p.roughnessNode = m.roughnessNode ? max(float(0.22), m.roughnessNode.mul(float(1).sub(uGloveWet.mul(0.45)))) : null;
     p.normalMap = m.normalMap;
     p.normalScale = m.normalScale;
     p.metalness = 0;
@@ -166,9 +206,17 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
       p.sheen = 1;
       p.sheenColor = new THREE.Color(0.16, 0.14, 0.12);
       p.sheenRoughness = 0.5;
+      // B14: the water film on Max (the clearcoat lobe; no extra sampler — no clearcoat maps)
+      p.clearcoat = 0.6;
+      p.clearcoatRoughness = 0.12;
     }
-    if (!p.roughnessNode) p.roughness = 0.55;
+    if (!p.roughnessNode) p.roughness = 0.55 * (1 - 0.45 * 0.6);
     return p;
+  }
+  if (String(ud.material_id) === 'nightgown_silt' && presetId !== 'low') {
+    // C2-ESCAPE B13: wet-cotton translucency (see GownLightingModel)
+    m.setupLightingModel = () => new GownLightingModel();
+    return m;
   }
   if (String(ud.material_id) === 'hair_wet_black' && presetId !== 'low') {
     if (!m.roughnessNode) m.roughness = 0.3; // indirect (probe/env) specular of wet hair (the direct lobes: HAIR)

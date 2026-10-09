@@ -181,6 +181,30 @@ export class Sequencer {
     return true;
   }
 
+  /**
+   * C2-ESCAPE (skip into a chained cutscene, C2 → C2c 10.4): jump forward to time t, applying every STATE cue before
+   * t exactly as skip() does (late = t − c.t, so clips start at their right offset) and finishing the moves that ended
+   * before t. Cues at or after t fire normally on the next update. Gates before t count as resolved.
+   */
+  seek(t: number): void {
+    if (this.finished) return;
+    const to = Math.max(this.now, Math.min(this.timeline.duration, t));
+    this.started = true;
+    for (; this.ci < this.cues.length; this.ci++) {
+      const c = this.cues[this.ci];
+      if (c.t >= to) break;
+      this.finishMovesUpTo(c.t, true);
+      if (c.type === 'gate') {
+        this.resolved.add(c.id);
+        continue;
+      }
+      if (isStateCue(c)) this.sink.cue(c, { skipped: true, late: Math.max(0, to - c.t) });
+    }
+    this.finishMovesUpTo(to - 1e-9, true);
+    this.now = to;
+    this.evalContinuous(to);
+  }
+
   /** Stop without applying anything (teardown); emits nothing. */
   abort(): void {
     this.finished = true;
@@ -211,8 +235,24 @@ export class Sequencer {
       }
     }
     const fov = typeof s.fov === 'number' ? s.fov : lerp(s.fov[0], s.fov[1], e);
-    const roll = s.roll === undefined ? 0 : typeof s.roll === 'number' ? s.roll : lerp(s.roll[0], s.roll[1], e);
-    return { pos, target, fov, roll, shake: handheld(wall, this.seed, s.handheld ?? 0) };
+    let roll = s.roll === undefined ? 0 : typeof s.roll === 'number' ? s.roll : lerp(s.roll[0], s.roll[1], e);
+    if (s.bob) {
+      const tau = t - s.t;
+      const dz = s.bob.amp * (0.5 - 0.5 * Math.cos(2 * Math.PI * s.bob.hz * tau)) - s.bob.amp / 2;
+      pos = [pos[0], pos[1], pos[2] + dz];
+      target = [target[0], target[1], target[2] + dz];
+      roll += (s.bob.roll ?? 0) * Math.sin(Math.PI * s.bob.hz * tau);
+    }
+    const shake = handheld(wall, this.seed, s.handheld ?? 0);
+    for (const k of this.timeline.kicks ?? []) {
+      const u = (t - k.t) / k.d;
+      if (u <= 0 || u >= 1) continue;
+      const w = Math.sin(Math.PI * u);
+      shake[0] += (k.yaw ?? 0) * w;
+      shake[1] += (k.pitch ?? 0) * w;
+      shake[2] += (k.roll ?? 0) * w;
+    }
+    return { pos, target, fov, roll, shake };
   }
 
   vehicleAt(t: number): VehiclePose | null {

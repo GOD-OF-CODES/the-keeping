@@ -316,6 +316,8 @@ export function createOpening(d: OpeningDeps) {
     EXPOSURE_CUE.hold = p.hold === true;
     EXPOSURE_CUE.min = p.min !== undefined ? Number(p.min) : null;
     EXPOSURE_CUE.max = p.max !== undefined ? Number(p.max) : null;
+    // C2-ESCAPE B1: spot meter {spotX, spotY, spotR, spotW} (uv; w = share of the spot in the reading)
+    EXPOSURE_CUE.spot = p.spotW !== undefined ? { x: Number(p.spotX ?? 0.5), y: Number(p.spotY ?? 0.5), r: Number(p.spotR ?? 0.2), w: Number(p.spotW) } : null;
     if (p.snap === true) requestExposureSnap();
   };
   const resetExposure = () => {
@@ -324,6 +326,7 @@ export function createOpening(d: OpeningDeps) {
     EXPOSURE_CUE.hold = false;
     EXPOSURE_CUE.min = null;
     EXPOSURE_CUE.max = null;
+    EXPOSURE_CUE.spot = null;
   };
 
   // ---- the logging truck (S5): eastbound along the road at constant speed, wheels turning

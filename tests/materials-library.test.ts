@@ -31,8 +31,8 @@ test('every material family used by the spec has a dedicated generator', () => {
   assert.match(libSrc, /wall_tally:\s*wallTally/);
 });
 
-test('spec sanity: 94 materials, unique ids, avgAlbedo in (0,1), tileMetres > 0', () => {
-  assert.equal(MATERIAL_SPECS.length, 94);
+test('spec sanity: 96 materials (C2-ESCAPE K7 + blood_wet, blood_dried), unique ids, avgAlbedo in (0,1), tileMetres > 0', () => {
+  assert.equal(MATERIAL_SPECS.length, 96);
   assert.equal(new Set(MATERIAL_SPECS.map((m) => m.id)).size, MATERIAL_SPECS.length);
   for (const m of MATERIAL_SPECS) {
     assert.ok(m.tileMetres > 0, m.id);

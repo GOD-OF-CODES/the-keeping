@@ -314,6 +314,7 @@ export class RoomReflections {
       }
       for (const p of only ?? this.probes.values()) {
         const cc = new THREE.CubeCamera(p.near, p.far, into ?? p.cube);
+        for (const c of cc.children) c.layers.enable(6); // RUNTIME F2: also the yard meshes the view's window cull parked on layer 6 (src/world/window-cull.ts)
         cc.position.copy(p.center);
         cc.updateMatrixWorld(true);
         cc.update(renderer, scene);

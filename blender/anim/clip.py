@@ -138,6 +138,9 @@ def bake_clip(rig, clip, meshes=()):
         c.chain_count = spec.get('chain', 2)
         c.use_tail = spec.get('use_tail', True)
         c.influence = spec.get('influence', 1.0)
+        for lb in spec.get('lock', ()):          # bones the solver must not bend (a prop bone fixed in the fist)
+            lp = rig.pose.bones[lb]
+            lp.lock_ik_x = lp.lock_ik_y = lp.lock_ik_z = True
         if 'weight' in spec:
             w = np.array([float(spec['weight'](i / FPS)) for i in range(n)])
             _write_fcurve(cb, f'pose.bones["{tip}"].constraints["IK"].influence', 0, frames, w, tip)
@@ -188,6 +191,7 @@ def bake_clip(rig, clip, meshes=()):
         for c in list(pb.constraints):
             pb.constraints.remove(c)
         pb.rotation_mode = 'XYZ'
+        pb.lock_ik_x = pb.lock_ik_y = pb.lock_ik_z = False
     _to_track(rig, baked)
     return baked
 

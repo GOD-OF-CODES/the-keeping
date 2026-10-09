@@ -612,6 +612,32 @@ Ranked, worst first. Not yet verified fixed; the review was blocked (battery 10 
 6. **Unreviewed on the current tree** (need Chrome time + mains): the rest of the C1-OPENING §11 frames, parlor perf,
    first-person gloves/arms (torch, wheel grip, map), upstairs key candle, armoire slat view, Ada under the torch (#17).
 
+## C2-ESCAPE Phase 1 — art/horror-director review (2026-10-09)
+
+Frames: `scratch/esc-review/r1med-*` (as built), `r2…r4med-*` (after the review fixes); Medium, WebGPU, 1280×800,
+simulated time (`scripts/qa/c2e-hero.mjs`, `scratch/esc-review/r2.mjs`). Max frames: see STATUS-escape-cine "Review".
+Judged against a photograph and against the user's words (beheading clearly visible, really horrifying, she follows
+you up the stairs, the empty stair, then the game begins).
+
+**Verdict: not photoreal yet, and the user's first sentence is not met.** The beheading is NOT readable in one still
+(C2 7.62/8.45): the gown is a cream lump that hides the stump, the jets are a few sub-pixel red dots (620 particles on
+Medium), the head is a dark hair ball against a dark sheet. The stair half now works as a sequence: the climb is lit
+again, glance #2 shows her grey hand on the rail, the empty stair is a strong frame.
+
+| # | Problem (frame) | Why it isn't real | Fix (owner) |
+|---|---|---|---|
+| 1 | The strike does not read (C2 7.62, 8.45) | no visible separation at contact; jets sub-pixel; stump hidden by the gown lump | stage the stump in profile against the lamp (camera/blocking, B-CINE); jets ≥ 3–4 px wide streaks with motion blur on Medium (B4/B8); a visible gap at 7.62 (head node offset on contact frame) |
+| 2 | Ada's gown/torso = white plaster mannequin (C2 2.4, 24.0; B05 1.5 m) | clipped highlight (lamp 0.4 m away, C2's exposure clamp 0.5–2.2 disables the highlight cap), no folds/texture at that luminance, blocky torso silhouette | A11 wet-cotton atlas + fold normal detail (A); let C2's meter protect the lamp-lit gown (B-CINE) |
+| 3 | Cut faces = flat red discs with a white "target" vertebra (C2 9.9, 24.0; B05) | 120–150 px texel density, almost no relief; the white vertebra cross reads as a sticker | 512 px cap texels + displaced/normal relief, blood film over bone (A2); runtime wet film added (r2) |
+| 4 | Eye insert (C2 13.9) not working | the face is back-lit by the lamp and behind the hair veil; at 100 mm it is a silhouette | key the lamp side (3/4 to the lamp done in r4), a cornea glint, a real 2 cm veil gap (A3/B3, Phase 2) |
+| 5 | Head on the floor (C2 9.9) = hair ball + flat disc, 0.2 m from its pool | no ear/jaw profile, pool not under it | rest pose with the profile up, pool spawned under the cut (B-CINE) |
+| 6 | Pools/prints (C2 9.9; C2c 12.6) | pools are opaque red ellipses (no reflection, unshadowed custom shading); prints are dark SQUARES with a pink foot | pool env reflection + shadow term; prints: atlas mip bleed suspected (pool cell 11 above print cells 12/13) — test `generateMipmaps = false` (B5) |
+| 7 | Glance #1 (C2c 4.0) | headless doesn't read: cream lit torso from above, not a silhouette against the fanlight patch | re-block her between the camera and the patch (B-CINE) |
+| 8 | Balusters (C2c 4.0, 12.6) | bright white specular outlines / shimmer | baluster roughness/AA (A/B) |
+
+Fixed in this review (logged, CONTRACT-CHANGES #97–#101): the black climb (beam clamp in C2c), glance #2's subject
+lit, the held head faces the camera 3/4 to the lamp, the eye-insert aim, the wet cut-tissue film.
+
 ## Merged and overruled QA points
 - Agreed: QA #1 (dark frames), #3 (outlines/CA, cause now found), #4 (grain), #5 (facade), #7 (C5), #8 (C6),
   #10 (rain glass).

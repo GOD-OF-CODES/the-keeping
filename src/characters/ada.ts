@@ -15,6 +15,7 @@ import type { AdaAnim, AdaOutput } from '../ai/types.ts';
 import { planToWorld } from '../shared/coords.ts';
 import { PoseCache, type LoadedCharacter } from './loader.ts';
 import { AngularSpring, StopMotion, VerletChain, type Capsule3 } from './secondary.ts';
+import { HeadCarry } from './head-carry.ts';
 
 /**
  * Clip preferences per AdaAnim: M2 clips first (picked up automatically once the GLB has them), then the M1 clip
@@ -82,6 +83,9 @@ export class AdaCharacter {
   private readonly stop = new StopMotion();
   private readonly cache: PoseCache;
   private readonly chains: VerletChain[] = [];
+  private readonly hairChains: VerletChain[] = [];
+  /** The hair chain parted off the open eye (S6), or null. */
+  private partedChain: VerletChain | null = null;
   private readonly legCaps: Capsule3[] = [];
   private readonly spring = new AngularSpring(34, 4.2);
   private readonly bones: Map<string, any>;
@@ -98,6 +102,9 @@ export class AdaCharacter {
   private headYaw = 0;
   private readonly morphMeshes: any[] = [];
   private readonly contact: ContactShadow;
+  /** C2-ESCAPE B3: the severed head + the one runtime head-carry mechanism (head-carry.ts). */
+  readonly headCarry: HeadCarry;
+  private warnedNoHead = false;
 
   constructor(c: LoadedCharacter) {
     this.c = c;
@@ -123,7 +130,9 @@ export class AdaCharacter {
     for (let g = 0; g < 8; g++) {
       const hb = chain(`hair_${g}`, 4);
       if (hb.length) {
-        this.chains.push(new VerletChain(hb, { stiffness: 0.16, damping: 0.86 }));
+        const hc = new VerletChain(hb, { stiffness: 0.16, damping: 0.86 });
+        this.chains.push(hc);
+        this.hairChains.push(hc);
         cached.push(...hb);
       }
       const gb = chain(`gown_${g}`, 3);
@@ -138,11 +147,21 @@ export class AdaCharacter {
       this.legCaps.push({ a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.095 }, { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.07 });
       void s;
     }
-    for (const n of ['neck_01', 'neck_02', 'head']) {
+    // the arm override layer (head carry) rotates the arms after the sampled pose: cache them too, or the rotation
+    // would accumulate on the frames that restore instead of sampling
+    for (const n of ['neck_01', 'neck_02', 'head', 'upperarm_r', 'forearm_r', 'hand_r', 'upperarm_l', 'forearm_l', 'hand_l']) {
       const b = this.bones.get(n);
       if (b) cached.push(b);
     }
     this.cache = new PoseCache(cached);
+    const tri = (s: string): [any, any, any] | null => {
+      const t = [this.bones.get(`upperarm_${s}`), this.bones.get(`forearm_${s}`), this.bones.get(`hand_${s}`)];
+      return t.every(Boolean) ? (t as [any, any, any]) : null;
+    };
+    this.headCarry = new HeadCarry(c.root, { head: this.bones.get('head') ?? null, propR: this.bones.get('prop_r') ?? this.bones.get('hand_r') ?? null, armR: tri('r'), armL: tri('l') });
+    const carryClip = c.clips.get('ada_carry_r');
+    if (carryClip) this.headCarry.setGrip(carryClip, this.bones);
+    for (const m of c.meshes) if (m.morphTargetDictionary && 'eyelid_l_open' in m.morphTargetDictionary && !this.morphMeshes.includes(m)) this.morphMeshes.push(m);
   }
 
   /** Per-tick AI output (Director host.ada). */
@@ -194,6 +213,62 @@ export class AdaCharacter {
   /** The clip a cutscene override is playing (null = AI-driven). */
   get overrideClip(): string | null {
     return this.ov?.clip ?? null;
+  }
+
+  // ------------------------------------------------------------------ C2-ESCAPE B3: severed Ada
+
+  /** The world root the free head lives in (the level root Ada's group sits in). */
+  private world(): any | null {
+    return this.group.parent ?? null;
+  }
+
+  /** C2's cut (B-CINE `fx adaHead sever`, the story flag `ada_severed`): the head becomes its own node; neck spring off. */
+  sever(on: boolean): void {
+    if (on && !this.headCarry.real && !this.warnedNoHead) {
+      this.warnedNoHead = true;
+      console.info('[ada] severed: no ada_head_rig in this GLB yet (lane A A0/A1) — the head is a stand-in node; the body stays whole');
+    }
+    this.headCarry.sever(on, this.world());
+    if (!on) this.eyeOpen(false);
+  }
+
+  get severed(): boolean {
+    return this.headCarry.severed;
+  }
+
+  /** The head node (world-space while free; B-CINE's head puppet positions it) — null before the split asset lands. */
+  headNode(): any | null {
+    return this.headCarry.real ? this.headCarry.node : null;
+  }
+
+  /** Hang the head from a socket (Harlan's prop_l in C2, her own prop_r) — null = leave it free where it is. */
+  carryHeadBy(socket: any | null): void {
+    this.headCarry.carryBy(socket, this.world());
+  }
+
+  /** The left eyelid opens (C2 13.6, `eyelid_l_open`; no-op until the morph exists). */
+  eyeOpen(on: boolean): void {
+    for (const m of this.morphMeshes) {
+      const d = m.morphTargetDictionary;
+      if (m.morphTargetInfluences && 'eyelid_l_open' in d) m.morphTargetInfluences[d.eyelid_l_open] = on ? 1 : 0;
+    }
+    // part the strand nearest her image-left eye (her right eye, the one that opens): in the head node's frame
+    // (origin = the crown, +Z = the face, +X = her left) the eye sits ≈ (−0.032, −0.10, +0.09) m (lane A's head)
+    const node = this.headCarry.node;
+    if (!node) return;
+    node.updateWorldMatrix(true, false);
+    const eye = new THREE.Vector3(-0.032, -0.1, 0.09).applyMatrix4(node.matrixWorld);
+    const tmp = new THREE.Vector3();
+    let best = Infinity;
+    for (const hc of this.hairChains) {
+      const b = hc.bones[Math.min(1, hc.bones.length - 1)];
+      b.updateWorldMatrix(true, false);
+      const d = tmp.setFromMatrixPosition(b.matrixWorld).distanceTo(eye);
+      if (d < best) {
+        best = d;
+        this.partedChain = hc;
+      }
+    }
   }
 
   /** Bone by name (sockets prop_l / prop_r, hand_*, head …). */
@@ -253,6 +328,8 @@ export class AdaCharacter {
     } else if (!out || !out.visible) {
       this.group.visible = false;
       this.primed = false;
+      // the head she carries goes offstage with her (a head another hand holds stays where it is)
+      if (this.headCarry.severed && this.headCarry.holder === this.headCarry.bones.propR) this.headCarry.node.visible = false;
       this.contact.update();
       return;
     } else {
@@ -314,9 +391,10 @@ export class AdaCharacter {
     }
     this.headYaw += (wantHeadYaw - this.headYaw) * Math.min(1, dt * 5);
     this.spring.update(dt, -accFwd * 1.6, accSide * 1.6, lifted ? 0.12 : 0.5);
-    const neck = this.bones.get('neck_02');
-    const head = this.bones.get('head');
-    const neck1 = this.bones.get('neck_01');
+    const severed = this.headCarry.severed;
+    const neck = severed ? null : this.bones.get('neck_02'); // C2-ESCAPE: the neck spring is off once she is severed
+    const head = severed ? null : this.bones.get('head');
+    const neck1 = severed ? null : this.bones.get('neck_01');
     const k = lifted ? 0.3 : 1;
     if (neck1 && Math.abs(this.headYaw) > 1e-3) rotateLocal(neck1, 'y', this.headYaw * 0.5);
     if (neck) {
@@ -332,7 +410,26 @@ export class AdaCharacter {
 
     // ---- chains (gown collides with the legs)
     this.updateLegCaps();
+    // ---- the carried head + the arm override layer (after the clip pose, before the hair chains)
+    if (severed) {
+      const hc = this.headCarry;
+      const own = hc.bones.propR;
+      // in gameplay the head is always in her right hand (unless she set it down); a cutscene decides its own
+      if (!ov && out && out.visible && hc.mode !== 'placed' && hc.holder !== own && own) this.carryHeadBy(own);
+      if (!ov) hc.node.visible = this.group.visible;
+      hc.update(dt, this.group, ov ? null : (out?.head ?? 'hanging'), this.legCaps[2] ?? null, this.headYaw);
+      this.c.root.updateMatrixWorld(true);
+    }
     const cdt = this.primed ? dt : 0;
+    // C2-ESCAPE review (S6, §2.1 "the swing parts a 2 cm gap over the left eye"): the one strand chain over the open eye
+    // is flicked up and let go of its authored veil pose (stiffness 0.16 → 0.02); the rest of the curtain stays.
+    // (only while another hand holds it: once she carries it herself — C2c / B05 — the curtain falls back)
+    if (this.partedChain && this.headCarry.holder === this.headCarry.bones.propR) this.partedChain = null;
+    for (const hc of this.hairChains) {
+      const part = hc === this.partedChain;
+      hc.gravity = part ? -40 : 9.81;
+      hc.stiffness = part ? 0.02 : 0.16;
+    }
     for (const ch of this.chains) ch.update(cdt);
 
     // ---- morphs

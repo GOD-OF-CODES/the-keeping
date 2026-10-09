@@ -293,6 +293,17 @@
       "outputs": []
     },
     {
+      "id": "c2-review",
+      "group": "review",
+      "manual": true,
+      "description": "A9 C2-ESCAPE review renders (Cycles, real light values: 12 cd lamp, candles; metered like the runtime eye) of the restaged parlor -> scratch/c2e/a9/*.png + meter.json",
+      "script": "blender/anim/review_c2.py",
+      "args": ["--samples", "64"],
+      "libInputs": ["blender/lib/scene.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", ".cache/anims/ada_anim.blend", ".cache/anims/harlan_anim.blend"],
+      "outputs": []
+    },
+    {
       "id": "arms-dim-review",
       "group": "review",
       "manual": true,

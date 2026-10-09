@@ -96,6 +96,12 @@ export function createFlashlight(camera: any, preset: PresetConfig): Flashlight 
   light.shadow.normalBias = 0.02;
   light.shadow.camera.near = 0.08;
   light.shadow.camera.far = 18;
+  // RUNTIME F3 (lead ruling): indoors the torch's caster set follows the VIEW layers, so the yard meshes the window
+  // cull (src/world/window-cull.ts) moved off layer 0 — everything not seen through an opening — cast nothing into it.
+  // An indoor receiver lit by an indoor torch can only be shadowed by an occluder between them: inside the house, or
+  // in the opening's sub-frustum (still on layer 0). Measured u1-armoire before: torch pass 168–188 draws / 350 k tris,
+  // of which EXT2 40–45 / 202 k (docs/RUNTIME-F-PLAN.md F3).
+  light.userData.windowCullCasters = false;
   // Must be the TSL Fn itself (LightsNode hashes light.colorNode.getCacheKey(); SpotLightNode calls it with lightCoord).
   light.colorNode = flashlightCookie;
   uTorchPos.onRenderUpdate(() => uTorchPos.value.setFromMatrixPosition(light.matrixWorld));

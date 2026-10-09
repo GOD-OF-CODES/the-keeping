@@ -16,6 +16,7 @@ import {
   float,
   Fn,
   smoothstep,
+  texture,
   luminance,
   mix,
   mrt,
@@ -24,11 +25,14 @@ import {
   packNormalToRGB,
   pass,
   renderOutput,
+  positionWorld,
   sample,
+  screenSize,
   screenUV,
   time,
   uniform,
   unpackRGBToNormal,
+  vec2,
   vec3,
   vec4,
   velocity,
@@ -63,7 +67,8 @@ export const LIGHTMAP_AO_STRENGTH = 0.35;
 
 export interface CutsceneFx {
   dof?: { focusDistance: number; focalLength: number; bokehScale: number };
-  /** Motion-blur amount (velocity multiplier), Max only. */
+  /** Motion-blur amount (velocity multiplier), where the preset allows it. 0 = the variant is live with no blur
+   *  (C2-ESCAPE B8: built once per sequence; only the amount uniform changes afterwards, setBlurAmount). */
   motionBlur?: number;
 }
 
@@ -97,6 +102,10 @@ export interface Pipeline {
   getScale(): number;
   /** Swap in cutscene DOF / motion blur (null = gameplay chain). Ignored where the preset disables it. */
   setCutscene(fx: CutsceneFx | null): void;
+  /** C2-ESCAPE B8: the motion-blur amount uniform only (no chain switch). */
+  setBlurAmount?(v: number): void;
+  /** true when the preset has the cutscene motion-blur variant. */
+  readonly blurAvailable?: boolean;
   /**
    * PERF-PLAN P0-1: compiles (async) everything the camera sees with the current culling, in the context the frame is
    * really drawn in, so the next render finds its shader pipelines ready. Render nothing until it resolves.
@@ -285,6 +294,10 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   }
 
   // ---- Post pipeline (Medium / Max) ----
+  let aoReadyU: any = null;
+  // RUNTIME F review: the camera (unjittered view-projection) and TAAU jitter of the frame that rendered the AO target
+  let aoPrevVP: any = null;
+  let aoJitterPrev: any = null;
   // runtime lane E (item 3): one RenderPipeline per chain shape. A single pipeline whose outputNode was swapped
   // (rp.needsUpdate → RenderPipeline._updateContext → quad material needsUpdate) re-built the whole post graph at every
   // switch — the C0 12.5 s first-DOF hitch (0.2 s Medium / 0.4 s Max). Each chain keeps its own quad material now, so a
@@ -292,7 +305,22 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   const rps = new Map<string, any>();
   let rp: any = null;
   const scenePass = pass(scene, camera);
-  scenePass.setMRT(mrt({ output, velocity }));
+  // RUNTIME F1 (docs/RUNTIME-F-PLAN.md, lead ruling Option A): Max GTAO reads the SCENE pass's own depth + a packed
+  // view-normal MRT target instead of a second full opaque render (the old pre-pass: +281…308 draws, +1.1…1.2 M tris,
+  // +7 ms CPU, +1050 node builds, +450 programs, +0.5 GB JS heap). The AO of frame N−1 is applied in frame N's lighting,
+  // reprojected with the same per-fragment velocity TAAU uses (historyUV = uv − v·(0.5, −0.5), TAAUNode.js 580).
+  // `?gtao=pre` restores the pre-pass for A/B frame diffs.
+  const gtaoPre = preset.post.gtao && (() => { try { return new URLSearchParams(location.search).get('gtao') === 'pre'; } catch { return false; } })();
+  const gtaoMain = preset.post.gtao && !gtaoPre;
+  // Transparent draws (glass, decals, sprites: depthWrite false) must not overwrite the opaque normal: alpha 0 under
+  // the attachment's MaterialBlending leaves the destination unchanged for normal / premultiplied / additive blending.
+  const sceneNormal = Fn((builder: any) => (builder.material?.transparent === true ? vec4(0) : vec4(packNormalToRGB(normalView), 1)));
+  if (gtaoMain) {
+    const m = mrt({ output, velocity, normal: sceneNormal() });
+    m.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
+    scenePass.setMRT(m);
+    scenePass.getTexture('normal').type = THREE.UnsignedByteType;
+  } else scenePass.setMRT(mrt({ output, velocity }));
   let scale = preset.sceneScale;
   scenePass.setResolutionScale(scale);
 
@@ -301,7 +329,9 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   const vel = scenePass.getTextureNode('velocity');
 
   let prePass: any = null;
-  if (preset.post.gtao) {
+  /** Node that keeps the main-pass GTAO in the post graph (its updateBefore runs once per frame after the scene pass). */
+  let aoKeep: any = null;
+  if (gtaoPre) {
     prePass = pass(scene, camera);
     prePass.name = 'GTAO Pre-Pass';
     prePass.transparent = false;
@@ -322,6 +352,49 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
         return inputNode !== null && inputNode !== undefined ? inputNode.mul(a) : a;
       },
     });
+  } else if (gtaoMain) {
+    const sceneN = scenePass.getTextureNode('normal');
+    const normalS = sample((uv: any) => unpackRGBToNormal(sceneN.sample(uv).rgb));
+    const aoPass = ao(depth, normalS, camera);
+    aoPass.resolutionScale = 0.5;
+    aoPass.useTemporalFiltering = true;
+    // The AO quad samples this frame's scene depth: make sure the scene pass has rendered first (NodeFrame keeps it
+    // to one render per frame), whatever order the post graph visits the two nodes in — else a dynres resize of the
+    // AO target would be read empty by the scene pass.
+    const ub = aoPass.updateBefore.bind(aoPass);
+    aoPass.updateBefore = (frame: any) => {
+      frame.updateBeforeNode(scenePass);
+      return ub(frame);
+    };
+    const aoReady = uniform(0);
+    (aoPass as any).__ready = aoReady;
+    aoJitterPrev = uniform(new THREE.Vector2());
+    aoPrevVP = uniform(new THREE.Matrix4());
+    // A plain texture node (not the pass texture): the scene pass reads last frame's AO without depending on aoPass.
+    const aoTex = texture(aoPass._aoRenderTarget.texture);
+    aoKeep = aoPass.getTextureNode().sample(screenUV).r.mul(0);
+    scenePass.contextNode = context({
+      getAO: (inputNode: any, builder: any) => {
+        const material = builder.material;
+        if (material?.transparent === true) return inputNode;
+        // RUNTIME F review: reproject with the previous frame's camera, NOT the `velocity` node. Reading `velocity`
+        // inside the lighting context (the builder's version) broke the scene pass's motion vectors: Max frame-to-frame
+        // edge shimmer on every silhouette 6–7× the ?gtao=pre control (C1 60.5 mean |Δ| 1.8–1.9 vs 0.27–0.29, u1-armoire
+        // 0.70 vs 0.10) even with the AO value forced to 1; dropping it from the context restored 0.26–0.32 / 0.10–0.11
+        // (scratch/rf-review chain6/chain8). World position → last frame's unjittered view-projection → uv (top-down,
+        // TAAU's convention) − last frame's jitter (content sits at −j input px: TAAUNode.js 566). Moving objects lag
+        // one frame (camera motion, the ghosting case, is exact).
+        const clip = aoPrevVP.mul(vec4(positionWorld, 1));
+        const ndc = clip.xy.div(clip.w);
+        const hUV = vec2(ndc.x.mul(0.5).add(0.5), ndc.y.mul(-0.5).add(0.5)).sub(aoJitterPrev.div(screenSize));
+        const inside = clip.w.greaterThan(0).and(hUV.x.greaterThanEqual(0)).and(hUV.x.lessThanEqual(1)).and(hUV.y.greaterThanEqual(0)).and(hUV.y.lessThanEqual(1));
+        const raw = aoTex.sample(hUV).r;
+        const aoValue = inside.select(mix(float(1), raw, aoReady), float(1));
+        const a = material?.userData?.lightmapped ? mix(float(1), aoValue, LIGHTMAP_AO_STRENGTH) : aoValue;
+        return inputNode !== null && inputNode !== undefined ? inputNode.mul(a) : a;
+      },
+    });
+    aoReadyU = aoReady;
   }
 
   const taauNode = taau(color, depth, vel, camera);
@@ -351,13 +424,17 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   let current = '';
   function build(fx: CutsceneFx | null) {
     const useDof = !!fx?.dof && preset.post.cutsceneDof;
-    const useMb = !!fx?.motionBlur && preset.post.cutsceneMotionBlur;
+    // C2-ESCAPE review (Max): the DOF + motion-blur chain logs the TSL `vec3()` join errors and never shows a new
+    // scene image — every C2 frame on Max was the stale gameplay frame from before C2 (scratch/esc-review/r5max-01..04).
+    // Until it is fixed, DOF wins where both are asked for (C2); the blur-only chain (C2c's whip) is unaffected.
+    const useMb = fx?.motionBlur !== undefined && fx.motionBlur !== null && preset.post.cutsceneMotionBlur && !useDof;
     if (useDof) {
       dofU.focus.value = fx!.dof!.focusDistance;
       dofU.focal.value = fx!.dof!.focalLength;
       dofU.bokeh.value = fx!.dof!.bokehScale;
     }
     if (useMb) mbAmount.value = fx!.motionBlur!;
+    else mbAmount.value = 0;
     const key = `${useDof ? 'dof' : ''}|${useMb ? 'mb' : ''}`;
     let out = chains.get(key);
     if (!out) {
@@ -373,6 +450,7 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
       let hdr: any = aa;
       // LIGHTING lane: lateral CA on the HDR texture, before bloom (no extra RTT pass; highlights fringe once)
       if (preset.post.chromaticAberration > 0 && typeof aa.getTextureNode === 'function') hdr = lensCA(aa.getTextureNode(), uniforms.chromaticAberration);
+      if (aoKeep) hdr = hdr.add(aoKeep); // RUNTIME F1: × 0 — only keeps the main-pass GTAO's per-frame update in the graph
       // r3 AD review (R3-3): the threshold is in EXPOSED units (1.5 ≈ AgX's highlight shoulder), not scene radiance.
       // A fixed 0.9 cd-ish threshold meant that at the torch's exposure 0.25 every surface above 0.22 on screen bloomed
       // — the 1 m torch hot spot became a hazy luminous disc with the wallpaper washed out. Glare now comes only
@@ -410,7 +488,15 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
     kind: 'post',
     uniforms,
     meterTexture: scenePass.getTexture('output'),
-    render: () => rp.render(),
+    render: () => {
+      rp.render();
+      if (aoReadyU) aoReadyU.value = 1;
+      if (aoPrevVP) {
+        // the camera + jitter this frame's AO target was rendered with (read by next frame's getAO)
+        aoPrevVP.value.multiplyMatrices(taauNode._originalProjectionMatrix, camera.matrixWorldInverse);
+        aoJitterPrev.value.copy(taauNode._jitterOffset.value);
+      }
+    },
     setScale(s: number) {
       if (Math.abs(s - scale) < 1e-4) return;
       scale = s;
@@ -419,6 +505,10 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
     },
     getScale: () => scale,
     setCutscene: (fx) => build(fx),
+    setBlurAmount: (v: number) => {
+      mbAmount.value = Math.max(0, v);
+    },
+    blurAvailable: !!preset.post.cutsceneMotionBlur,
     compileView: passCompiler(renderer, scene, camera, prePass ? [prePass, scenePass] : [scenePass], () => rp.render(), taauNode._originalProjectionMatrix), // PERF lane (P0-1)
     dispose: () => {
       for (const p of rps.values()) p.dispose();

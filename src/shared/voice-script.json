@@ -145,19 +145,6 @@
    "milestone": "M1"
   },
   {
-   "id": "b04_door_rattle",
-   "speaker": "driver",
-   "text": "[panicked, breathless whisper] No, no, no, come on, open—",
-   "subtitle": "No, no, no, come on, open—",
-   "beat": "B04",
-   "trigger": "b04:front_door_rattle",
-   "chain": "whisper_in_head",
-   "kind": "line",
-   "variants": 1,
-   "priority": 7,
-   "milestone": "M1"
-  },
-  {
    "id": "b05_dont_breathe",
    "speaker": "driver",
    "text": "[whispers, shaking] Don't breathe. [short, shaky breath] Don't breathe.",
@@ -596,7 +583,7 @@
   {
    "id": "b03_go_on",
    "speaker": "harlan",
-   "text": "[low, slow, flat, through a burlap sack] Go on, then.",
+   "text": "[low, slow, flat, winded from the work, through a wet burlap sack] Go on, then.",
    "subtitle": "Go on, then.",
    "beat": "B03",
    "trigger": "c2:rope_slip",

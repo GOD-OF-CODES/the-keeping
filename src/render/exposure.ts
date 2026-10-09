@@ -40,7 +40,7 @@ export interface MeterReading {
 let snapRequested = false;
 /** Opening (C1-OPENING §5.2, set by src/world/opening.ts `exposure` fx): hold = meter frozen; min/max override the
  *  room clamp (linear). null = the room's own range. */
-export const EXPOSURE_CUE: { hold: boolean; min: number | null; max: number | null } = { hold: false, min: null, max: null };
+export const EXPOSURE_CUE: { hold: boolean; min: number | null; max: number | null; spot: { x: number; y: number; r: number; w: number } | null } = { hold: false, min: null, max: null, spot: null };
 export function requestExposureSnap(): void {
   snapRequested = true;
 }
@@ -219,7 +219,23 @@ export class AutoExposure {
         // at 0.5–1.3 m stays a lit, textured surface instead of a clipped disc). 0 disables it.
         // The cap applies AFTER the room clamp (the night key still keeps every room as before) with its own floor
         // LOOK.hpFloor: target = max(hpFloor, min(clamp(key EV), hp EV)).
-        let target = clampEV(Math.log2(LOOK.key) - log2Avg);
+        // C2-ESCAPE §2.4 (B1): a spot-weighted meter — the eye fixes the work area (the neck, then the floor): the log mean
+        // inside a screen circle (uv, centre x/y, radius r; aspect-agnostic) is blended in with weight w (0.6 in C2)
+        const sp = EXPOSURE_CUE.spot;
+        let metered = log2Avg;
+        if (sp && sp.w > 0) {
+          let ss = 0;
+          let sn = 0;
+          for (let i = 0; i < n; i++) {
+            const dx = ((i % SIZE) + 0.5) / SIZE - sp.x;
+            const dy = (Math.floor(i / SIZE) + 0.5) / SIZE - sp.y;
+            if (dx * dx + dy * dy > sp.r * sp.r) continue;
+            ss += Math.max(-14, vals[i]);
+            sn++;
+          }
+          if (sn > 0) metered = log2Avg * (1 - sp.w) + (ss / sn) * sp.w;
+        }
+        let target = clampEV(Math.log2(LOOK.key) - metered);
         if (LOOK.hpWhite > 0 && hpLog > -20 && EXPOSURE_CUE.min == null && EXPOSURE_CUE.max == null) target = Math.max(Math.log2(LOOK.hpFloor), Math.min(target, Math.log2(LOOK.hpWhite) - hpLog + LOOK.biasEV));
         this.targetEV = target;
         this.haveTarget = true;

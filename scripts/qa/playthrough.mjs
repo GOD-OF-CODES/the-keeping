@@ -184,6 +184,8 @@ function installBot(cfg) {
     path: [],
     pathTo: null,
     heldKeys: new Set(),
+    // C2-ESCAPE QA: input held during C2/C2c (must be none), the handover at control, her first appearance in B05
+    escape: { csInput: [], handover: null, b05T0: null, firstSeen: null },
     beats: [],
     checkpoints: [],
     cutscenes: [],
@@ -415,9 +417,11 @@ function installBot(cfg) {
       case 'B03':
         return go('threshold');
       case 'B04':
-        return go('u_armoire', () => g.hides.enter('H_ARMOIRE'), 'flee to the armoire', 3.6);
+        return wait('C2c'); // C2-ESCAPE: B04 is the C2c cutscene only (no chase)
       case 'B05':
         if (hidden()) return f.first_hide_done ? wait('unhide') : wait('slats');
+        // C2-ESCAPE §4.5: control at the stair top; the lightning showed the armoire ajar — walk there and hide
+        if (!f.first_hide_done) return go('u_armoire', () => g.hides.enter('H_ARMOIRE'), 'to the armoire', 1.6);
         return go('u2_mid', undefined, 'sneak to U2', 1.6);
       case 'B06':
         if (!f.ledger_read || s.ledgerPages < 3) return go('u2_ledger', () => interact('P_LEDGER', 'read_ledger'), 'ledger');
@@ -708,6 +712,17 @@ function installBot(cfg) {
     const startBeat = beat();
     while (bot.t < tEnd && !bot.ended) {
       act();
+      {
+        const E = bot.escape;
+        const cNow = csActive();
+        if ((cNow === 'C2' || cNow === 'C2c') && bot.heldKeys.size) E.csInput.push({ cs: cNow, t: +bot.t.toFixed(2), keys: [...bot.heldKeys] });
+        const sb = st().beat;
+        if (sb === 'B05' && E.b05T0 === null && !cNow) {
+          E.b05T0 = bot.t;
+          E.handover = { pos: pos().map((v) => +v.toFixed(2)), yaw: +(g.ctx?.player?.yaw ?? NaN).toFixed?.(3), t: +bot.t.toFixed(2) };
+        }
+        if (sb === 'B05' && E.b05T0 !== null && E.firstSeen === null && adaOut?.visible) E.firstSeen = +(bot.t - E.b05T0).toFixed(2);
+      }
       try {
         await g.advance(1, DT, [...bot.heldKeys]);
       } catch (e) {
@@ -781,7 +796,7 @@ function installBot(cfg) {
       ended: bot.ended,
     };
   };
-  bot.summary = () => ({ beats: bot.beats, checkpoints: bot.checkpoints, cutscenes: bot.cutscenes, gates: bot.gates, deaths: bot.deaths, unsticks: bot.unsticks, frameErrors: bot.errors, adaTrace: bot.trace.slice(-40), strikes: bot.strikes, hints: st().hintsGiven, stimuli: stims.slice(-80), log: bot.log.slice(-60), states: Object.fromEntries(Object.entries(bot.states).map(([k, v]) => [k, +v.toFixed(1)])), beamHits: bot.beamHits });
+  bot.summary = () => ({ beats: bot.beats, checkpoints: bot.checkpoints, cutscenes: bot.cutscenes, gates: bot.gates, deaths: bot.deaths, unsticks: bot.unsticks, frameErrors: bot.errors, adaTrace: bot.trace.slice(-40), strikes: bot.strikes, hints: st().hintsGiven, stimuli: stims.slice(-80), log: bot.log.slice(-60), states: Object.fromEntries(Object.entries(bot.states).map(([k, v]) => [k, +v.toFixed(1)])), beamHits: bot.beamHits, escape: bot.escape });
   return true;
 }
 
@@ -841,6 +856,15 @@ export default async function (qa) {
   const csIds = new Set(sum.cutscenes.map((c) => c.id));
   qa.assert(inOrder, `beats B01…B13 in order (got ${order.join(' ')})`);
   for (const c of ['C1', 'C2', 'C3', 'C5', 'C6', 'C7']) qa.assert(csIds.has(c), `cutscene ${c} played`);
+  // C2-ESCAPE gate: no input through C2 + C2c, control at the stair top (CP2), her return ≥ 10 s after control, no
+  // death from B03 to the end of B05 (C2/C2c cannot catch; the first hide cannot be failed)
+  const E = sum.escape ?? {};
+  qa.log('escape: ' + JSON.stringify(E));
+  qa.assert((E.csInput ?? []).length === 0, `no input held during C2/C2c (${JSON.stringify((E.csInput ?? []).slice(0, 3))})`);
+  const cp2 = await qa.eval(`(() => { const s = window.__game.ctx.layout.spawns.find((x) => x.id === 'CP2'); return s ? s.pos : null; })()`);
+  if (cp2 && E.handover) qa.assert(Math.hypot(E.handover.pos[0] - cp2[0], E.handover.pos[1] - cp2[1]) < 0.6 && Math.abs(E.handover.pos[2] - (cp2[2] - 1.65)) < 0.3, `B05 control at the stair top CP2 (${E.handover.pos} vs ${cp2})`);
+  qa.assert(E.firstSeen === null || E.firstSeen >= 9.9, `her return is ≥ 10 s after control (first seen +${E.firstSeen} s)`);
+  qa.assert(!sum.deaths.some((d) => ['B03', 'B04', 'B05'].includes(d.beat)), `no death in B03–B05 (${JSON.stringify(sum.deaths)})`);
   qa.assert(s.ended, `reached the title card (ended=${s.ended}, beat ${s.beat}, game ${s.t}s)`);
   // difficulty gate (ROADMAP "Difficulty", 2026-10-08): the stealth bot is never caught; the careless bot (QA_CARELESS:
   // walks, torch on, hides only where the story asks) at most once; QA_TORCH_ON is informative only

@@ -213,6 +213,11 @@ export interface LightDef {
   angle?: number;
   /** How the light is realised: baked into the base lightmap, into the lightning-flash lightmap, runtime only, or baked + small runtime flicker light. */
   mode: 'bake' | 'flash' | 'runtime' | 'bake_flicker';
+  /**
+   * Optional (C2-ESCAPE K2): which light paths the base lightmap bake takes from this light. 'all' (default) = direct +
+   * indirect; 'indirect' = bounce only (the direct term is drawn at runtime with a real shadow, e.g. L_LAMP_PARLOR).
+   */
+  bakePass?: 'all' | 'indirect';
 }
 
 export interface SurfaceZone {

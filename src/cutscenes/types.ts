@@ -33,6 +33,19 @@ export interface CameraShot {
   handheld?: number;
   /** Camera roll (radians), constant or [from, to]. */
   roll?: number | [number, number];
+  /** C2-ESCAPE B8: a step-locked head bob (POV runs): eye + target rise by amp·(1 − cos 2π·hz·τ)/2 − amp/2 (m), and
+   *  the head rolls ±roll (rad) at half the step rate (it alternates with the stride). τ = time since the shot start. */
+  bob?: { amp: number; hz: number; roll?: number };
+}
+
+/** C2-ESCAPE B8: a camera impulse (the flinch at `head_drop`, the heartbeat jolts): a half-sine of d seconds added to
+ *  the shake (radians). */
+export interface CameraKick {
+  t: number;
+  d: number;
+  pitch?: number;
+  yaw?: number;
+  roll?: number;
 }
 
 /** The car (C1, C6, C7): its pose moves along a path; 'car'-space shots ride it. */
@@ -99,7 +112,8 @@ export type Cue =
   /** Hand a character back to gameplay (Ada: the AI's output drives her again). */
   | { t: number; type: 'release'; char: CharId }
   | { t: number; type: 'attach'; char: CharId; prop: string; bone: string | null }
-  | { t: number; type: 'sfx'; id: string; pos?: P3; room?: string; gain?: number; rate?: number }
+  /** `sched` (K12, C2-ESCAPE B12): handed to the AudioContext clock 150 ms ahead so it lands on the cue's frame. */
+  | { t: number; type: 'sfx'; id: string; pos?: P3; room?: string; gain?: number; rate?: number; sched?: boolean }
   | { t: number; type: 'loop'; key: string; id: string | null; gain?: number; fade?: number }
   /** A voice-script TRIGGER (src/shared/voice-script.json `trigger`), resolved to line ids by the host. */
   | { t: number; type: 'voice'; trigger: string }
@@ -157,6 +171,7 @@ export interface Timeline {
   moves?: MoveTrack[];
   fade?: Key[];
   letterbox?: Key[];
+  kicks?: CameraKick[];
   cues: Cue[];
 }
 
@@ -185,6 +200,8 @@ export interface CutsceneContext {
   seen: boolean;
   /** Started straight after a preroll cutscene (C0 → C1): no fade-in, the cut is matched (C1-OPENING §3 shot 4). */
   chained?: boolean;
+  /** C2-ESCAPE B8: the preset has the cutscene motion-blur variant (else: the clip smear and slower whips). */
+  motionBlur?: boolean;
 }
 
 export type TimelineFactory = (c: CutsceneContext) => Timeline;

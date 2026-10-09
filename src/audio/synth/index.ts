@@ -11,6 +11,7 @@ import { ROAD_RECIPES } from './road.ts';
 import { PROP_RECIPES } from './props.ts';
 import { PLAYER_RECIPES } from './player.ts';
 import { SCORE_RECIPES } from './score.ts';
+import { ESCAPE_RECIPES } from './escape.ts';
 import type { Recipe } from './types.ts';
 
 export const RECIPES: readonly Recipe[] = [
@@ -25,6 +26,7 @@ export const RECIPES: readonly Recipe[] = [
   ...PROP_RECIPES,
   ...PLAYER_RECIPES,
   ...SCORE_RECIPES,
+  ...ESCAPE_RECIPES,
 ];
 
 const BY_ID = new Map(RECIPES.map((r) => [r.id, r]));

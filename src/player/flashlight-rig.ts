@@ -18,6 +18,9 @@ export class FlashlightRig {
   private primed = false;
   /** Extra tremble 0..1 (the beam trembles near her — driven by the AI/story lanes). */
   tremble = 0;
+  /** C2-ESCAPE (C2c glance #1): the torch arm stays forward while the head turns back — the rig keeps its world
+   *  orientation (it still follows the eye's position) until released. Set by the cutscene fx `torchHold`. */
+  hold = false;
 
   constructor(scene: any, camera: any, preset: PresetConfig) {
     this.camera = camera;
@@ -51,7 +54,12 @@ export class FlashlightRig {
     this.camera.updateMatrixWorld();
     this.camera.getWorldQuaternion(this.q);
     this.rig.position.setFromMatrixPosition(this.camera.matrixWorld);
-    if (!this.primed) {
+    if (this.hold) {
+      // keep the last orientation (sway below is re-applied on top of it: strip last frame's sway first). Cutscene
+      // cameras snap() every frame — a held rig ignores that
+      this.rig.quaternion.multiply(this.sway.invert());
+      this.primed = true;
+    } else if (!this.primed) {
       this.rig.quaternion.copy(this.q);
       this.primed = true;
     } else {

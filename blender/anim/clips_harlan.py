@@ -210,7 +210,8 @@ def finale_shadow():
 
 
 def m2_clips(geo):
-    return [finale(geo), finale_shadow()]
+    from . import clips_escape
+    return [finale(geo), finale_shadow(), clips_escape.harlan_c2(geo)]
 
 
 M2_TODO = []

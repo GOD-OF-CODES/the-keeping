@@ -34,17 +34,17 @@ test('playthrough: main route is stable across seeds', () => {
   for (const seed of [2, 3, 4, 5]) assertClean(new Sim({ seed }).play(), `seed ${seed}`);
 });
 
-test('playthrough: a death at EVERY checkpoint (CP2–CP8) respawns there with grace and still finishes', () => {
-  const dieAt = ['CP2', 'CP3', 'CP4', 'CP5', 'CP6', 'CP7', 'CP8'] as const;
+test('playthrough: a death at EVERY checkpoint (CP3–CP8; CP2 has none — C2-ESCAPE) respawns there with grace and still finishes', () => {
+  const dieAt = ['CP3', 'CP4', 'CP5', 'CP6', 'CP7', 'CP8'] as const;
   const sim = new Sim({ seed: 1, dieAt: [...dieAt] });
   const graceSeen: string[] = [];
   let pending: string | null = null;
   sim.events.on('player:respawn', ({ checkpoint }) => (pending = checkpoint));
   sim.afterStep.push(() => {
-    // right after a respawn the brain is in grace (PATROL-only, hearing −30 %, lure reset) — except B04 (C2 replays)
+    // right after a respawn the brain is in grace (PATROL-only, hearing −30 %, lure reset)
     if (!pending) return;
     const b = sim.director.brain;
-    if (pending !== 'CP2' && b.graceActive && b.patrolOnly && b.lurePulls === 0) graceSeen.push(pending);
+    if (b.graceActive && b.patrolOnly && b.lurePulls === 0) graceSeen.push(pending);
     pending = null;
   });
   sim.play();
@@ -53,9 +53,9 @@ test('playthrough: a death at EVERY checkpoint (CP2–CP8) respawns there with g
   for (const cp of dieAt) assert.ok(died.includes(cp), `died at ${cp}: ${died.join(',')}`);
   // each death respawned at the checkpoint it happened after
   assert.deepEqual(sim.respawns, died);
-  assert.deepEqual(graceSeen, dieAt.filter((c) => c !== 'CP2'));
-  // causes: the B04 stand-still grab, the hide found at the dress visit (breath not held), the rest contact/chase
-  assert.equal(sim.deaths.find((d) => d.cp === 'CP2')!.cause, 'scripted');
+  assert.deepEqual(graceSeen, [...dieAt]);
+  // causes: the hide found at the dress visit (breath not held), the rest contact/chase; never a scripted grab
+  assert.ok(!sim.deaths.some((d) => d.cause === 'scripted'));
   assert.equal(sim.deaths.find((d) => d.cp === 'CP6')!.cause, 'hide');
   // the finale retry hands the locket back raised, with the one-time prompt
   assert.equal(sim.prompts.length, 1);

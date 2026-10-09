@@ -12,13 +12,13 @@ SETTING. County Road 9, emptied by the interstate. Tuesday 11 October 1994: no p
 
 THE HOUSE. Stroud's Gas & Feed served the road until its pump ran dry in the early seventies. Harlan Stroud married Ada Lind, a seamstress from Carvel, in 1968. By 1976 the marriage was locks, bruises and a bell: when Harlan rang, Ada came. She saved sewing money in a biscuit tin, wrote to her sister Ruth, and bought a seat on the 6:10 bus for Tuesday 12 October. Harlan found the tin. On the night of the 11th he held her under in the rain cistern beneath the kitchen floor (the well) and padlocked the hatch. He told Carvel she had run off. Nobody looked for her, mourned her or buried her.
 
-WHAT SHE IS. Whatever the water keeps comes back up. Three nights later Ada climbed out: a revenant, one of the unmourned drowned, who wants one thing, the face of the man who held her under. The water clouded her eyes, so she must bring her face close to a face to know it. Any face that is not his she drags down into the well, and each stranger buys weeks of quiet. She cannot get past iron nails. She still comes to the bell. She remembers her room and her dress. And she learns.
+WHAT SHE IS. Whatever the water keeps comes back up. Three nights later Ada climbed out: a revenant, one of the unmourned drowned, who wants one thing, the face of the man who held her under. The water clouded her eyes, so she must lift her own head to a face to know it. When she loses the sound she hunts, the body goes back to wherever its head is, and no one sees it go. Any face that is not his she drags down into the well, and each stranger buys weeks of quiet. She cannot get past iron nails. She still comes to the bell. She remembers her room and her dress. And she learns.
 
-WHAT HE IS. Nothing supernatural: a man who murdered his wife and made himself her jailer. His mother's receipt book said to take the head and give it back to the water. That holds her one night; about six thousand pencil tallies on the parlor wall count those nights. He hides the only way that works: a feed sack over his head, crepe over every mirror, his face knifed out of every photograph. The locket he gave her, the one image he could not destroy, he believes went down the well with her. In 1977 a drifter kept her quiet a month, and Harlan learned he could buy rest. He painted out the GAS on his sign and hung a ROOMS board, lit with gasoline siphoned from the last guest's car. He wired every bell to ring in the parlor, hung the front door on a rope and nailed every sash. His guest book holds eleven names; nine cars rust in the east field. She has to take them herself: one he killed himself didn't hold her an hour. He tells his ledger he does it so she can't walk the road. That is also true.
+WHAT HE IS. Nothing supernatural: a man who murdered his wife and made himself her jailer. His mother's receipt book said to take the head and give it back to the water. That holds her one night. On a night with a guest he does not give it back: he keeps the head until the guest has run, because she has to take them herself; about six thousand pencil tallies on the parlor wall count those nights. He hides the only way that works: a feed sack over his head, crepe over every mirror, his face knifed out of every photograph. The locket he gave her, the one image he could not destroy, he believes went down the well with her. In 1977 a drifter kept her quiet a month, and Harlan learned he could buy rest. He painted out the GAS on his sign and hung a ROOMS board, lit with gasoline siphoned from the last guest's car. He wired every bell to ring in the parlor, hung the front door on a rope and nailed every sash. His guest book holds eleven names; nine cars rust in the east field. She has to take them herself: one he killed himself didn't hold her an hour. He tells his ledger he does it so she can't walk the road. That is also true.
 
 THE ROPE (one mechanism, obeyed everywhere). A counterweight pulls the front door shut. An iron drop-bolt, boxed out of reach above the transom, locks it. One rope runs from the bolt over three cornice pulleys to a cleat in the parlor. A pull lifts the bolt and draws the door open. Cleated, it stays open. Released, the weight slams it and the bolt drops. Only a hand in the parlor can open it.
 
-THE TWIST. Nothing in the opening was chance. The ROOMS lantern was bait. The bell you rang was his signal, and the door that opened by itself was his rope. The beheading was his nightly chore, eighteen years to the night, and he stopped the second stroke on purpose. Both of them looked at you because he turned her face to the doorway by the hair so she would see yours. Then he let the rope go, and the slam and the stairs herded you upward like the eleven before you. She was never hunting you. She is hunting him, and she can't see him.
+THE TWIST. Nothing in the opening was chance. The ROOMS lantern was bait. The bell you rang was his signal, and the door that opened by itself was his rope. The beheading was his nightly chore, eighteen years to the night. He waited until you were in the doorway, then let you watch the second stroke, lifted her head by the hair and turned it to you so she would see your face. Then he let the rope go, and the slam and the stairs herded you upward like the eleven before you. She was never hunting you. She is hunting him, and she can't see him.
 
 THE WAY OUT. The last image of his face is in the locket, sewn into the hem of her wedding dress beside her bus ticket in a room nailed shut since 1976. Hold his face up in your light and let her look.
 
@@ -36,12 +36,12 @@ THE STING. She takes him, pulls his rope and lets you go. But she learns: whoeve
 ### Ada Stroud (the woman)
 *The single AI chaser: a revenant, one of the unmourned drowned, and the story's true victim.*
 
-**Appearance.** Slight and barefoot, in a sodden ivory nightgown stained grey-green with cistern silt. Grey-blue skin shows only at the hands and feet. Very long black hair is plastered wet over her whole face; one clouded, iris-less white eye is the most ever shown. She drips constantly. After the opening her neck is half-severed: the head hangs or lolls on a spring joint unless she lifts it in her hand. A pale line on her throat marks where a locket chain sat. She is seen in darkness, silhouette or through slats, and never lit for more than 3 s.
+**Appearance.** Slight and barefoot, in a sodden ivory nightgown stained grey-green with cistern silt. Grey-blue skin shows only at the hands and feet. Very long black hair is plastered wet over her whole face; one clouded, iris-less white eye is the most ever shown. She drips constantly. After the opening she is headless. She carries her head by its hair at her hip, where it swings and knocks against her thigh when she runs. To see, she lifts it in both hands to face height in front of the stump. The stump wells and breathes through the cut windpipe. A pale line at the stump's edge marks where a locket chain sat. She is seen in darkness, silhouette or through slats, and never lit for more than 3 s.
 
 **Behavior.** Stop-motion stutter: her pose is sampled at 8-12 fps while she moves smoothly through space.
-- Head hanging means she is blind; she hunts by sound and by the warmth of light.
-- To see, she lifts her head in her hand with a bone crack, the key tell.
-- She opens ordinary doors, slowly, but can't get past nails. Between hunts she stands at her own boarded door, forehead to the planks, scraping at the nail heads.
+- Head at her hip means she is blind; she hunts by sound and by the warmth of light.
+- To see, she lifts her head in both hands with a wet creak of the hair (`ada_head_lift`, the same 0.6 s wind-up as the old crack), the key tell; her eye is then 0.25 m in front of the stump.
+- She opens ordinary doors, slowly, but can't get past nails. Between hunts she stands at her own boarded door, her head set down at its foot face to the planks, scraping at the nail heads.
 - She always goes to a ringing bell; in life, when he rang, she came.
 - She goes close to every face she finds.
 - She is human at the dress.
@@ -204,25 +204,25 @@ First control; the flashlight (F) is needed at once. Walk up the drive past the 
 **Set-piece.** The door that opens by itself.
 
 ### B03 — The First Room on the Right (Entrance hall to the parlor threshold, ~0.75 min, M1)
-Inside: a candle beside the open guest book (optional read: eleven names ruled through, tonight's date with the name blank). A crepe-covered mirror, and a wedding portrait with the groom's face knifed out. Look up and you see the rope running from a bolt box above the door into the parlor. The first door on the right stands ajar and candlelit, and from it comes one wet chop.
+Inside: a candle beside the open guest book (optional read: eleven names ruled through, tonight's date with the name blank). A crepe-covered mirror, and a wedding portrait with the groom's face knifed out. Look up and you see the rope running from a bolt box above the door into the parlor. The first door on the right stands ajar and lamplit, and from it comes one wet chop (`cleaver_chop_partial`, at the hall trigger); after it, a slow drip into a deepening pool, about one drop every 0.7 s.
 
-At the threshold the controls lock and the player freezes (C2, about 30 s). A candle on the near end of a long table throws the scene huge across a far wall covered in pencil tallies. A man in a feed-sack mask and rubber apron stands over a woman bent face-down across the table on a rubber sheet; spatter glistens, and her wet black hair hangs to the floor. His second stroke is raised, and stops. He takes a fistful of her hair and turns her face to the doorway. One clouded eye opens behind the hair. The sack's eyeholes turn to you. Both of them look at you for three heartbeats.
+At the threshold the controls lock and the player freezes (C2, 29 s, docs/C2-ESCAPE.md §2.1). A kerosene lamp on a stool throws one hard key across the parlor. A man in a feed-sack mask and rubber apron stands over a woman bent face-down across a sawbuck table on a rubber sheet, her wet black hair to the floor. He waited for you: the second stroke comes down, shown clearly, and takes her head off (arterial jets, the head dropping to the boards). He nudges it with his boot, lifts it by the hair and turns it to the doorway. One clouded eye opens. The sack's eyeholes turn to you. Both of them look at you for three heartbeats.
 
-He lets the rope slip from its cleat. It runs over your head, and behind you the front door slams and the bolt drops. She slides off the table and rises, her head lolling on the half-cut neck; behind her the parlor door swings shut and a key turns. Control returns mid-lurch. Tension 6 to 10.
+Her headless body rises off the table, the heart restarting in it. "Go on, then." He lets the rope slip from its cleat. It runs over your head, and behind you the front door slams and the bolt drops. The body comes for you through the door; behind it the parlor door shuts and a key turns, Harlan inside with her head. Tension 6 to 10.
 
 **Player goal.** Frozen at first; then run.
 
-**Set-piece.** The beheading as shadow-play on the tally wall; the double look; the door slam.
+**Set-piece.** The beheading, seen clearly; the double look (his eyeholes and her one eye in the head he holds up); the door slam.
 
-### B04 — Up (Hall, main stair, upper hallway, ~0.4 min, M1)
-Scripted chase with a guaranteed near-miss: she is held 2-4 m behind and catches you only if you stand still for more than 2 s. The front door won't budge, the parlor is shut, and the far end of the hall is a dead end (its passage door is bolted from the other side). Lightning shows the stair as the only way. She follows in stuttering bursts, one hand on the banister, head swinging. At the top the hallway doubles back along the balustrade, so you see her climbing through the balusters. A flash through the south window picks out an armoire standing ajar. Tension 10.
+### B04 — Up (C2c cutscene: hall, main stair, upper hallway, 13.9 s, M1)
+A cutscene, full lock, skippable after the first view (docs/C2-ESCAPE.md §2.2, §4). There is no chase and no catch: B04 is only the beat active while C2c plays. You run for the stair with the headless body behind you. Glance #1 at the newel: lightning through the fanlight shows what she is, a hard silhouette with no head. You stumble on the creaking 12th tread; glance #2: her wet hand on the rail at 0.9 m, reaching. You scramble to the top. Her steps stop with yours. For 1.4 s there is only rain, breath, heart and one drop. You turn slowly: the stair is empty. Wet prints climb to tread 11 and stop in a puddle; a drop falls from its nosing. Nothing tells you where she went (the absence rule: the body goes back to wherever its head is, unseen). Control returns on the exact last camera, at the stair top. Tension 10.
 
-**Player goal.** Get away from her and hide.
+**Player goal.** None (cutscene).
 
-**Set-piece.** Chase up the stairs with her visible through the balusters.
+**Set-piece.** The two glances; the empty stair.
 
 ### B05 — Hold Your Breath (Upper hallway: the armoire, then her vigil, ~0.85 min, M1)
-The first hide is taught by demonstration and cannot be failed. Through the slats you hear wet slaps on the stairs and the drip. At the top she stops, and the drip stops too: she is listening. She comes down the runner and stands at the slats. A gurgle; a crack of bone as her hand lifts her head; in a lightning flash the hair parts on one white eye. Prompt: hold breath (Space). She lowers her head, the drip resumes, and she drifts back to the door beside the stair top, boarded with three planks. She stands with her forehead against it, scraping at the nail heads. Now sneak out. She is about 5 m away, blind and listening: walking on the runner (2 m radius) or crouching (1.5 m) is safe, running (10 m) is not. Slip 1.5 m south into Harlan's bedroom. Checkpoint; the vertical slice ends here. Tension 10 to 5.
+Control at the stair top (CP2), looking down the empty flight, torch on. At +2.5 s a lightning flash shows the armoire ajar 4 m south. Her return starts 10–15 s after control (sooner never; as soon as you hide, within that window): below, the parlor key turns (Harlan lets her out), the hinge, her wet feet on the hall boards and the knock of a carried head on her thigh; the rocker starts again. She climbs at 1.4 risers/s, her head held by the hair at her hip. The first hide is taught by demonstration and cannot be failed. Through the slats you hear the knock-knock up the stair and the drip. At the top she stops, and the drip stops too: she is listening. She comes down the runner and stands at the slats. A wet creak as she lifts her head by the hair in both hands to the gap; the hair hangs through the slats, and in a lightning flash it parts on one clouded eye. If you are still in the open when she reaches tread 10, she stops there, blind, listening, until 45 s (a second armoire flash at 30 s); she cannot catch you during her return. Prompt: hold breath (Space). She lowers her head, the drip resumes, and she drifts back to the door beside the stair top, boarded with three planks. She sets her head down at its foot, face to the planks, and scrapes at the nail heads. Now sneak out. She is about 5 m away, blind and listening: walking on the runner (2 m radius) or crouching (1.5 m) is safe, running (10 m) is not. Slip 1.5 m south into Harlan's bedroom. Checkpoint; the vertical slice ends here. Tension 10 to 5.
 
 **Player goal.** Stay hidden while she looks; then sneak away from her vigil.
 
@@ -309,12 +309,12 @@ Sting C7, reusing the opening's camera paths. Weeks later, in the rain, a differ
 ## Chaser AI
 
 **States**
-- SCRIPTED: cutscenes and set pieces. The opening rise; the B04 chase (held 2-4 m behind, catch only if you stand still for more than 2 s); the B05 slats look; the B09 dress visit.
+- SCRIPTED: cutscenes and set pieces. The opening rise; the B05 return (`b05_return`: offstage ≥ 10 s after control, the key, the door, the hall, the climb with her head at her hip; never catches; the first hide turns it into the slats look); the B05 slats look; the B09 dress visit. (The B04 chase is retired: C2c is a cutscene.)
 - VIGIL: anchor between hunts. Upstairs at her own boarded door (beside the dress after B09), forehead to the planks, scraping the nail heads for 15-30 s; blind, hearing normal.
 - PATROL: 0.9 m/s stutter-walk on an authored node loop, head hanging, with LOOK points at the stair top, the south window and the doorways. Upper loop: her door, stair top, runner, Harlan's two doors, south window. Ground loop (finale only): stair foot, parlor door, back passage, kitchen.
 - LISTEN: freezes about 1 s, head tilted toward a noise; the drip stops.
 - INVESTIGATE: walks at 1.4 m/s to a noise or light, then LOOKs.
-- LOOK: her hand lifts her head with a bone crack. 1.2 s wind-up (0.6 s if your beam touched her), 3 s of sight, then the head lowers.
+- LOOK: she lifts her carried head in both hands to face height (a wet creak of the hair, `ada_head_lift`; her eye is then 0.25 m in front of the stump). 1.2 s wind-up (0.6 s if your beam touched her), 3 s of sight, then the head lowers.
 - CHASE: jerky 3.2 m/s bursts with her head held up in one hand. She follows running noise when sight breaks, and switches to SEARCH after 4 s with neither.
 - SEARCH: up to two LOOKs, nails dragged on plaster; in Harlan's room she looks under the bed (head flops upside down, side-on). Then 4-6 s listening at the nearest hide.
 - LURED: any bell, except during CHASE. She scrapes at the parlor door for 60 s, then 50, then 40 s (floor, reset on death), then climbs back up audibly.
@@ -388,7 +388,7 @@ assist starts at the first death; no detection for 6 s after any cutscene. Every
   from the main stair), a beam on her again within 12 s makes her walk toward the light and look at it from 2.5 m.
 - *Seen from afar (round E; #78):* the first time she sees you farther than 5 m, she comes to look: she walks to
   2.5 m short of where you stood and looks straight at you. Seen again within 5 m, she chases.
-- *C2 → B04 (round E; #74):* the still-player rush waits out the 6 s post-cutscene calm (measured grab was 5.2 s).
+- *C2 → B04 (round E; #74):* retired with the chase (C2-ESCAPE). B05 opens with her ≥ 20 s from the player and her first sound ≥ 10 s after control.
 
 ## Obstacles & puzzles
 
@@ -463,7 +463,7 @@ Death is quick and not gory: a 3 s cutaway (a wet hand over the lens, hair filli
 
 Checkpoints:
 - CP1: at the gate after C1
-- CP2: the hall as she rises (C2 replays in 3 s)
+- CP2: the stair top after C2c (0.55, 8.25, eye 5.75 — the flight centreline; looking down the flight, pitch −50°); a death there replays her return below, never C2
 - CP3: after the first hide
 - CP4: taking the hammer or ledger
 - CP5: after each pried board
@@ -528,7 +528,8 @@ The only ending, earned by the escape theorem. Ada sees Harlan's face in your li
 
 ### Character Animations
 - RIG: one shared human skeleton for Ada and Harlan, plus a first-person arms rig. Ada is quantized to 8-12 fps, with a spring-joint neck and spring-chain wet hair on every clip. Hand contacts use IK plus parent-constraint swaps; lightning-only beats are static poses.
-- [M1] Ada, opening: face-down on the table; head raised and turned by his hand; eye opens; slides off and rises on the half-cut neck
+- [M1] Ada, opening (C2-ESCAPE): face-down on the sawbuck; the stroke severs the head (`ada_c2`); the headless body rises (`ada_rise_headless`), chases (`ada_chase_headless`) and climbs with the right hand on the rail (`ada_climb_headless`)
+- [M1] Ada, every later clip: the head carried by the hair at her hip, lifted in both hands to see, set down when she works — ONE runtime head-carry layer (the head node on her hand + an arm override, `src/characters/head-carry.ts`), not re-authored clips
 - [M1] Ada: patrol stutter-walk, head hanging
 - [M1] Ada: LISTEN freeze with a head tilt
 - [M1] Ada: LOOK (hand to jaw, lift with crack, hair parts on one eye, lower)
@@ -558,7 +559,8 @@ The only ending, earned by the escape theorem. Ada sees Harlan's face in your li
 
 ### Cutscenes
 - [M1] C1 'Empty' (about 55 s): the drive, fuel chime, NEXT SERVICES, the ROOMS lantern, the car dies at the gate, lightning reveal, the subtitle thought, plate RVX-318, step out
-- [M1] C2 'The First Room on the Right' (about 30 s): threshold freeze, shadow-play stroke, head turned by the hair, both look, rope slips, door slams and bolts, she rises
+- [M1] C2 'The First Room on the Right' (29.0 s): threshold freeze, the stroke shown clearly (blood film, jets, pools), the head falls and is lifted by the hair, both look, she rises headless, "Go on, then.", rope slips, door slams and bolts
+- [M1] C2c 'Up' (13.9 s, chained from C2 on the same camera): the run up the stair, the two glances, the empty stair; control at the stair top (CP2)
 - [M2] C3 'He Looks Up' (about 12 s, look control kept): four lightning flashes over the field
 - [M2] C4 'The Hem' (about 20 s, interactive hide): her hand on the hem; near-sob; head lifts toward you
 - [M2] C5 'Face' (about 35 s): the locket look, silence, the bell stops, the knock, the door gap, walked to the threshold, shadows, black, stroke, bell, rope zip, the front door opens
@@ -568,7 +570,8 @@ The only ending, earned by the escape theorem. Ada sees Harlan's face in your li
 
 ### Sounds
 - ENGINE: everything synthesized in Web Audio (noise, oscillator and modal synthesis), with procedural room reverbs and HRTF panning for every one of her tells
-- [M1] Her tells, prototyped first: drip loop and drip-stop, bone crack, throat gurgle, wet footsteps, gown slap, nails on plaster, scraping on wood
+- [M1] Her tells, prototyped first: drip loop and drip-stop, the head lift (`ada_head_lift`: the hair rope creaks, water pours out, a jaw click — replaces the bone crack), the carried head knocking on her thigh (`ada_head_knock`), the stump breathing (`stump_breath`, 570 Hz tube), throat gurgle, wet bare feet (`bare_feet_wet`), gown slap, nails on plaster, scraping on wood
+- [M1] C2/C2c (C2-ESCAPE §2.3): `cleaver_sever` (swish, skin, the C4–C5 crack, table bite, squelch), `arterial_spurt`, `blood_patter`, `blood_drip`, `head_drop`, `head_nudge`, `hair_wring`, `heart_restart`, `rope_zip`, `handrail_squeak`, `newel_knock`, `torch_knock`, `body_fall_stairs`, `score_hit`, `parlor_key_turn`
 - [M1] Rain by surface (roof, glass, porch, gravel, car), gutters, eaves drips, wind, the creaking VACANCY plate
 - [M1] Thunder: near crack and distant roll timed to each flash (the 2.5 s mask must be audible); window rattle
 - [M1] Footsteps on runner vs bare boards, 2 creakers, main stair treads. [M2] back stair

@@ -31,6 +31,7 @@ import { EYE_HEIGHT, RoomIndex, headingToCameraYaw, partitionGround } from './ro
 import { WorldCollision, groundColliderMesh, propColliderMeshes } from './collision.ts';
 import { DoorSystem } from './doors.ts';
 import { RuntimeLights } from './lights.ts';
+import { createWindowCull } from './window-cull.ts';
 import { SkySpecularNode, setExteriorGridBox } from './atmosphere.ts';
 import type { LoadingOverlay } from './loading-overlay.ts';
 import { bindFallbackMaterials } from './fallback-materials.ts';
@@ -68,6 +69,9 @@ export interface GridInfo {
 }
 
 /** Sky radiance behind everything (linear). The probe grids capture it as the storm sky. */
+/** RUNTIME F3: props smaller than this (bounding radius, m) cast no shadow. */
+const MIN_CASTER_RADIUS_M = 0.03;
+
 export const SKY_COLOR: [number, number, number] = [0.022, 0.026, 0.036];
 
 export class Level {
@@ -106,6 +110,8 @@ export class Level {
   private dirtyVis = true;
   private visScratch: Set<string> = new Set();
   private readonly scene: any;
+  /** RUNTIME F2: indoor window-portal culling of the exterior rooms (src/world/window-cull.ts). */
+  private windowCull: ReturnType<typeof createWindowCull> | null = null;
 
   constructor(o: {
     layout: LevelLayout;
@@ -129,6 +135,24 @@ export class Level {
     this.lights = o.lights;
     this.props = o.props;
     this.scene = o.scene;
+    try {
+      this.windowCull = createWindowCull(this.layout, this.roomGroups, this.scene);
+    } catch (e) {
+      console.warn('[level] window cull disabled:', e);
+    }
+  }
+
+  /** RUNTIME F2: per frame after setViewer, with the render camera's world position (the frame's final eye). */
+  updateWindowCull(eye: any, now: number): void {
+    this.windowCull?.update(eye, this.cullingEnabled && this.room !== null && !this.isOutside(), this.visible, now);
+  }
+
+  setWindowCull(on: boolean): void {
+    this.windowCull?.setEnabled(on);
+  }
+
+  windowCullStats() {
+    return this.windowCull?.stats() ?? null;
   }
 
   spawn(id: string): SpawnPose | null {
@@ -299,11 +323,17 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
       n.rotation.set(0, p.yaw, 0);
       n.userData.static = p.lighting === 'static';
       n.userData.dynamic = p.lighting === 'dynamic';
+      n.updateMatrixWorld(true);
       n.traverse((c: any) => {
         if (c.userData?.collider === true || c.userData?.hide_proxy || /-collider$/.test(c.name)) c.visible = false;
         if (c.userData?.flame) flameAnchors.set(c.name, c);
         if (c.isMesh) {
-          c.castShadow = true;
+          // RUNTIME F3 (lead ruling): no shadow casters under 3 cm bounding radius (screws, coins, papers' curl) — their
+          // shadow is < 1 texel of the torch's 2048² 90° map beyond 1 m (2·tan45°/2048 ≈ 1 mm/texel/m … 3 cm at 30 m of
+          // the candle cube's 512² face: 0.4 cm/texel at 1 m) yet each costs a draw in every shadow pass.
+          if (!c.geometry?.boundingSphere) c.geometry?.computeBoundingSphere?.();
+          const r = (c.geometry?.boundingSphere?.radius ?? 1) * c.matrixWorld.getMaxScaleOnAxis();
+          c.castShadow = !(r < MIN_CASTER_RADIUS_M);
           c.receiveShadow = true;
         }
       });

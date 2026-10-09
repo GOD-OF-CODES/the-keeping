@@ -301,8 +301,19 @@ export const MATERIALS = [
   }),
   m('steel_cleaver', 'chrome', {
     albedo: [0.3, 0.3, 0.29], rough: 0.45, metal: 1, tile: 0.3, source: 'baked_unique',
-    params: { pitting: 0.7, rustSpots: 0.55, honedEdge: 0.8, seed: 106 },
-    notes: 'Hog-cleaver blade: carbon steel, pitted, rust blooms, bright honed edge.',
+    params: { pitting: 0.7, rustSpots: 0.55, honedEdge: 0.8, seed: 106, bloodMask: true },
+    notes: 'Hog-cleaver blade: carbon steel, pitted, rust blooms, bright honed edge. C2-ESCAPE K7: bloodMask = the TSL wet-blood mask on the blade after C2 (src/materials/blood.ts).',
+  }),
+  // ---------- C2-ESCAPE K7 (approved 2026-10-09): blood as a material (src/world/blood-fx.ts reads these) ----------
+  m('blood_wet', 'rubber', {
+    albedo: [0.11, 0.009, 0.008], rough: 0.05, source: 'constant',
+    params: { f0: 0.022, ior: 1.35, muA: [1.0, 100, 120], muA_pool: [3.0, 110, 130], g: 0.95, albedoJet: [0.18, 0.012, 0.01], age: 0, thickness: 0.00275 },
+    notes: 'Whole blood, cold and water-thinned (3 mPa·s, 1060 kg/m³, σ 0.055 N/m → 2.75 mm settled film). μa per mm (Prahl, Hb ≈ 150 g/L): red 0.6–0.7 oxygenated / 3.8–6.9 deoxygenated, green ≈ 110, blue ≈ 130 — it transmits only red, through ≲ 1–2 mm. Henyey–Greenstein g 0.95 (forward scatter of a back-lit jet). Fresh roughness 0.03–0.08 → 0.25 clotting at the edges after 3–10 min.',
+  }),
+  m('blood_dried', 'rubber', {
+    albedo: [0.06, 0.016, 0.012], rough: 0.55, source: 'constant',
+    params: { f0: 0.03, coffeeRingMm: 2 },
+    notes: 'Blood dried ≥ 10 min: brown-black, matte, a darker 2 mm coffee-ring rim (B11/C5 and older nights on the sheet).',
   }),
   // ---------- round E (R3, approved 2026-10-08): handheld story props ----------
   m('steel_forged', 'chrome', {

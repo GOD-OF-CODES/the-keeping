@@ -275,6 +275,7 @@ export async function createStoryRuntime(d: StoryDeps) {
   // ---------------------------------------------------------------- Ada audio (drip, tells, loops, footfalls)
   let dripStarted = false;
   let loopHandle: any = null;
+  let stumpLoop: any = null;
   let loopKind: string | null = null;
   let stride = 0;
   const lastAdaPos = new THREE.Vector3();
@@ -291,8 +292,16 @@ export async function createStoryRuntime(d: StoryDeps) {
         loopHandle = null;
         loopKind = null;
       }
+      stumpLoop?.stop(0.4);
+      stumpLoop = null;
       return;
     }
+    // C2-ESCAPE §6.2: the stump breathes through the cut windpipe (0.4 Hz, 570 Hz tube) — a close tell, at the stump
+    if (ada?.severed && !stumpLoop) stumpLoop = audio.play('stump_breath', { pos: [w[0], w[1] + 1.42, w[2]], room: out.room, loop: true, gain: 0.55, fadeIn: 0.8 });
+    else if (stumpLoop && !ada?.severed) {
+      stumpLoop.stop(0.3);
+      stumpLoop = null;
+    } else if (stumpLoop) stumpLoop.setPosition(w[0], w[1] + 1.42, w[2], out.room);
     if (!dripStarted) {
       audio.layers.startDrip(out.tells.dripRate || 1);
       dripStarted = true;
@@ -301,7 +310,9 @@ export async function createStoryRuntime(d: StoryDeps) {
     audio.layers.setDripRate(out.tells.dripRate);
     if (out.tells.dripStopped) audio.layers.stopDrip(false);
     else if (out.state !== 'LISTEN') audio.layers.resumeDrip();
-    if (out.tells.crack) audio.play('ada_bone_crack', { pos: [w[0], w[1] + 1.45, w[2]], room: out.room });
+    // C2-ESCAPE K9: the tell is the head lift (the carried head is raised to face height), not the old bone crack
+    if (out.tells.crack) audio.play('ada_head_lift', { pos: [w[0], w[1] + 1.2, w[2]], room: out.room });
+    if (out.tells.knock) audio.play('ada_head_knock', { pos: [w[0], w[1] + 0.75, w[2]], room: out.room, gain: 0.8 });
     if (out.tells.gurgle) audio.play('ada_gurgle', { pos: [w[0], w[1] + 1.4, w[2]], room: out.room });
     // looping foley
     const want = out.tells.loop === 'scrape_wood' ? 'ada_scrape_wood' : out.tells.loop === 'nails_plaster' ? 'ada_nails_plaster' : null;
@@ -370,6 +381,28 @@ export async function createStoryRuntime(d: StoryDeps) {
           nonstopBell = audio.play(id, bp ? { pos: [bp.x, bp.y, bp.z], room: 'G2', loop: true } : { loop: true });
           return;
         }
+        // C2-ESCAPE: the parlor's slow drip (B03 hall → C2's threshold freeze) and Harlan's rocker once she is out (B05)
+        if (id === 'parlor_drip_loop') {
+          parlorDrip?.stop(0.3);
+          parlorDrip = audio.play(id, pos ? { pos: planToWorld(pos), room, loop: true, fadeIn: 0.5 } : { loop: true });
+          return;
+        }
+        if (id === 'parlor_drip_stop') {
+          parlorDrip?.stop(0.4);
+          parlorDrip = null;
+          return;
+        }
+        if (id === 'rocker_slow') {
+          // rocking_chair loop (1.7 s period) slowed to 0.55 Hz: rate 1.7 × 0.55 = 0.935
+          rocker?.stop(0.3);
+          rocker = audio.play('rocking_chair', pos ? { pos: planToWorld(pos), room, loop: true, rate: 0.935, fadeIn: 1.2 } : { loop: true, rate: 0.935 });
+          return;
+        }
+        if (id === 'rocker_stop') {
+          rocker?.stop(0.6);
+          rocker = null;
+          return;
+        }
         if (id === 'bolt_slide') return; // the passage door's own bolt plays it, positionally (doors.ts)
         if (!pos && SFX_AT[id]) {
           const o = level.prop(SFX_AT[id].prop);
@@ -380,8 +413,15 @@ export async function createStoryRuntime(d: StoryDeps) {
           }
         }
         audio.play(id, pos ? { pos: planToWorld(pos), room } : {});
+        // C2-ESCAPE B7/§4.5: as Harlan unlocks the door for her, the roaming shadow light is back at the parlor lamp
+        if (id === 'parlor_key_turn') cutsceneFx('shadowLight', { at: 'lamp' });
       },
-      lightning: () => lightning?.strike(),
+      lightning: (reason?: string) => {
+        lightning?.strike();
+        // C2-ESCAPE §4.5: the armoire flash lights U1 through its window with a real (shadowed) light — the one roaming
+        // cube-shadow light, 4 strokes in ≈ 0.4 s (CLAUDE.md lightning: 3–4 pulses, ≈ 7000–9000 K)
+        if (reason === 'armoire') cutsceneFx('shadowLight', { at: 'u1_window', pulses: '1@0:0.05,0.55@0.11:0.04,1@0.22:0.06,0.35@0.36:0.08' });
+      },
       storm: (interval, rumble) => {
         stormNow = { interval, rumble };
         if (stormAutoOn) lightning?.setStorm(interval, rumble);
@@ -430,6 +470,8 @@ export async function createStoryRuntime(d: StoryDeps) {
     },
   });
   let nonstopBell: any = null;
+  let parlorDrip: any = null;
+  let rocker: any = null;
 
   // ---------------------------------------------------------------- cutscenes (src/cutscenes, docs/CUTSCENES.md)
   let cs: any = null;
@@ -506,7 +548,7 @@ export async function createStoryRuntime(d: StoryDeps) {
       m2.canAtFiller(false);
       armsProp(null);
     }
-    if ((id === 'C2' || id === 'C2_replay') && !characters.acquired.has('ada')) {
+    if (id === 'C2' && !characters.acquired.has('ada')) {
       tableauOn = false;
       ada?.release();
     }
@@ -527,6 +569,8 @@ export async function createStoryRuntime(d: StoryDeps) {
       nonstopBell = audio.play('spring_bell_loop', bp ? { pos: [bp.x, bp.y, bp.z], room: 'G2', loop: true } : { loop: true });
     }
     if (name === 'rang_front_bell' && value) whetstone?.stop(0.6);
+    // C2-ESCAPE B3: from C2's strike on she is headless and carries her head (also a debug start / restore at B04+)
+    if (name === 'ada_severed') ada?.sever(!!value);
     if (name === 'harlan_taken' && value) {
       fxw.fx('blue_hour', { mist: 1, rain: 0 }); // B12: the storm is over
       if (harlan) harlan.visible = false; // C5 took him (also a debug / restore start at B12+)

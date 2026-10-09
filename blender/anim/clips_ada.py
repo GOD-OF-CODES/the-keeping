@@ -585,8 +585,9 @@ def sting(geo):
 
 
 def m2_clips(geo):
+    from . import clips_escape
     return [search(), search_bed(geo), door_push(), dress(geo), finale_approach(geo), finale_take(), finale_carry(geo),
-            finale(), finale_shadow(), sting(geo)]
+            finale(), finale_shadow(), sting(geo)] + clips_escape.ada_clips(geo)
 
 
 M2_TODO = []

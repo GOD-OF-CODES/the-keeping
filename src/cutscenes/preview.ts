@@ -1,4 +1,4 @@
-// Cutscene preview harness: ?scene=cutscene&id=C2 (ids: C1 C2 C2_replay C3 C4 C5 C6 C7 death).
+// Cutscene preview harness: ?scene=cutscene&id=C2 (ids: C1 C2 C2c C3 C4 C5 C6 C7 death).
 // Loads with the real level (the level runtime still boots as usual), takes the frame over and plays one cutscene
 // through the real bindings — real camera, doors, lights, audio, voices/subtitles, DOF — with stand-in characters
 // unless the runtime exposes a real CharacterDirector as `expose.characters`.
@@ -17,13 +17,13 @@ import { StubCharacters } from './stub-characters.ts';
 import { SPAWN, WARDROBE_EYE } from './stage.ts';
 import type { P3 } from './types.ts';
 
-export const PREVIEW_IDS = ['C1', 'C2', 'C2_replay', 'C3', 'C4', 'C5', 'C6', 'C7', 'death'] as const;
+export const PREVIEW_IDS = ['C1', 'C2', 'C2c', 'C3', 'C4', 'C5', 'C6', 'C7', 'death'] as const;
 
 /** Where the player stands when each cutscene starts (eye, PLAN; heading CCW from east). */
 export const PREVIEW_START: Record<string, { eye: P3; heading: number; pitch?: number; ada?: P3; hide?: string }> = {
   C1: { eye: SPAWN.CP1.pos, heading: SPAWN.CP1.heading },
   C2: { eye: [3.1, 1.5, 2.25], heading: 0.35 },
-  C2_replay: { eye: SPAWN.CP2.pos, heading: SPAWN.CP2.heading },
+  C2c: { eye: [2.35, 2.7, 2.25], heading: -0.785 },
   C3: { eye: [8.1, 1.3, 5.75], heading: 0.1 },
   C4: { eye: WARDROBE_EYE, heading: -1.571 },
   C5: { eye: [2.3, 4.6, 2.25], heading: -1.2, ada: [3.2, 1.5, 0.6] },

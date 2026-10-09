@@ -15,6 +15,8 @@ export const FLAGS = {
   rang_front_bell: 'B02: pulled the front bell knob',
   front_door_open: 'the rope holds the front door open (B02, after C5)',
   parlor_locked: 'C2: the parlor door is shut and key-locked',
+  ada_severed: 'C2: Harlan beheaded her (the strike); from here on she is headless and carries her head',
+  cs_C2c_done: 'C2c (Up) is over: control at the stair top (B05)',
   first_hide_done: 'B05: the unfailable slat look is over',
   ledger_read: 'read at least one ledger page',
   has_hammer: 'inventory: claw hammer (world sets it)',
@@ -73,6 +75,8 @@ export interface EscapeState {
   lastDistractionT: number;
   lastThunderAssistT: number;
   finalePromptShown: boolean;
+  /** C2-ESCAPE K8 `c2_strike_time`: story time of the C2 strike (blood decals/pools age from it); null = before C2. */
+  c2StrikeTime?: number | null;
 }
 
 export function newEscapeState(): EscapeState {
@@ -99,6 +103,7 @@ export function newEscapeState(): EscapeState {
     lastDistractionT: -1e9,
     lastThunderAssistT: -1e9,
     finalePromptShown: false,
+    c2StrikeTime: null,
   };
 }
 

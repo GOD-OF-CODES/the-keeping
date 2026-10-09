@@ -28,12 +28,34 @@ export const MOONLIGHT = 0.07;
  * arms) would be disposed and rebuilt twice per toggle pair. Outside those shots the shadow is muted (shadow.intensity
  * 0, a uniform) and its map is never re-rendered (autoUpdate false): the same look as an unshadowed light.
  */
-export const SHADOW_CANDLE_ID = 'L_CANDLE_TABLE';
+export const SHADOW_LIGHT_ID = 'L_LAMP_PARLOR';
+/** Before C2-ESCAPE K3 the table candle was the shadow light; a layout without the lamp still uses it. */
+export const LEGACY_SHADOW_ID = 'L_CANDLE_TABLE';
+/** @deprecated the resolved id is RuntimeLights.shadowId (the lamp, or the legacy candle on an old layout). */
+export const SHADOW_CANDLE_ID = SHADOW_LIGHT_ID;
+/** C2-ESCAPE §2.4: the rooms the roaming shadow light may light (it is in their atlases' light lists from load: the
+ *  parlor (lamp, C5), the hall (fanlight stroke, B03 door gap), the upper hall/landing (U1 window stroke, B05 flash)). */
+export const SHADOW_ROAM_ROOMS = ['G2', 'G1', 'U1'] as const;
 
 /** Turns the fixed candle shadow on (map re-rendered every frame, full strength) or off (muted, map frozen). */
 export function setCandleShadow(light: any, on: boolean): void {
   const sh = light?.shadow;
   if (!sh) return;
+  if (light.userData?.alwaysShadow) {
+    // C2-ESCAPE K3: the lamp is a 12 cd FULL direct light — muting its shadow would light the hall through WG_G1G2.
+    // Its shadow stays on; "off" only freezes the map (RuntimeLights.update redraws it at 10 Hz while the parlor is
+    // seen; ShadowRoam zeroes the light itself when it is dark)
+    sh.intensity = 1;
+    const u0 = light.userData.uShadowOn;
+    if (u0) u0.value = light.intensity > 0 || on ? 1 : 0;
+    // B7 measured (Medium, AC, 2026-10-09): a cube map redrawn EVERY frame at distance 7 m cost C2 ≈ +13 ms GPU
+    // (13.9: 24.1 ms vs ≈ 11 before) → the approved fallback: distance 4.5 m (below) and the map at 30 Hz while a shot
+    // needs it (C2, C5), 10 Hz otherwise while the parlor is seen — never autoUpdate
+    sh.autoUpdate = false;
+    light.userData.shHz = on ? 30 : 10;
+    sh.needsUpdate = true;
+    return;
+  }
   sh.intensity = on ? 1 : 0;
   sh.autoUpdate = on;
   const u = light.userData?.uShadowOn;
@@ -51,6 +73,11 @@ export interface FlickerLight {
   /** 1 = full flicker; faded to 0 when the room is culled. */
   fade: number;
   uFlicker: any;
+  /** C2-ESCAPE K2/K3: direct light is all runtime (the bake holds only its indirect, `bakePass: 'indirect'`, or
+   *  nothing yet, mode `runtime`): full diffuse share on lightmapped surfaces, a flat-wick flicker (2 % at 6–9 Hz). */
+  direct?: boolean;
+  /** Roaming (cutscene-fx shadowLight): the light is driven by the roam controller, not by the flicker loop. */
+  roaming?: boolean;
 }
 
 /** Approximate blackbody colour (linear sRGB, normalised) — Tanner Helland fit, then sRGB → linear. */
@@ -119,6 +146,9 @@ export class RuntimeLights {
   /** Runtime lights that follow a prop (headlights → gate sedan, dashboard → car interior) without being its child. */
   private readonly followers: Array<{ light: any; parent: any; local: any; targetLocal: any | null }> = [];
   private readonly tmpV = new THREE.Vector3();
+  /** The one cube-shadow light (PERF-PLAN P0-2 / C2-ESCAPE K3): the lamp, or the legacy table candle. */
+  readonly shadowId: string;
+  shadow: FlickerLight | null = null;
 
   constructor(layout: LevelLayout, flameAnchors: Map<string, any>, opts: { lightningSpots: boolean; props?: Map<string, any>; gateShadow?: boolean }) {
     for (const r of layout.rooms) this.roomFloor.set(r.id, r.floor);
@@ -130,14 +160,17 @@ export class RuntimeLights {
     this.group = new THREE.Group();
     this.group.name = 'runtime-lights';
     let seed = 1;
+    this.shadowId = layout.lights.some((l) => l.id === SHADOW_LIGHT_ID) ? SHADOW_LIGHT_ID : LEGACY_SHADOW_ID;
     for (const def of layout.lights) {
-      if (def.mode === 'bake_flicker') {
+      const isShadow = def.id === this.shadowId;
+      if (def.mode === 'bake_flicker' || isShadow) {
         const [x, y, z] = planToWorld(def.pos);
         const c = kelvinToLinearRGB(def.kelvin);
-        const base = def.watts / (4 * Math.PI);
-        const light = new THREE.PointLight(new THREE.Color(c[0], c[1], c[2]), 0, def.role === 'lamp' || def.role === 'lantern' ? 7 : 4.5, 2);
+        const base = (def as any).cd ?? def.watts / (4 * Math.PI); // lamp: 151 W / 4π = 12.0 cd (flat-wick kerosene 10–15 cd)
+        // the shadow lamp: 4.5 m (B7 fallback — fewer casters per cube face; the bake carries its far bounce)
+        const light = new THREE.PointLight(new THREE.Color(c[0], c[1], c[2]), 0, isShadow ? 4.5 : def.role === 'lamp' || def.role === 'lantern' ? 7 : 4.5, 2);
         light.castShadow = false;
-        if (def.id === SHADOW_CANDLE_ID) {
+        if (isShadow) {
           light.castShadow = true; // fixed for the session (P0-2); muted until a shot needs it
           light.shadow.mapSize.set(512, 512);
           light.shadow.bias = -0.002;
@@ -180,7 +213,14 @@ export class RuntimeLights {
         flame.castShadow = false;
         flame.name = `flame_${def.id}`;
         this.group.add(flame);
-        this.flickers.push({ def, light, flame, base, room: def.room, seed: seed++, fade: 1, uFlicker });
+        const direct = isShadow && (def.mode === 'runtime' || (def as any).bakePass === 'indirect');
+        if (direct) {
+          light.userData.alwaysShadow = true;
+          setCandleShadow(light, false); // shadow on, map frozen (redrawn by policy in update())
+        }
+        const f: FlickerLight = { def, light, flame, base, room: def.room, seed: seed++, fade: 1, uFlicker, direct };
+        this.flickers.push(f);
+        if (isShadow) this.shadow = f;
       }
     }
     // Lightning: direction from L_LTN_SUN (sun watts are W/m² — used as a relative peak).
@@ -219,7 +259,7 @@ export class RuntimeLights {
    */
   private createRuntime(layout: LevelLayout, props: Map<string, any>): void {
     for (const l of layout.lights) {
-      if (l.mode !== 'runtime') continue;
+      if (l.mode !== 'runtime' || l.id === this.shadowId) continue;
       const c = new THREE.Color(...kelvinToLinearRGB(l.kelvin));
       const cd = l.cd ?? l.watts / (4 * Math.PI); // opening: layout `cd` (photometric, C1-OPENING §5.1) wins
       let light: any;
@@ -265,7 +305,7 @@ export class RuntimeLights {
   /** Lights relevant to one lightmap atlas's rooms (keeps per-pixel light loops short on lightmapped surfaces). */
   forRooms(rooms: Set<string>, exterior: boolean): any[] {
     const out: any[] = [];
-    for (const f of this.flickers) if (rooms.has(f.room)) out.push(f.light);
+    for (const f of this.flickers) if (rooms.has(f.room) || (f === this.shadow && SHADOW_ROAM_ROOMS.some((r) => rooms.has(r)))) out.push(f.light);
     if (exterior) out.push(this.lightningDir);
     for (const r of this.runtime.values()) if (rooms.has(r.room) || (exterior && r.room.startsWith('EXT'))) out.push(r.light);
     for (const s of this.lightningSpots) if (rooms.has(s.room)) out.push(s.light);
@@ -280,6 +320,7 @@ export class RuntimeLights {
     const vf = viewer ? this.roomFloor.get(viewer) : undefined;
     const crossOk = !viewer || this.stairFoot.has(viewer) || vf === 'exterior';
     for (const f of this.flickers) {
+      if (f.roaming) continue; // cutscene-fx drives it (position, colour, intensity, shadow redraws)
       const floorOk = visible || !vf || crossOk || this.roomFloor.get(f.room) === vf;
       const want = (visible ? visible.has(f.room) : (!seen || seen.has(f.room)) && floorOk) ? 1 : 0;
       f.fade = visible ? f.fade + (want - f.fade) * Math.min(1, dt * 6) : want; // cutscene cuts: snap, no fade-in
@@ -295,6 +336,27 @@ export class RuntimeLights {
       // LIGHTING lane (item 5): the light itself runs at the candle's full candela base × (1 + 0.3k) — that is the
       // specular (absent from the diffuse-only bake). The diffuse on lightmapped surfaces is scaled back to exactly
       // the old swing FLICKER_SHARE × max(0, 0.35 + 0.65k) by the per-light share uniform.
+      if (f.direct) {
+        // §2.4 update policy outside cutscenes: the map is redrawn at 10 Hz while the parlor is in view (Harlan,
+        // the door), frozen otherwise; a cutscene's cast_shadow cue sets autoUpdate (every frame in C2)
+        const hz = f.light.userData.shHz ?? 10;
+        // RUNTIME F review: never while the lamp is (nearly) dark — in C1 (`visible` null, the parlor unseen → fade 0)
+        // the 10 Hz redraw cost 303 draws / 1.28 M tris every 6th frame on Max (C1 60.5 703 d / 2.54 M) for a light at
+        // intensity 0, and at the B05 handover 482 d / 1.6 M at 0.02 cd (fade-out tail). Below 2 % of 12 cd its shadow
+        // is invisible; the first frame above redraws at once (shT is not advanced while dark).
+        if (!f.light.shadow.autoUpdate && f.fade > 0.02 && (hz > 10 || (visible ? visible.has(f.room) : true)) && t - (f.light.userData.shT ?? -1) > 1 / hz - 1e-4) {
+          f.light.userData.shT = t;
+          f.light.shadow.needsUpdate = true;
+        }
+        if (f.light.userData.uShadowOn) f.light.userData.uShadowOn.value = 1;
+        // a flat wick is steadier than a candle: 2 % at 6–9 Hz (C2-ESCAPE §2.4); no bake under it → full diffuse
+        const w = 0.012 * Math.sin(t * 2 * Math.PI * 6.3 + s) + 0.008 * Math.sin(t * 2 * Math.PI * 8.7 + s * 2.3);
+        f.uFlicker.value = 1 + w * 4;
+        f.light.intensity = f.base * (1 + w) * f.fade;
+        f.light.userData.lmDiffuseShare.value = 1;
+        if (f.flame) f.flame.visible = f.fade > 0.01 && f.base > 1e-3;
+        continue;
+      }
       const full = 1 + 0.3 * k;
       f.light.intensity = f.base * full * f.fade;
       f.light.userData.lmDiffuseShare.value = (FLICKER_SHARE * Math.max(0, 0.35 + k * 0.65)) / full;
@@ -361,4 +423,140 @@ function roomForTarget(layout: LevelLayout, t: [number, number, number]): string
     }
   }
   return best;
+}
+
+// ------------------------------------------------------------------------------------------------ the roaming shadow light
+
+/**
+ * C2-ESCAPE §2.4 / K3 (B7): the session's one cube-shadow point light is the parlor lamp; a cutscene cue
+ * `fx shadowLight {at, pulses}` moves it to an opening for a lightning stroke ("real shadows through real openings":
+ * the fanlight's muntins, her silhouette, the balusters) and back. Stroke: a lightning-lit cloud seen through grimy
+ * glass ≈ 2000 cd/m² over the fanlight's 0.55 m² ≈ 1100 cd peak, 8000 K, distance 9 m. Pulses rise in 30 ms and decay
+ * with τ 60 ms; the last (continuing current) with τ 180 ms. The cube map is redrawn once at each pulse onset.
+ */
+export const ROAM_SPOTS = {
+  /** outside the front-door fanlight (PLAN) */
+  fanlight: [1.6, -1.5, 4.4],
+  /** outside the U1 south window */
+  u1_window: [2.1, -1.4, 5.6],
+} as const;
+export const STROKE_CD = 1100;
+export const STROKE_K = 8000;
+
+export interface RoamPulse {
+  /** onset (s after the cue) */
+  t: number;
+  /** relative strength 0..1 (× STROKE_CD) */
+  v: number;
+  /** decay τ (s) */
+  tau: number;
+}
+
+/** "v@t[:tau]" comma list → pulses (cue params are flat). */
+export function parsePulses(s: string | undefined): RoamPulse[] {
+  if (!s) return [];
+  return s
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .map((x) => {
+      const [v, rest] = x.split('@');
+      const [t, tau] = (rest ?? '0').split(':');
+      return { v: Number(v), t: Number(t), tau: tau !== undefined ? Number(tau) : 0.06 };
+    })
+    .sort((a, b) => a.t - b.t);
+}
+
+/** Stroke envelope 0..~1 at time t after the cue (sum of pulses: 30 ms linear rise, exponential decay). */
+export function strokeEnvelope(p: RoamPulse[], t: number): number {
+  let e = 0;
+  for (const q of p) {
+    const u = t - q.t;
+    if (u < 0) continue;
+    e += q.v * (u < 0.03 ? u / 0.03 : Math.exp(-(u - 0.03) / q.tau));
+  }
+  return e;
+}
+
+export class ShadowRoam {
+  private readonly lights: RuntimeLights;
+  private at: 'lamp' | 'off' | keyof typeof ROAM_SPOTS = 'lamp';
+  private t = 0;
+  private pulses: RoamPulse[] = [];
+  private next = 0;
+  private readonly home: { pos: any; color: any; distance: number } | null;
+  private readonly strokeColor = new THREE.Color(...kelvinToLinearRGB(STROKE_K));
+
+  constructor(lights: RuntimeLights, root: any = null) {
+    this.lights = lights;
+    // Glass transmits ≈ 90 % (F0 0.04 per face): a pane must not be an opaque caster, or the fanlight stroke never
+    // reaches the hall floor (r4: the glazed fanlight blacked out the patch behind her). Applies to every caster the
+    // session's shadow lights see (the lamp through the chimney, the torch through windows) — all physically right.
+    root?.traverse?.((o: any) => {
+      if (!o.isMesh || !o.castShadow) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      if (mats.some((m: any) => /glass|window_pane|chimney/i.test(String(m?.name ?? '')) || m?.transmission > 0)) o.castShadow = false;
+    });
+    const L = lights.shadow?.light;
+    this.home = L ? { pos: L.position.clone(), color: L.color.clone(), distance: L.distance } : null;
+  }
+
+  get where(): string {
+    return this.at;
+  }
+
+  /** at: 'lamp' (home, normal flicker), 'off' (direct off: the parlor door is shut), or an opening + pulses. */
+  set(at: string, pulses: RoamPulse[] = []): void {
+    const f = this.lights.shadow;
+    if (!f || !this.home) return;
+    const L = f.light;
+    if (at === 'lamp') {
+      this.at = 'lamp';
+      f.roaming = false;
+      if (L.userData.uShadowOn) L.userData.uShadowOn.value = 1;
+      L.position.copy(this.home.pos);
+      L.color.copy(this.home.color);
+      L.distance = this.home.distance;
+      L.shadow.needsUpdate = true;
+      return;
+    }
+    f.roaming = true;
+    if (at === 'off' || !(at in ROAM_SPOTS)) {
+      this.at = 'off';
+      L.intensity = 0;
+      if (L.userData.uShadowOn) L.userData.uShadowOn.value = 0; // a dark light: skip the PCF
+      return;
+    }
+    this.at = at as keyof typeof ROAM_SPOTS;
+    const [x, y, z] = planToWorld(ROAM_SPOTS[this.at] as unknown as [number, number, number]);
+    L.position.set(x, y, z);
+    L.color.copy(this.strokeColor);
+    L.distance = 9;
+    L.intensity = 0;
+    L.userData.lmDiffuseShare.value = 1; // nothing of a stroke is baked
+    setCandleShadow(L, true);
+    L.shadow.autoUpdate = false; // redrawn at each pulse onset only (4 cube renders per stroke)
+    this.t = 0;
+    this.pulses = pulses;
+    this.next = 0;
+  }
+
+  /** Per frame after RuntimeLights.update (it skips a roaming light). */
+  update(dt: number): void {
+    const f = this.lights.shadow;
+    if (!f || this.at === 'lamp') return;
+    const L = f.light;
+    if (this.at === 'off') {
+      L.intensity = 0;
+      if (L.userData.uShadowOn) L.userData.uShadowOn.value = 0;
+      return;
+    }
+    if (L.userData.uShadowOn) L.userData.uShadowOn.value = 1;
+    this.t += dt;
+    while (this.next < this.pulses.length && this.t >= this.pulses[this.next].t) {
+      L.shadow.needsUpdate = true; // the figures moved since the last pulse
+      this.next++;
+    }
+    L.intensity = STROKE_CD * strokeEnvelope(this.pulses, this.t);
+  }
 }

@@ -26,7 +26,7 @@ export const TUNING = {
   listenS: [1.0, 0.8, 0.6],
   /** Difficulty 2026-10-08: lit 14 → 8 m (torch on is ordinary play), dark 5 → 4 m. noticeS: she must keep you in
    *  sight this long before a CHASE (a glance across her cone is a near miss); within closeM it is instant. */
-  sight: { halfAngleDeg: 30, lit: 8, dark: 4, darkCrouched: 2, eyeHeight: 1.5, noticeS: 0.6, closeM: 2.5, chaseM: 5 }, // chaseM (round E careless gate): a first sighting farther than this → she comes to look (INVESTIGATE), not a chase
+  sight: { halfAngleDeg: 30, lit: 8, dark: 4, darkCrouched: 2, eyeHeight: 1.5, noticeS: 0.6, closeM: 2.5, chaseM: 5, headAheadM: 0.25 }, // chaseM (round E careless gate): a first sighting farther than this → she comes to look (INVESTIGATE), not a chase
   light: { beamInvestigate: 6, flameLit: 1.5, bodyRadius: 0.35, chestHeight: 1.2, beamInvestigateCooldownS: 2.5, beamRepeatS: 12 }, // beamRepeatS (round E, B11 stall): after a beam LOOK that saw nothing, a beam on her body within this long sends her toward the holder instead of another LOOK in place
   locket: { range: 4 },
   /** Difficulty 2026-10-08: lostS 4 → 2.5, catchDist 1 → 0.8 m, and she abandons any chase after giveUpS. */
@@ -51,10 +51,16 @@ export const TUNING = {
   hide: { seenWindowS: 2, audibleDist: 2, breathRadius: 1.2 },
   door: { openS: 1.2, openChaseS: 0.5 },
   gurgle: { dist: 5, cooldownS: 10 },
-  b04: { minGap: 2, maxGap: 4, stillS: 2, stillSpeed: 0.25, crumbS: 0.2, maxSpeed: 4.2, startGraceS: 3 }, // gameplay review: grace 1.5 → 3 s — C2 releases the player 1.5 m from her (C2_END_EYE vs C2_ADA_END); a first-timer frozen by the reveal was grabbed ~4 s after control returned, now ~5.5 s
   finale: { armLength: 0.9, lookS: 2.5, waitDist: 3.6, lostS: 4 },
   dress: { hemS: 3.5 },
   hideDemo: { listenS: 2.5 },
+  /**
+   * C2-ESCAPE §4.5 b05_return. Start = max(minStartS, min(the player hides, maxStartS)) after control. The key turns
+   * (keyS), the door opens (doorS), 3 s of wet feet on the hall boards (≈ 2.9 m at hallSpeed), then the rocker; she
+   * climbs 16 risers at 1.4 risers/s (0.355 m per riser along the slope → 0.5 m/s). Still in the open when she reaches
+   * tread 10 (z ≥ treadZ10): she stops there blind until blindUntilS, then tops the stair (normal rules + grace).
+   */
+  b05: { minStartS: 10, maxStartS: 15, keyS: 1.4, doorS: 1.6, hallSpeed: 0.95, rockerAfterS: 3, climbSpeed: 0.5, treadZ10: 0.6 + 0.219 * 10 - 0.05, blindUntilS: 45, knockEveryS: 0.85 },
   /** Thunder mask fallback when a `thunder` event carries no timing (AUDIO.md contract: +1.5 s, 2.5 s long). */
   thunder: { delayMs: 1500, durationMs: 2500 },
   voice: { vigilLongS: 20 },

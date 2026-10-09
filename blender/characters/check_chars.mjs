@@ -23,8 +23,10 @@ const CORE = ['root', 'hips', 'spine_01', 'spine_02', 'spine_03', 'neck_01', 'ne
 const ARMS = ['root', ...['l', 'r'].flatMap((s) => [`upperarm_${s}`, `forearm_${s}`, `hand_${s}`,
   ...['thumb', 'index', 'middle', 'ring', 'pinky'].flatMap((f) => [1, 2, 3].map((i) => `${f}_0${i}_${s}`))]), 'flashlight', 'flashlight_beam'];
 const SPEC = {
-  ada: { bones: [...CORE, 'jaw_hold'], prefixes: ['hair_', 'gown_'], morphs: { ada_body: ['jaw_open', 'gurgle'], ada_hair: ['jaw_open', 'gurgle'] },
-    meshes: ['ada_body', 'ada_gown', 'ada_hair', 'ada_eye'], maxTris: 60000, textures: ['ada_albedo.webp', 'ada_normal.png', 'ada_hair_albedo.webp', 'ada_hair_normal.png'] },
+  // C2-ESCAPE A0: the head is its own skinned node ada_head_rig (head_root + hair_*), bone-parented to ada_rig.head
+  ada: { bones: [...CORE, 'jaw_hold', 'head_root'], prefixes: ['hair_', 'gown_'], skins: 2, headNode: 'ada_head_rig',
+    morphs: { ada_head: ['jaw_open', 'gurgle', 'eyelid_l_open'], ada_hair: ['jaw_open', 'gurgle'] },
+    meshes: ['ada_body', 'ada_head', 'ada_gown', 'ada_hair', 'ada_eye', 'ada_cornea_l'], maxTris: 62000, textures: ['ada_albedo.webp', 'ada_normal.png', 'ada_hair_albedo.webp', 'ada_hair_normal.png'] },
   harlan: { bones: [...CORE, 'cleaver'], prefixes: ['sack_', 'apron_'], morphs: {},
     meshes: ['harlan_body', 'harlan_shirt', 'harlan_trousers', 'harlan_boots', 'harlan_gloves', 'harlan_apron', 'harlan_suspenders',
       'harlan_sack', 'harlan_twine', 'harlan_void', 'harlan_cleaver', 'harlan_cleaver_handle'], maxTris: 75000, textures: ['harlan_albedo.webp', 'harlan_normal.png'] },
@@ -54,15 +56,23 @@ for (const ch of chars) {
   const t0 = performance.now();
   const gltf = await loader.parseAsync(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '');
   const ms = performance.now() - t0;
-  expect((json.skins ?? []).length === 1, `exactly one skin (${(json.skins ?? []).length})`);
+  const nSkins = spec.skins ?? 1;
+  expect((json.skins ?? []).length === nSkins, `exactly ${nSkins} skin(s) (${(json.skins ?? []).length})`);
   const skinned = [];
   gltf.scene.traverse((o) => o.isSkinnedMesh && skinned.push(o));
-  const bones = new Set(skinned[0]?.skeleton.bones.map((b) => b.name) ?? []);
+  const bones = new Set(skinned.flatMap((m) => m.skeleton.bones.map((b) => b.name)));
+  if (spec.headNode) {
+    const hn = gltf.scene.getObjectByName(spec.headNode);
+    expect(!!hn && hn.parent?.isBone && hn.parent.name === 'head', `${spec.headNode} is a child of bone 'head' (${hn?.parent?.name})`);
+    let hb = 0;
+    hn?.traverse((o) => o.isBone && hb++);
+    expect(hb === 33, `${spec.headNode} carries 33 bones (${hb})`);
+  }
   const missing = spec.bones.filter((b) => !bones.has(b));
   expect(missing.length === 0, `required bones present (${bones.size} in skeleton)${missing.length ? ' missing ' + missing : ''}`);
   for (const p of spec.prefixes) expect([...bones].some((b) => b.startsWith(p)), `runtime chain bones ${p}*`);
-  const sameSkel = skinned.every((m) => m.skeleton.bones.length === skinned[0].skeleton.bones.length);
-  expect(sameSkel, `all ${skinned.length} skinned primitives share the skeleton`);
+  const skelSizes = new Set(skinned.map((m) => m.skeleton.bones.length));
+  expect(skelSizes.size === nSkins, `${skinned.length} skinned primitives on ${nSkins} skeleton(s) (${[...skelSizes]})`);
   const names = new Set();
   gltf.scene.traverse((o) => o.isMesh && names.add(o.name.replace(/_\d+$/, '')));
   const meshNames = new Set();

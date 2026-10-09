@@ -46,6 +46,13 @@ class ArmsEnvNode extends (THREE as any).LightingNode {
 
 const ONE_SHOTS = new Set(['arms_flashlight_toggle', 'arms_knock', 'arms_bell_pull', 'arms_door_rattle', 'arms_freeze', 'arms_hide_push', 'arms_key', 'arms_pickup_read', 'arms_pry_board', 'arms_cut_hem', 'arms_raise_locket', 'arms_slide_bolt', 'arms_pour_can']);
 
+/** C2-ESCAPE review: while on (C2c's climb, cue fx `beamClamp`; cleared when a cutscene releases the camera) the beam
+ *  is held within BEAM_MAX of the gaze. Gameplay is unchanged (off). */
+export const BEAM_CLAMP = { on: false };
+/** Max angle between the beam and the gaze (rig −Z): 12° (r3: 20° left glance #2 her hand outside the beam). */
+const BEAM_MAX_COS = Math.cos((12 * Math.PI) / 180);
+const BEAM_MAX_SIN = Math.sin((12 * Math.PI) / 180);
+
 export class FpArms {
   readonly c: LoadedCharacter;
   /** The uniforms of the arms' environment (ArmsEnvNode), for the ?debug console. */
@@ -62,6 +69,9 @@ export class FpArms {
   private readonly _d = new THREE.Vector3();
   private readonly _m = new THREE.Matrix4();
   private readonly _q = new THREE.Quaternion();
+  private readonly _p2 = new THREE.Vector3();
+  /** True when the clip's torch bone pointed > 12° off the gaze this frame (debug). */
+  beamClamped = false;
 
   constructor(c: LoadedCharacter, parent: any) {
     this.c = c;
@@ -257,6 +267,18 @@ export class FpArms {
     this.c.root.updateMatrixWorld(true);
     this.relMatrix(this._m).decompose(this._p, this._q, this._d);
     const dir = this._d.copy(this.beamAxis).applyQuaternion(this._q).normalize();
+    // C2-ESCAPE review: a torch held while running/stumbling still points within ≈ 12° of where the eyes go (you light
+    // where you look). arms_run_torch's bone aimed the beam off the flight (and its lens glow at the camera): the
+    // climb rendered black. While BEAM_CLAMP.on (C2c) the beam is clamped to a 12° cone around the rig's forward (−Z).
+    // The real fix is lane A's arms_run_torch beam bone (requested); this keeps C2c lit until then.
+    const cosDev = -dir.z; // dot(dir, (0, 0, −1))
+    if (BEAM_CLAMP.on && cosDev < BEAM_MAX_COS) {
+      const ortho = this._p2.set(dir.x, dir.y, 0);
+      if (ortho.lengthSq() < 1e-8) ortho.set(0, -1, 0);
+      ortho.normalize();
+      dir.set(ortho.x * BEAM_MAX_SIN, ortho.y * BEAM_MAX_SIN, -BEAM_MAX_COS);
+      this.beamClamped = true;
+    } else this.beamClamped = false;
     light.position.copy(this._p);
     light.target.position.copy(this._p).addScaledVector(dir, 3);
     if (beam) {

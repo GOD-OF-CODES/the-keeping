@@ -73,6 +73,30 @@ def add_sockets(char, rig, clips_mod=None):
         # the road map (C1 arms_map): left-hand pinch on the map's left edge, rest placement from the map hold
         head, rot = clips_arms.map_socket_rest(rig)
         made.append(add_socket(rig, 'prop_l', 'hand_l', head, rot, 0.03))
+    elif char == 'harlan':
+        # C2-ESCAPE: prop_l = his left fist (the crown grip on Ada's head node, C2 10.6 on); cleaver_edge = the middle
+        # of the cleaver's edge (IK end for the strike: contact within 1 cm of the neck point, A4)
+        R = rig.data.bones['hand_l'].matrix_local.to_3x3()
+        made.append(add_socket(rig, 'prop_l', 'hand_l', palm_point(rig, 'hand_l', 0.045, 0.025), R))
+        clv = bpy.data.objects.get('harlan_cleaver')
+        if clv is not None and 'cleaver' in rig.data.bones:
+            import numpy as np
+            V = np.array([tuple(clv.matrix_world @ v.co) for v in clv.data.vertices])
+            cen = V.mean(0)
+            _, _, vt = np.linalg.svd(V - cen, full_matrices=False)
+            hd_a, bd_a = vt[0], vt[1]                       # blade length, blade width
+            grip = np.array(tuple(rig.data.bones['cleaver'].head_local))
+            if np.dot(cen - grip, hd_a) < 0:
+                hd_a = -hd_a
+            if np.dot(cen - grip, bd_a) < 0:                # the edge is the width extreme away from the fist
+                bd_a = -bd_a
+            pw = (V - cen) @ bd_a
+            sel = V[pw > pw.max() - 0.004]
+            edge = Vector(tuple(sel.mean(0)))
+            hd, bd = Vector(tuple(hd_a)), Vector(tuple(bd_a))
+            log(f'cleaver: {len(V)} verts, edge mid {tuple(round(x, 3) for x in edge)} ({len(sel)} edge verts)')
+            Rb = _frame(hd, bd)
+            made.append(add_socket(rig, 'cleaver_edge', 'cleaver', rig.matrix_world.inverted() @ edge, Rb, 0.004))
     elif char == 'ada':
         for s in ('l', 'r'):
             R = rig.data.bones[f'hand_{s}'].matrix_local.to_3x3()

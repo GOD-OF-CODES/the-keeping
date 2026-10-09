@@ -95,6 +95,15 @@ export class CharacterBank {
    * bone null = detach (hidden). `hand_r` / `hand_l` resolve to the prop_r / prop_l sockets when they exist.
    */
   attach(id: CharId, prop: string, bone: string | null): void {
+    // C2-ESCAPE B3: her severed head is not a prop clone — it is her own head node, hung from whichever hand holds it
+    // (Harlan's prop_l in C2 10.6, her prop_r) or left free in the world (bone null) for a cutscene to place
+    if (prop === 'ada_head') {
+      if (!this.ada) return;
+      const src = id === 'harlan' ? this.harlan?.c : id === 'ada' ? this.ada.c : null;
+      const sock = bone ? (src?.bones.get(bone) ?? null) : null;
+      this.ada.carryHeadBy(sock);
+      return;
+    }
     if (id !== 'ada' || !this.ada) return;
     let a = this.attached.get(prop);
     if (!bone) {

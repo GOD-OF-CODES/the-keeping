@@ -136,6 +136,11 @@ interface ScriptedLayer {
   stillT: number;
   lookYaw: number;
   lookT: number;
+  /** b05_return: seconds since control, when the player first hid (null = not yet), rocker cue sent, tread-10 wait done. */
+  clock?: number;
+  hiddenAt?: number | null;
+  rocker?: boolean;
+  waited?: boolean;
 }
 
 interface RoutineLayer {
@@ -380,11 +385,11 @@ export class AdaBrain {
 
   /**
    * Scripted control. 'hidden' parks her offstage; 'hold' stands her at `node` (cutscene cover, `force` skips the
-   * in-view guard); 'b04_chase' starts the held chase from `node` (default the parlor door); 'hide_demo' runs the
+   * in-view guard); 'b05_return' runs her return after C2c through `node` (default the parlor door); 'hide_demo' runs the
    * first-hide demo at `hideId`; 'dress' runs the C4 dress visit.
    */
   setScripted(mode: ScriptedMode, opts: { node?: string; hideId?: string; force?: boolean } = {}): void {
-    const s: ScriptedLayer = { mode, phase: 'start', t: 0, node: opts.node ?? null, hideId: opts.hideId ?? null, crumbs: [], crumbT: 0, stillT: mode === 'b04_chase' ? -TUNING.b04.startGraceS : 0, lookYaw: 0, lookT: 0 };
+    const s: ScriptedLayer = { mode, phase: 'start', t: 0, node: opts.node ?? null, hideId: opts.hideId ?? null, crumbs: [], crumbT: 0, stillT: 0, lookYaw: 0, lookT: 0 };
     this.clearStimuli();
     this.caught = null;
     this.scripted = s;
@@ -393,7 +398,13 @@ export class AdaBrain {
       this.parked = false;
       this.pendingRelocate = null;
     }
-    else if (mode === 'hold' || mode === 'b04_chase') this.relocate(opts.node ?? LURE_NODE, opts.force ?? true);
+    else if (mode === 'hold') this.relocate(opts.node ?? LURE_NODE, opts.force ?? true);
+    else if (mode === 'b05_return') {
+      // offstage behind the locked parlor door (C2-ESCAPE §4.5) until the key turns
+      this.nav.placeFree(PARK.pos, PARK.room);
+      this.parked = false;
+      this.pendingRelocate = null;
+    }
     this.nav.goalKey = '';
   }
 
@@ -553,8 +564,18 @@ export class AdaBrain {
     return fast ? TUNING.look.windupFast : this.assist.slow ? TUNING.look.windupAssist : TUNING.look.windup;
   }
 
+  /**
+   * Her vision source (C2-ESCAPE K9): the carried head. Lifted (or lifting) in both hands, its eye is 0.25 m ahead of
+   * the stump along her facing at eye height; hanging at the hip or placed she is blind (sight already gates on
+   * `head === 'lifted'`), so the eye stays over the stump for line-of-sight bookkeeping.
+   */
   private eye(): P3 {
-    return [this.nav.pos[0], this.nav.pos[1], this.nav.pos[2] + TUNING.sight.eyeHeight];
+    const p = this.nav.pos;
+    if (this.head === 'lifted' || this.head === 'lifting') {
+      const f = this.nav.facing;
+      return [p[0] + Math.cos(f) * TUNING.sight.headAheadM, p[1] + Math.sin(f) * TUNING.sight.headAheadM, p[2] + TUNING.sight.eyeHeight];
+    }
+    return [p[0], p[1], p[2] + TUNING.sight.eyeHeight];
   }
 
   private chest(): P3 {
@@ -572,7 +593,8 @@ export class AdaBrain {
     this.thunder.prune(this.t);
     if (this.pendingRelocate) this.relocate(this.pendingRelocate, false);
 
-    const offstage = this.scripted?.mode === 'hidden' || this.parked;
+    const offstage =
+      this.scripted?.mode === 'hidden' || (this.scripted?.mode === 'b05_return' && (this.scripted.phase === 'start' || this.scripted.phase === 'wait' || this.scripted.phase === 'key')) || this.parked;
     if (!offstage) this.sense(dt, player);
     else {
       this.noiseQueue = [];
@@ -644,6 +666,9 @@ export class AdaBrain {
         [speed, anim, phase, shown] = this.tickRoutine(dt);
     }
     this.setDisplay(shown);
+    // C2-ESCAPE §6.3 (K9): at her vigil she sets her head down at the foot of the door, face to the planks, and both
+    // hands scrape the nail heads — blind ('placed'); a look picks it back up (the layers above set lifting/lifted)
+    if (this.head === 'hanging' && (anim === 'vigil_scrape' || anim === 'lured_scrape')) this.head = 'placed';
 
     // tells
     const moving = this.nav.speed;
@@ -1371,8 +1396,8 @@ export class AdaBrain {
       case 'hold':
         this.nav.speed = 0;
         return [0, 'idle', 'hold', 'SCRIPTED'];
-      case 'b04_chase':
-        return this.tickB04(dt, p);
+      case 'b05_return':
+        return this.tickB05Return(dt, p);
       case 'hide_demo':
         return this.tickHideDemo(dt, p);
       default:
@@ -1380,73 +1405,109 @@ export class AdaBrain {
     }
   }
 
-  /** B04: follow the player's trail, held 2–4 m behind; stand still > 2 s and she closes and grabs. */
-  private tickB04(dt: number, p: PlayerView): [number, AdaAnim, string, AdaState] {
+  /**
+   * B05 (C2-ESCAPE §4.5): her return after C2c. Offstage behind the locked parlor door until
+   * max(10 s, min(the player hides, 15 s)); the key, the door, the hall boards (the carried head knocking on her thigh),
+   * the rocker, then 16 risers at 1.4 risers/s with the head hanging at her hip (blind). A hidden player turns it into
+   * the unfailable slat demo; a player still in the open when she reaches tread 10 finds her stopped there, blind and
+   * listening, until 45 s; then she tops the stair and the normal rules start (the story grants grace). Never catches.
+   */
+  private tickB05Return(dt: number, p: PlayerView): [number, AdaAnim, string, AdaState] {
     const S = this.scripted!;
-    const B = TUNING.b04;
-    if (p.hiddenIn) {
-      // the first hide: switch to the slat demo at that hide
-      this.events.push({ type: 'scripted_done', mode: 'b04_chase' });
+    const B = TUNING.b05;
+    S.clock = (S.clock ?? 0) + dt;
+    if (p.hiddenIn && S.hiddenAt == null) S.hiddenAt = S.clock;
+    const go = (phase: string, ev?: 'key' | 'door' | 'hall' | 'rocker' | 'climb' | 'blind_wait' | 'top') => {
+      S.phase = phase;
+      S.t = 0;
+      if (ev) this.events.push({ type: 'b05_return', phase: ev });
+    };
+    this.head = 'hanging';
+    switch (S.phase) {
+      case 'start':
+      case 'wait': {
+        S.phase = 'wait';
+        this.nav.speed = 0;
+        const startAt = Math.max(B.minStartS, Math.min(S.hiddenAt ?? Infinity, B.maxStartS));
+        if (S.clock >= startAt) go('key', 'key');
+        return [0, 'hidden', 'offstage', 'SCRIPTED'];
+      }
+      case 'key':
+        this.nav.speed = 0;
+        if (S.t >= B.keyS) {
+          go('door', 'door');
+          this.relocate(S.node ?? LURE_NODE, true);
+          this.events.push({ type: 'door', doorId: 'D_PARLOR', fast: false });
+        }
+        return [0, 'hidden', 'offstage', 'SCRIPTED'];
+      case 'door':
+        this.nav.speed = 0;
+        if (S.t >= B.doorS) go('hall', 'hall');
+        return [0, 'idle', 'door', 'SCRIPTED'];
+      default:
+        break;
+    }
+    // the first hide (from the hall on): the slat demo at that hide — the same unfailable look as before C2-ESCAPE
+    if (p.hiddenIn && S.phase !== 'top') {
+      this.events.push({ type: 'scripted_done', mode: 'b05_return' });
       this.scripted = { mode: 'hide_demo', phase: 'approach', t: 0, node: null, hideId: p.hiddenIn, crumbs: [], crumbT: 0, stillT: 0, lookYaw: 0, lookT: 0 };
       this.nav.goalKey = '';
       return [0, 'walk', 'to_hide', 'SCRIPTED'];
     }
-    S.crumbT -= dt;
-    const last = S.crumbs[S.crumbs.length - 1];
-    if (S.crumbT <= 0 && p.room && (!last || dist3(last.pos, p.pos) > 0.15)) {
-      S.crumbT = B.crumbS;
-      S.crumbs.push({ pos: [...p.pos] as P3, room: p.room });
-    }
-    // trail length from her to the player
-    let gap = 0;
-    let prev = this.nav.pos;
-    for (const c of S.crumbs) {
-      gap += dist3(prev, c.pos);
-      prev = c.pos;
-    }
-    gap += dist3(prev, p.pos);
-    S.stillT = p.speed < B.stillSpeed ? S.stillT + dt : 0;
-    // round E (measured C2 → B04 handover: a frozen player released 1.47 m from her was grabbed 5.17 s after control
-    // returned): the still-player rush waits out the 6 s post-cutscene calm too
-    const rush = S.stillT > B.stillS && !this.calmActive;
-    let speed: number;
-    if (rush) speed = TUNING.speed.chase;
-    else speed = Math.max(0, Math.min(B.maxSpeed, p.speed + 1.5 * (gap - (B.minGap + B.maxGap) / 2)));
-    if (!rush && gap < B.minGap) speed = 0;
-    // walk the trail
-    let budget = speed * dt;
-    const start: P3 = [...this.nav.pos] as P3;
-    while (budget > 0 && S.crumbs.length) {
-      const c = S.crumbs[0];
-      const d = dist3(this.nav.pos, c.pos);
-      if (d <= budget) {
-        budget -= d;
-        this.nav.placeFree(c.pos, c.room);
-        S.crumbs.shift();
-      } else {
-        const k = budget / d;
-        this.nav.pos = [this.nav.pos[0] + (c.pos[0] - this.nav.pos[0]) * k, this.nav.pos[1] + (c.pos[1] - this.nav.pos[1]) * k, this.nav.pos[2] + (c.pos[2] - this.nav.pos[2]) * k];
-        this.nav.room = c.room;
-        budget = 0;
+    const knock = () => {
+      S.crumbT -= dt;
+      if (this.nav.speed > 0.2 && S.crumbT <= 0) {
+        S.crumbT = B.knockEveryS;
+        this.tells.knock = true;
       }
+    };
+    switch (S.phase) {
+      case 'hall': {
+        if (S.t >= B.rockerAfterS && !S.rocker) {
+          S.rocker = true;
+          this.events.push({ type: 'b05_return', phase: 'rocker' });
+        }
+        this.nav.toNode('b05:foot', 'G_STAIRFOOT', this.doors);
+        const arrived = this.nav.follow(dt, B.hallSpeed, this.doors, this.t, this.events);
+        knock();
+        if (arrived || this.nav.blocked) go('climb', 'climb');
+        return [B.hallSpeed, 'walk', 'hall', 'SCRIPTED'];
+      }
+      case 'climb': {
+        if (S.t >= B.rockerAfterS && !S.rocker) {
+          S.rocker = true;
+          this.events.push({ type: 'b05_return', phase: 'rocker' });
+        }
+        if (this.nav.pos[2] >= B.treadZ10 && S.clock < B.blindUntilS) {
+          go('blind_wait', 'blind_wait');
+          this.nav.stop();
+          return [0, 'idle', 'listen', 'LISTEN'];
+        }
+        this.nav.toNode('b05:top', 'U_STAIRTOP', this.doors);
+        const arrived = this.nav.follow(dt, B.climbSpeed, this.doors, this.t, this.events);
+        knock();
+        if (arrived || this.nav.blocked) {
+          go('top', 'top');
+          this.endScripted();
+          // the normal rules from here, after the 6 s calm — in place, NO relocation: the player may be watching her
+          // (grace()'s teleport is for respawns behind a black frame; QA c2c-handover idle saw it pop her away in view)
+          this.calm();
+          return [0, 'idle', 'top', 'PATROL'];
+        }
+        return [B.climbSpeed, 'walk', 'climb', 'SCRIPTED'];
+      }
+      case 'blind_wait':
+        this.nav.speed = 0;
+        if (S.clock >= B.blindUntilS) {
+          S.phase = 'climb';
+          S.t = 0;
+          S.clock = Math.max(S.clock, B.blindUntilS); // never re-enter the wait
+          S.waited = true;
+        }
+        return [0, 'idle', 'listen', 'LISTEN'];
+      default:
+        return [0, 'idle', 'top', 'SCRIPTED'];
     }
-    if (budget > 0 && rush) {
-      const d = dist3(this.nav.pos, p.pos);
-      const k = Math.min(1, budget / (d || 1));
-      this.nav.pos = [this.nav.pos[0] + (p.pos[0] - this.nav.pos[0]) * k, this.nav.pos[1] + (p.pos[1] - this.nav.pos[1]) * k, this.nav.pos[2] + (p.pos[2] - this.nav.pos[2]) * k];
-    }
-    const mv: P3 = [this.nav.pos[0] - start[0], this.nav.pos[1] - start[1], this.nav.pos[2] - start[2]];
-    this.nav.vel = dt > 0 ? [mv[0] / dt, mv[1] / dt, mv[2] / dt] : [0, 0, 0];
-    this.nav.speed = dt > 0 ? Math.hypot(mv[0], mv[1], mv[2]) / dt : 0;
-    if (Math.hypot(mv[0], mv[1]) > 1e-4) this.nav.facing = Math.atan2(mv[1], mv[0]);
-    this.nav.atNode = null;
-    this.nav.onEdge = null;
-    if (rush && dist2(this.nav.pos, p.pos) <= TUNING.chase.catchDist && Math.abs(this.nav.pos[2] - p.pos[2]) < 1.2) {
-      this.scripted = null;
-      this.doCatch('scripted');
-      return [0, 'catch_grab', 'grab', 'CATCH'];
-    }
-    return [speed, speed > 2 ? 'chase_run' : 'walk', 'follow', 'SCRIPTED'];
   }
 
   /** B05: to the slats, drip stops, crack, "…Harlan?", look 3 s (unfailable), lower, back to her vigil. */

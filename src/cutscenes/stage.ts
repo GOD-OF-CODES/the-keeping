@@ -23,7 +23,7 @@ export const CAM = {
 /** layout.spawns used as hand-off points (eye, heading, pitch). */
 export const SPAWN = {
   CP1: { pos: [1.8, -27.4, 1.65] as P3, heading: 1.571, pitch: 0.05 },
-  CP2: { pos: [3.05, 1.6, 2.25] as P3, heading: 1.571, pitch: 0 },
+  CP2: { pos: [0.55, 8.25, 5.75] as P3, heading: -1.571, pitch: -0.87 }, // C2-ESCAPE K4: the stair top after C2c
 } as const;
 
 /** Props (layout.props pos) the cutscenes aim at. */
@@ -117,3 +117,25 @@ export function every(id: string, from: number, to: number, period: number, extr
 
 /** DOF focused at a point from a camera position. */
 export const focusAt = (cam: P3, p: P3, focal = 1.2, bokeh = 2.5) => ({ focusDistance: Math.round(dist(cam, p) * 100) / 100, focalLength: focal, bokehScale: bokeh });
+
+// ---- C2-ESCAPE (docs/C2-ESCAPE.md §2.0 staging constants; PLAN; tests/c2-escape-stage.test.ts checks them)
+/** Vertical FOV (deg) of a prime on the 24 mm gate: 2·atan(12 / f). 50 mm = 27.0°, 35 mm = 37.8°, 100 mm = 13.7°. */
+export const lens = (mm: number): number => (2 * Math.atan(12 / mm) * 180) / Math.PI;
+/** The lean eye D inside the doorway reveal (layout camera parlor_lean, K5). */
+export const C2E_D: P3 = [3.7, 1.26, 2.17];
+/** The threshold eye T (camera parlor_threshold). */
+export const C2E_T: P3 = [3.42, 1.5, 2.22];
+/** The cut point (C4–C5) on the west edge of the sawbuck; the cap normal points west, 20° up. */
+export const NECK: P3 = [5.31, 3.25, 1.4];
+/** L_LAMP_PARLOR flame (K2) on the moved stool. */
+export const LAMP_FLAME: P3 = [4.6, 4.25, 1.35];
+/** Harlan's strike root and heading (SSE). */
+export const HARLAN_C2: { pos: P3; heading: number } = { pos: [5.15, 3.95, GROUND], heading: -1.25 };
+/** The head's landing (centre) and its rest after the boot nudge (cut end toward the lamp, NW). */
+export const HEAD_LAND: P3 = [5.12, 3.18, 0.7];
+export const HEAD_REST: P3 = [5.02, 3.05, 0.7];
+/** The stair-top eye S = CP2 (K4). */
+export const STAIR_TOP_EYE = { pos: [0.55, 8.25, 5.75] as P3, heading: -1.571, pitch: -0.87 } as const;
+/** ST_MAIN: 16 risers × 0.219 m, treads 0.28 m, from (0.55, 3.60) running north; tread k's nosing. */
+export const ST_MAIN = { x: 0.55, y0: 3.6, risers: 16, rise: 0.219, run: 0.28, width: 1.1, creaky: [5, 12] } as const;
+export const treadNosing = (k: number): P3 => [ST_MAIN.x, ST_MAIN.y0 + ST_MAIN.run * k, GROUND + ST_MAIN.rise * k];

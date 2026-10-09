@@ -31,17 +31,68 @@ def neckline(y):
 
 
 def with_wound(fn, J):
-    """Half-severed neck: a lens-shaped gash from the front (slightly to her left) through ~2/3 of the neck."""
-    a, b = J['neck_02'][0], J['head'][0]
-    c = a * 0.55 + b * 0.45 + np.array([0.006, -0.032, 0.0])
-    R = sdf.frame([0.22, -1.0, 0.05], [0.0, 0.12, 1.0])
+    """C2-ESCAPE A1 (re-aimed gash): the old front lens gash is gone from the geometry. The neck is split on the
+    oblique C4-C5 plane (characters/sever.py); the first stroke is a dark wet seam ON that plane at the nape (texture,
+    tex_ada.skin via `cut_plane`), so the pre-C2 seam hides inside the wound. wound_center = the nape point of the cut."""
+    from . import sever
+    c, n, fwd, side = sever.cut_plane_pts(J['neck_01'][0], J['head'][0])
 
     def f(X):
-        return sdf.smax(fn(X), -sdf.ellipsoid(X, c, (0.052, 0.047, 0.0058), R), 0.0028)
+        return fn(X)
     for k in ('head', 'head_center', 'torso', 'trunk', 'J', 'socket_r'):
         setattr(f, k, getattr(fn, k))
-    f.wound_center = c
+    f.cut_plane = (np.array(c), np.array(n), np.array(fwd), np.array(side))
+    f.wound_center = np.array(c) - np.array(fwd) * 0.045      # the nape surface on the cut plane
     return f
+
+
+def build_collar(fn, J, n_ang=84, rows=7):
+    """C2-ESCAPE A14: a high, wet frilled collar (a Victorian high-neck nightgown) standing from the neckline to
+    3-4 cm ABOVE the cut plane at the back and sides (2 cm over it at the throat), 4 mm off the neck skin, flaring and
+    ruffled at the top. After C2 it shields the stump from grazing views (§4.6); before, it is just her collar."""
+    from . import sever
+    c, n, fwd, side = (np.array(tuple(v)) for v in sever.cut_plane_pts(J['neck_01'][0], J['head'][0]))
+    a0 = np.array(J['neck_01'][0])
+    axis = np.array(J['head'][0]) - a0
+    axis /= np.linalg.norm(axis)
+    verts, faces = [], []
+    for i in range(n_ang):
+        ang = 2 * math.pi * i / n_ang
+        d = math.cos(ang) * side + math.sin(ang) * fwd           # radial direction in the cut plane
+        d = d - axis * d.dot(axis)
+        d /= np.linalg.norm(d)
+        front = max(0.0, math.sin(ang))                           # 1 at the throat
+        for r in range(rows + 1):
+            u = r / rows
+            # base: 1 cm under the neckline; top: the cut plane + 3.5 cm (back/sides) .. + 2 cm (throat)
+            y_here = (c + d * 0.05)[1]
+            base_z = neckline(y_here) - 0.012
+            # round 1 review (ada_detail): a full-height collar at the throat cut through the hair veil hanging in
+            # front of the face -> high only at the back/sides, a low 1.5 cm band at the throat
+            top_rise = 0.035 - 0.075 * front ** 1.5
+            # the plane height along this radial line, then up the neck axis
+            p_plane = c + d * 0.05
+            top = p_plane + axis * top_rise
+            base = np.array([p_plane[0], p_plane[1], base_z])
+            if top[2] < base_z + 0.015:
+                top = base + axis * 0.015
+            p = base + (top - base) * u
+            # neck surface distance along d (march out from the axis line)
+            q = a0 + axis * np.dot(p - a0, axis)
+            rr = 0.03
+            for _ in range(40):
+                if fn((q + d * rr)[None, :])[0] > 0:
+                    break
+                rr += 0.0015
+            flare = (0.010 * u ** 2.2 + 0.0035 * u ** 2 * math.sin(ang * 7 + 0.7)) * (1.0 - 0.8 * front)
+            verts.append(q + d * (rr + 0.004 + flare))
+    for i in range(n_ang):
+        j = (i + 1) % n_ang
+        for r in range(rows):
+            faces.append((i * (rows + 1) + r, j * (rows + 1) + r, j * (rows + 1) + r + 1, i * (rows + 1) + r + 1))
+    ob = garments.new_object('ada_collar', [tuple(v) for v in verts], faces)
+    log(f'ada collar: {len(faces)} quads')
+    return ob
 
 
 # ------------------------------------------------------------------------------------------------ chains
@@ -491,6 +542,9 @@ def build(h=0.003, log_=log):
     covered = (z > 0.62) & (z < neckline(y) - 0.022)      # legs kept to mid-thigh: knees swing past the hem
     starts = lambda arr, pre: np.array([str(x).startswith(pre) for x in arr])
     arm = starts(labs, ('upperarm', 'clavicle'))
+    # C2-ESCAPE A1: keep the THROAT above the neckline (its nearest bone is the clavicle head, so the arm rule used to
+    # delete it; the cut plane crosses the throat there and needs closed skin all round the neck)
+    arm &= ~((np.abs(Pv[:, 0]) < 0.055) & (z > neckline(y) - 0.022) & (y < 0.03))
     fore = starts(labs, 'forearm') & (t < 0.8)
     hidden = (covered & ~starts(labs, ('hand', 'thumb', 'index', 'middle', 'ring', 'pinky', 'forearm', 'upperarm'))) | arm | fore
     body_vis = full
@@ -499,7 +553,8 @@ def build(h=0.003, log_=log):
     garments.delete_verts(body_vis, hidden)
     garments.decimate(body_vis, 0.27)
     # gown pieces joined
-    gown = join([bodice, skirt], 'ada_gown')
+    collar = build_collar(fn, J)
+    gown = join([bodice, skirt, collar], 'ada_gown')
     for ob in (body_vis, gown):
         rig.transfer_weights(proxy, ob, core)
     skirt_chain_weights(gown, rig_ob, J)
@@ -512,7 +567,17 @@ def build(h=0.003, log_=log):
         rig.cleanup(ob, rig_ob)
         rig.bind(ob, rig_ob)
     bpy.data.objects.remove(proxy)
-    return dict(rig=rig_ob, body=body_vis, gown=gown, hair=hair_ob, eye=eye, fn=fn, J=J)
+    # C2-ESCAPE A0/A1: the head becomes its own node (ada_head_rig + ada_head/ada_hair/ada_eye), capped on both sides
+    from . import sever
+    SV = sever.sever(rig_ob, body_vis, hair_ob, eye)
+    # A3: the upper lid (Basis closed, key eyelid_l_open) and the cornea shell ada_cornea_l
+    from . import eye_lid
+    eye_c = fn.socket_r + np.array([0, 0.0095, 0])
+    eye_lid.add_lid(SV['head'], eye_c)
+    cornea = eye_lid.add_cornea(eye, eye_c, SV['head_rig'])
+    return dict(rig=rig_ob, body=SV['body'], head=SV['head'], head_rig=SV['head_rig'], gown=gown, hair=hair_ob, eye=eye,
+                cornea=cornea,
+                fn=fn, J=J, cap=SV['cap'])
 
 
 def join(objs, name):

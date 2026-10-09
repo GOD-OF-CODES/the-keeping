@@ -1675,7 +1675,7 @@
    "initial": "ajar",
    "interactive": false,
    "mat": "door_painted",
-   "note": "Ajar and candlelit in B03; shut and key-locked by C2 (story), cracked by Harlan in C5."
+   "note": "Ajar and candlelit in B03; locked by Harlan in C2; opened by him for her at B05 +10-20 s (C2-ESCAPE K6); cracked by Harlan in C5."
   },
   {
    "id": "D_PASSAGE",
@@ -3128,13 +3128,14 @@
    "type": "stool",
    "room": "G2",
    "pos": [
-    5.3,
-    0.75,
+    4.6,
+    4.25,
     0.6
    ],
    "yaw": 0.3,
    "params": {
-    "mat": "wood_raw_plank"
+    "mat": "wood_raw_plank",
+    "height": 0.45
    },
    "lighting": "static",
    "collider": "box",
@@ -3145,13 +3146,32 @@
    "type": "whetstone",
    "room": "G2",
    "pos": [
-    5.3,
-    0.75,
-    1.15
+    4.85,
+    4.5,
+    0.6
    ],
    "yaw": 0.3,
    "params": {
     "mat": "stone_foundation"
+   },
+   "lighting": "dynamic",
+   "collider": "none",
+   "milestone": "M1"
+  },
+  {
+   "id": "P_LAMP_PARLOR",
+   "type": "kerosene_lamp",
+   "room": "G2",
+   "pos": [
+    4.6,
+    4.25,
+    1.05
+   ],
+   "yaw": 0.4,
+   "params": {
+    "wick": "high",
+    "mat": "glass_grimy",
+    "burnerMat": "brass_tarnished"
    },
    "lighting": "dynamic",
    "collider": "none",
@@ -3204,7 +3224,8 @@
    "yaw": 1.2,
    "params": {
     "mat": "steel_cleaver",
-    "handleMat": "wood_furniture_dark"
+    "handleMat": "wood_furniture_dark",
+    "state": "bitten"
    },
    "lighting": "dynamic",
    "collider": "none",
@@ -4700,6 +4721,22 @@
    "mode": "bake_flicker"
   },
   {
+   "id": "L_LAMP_PARLOR",
+   "room": "G2",
+   "role": "lamp",
+   "type": "point",
+   "pos": [
+    4.6,
+    4.25,
+    1.35
+   ],
+   "watts": 151,
+   "kelvin": 1950,
+   "radius": 0.012,
+   "mode": "runtime",
+   "bakePass": "indirect"
+  },
+  {
    "id": "L_CANDLE_MANTEL",
    "room": "G2",
    "role": "candle",
@@ -6175,6 +6212,21 @@
    "note": "C7: the waiting line now reads HARLAN, ruled through."
   },
   {
+   "id": "parlor_lean",
+   "pos": [
+    3.7,
+    1.26,
+    2.17
+   ],
+   "target": [
+    5.31,
+    3.25,
+    1.4
+   ],
+   "fovDeg": 27,
+   "note": "C2-ESCAPE K5: the lean eye D inside the doorway reveal (50 mm = 27 deg vertical); aims at the neck on the sawbuck."
+  },
+  {
    "id": "c7_sting_threshold",
    "pos": [
     3.42,
@@ -6205,15 +6257,15 @@
   },
   {
    "id": "CP2",
-   "room": "G1",
+   "room": "U1",
    "pos": [
-    3.05,
-    1.6,
-    2.25
+    0.55,
+    8.25,
+    5.75
    ],
-   "yaw": 1.571,
-   "pitch": 0,
-   "note": "Hall at the parlor threshold as she rises (C2 replays in 3 s)."
+   "yaw": -1.571,
+   "pitch": -0.87,
+   "note": "Stair top after C2c (C2-ESCAPE K4; x 0.55 = the flight centreline, C6 prototype + B-CINE, CONTRACT-CHANGES): looking down the flight, pitch -50 deg."
   },
   {
    "id": "CP3",
@@ -6473,32 +6525,6 @@
    "zMin": 0.4,
    "zMax": 3.6,
    "event": "b03:threshold"
-  },
-  {
-   "id": "T_B04_STAIRTOP",
-   "room": "U1",
-   "rect": [
-    0,
-    7.8,
-    1.2,
-    9
-   ],
-   "zMin": 3.9,
-   "zMax": 7.1,
-   "event": "b04:stair_top"
-  },
-  {
-   "id": "T_B04_ARMOIRE_FLASH",
-   "room": "U1",
-   "rect": [
-    1.2,
-    5.2,
-    3.6,
-    7.8
-   ],
-   "zMin": 3.9,
-   "zMax": 7.1,
-   "event": "b04:armoire_flash"
   },
   {
    "id": "T_B05_ENTER_U2",

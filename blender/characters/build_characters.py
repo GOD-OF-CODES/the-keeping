@@ -129,13 +129,15 @@ def build_ada():
     ev = np.empty(len(R['eye'].data.vertices) * 3)
     R['eye'].data.vertices.foreach_get('co', ev)
     eye_c = ev.reshape(-1, 3).mean(0)
+    cap = R['cap']
     shaders = {
-        'ada_body': lambda P, N, AO, G=None: tex_ada.skin(P, N, AO, J, fn.wound_center),
+        'ada_body': lambda P, N, AO, G=None: tex_ada.skin(P, N, AO, J, fn.wound_center, cap=cap),
+        'ada_head': lambda P, N, AO, G=None: tex_ada.skin(P, N, AO, J, fn.wound_center, cap=cap, head_side=True),
         'ada_gown': lambda P, N, AO, G=None: tex_ada.gown(P, N, AO, fn.trunk, J, ada.HEM_Z),
         'ada_eye': lambda P, N, AO, G=None: tex_ada.eye(P, N, eye_c),
     }
-    objs = [R['body'], R['gown'], R['eye']]
-    importance = {'ada_body': 2.2, 'ada_gown': 0.8, 'ada_eye': 5.0}
+    objs = [R['body'], R['head'], R['gown'], R['eye']]
+    importance = {'ada_body': 2.2, 'ada_head': 2.6, 'ada_gown': 0.8, 'ada_eye': 5.0}
     bake_atlas('ada', objs, importance, shaders, TEX)
     hair_textures('ada')
     mats = {
@@ -146,6 +148,12 @@ def build_ada():
     }
     for k, m in mats.items():
         assign(R[k], m)
+    assign(R['head'], mats['body'])
+    # A3: the clear cornea shell (no texture; the runtime gives it a clear-coat/transmission look, B3)
+    mats['cornea'] = material('ada_cornea', 'eye_ada', None,
+                              extras={'cornea': 1, 'ior': 1.376, 'f0': 0.025, 'roughness': 0.02, 'clearcoat': 1.0})
+    assign(R['cornea'], mats['cornea'])
+    R.pop('cap', None)
     return R, mats
 
 

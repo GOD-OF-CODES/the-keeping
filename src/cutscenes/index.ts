@@ -1,10 +1,11 @@
-// The cutscene library: id → timeline factory. Ids match src/story/beats.ts CutsceneId (C1, C2, C2_replay, C3, C5,
+// The cutscene library: id → timeline factory. Ids match src/story/beats.ts CutsceneId (C1, C2, C2c, C3, C5,
 // C6, C7, death) plus 'C4' (preview-only linear dress visit; in game C4 is the HemOverlay in c4-hem.ts).
 // Pure data + factories (no three.js): safe for node tests.
 
 import { c0Road } from './c0-road.ts';
 import { c1Empty } from './c1-empty.ts';
-import { c2Replay, c2Room } from './c2-room.ts';
+import { c2Room } from './c2-room.ts';
+import { c2cUp } from './c2c-up.ts';
 import { c3LooksUp } from './c3-looks-up.ts';
 import { c4Hem } from './c4-hem.ts';
 import { c5Face } from './c5-face.ts';
@@ -17,7 +18,7 @@ export const CUTSCENES: Record<string, TimelineFactory> = {
   C0: c0Road, // C1's preroll (host.ts PREROLL), never requested by the Director
   C1: c1Empty,
   C2: c2Room,
-  C2_replay: c2Replay,
+  C2c: c2cUp, // chained after C2 by host.ts POSTROLL (the Director requests only C2)
   C3: c3LooksUp,
   C4: c4Hem,
   C5: c5Face,
@@ -27,7 +28,7 @@ export const CUTSCENES: Record<string, TimelineFactory> = {
 };
 
 /** The ids the story Director requests (src/story/beats.ts CutsceneId). */
-export const DIRECTOR_CUTSCENES = ['C1', 'C2', 'C2_replay', 'C3', 'C5', 'C6', 'C7', 'death'] as const;
+export const DIRECTOR_CUTSCENES = ['C1', 'C2', 'C2c', 'C3', 'C5', 'C6', 'C7', 'death'] as const;
 
 /** Clip names that exist in public/assets/<tier>/{ada,harlan,arms}.glb (docs/CHARACTERS.md). */
 export const KNOWN_CLIPS: Record<'ada' | 'harlan' | 'arms', readonly string[]> = {
@@ -44,7 +45,16 @@ export const KNOWN_CLIPS: Record<'ada' | 'harlan' | 'arms', readonly string[]> =
 };
 
 /** Clips referenced by the timelines that the character lane has not built yet (each cue carries a fallback). */
-export const PENDING_CLIPS: readonly string[] = [];
+export const PENDING_CLIPS: readonly string[] = [
+  // C2-ESCAPE lane A (A4–A6): every cue carries a fallback
+  'harlan_c2', 'ada_c2', 'ada_rise_headless', 'ada_chase_headless', 'ada_climb_headless', 'arms_run_torch', 'arms_stumble_catch',
+];
+
+/** C2-ESCAPE §2.3 NEW sound ids lane B-STORY synthesises (bindings.ts plays a stand-in or nothing until they exist). */
+export const PENDING_SFX: readonly string[] = [
+  'cleaver_sever', 'score_hit', 'head_drop', 'head_nudge', 'hair_wring', 'blood_drip', 'arterial_spurt', 'blood_patter', 'stump_breath', 'bare_feet_wet',
+  'handrail_squeak', 'newel_knock', 'torch_knock', 'body_fall_stairs',
+];
 
 export { CutscenePlayer, localSeenStore, memorySeenStore } from './host.ts';
 export type { CharacterDirector, CutsceneDeps, SeenStore } from './host.ts';

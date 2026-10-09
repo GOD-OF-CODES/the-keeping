@@ -24,12 +24,14 @@ import { uniform, texture as tslTexture, vec4, vec3, float, vec2, uv, mix, smoot
 import type { Level } from './level.ts';
 import type { CharacterBank } from '../characters/bank.ts';
 import { planToWorld } from '../shared/coords.ts';
-import { setCandleShadow, kelvinToLinearRGB } from './lights.ts';
+import { setCandleShadow, kelvinToLinearRGB, ShadowRoam, parsePulses } from './lights.ts';
 import { LOOK } from '../render/look.ts';
 import { uParlorBake } from '../render/lightmap-material.ts'; // AD review: C5 ghost-bake dimming
 import { requestExposureSnap } from '../render/exposure.ts'; // AD review: C5 cut
 import { hashRng, PENS, drawText } from '../render/handwriting.ts';
 import { createOpening } from './opening.ts';
+import { createBloodFx } from './blood-fx.ts';
+import { HEAD_LAND, HEAD_REST, NECK } from '../cutscenes/stage.ts';
 
 type Params = Record<string, number | string | boolean>;
 
@@ -646,7 +648,9 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   // both heads land at ≈ 2.9 m on the wall (Ada × 5.4, Harlan × 2.4: shadow size = distance ratio). Its diffuse runs
   // at the full candela on the lightmapped wall (share 1) — the bake holds no light from here, so the shadow reads
   // ≈ 2–3 : 1 against the baked ambient. Was: the same light moved to the window, cold, 0.02 + 38·flash.
-  const shadowLight = level.lights.flickers.find((f) => f.def.id === 'L_CANDLE_TABLE') ?? null;
+  // C2-ESCAPE K3: the one shadow light is now the parlor lamp (RuntimeLights.shadow); the shadow-play moves it as before
+  const shadowLight = level.lights.shadow ?? level.lights.flickers.find((f) => f.def.id === 'L_CANDLE_TABLE') ?? null;
+  const roam = new ShadowRoam(level.lights, level.root);
   let shadow: { id: string; t: number; saved: { pos: any; color: any; distance: number; cast: boolean } } | null = null;
   const SHADOW_LIGHT_POS = planToWorld([5.0, 3.85, 2.05]);
   const SHADOW_CANDLE_CD = 0.95;
@@ -673,7 +677,7 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     }
     if (shadowLight && !shadow) {
       const L = shadowLight.light;
-      shadow = { id, t: 0, saved: { pos: L.position.clone(), color: L.color.clone(), distance: L.distance, cast: L.shadow.intensity > 0 } };
+      shadow = { id, t: 0, saved: { pos: L.position.clone(), color: L.color.clone(), distance: L.distance, cast: L.userData?.alwaysShadow ? !!L.shadow.autoUpdate : L.shadow.intensity > 0 } };
       L.position.set(...SHADOW_LIGHT_POS);
       L.distance = 6; // keeps its own 1850 K colour
       setCandleShadow(L, true); // PERF-PLAN P0-2: casts from load; unmute (never toggle castShadow)
@@ -793,6 +797,78 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     dd.speed = 8;
   };
 
+  let lastDt = 0;
+  // ---- C2-ESCAPE B4/B5: the blood of C2 / C2c (src/world/blood-fx.ts); the head puppet (C2 7.60–10.6)
+  const blood = createBloodFx({
+    scene: level.root.parent ?? level.root,
+    keyLight: () => level.lights.shadow?.light ?? null,
+    preset: d.preset?.id ?? 'medium',
+    headPos: () => {
+      const h = (d.characters?.ada as any)?.headNode?.();
+      if (!h || !h.visible) return null;
+      return h.getWorldPosition(new THREE.Vector3());
+    },
+  });
+  /** The severed head in world space while nobody holds it (needs B-STORY's ada.headNode(); a no-op until then). */
+  const head = { mode: 'none' as 'none' | 'fall' | 'nudge' | 'rest', t: 0, from: new THREE.Vector3(), q0: new THREE.Quaternion() };
+  const headNode = (): any | null => (d.characters?.ada as any)?.headNode?.() ?? null;
+  const headPlace = (n: any, w: [number, number, number], yaw: number, roll: number, pitch: number) => {
+    const p = new THREE.Vector3(...planToWorld(w));
+    if (n.parent) n.parent.worldToLocal(p);
+    n.position.copy(p);
+    // face-down in its hair, the cut end toward the lamp (NW) at rest: yaw about world up, then the roll
+    n.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
+    if (n.parent) n.quaternion.premultiply(n.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
+  };
+  const adaHead = (mode: string) => {
+    const ada: any = d.characters?.ada;
+    if (mode === 'sever') {
+      ada?.sever?.(true);
+      if (ada?.headCarry) ada.headCarry.faceAt = null;
+      const n = headNode();
+      head.mode = 'fall';
+      head.t = 0;
+      if (n) n.getWorldPosition(head.from);
+      else head.from.set(...planToWorld(NECK));
+    } else if (mode === 'nudge') {
+      head.mode = 'nudge';
+      head.t = 0;
+    } else if (mode === 'held') {
+      head.mode = 'none'; // attached to Harlan's prop_l: the character lane's pendulum drives it
+      // reviewer fix (C2 S5–S7): he shows you the face (the eye insert, "both look at you") — head-carry.faceAt. Turned
+      // 3/4 toward the parlor lamp (L_LAMP_PARLOR plan (4.6, 4.25, 1.35)): from D the lamp is ≈ 95° off her face, so a
+      // face square to the camera is pure silhouette; 0.7 of the way to the lamp the lamp side (her right = the
+      // image-left eye that opens) is lit and the flame can glint on the corneal bulge.
+      const hc = ada?.headCarry;
+      if (hc) hc.faceAt = d.camera.position.clone().lerp(new THREE.Vector3(...planToWorld([4.6, 4.25, 1.35])), 0.7);
+    } else if (mode === 'eye_open') {
+      ada?.eyeOpen?.(true);
+    }
+  };
+  const updateHead = (dt: number) => {
+    if (head.mode === 'none') return;
+    head.t += dt;
+    const n = headNode();
+    if (!n) return;
+    if (head.mode === 'fall') {
+      // dragged off the edge by its weight and the hair: 0.70 m in 0.30 s (lands 7.90), turning over
+      const u = Math.min(1, head.t / 0.3);
+      const f = new THREE.Vector3(...planToWorld(HEAD_LAND));
+      const p = head.from.clone().lerp(f, u);
+      p.y = head.from.y + (f.y - head.from.y) * u * u;
+      const w = [p.x, -p.z, p.y] as [number, number, number];
+      headPlace(n, w, 2.6, 0, Math.PI * 0.55 * u);
+      if (u >= 1) head.mode = 'rest';
+    } else if (head.mode === 'nudge') {
+      // the boot toe rolls it a quarter turn; a damped rock (0.6 s period) to rest by 10.1 (§2.1 S4)
+      const u = Math.min(1, head.t / 0.35);
+      const rock = head.t > 0.35 ? 0.12 * Math.exp(-(head.t - 0.35) * 4) * Math.cos(((head.t - 0.35) * 2 * Math.PI) / 0.6) : 0;
+      const w: [number, number, number] = [HEAD_LAND[0] + (HEAD_REST[0] - HEAD_LAND[0]) * u, HEAD_LAND[1] + (HEAD_REST[1] - HEAD_LAND[1]) * u, HEAD_REST[2]];
+      headPlace(n, w, 2.6 + 0.7 * u, (Math.PI / 2) * u + rock, Math.PI * 0.55);
+      if (head.t > 1.2) head.mode = 'rest';
+    }
+  };
+
   // ------------------------------------------------------------------------------------------------ api
   const fx = (id: string, p: Params): boolean => {
     switch (id) {
@@ -850,6 +926,16 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
       case 'car_trim':
         setTrim(String(p.style ?? 'tan'));
         return true;
+      // C2-ESCAPE K12 (B7): the roaming shadow light — {at: 'lamp' | 'off' | 'fanlight' | 'u1_window', pulses: 'v@t[:tau],…'}
+      case 'blood':
+        blood.fx(p);
+        return true;
+      case 'adaHead':
+        adaHead(String(p.mode ?? ''));
+        return true;
+      case 'shadowLight':
+        roam.set(String(p.at ?? 'lamp'), parsePulses(p.pulses as string | undefined));
+        return true;
       case 'wardrobe_back_give':
         giveBack(Number(p.amount ?? 0.02));
         return true;
@@ -862,6 +948,9 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   const bladeBuf: { s: number; t: number; len: number; a0: number; a1: number }[] = [];
   /** Per frame, after the cutscene player applied the camera. */
   const update = (dt: number) => {
+    lastDt += dt;
+    blood.update(dt);
+    updateHead(dt);
     uRainRefract.value = LOOK.rainRefract; // LIGHTING lane (item 18): live look value
     // wipers
     // last frame's wiper angles (flattened over the cars, cars[0] first), into a reused buffer
@@ -957,6 +1046,8 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
 
   /** After the level's light update (the flicker loop would overwrite the shadow light). */
   const lateUpdate = () => {
+    roam.update(lastDt); // the sim dt of this frame's update(dt) (QA advances the sim faster/slower than the wall)
+    lastDt = 0;
     if (shadow && shadowLight) {
       // a still-air candle: ±6 % breathing, full diffuse share (see the C5 shadow-play note above)
       const t = performance.now() / 1000;
@@ -969,6 +1060,7 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   /** Load-time warm-up: everything visible once (compiled with the level), then hidden in `start`. */
   const setWarm = (on: boolean) => {
     opening.setWarm(on);
+    blood.setWarm(on);
     for (const m of rainMeshes) m.visible = on;
     knot.visible = on;
     tally.visible = on;
@@ -996,6 +1088,12 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     blueHour: () => blueHour,
     mist: () => mist,
     /** After C5: restore Harlan's sack/cleaver state and drop the silhouette light. */
+    /** C2-ESCAPE: the shadow light home at the lamp (cutscene end / skip safety). */
+    resetRoam() {
+      roam.set('lamp');
+    },
+    roamWhere: () => roam.where,
+    blood,
     resetSilhouette() {
       silhouetteOff();
       d.characters?.harlan?.setSack(true);

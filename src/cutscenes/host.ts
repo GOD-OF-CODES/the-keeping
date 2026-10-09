@@ -45,8 +45,10 @@ export interface CutsceneCamera {
 }
 
 export interface CutsceneAudio {
-  /** One-shot. pos is PLAN (the adapter converts to WORLD for audio.play). */
-  play(id: string, o: { pos?: P3; room?: string; gain?: number; rate?: number }): void;
+  /** One-shot. pos is PLAN (the adapter converts to WORLD for audio.play). `delay` (s, C2-ESCAPE B12): start this
+   *  far ahead on the AudioContext clock (the adapter compensates the output latency so it is HEARD on the frame the
+   *  cutscene clock reaches the cue). */
+  play(id: string, o: { pos?: P3; room?: string; gain?: number; rate?: number; delay?: number }): void;
   loop?(key: string, id: string, o: { gain?: number; fade?: number }): void;
   stopLoop?(key: string, fade?: number): void;
   score?(state: 'drone' | 'chase' | 'blue_hour' | 'none', stinger?: string): void;
@@ -69,6 +71,8 @@ export interface CutsceneWorld {
   propVisible?(id: string, visible: boolean): void;
   dressing?(set: string, on: boolean): void;
   fx?(id: string, params: Record<string, number | string | boolean>): void;
+  /** A timeline `mark` cue (bindings emit it on the bus as the flag 'mark:<name>'; the story maps its markers). */
+  mark?(name: string): void;
   /** Where gameplay resumes: EYE (PLAN), heading (CCW from +x), pitch. */
   placePlayer?(eye: P3, heading: number, pitch: number): void;
   vehicle?(pose: VehiclePose | null): void;
@@ -96,7 +100,12 @@ export interface CutsceneDeps {
   world?: CutsceneWorld;
   ui?: CutsceneUi;
   input?: { lock(mode: LockMode): void };
-  render?: { dof(d: DofSettings | null): void };
+  render?: {
+    dof(d: DofSettings | null): void;
+    /** C2-ESCAPE B8 (`fx blurAmount`): the motion-blur amount; the variant is switched in on the first call of a
+     *  sequence and only its uniform changes afterwards. null = off (teardown). */
+    blur?(v: number | null): void;
+  };
   /** Snapshot for timeline factories (player eye, Ada's pose, flags). */
   context?(): Omit<CutsceneContext, 'seen'>;
 }
@@ -142,11 +151,19 @@ export function localSeenStore(key = 'keeping.cutscenesSeen'): SeenStore {
 }
 
 /** Seen-ness is shared between a cutscene and its replay variant. */
-const SEEN_ALIAS: Record<string, string> = { C2_replay: 'C2' };
+const SEEN_ALIAS: Record<string, string> = {};
 
 /** Preroll: a Director request for the key first plays the value (C1-OPENING §3: the C0 title cinematic runs before
  *  C1; C0's end or skip starts C1 with a matched cut). The Director's done() fires once, after the real cutscene. */
 const PREROLL: Record<string, string> = { C1: 'C0' };
+
+/** Postroll (C2-ESCAPE §1 handover chain): a Director request for the key plays it, then `next` chained on the same
+ *  camera; the Director's done() fires once, after `next`. A skip inside the key lands in `next` at `skipAt`
+ *  (C2 → C2c 10.4, the slow turn: a skipping player still sees the empty stair). */
+export const POSTROLL: Record<string, { next: string; skipAt: number }> = { C2: { next: 'C2c', skipAt: 10.4 } };
+
+/** B12: scheduled sfx (`sched: true`) are handed to the audio clock this far ahead of their cue time (s). */
+export const SCHED_LOOKAHEAD_S = 0.15;
 
 /** Live state for DOM that must step aside while a (non-overlay) cutscene holds the screen (the centre dot). */
 export const CUTSCENE_SCREEN = { held: false };
@@ -169,10 +186,14 @@ interface Running {
   acquired: Set<CharId>;
   loops: Set<string>;
   dofOn: boolean;
+  blurOn: boolean;
   cameraHeld: boolean;
   stormOff: boolean;
   shadows: Set<string>;
   lock: LockMode;
+  /** B12: sched sfx cues already handed to the audio clock (their own cue time then plays nothing). */
+  sched: Set<Cue>;
+  schedCues: Cue[];
 }
 
 export class CutscenePlayer {
@@ -218,12 +239,19 @@ export class CutscenePlayer {
    * Start a cutscene. `done` = the Director's callback (omit for overlays such as C4, which run alongside gameplay
    * and never block the story). Returns false for unknown ids.
    */
-  play(id: string, done?: (skipped: boolean) => void, o: { timeline?: Timeline; chained?: boolean; noPreroll?: boolean } = {}): boolean {
+  play(id: string, done?: (skipped: boolean) => void, o: { timeline?: Timeline; chained?: boolean; noPreroll?: boolean; noPostroll?: boolean; startAt?: number } = {}): boolean {
     const factory = this.library[id];
     if (!factory && !o.timeline) return false;
     const pre = PREROLL[id];
     if (done && pre && !o.timeline && !o.noPreroll && !o.chained && this.library[pre]) {
       return this.play(pre, () => this.play(id, done, { chained: true }));
+    }
+    const post = POSTROLL[id];
+    if (done && post && !o.timeline && !o.noPostroll && this.library[post.next]) {
+      const outer = done;
+      return this.play(id, (skipped) => {
+        if (!this.play(post.next, (s2) => outer(skipped || s2), { chained: true, startAt: skipped ? post.skipAt : 0 })) outer(skipped);
+      }, { ...o, noPostroll: true });
     }
     // finish whatever runs (a done() callback may synchronously start yet another cutscene: finish those too)
     for (let guard = 0; this.cur && guard < 8; guard++) {
@@ -241,10 +269,13 @@ export class CutscenePlayer {
       acquired: new Set(),
       loops: new Set(),
       dofOn: false,
+      blurOn: false,
       cameraHeld: false,
       stormOff: false,
       shadows: new Set(),
       lock: tl.lock,
+      sched: new Set(),
+      schedCues: tl.cues.filter((c) => c.type === 'sfx' && c.sched),
     };
     run.seq = new Sequencer(tl, {
       cue: (c, info) => this.onCue(run, c, info.skipped, info.late),
@@ -267,13 +298,31 @@ export class CutscenePlayer {
       CUTSCENE_SCREEN.held = true;
     }
     this.deps.ui?.skipHint?.(this.canSkip(), 0);
+    if (o.startAt && o.startAt > 0) run.seq.seek(o.startAt); // skip into a chained cutscene: state up to startAt
     run.seq.update(0); // t = 0 cues + first camera pose, this frame
+    this.scheduleAhead(run);
     return true;
   }
 
   /** Advance the running cutscene (call once per frame with the game-loop dt; dt = 0 while paused). */
   update(dt: number): void {
-    this.cur?.seq.update(dt);
+    const run = this.cur;
+    if (!run) return;
+    run.seq.update(dt);
+    if (this.cur === run && dt > 0) this.scheduleAhead(run);
+  }
+
+  /** B12: hand every `sched` sfx due within the lookahead to the audio clock now (delay = cue time − clock). The
+   *  frame of contact and the crack then coincide to the audio clock, not to the frame the cue happens to fire on. */
+  private scheduleAhead(run: Running): void {
+    if (!run.schedCues.length || run.seq.waitingGate) return;
+    const now = run.seq.time;
+    for (const c of run.schedCues) {
+      if (run.sched.has(c) || c.type !== 'sfx') continue;
+      if (c.t <= now || c.t > now + SCHED_LOOKAHEAD_S) continue;
+      run.sched.add(c);
+      this.deps.audio?.play(c.id, { pos: c.pos, room: c.room, gain: c.gain, rate: c.rate, delay: c.t - now });
+    }
   }
 
   canSkip(): boolean {
@@ -383,6 +432,7 @@ export class CutscenePlayer {
         chars!.attach?.(c.char, c.prop, c.bone);
         return;
       case 'sfx':
+        if (c.sched && run.sched.has(c)) return; // already on the audio clock (scheduleAhead)
         d.audio?.play(c.id, { pos: c.pos, room: c.room, gain: c.gain, rate: c.rate });
         return;
       case 'loop':
@@ -442,6 +492,11 @@ export class CutscenePlayer {
         d.world?.dressing?.(c.set, c.on);
         return;
       case 'fx':
+        if (c.id === 'blurAmount') {
+          run.blurOn = true;
+          d.render?.blur?.(skipped ? 0 : Number(c.params?.v ?? 0));
+          return;
+        }
         d.world?.fx?.(c.id, c.params ?? {});
         return;
       case 'score':
@@ -465,7 +520,9 @@ export class CutscenePlayer {
         d.world?.placePlayer?.(c.pos, c.heading, c.pitch ?? 0);
         return;
       case 'gate':
+        return;
       case 'mark':
+        d.world?.mark?.(c.name); // B-STORY: story markers (C2-ESCAPE: 'c2:strike', 'c2c:start') reach the Director
         return;
     }
   }
@@ -477,6 +534,7 @@ export class CutscenePlayer {
       d.camera.release();
     }
     if (run.dofOn) d.render?.dof(null);
+    if (run.blurOn) d.render?.blur?.(null);
     for (const k of run.loops) d.audio?.stopLoop?.(k, 0.6);
     run.loops.clear();
     for (const id of run.shadows) d.lights?.castShadow?.(id, false);

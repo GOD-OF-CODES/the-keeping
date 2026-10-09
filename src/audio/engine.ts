@@ -393,6 +393,17 @@ export class AudioEngine implements System {
     return this.playBuffer(b, { ...o, bus: o.bus ?? getRecipe(id).bus, loop: o.loop ?? getRecipe(id).loop });
   }
 
+  /**
+   * C2-ESCAPE B12: the AudioContext time at which a sound must START to be HEARD `delayS` from now, i.e. on the video
+   * frame the cutscene clock reaches its cue. The output path adds `outputLatency` (≈ 10–40 ms on macOS Chrome) after
+   * start(); the frame we are building is presented ≈ one 60 Hz frame (16.7 ms) after this tick. Clamped to "now".
+   */
+  scheduleTime(delayS: number): number {
+    const c: any = this.ctx;
+    const out = Number.isFinite(c.outputLatency) && c.outputLatency > 0 ? c.outputLatency : Number.isFinite(c.baseLatency) ? c.baseLatency : 0;
+    return c.currentTime + Math.max(0, delayS + 1 / 60 - out);
+  }
+
   /** Play once it's available (renders lazily if needed). */
   async playWhenReady(id: string, o: PlayOptions = {}): Promise<PlayHandle | null> {
     await this.ensure(id);

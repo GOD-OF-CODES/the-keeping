@@ -11,7 +11,20 @@ import { planToWorld, worldToPlan } from '../shared/coords.ts';
 import { CutscenePlayer, localSeenStore, type CharacterDirector, type CutsceneDeps, type SeenStore } from './host.ts';
 import { HemOverlay } from './c4-hem.ts';
 import { setCandleShadow } from '../world/lights.ts';
+import { hasRecipe } from '../audio/synth/index.ts';
+
+/** C2-ESCAPE: stand-ins for NEW sound ids (§2.3) until their recipes exist. */
+const SFX_STANDIN: Record<string, string> = {
+  cleaver_sever: 'wet_chop',
+  head_drop: 'board_drop',
+  blood_drip: 'ada_drip',
+  bare_feet_wet: 'ada_slap',
+  stump_breath: 'ada_gurgle',
+  body_fall_stairs: 'board_drop',
+  newel_knock: 'knock',
+};
 import { requestExposureSnap } from '../render/exposure.ts';
+import { BEAM_CLAMP } from '../characters/arms.ts';
 import { CUTSCENES } from './index.ts';
 import { TitleCards } from '../ui/title-card.ts'; // C0 date card + byline (opening lane)
 import type { CameraPose, DofSettings, DoorAction, LockMode, P3, TimelineFactory, VehiclePose } from './types.ts';
@@ -35,7 +48,7 @@ export interface CutsceneGame {
   ctx: { settings: { fovDeg: number; reducedFlash?: boolean }; flags: Map<string, boolean>; events: { emit(type: string, payload: unknown): void } };
   camera: any;
   /** Lazy: the pipeline is created after the level in main.ts. */
-  pipeline?: () => { setCutscene(fx: { dof?: DofSettings } | null): void } | null;
+  pipeline?: () => { setCutscene(fx: { dof?: DofSettings; motionBlur?: number } | null): void; setBlurAmount?(v: number): void; blurAvailable?: boolean } | null;
   level?: any;
   player?: any;
   rig?: any;
@@ -181,6 +194,22 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
     if (f.flame) f.flame.visible = s > 0.02;
   };
 
+  // C2-ESCAPE §2.3: sounds lane B-STORY is still synthesising play their nearest existing recipe (or nothing) until
+  // they land — never an unknown-recipe warning in the console
+  const sfxId = (id: string): string | null => {
+    if (hasRecipe(id)) return id;
+    const f = SFX_STANDIN[id];
+    return f && hasRecipe(f) ? f : null;
+  };
+  // C2-ESCAPE B8: the cutscene chain = DOF and/or the motion-blur variant (one cached RenderPipeline per shape)
+  let csDof: DofSettings | null = null;
+  let csBlur: number | null = null;
+  const applyChain = () => {
+    const pl = g.pipeline?.();
+    if (!pl) return;
+    pl.setCutscene(csDof || csBlur !== null ? { ...(csDof ? { dof: csDof } : {}), ...(csBlur !== null ? { motionBlur: csBlur } : {}) } : null);
+  };
+
   const applyPlayerCamera = () => {
     const p = g.player;
     if (!p) return;
@@ -220,6 +249,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
       },
       release() {
         camHeld = false;
+        BEAM_CLAMP.on = false;
         if (cullWas) {
           cullWas = false;
           g.level?.setCulling?.(true);
@@ -234,8 +264,15 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
     characters: g.characters ?? undefined,
     audio: g.audio
       ? {
-          play: (id, o) => g.audio.play(id, { ...(o.pos ? { pos: planToWorld(o.pos) } : {}), ...(o.room ? { room: o.room } : {}), ...(o.gain !== undefined ? { gain: o.gain } : {}), ...(o.rate !== undefined ? { rate: o.rate } : {}) }),
-          loop: (k, id, o) => g.audio.layers?.loop(`cs_${k}`, id, { gain: o.gain, fade: o.fade }),
+          play: (id0, o) => {
+            const id = sfxId(id0);
+            if (!id) return;
+            g.audio.play(id, { ...(o.pos ? { pos: planToWorld(o.pos) } : {}), ...(o.room ? { room: o.room } : {}), ...(o.gain !== undefined ? { gain: o.gain } : {}), ...(o.rate !== undefined ? { rate: o.rate } : {}), ...(o.delay !== undefined && g.audio.scheduleTime ? { when: g.audio.scheduleTime(o.delay) } : {}) });
+          },
+          loop: (k, id0, o) => {
+            const id = sfxId(id0);
+            if (id) g.audio.layers?.loop(`cs_${k}`, id, { gain: o.gain, fade: o.fade });
+          },
           stopLoop: (k, fade) => g.audio.layers?.stopLoop(`cs_${k}`, fade),
           score: (s, stinger) => {
             g.audio.layers?.setScore(s);
@@ -272,7 +309,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         if (!f?.light) return;
         // the shot's key: the candle throws the tableau across the tally wall — raise its runtime share while the
         // shadow is on (still one candle: dark, cinematic), back to normal with the shadow
-        scaleLight(f, on ? 4.5 : 1);
+        if (!f.direct) scaleLight(f, on ? 4.5 : 1); // C2-ESCAPE K3: the lamp is already its full 12 cd direct light
         // PERF-PLAN P0-2: the candle casts from load (castShadow never toggles — that rebuilds every material on
         // its LightsNode); this only unmutes / mutes its shadow
         setCandleShadow(f.light, on);
@@ -306,17 +343,29 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         if (o) o.visible = v;
       },
       dressing: (set, on) => hooks.dressing?.(set, on),
+      mark: (name) => g.ctx.events.emit('flag', { name: `mark:${name}`, value: true }), // story markers (beats.ts onFlag)
       fx: (id, params) => {
         if (id === 'mirror_view' && g.canvas) g.canvas.style.transform = params.on ? 'scaleX(-1)' : '';
         if (id === 'lens_wet_hand') overlay?.lensHand(!!params.on);
+        if (id === 'beamClamp') {
+          BEAM_CLAMP.on = !!params.on; // C2-ESCAPE review: the climb's torch stays within 12° of the gaze (arms.ts)
+          return;
+        }
+        if (id === 'torchHold' && g.rig) {
+          g.rig.hold = !!params.on; // C2-ESCAPE: the torch arm stays forward while the head turns back
+          return;
+        }
         hooks.fx?.(id, params);
       },
       placePlayer: (eye: P3, heading: number, pitch: number) => {
         const p = g.player;
         if (!p) return;
+        const before = g.camera?.position?.clone?.();
         p.teleport?.(planToWorld(eye), heading - Math.PI / 2, pitch);
         if (camHeld) g.rig?.snap?.();
-        requestExposureSnap(); // R2-5: a teleport is a cut
+        // R2-5: a teleport is a cut — but C2c hands over on its exact last camera (no cut): no exposure pop there
+        const w = planToWorld(eye);
+        if (!before || Math.hypot(before.x - w[0], before.y - w[1], before.z - w[2]) > 0.3) requestExposureSnap();
       },
       vehicle: (pose: VehiclePose | null) => {
         const obj = g.level?.prop?.('P_CAR_GATE');
@@ -366,9 +415,24 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
     },
     render: {
       dof: (d) => {
+        csDof = d;
+        applyChain();
+      },
+      blur: (v) => {
         const pl = g.pipeline?.();
         if (!pl) return;
-        pl.setCutscene(d ? { dof: d } : null);
+        if (v === null) {
+          csBlur = null;
+          applyChain();
+          return;
+        }
+        if (csBlur === null) {
+          csBlur = v; // first call of the sequence: switch the (prewarmed, cached) blur chain in
+          applyChain();
+        } else {
+          csBlur = v;
+          pl.setBlurAmount?.(v); // afterwards only the uniform
+        }
       },
     },
     context: () => {
@@ -377,7 +441,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
       const p = g.player;
       const heading = p ? p.yaw + Math.PI / 2 : 0;
       const pitch = p ? p.pitch : 0;
-      return { player: { eye, heading, pitch, fov: g.ctx.settings.fovDeg }, ada: g.characters?.pose?.('ada') ?? null, flags: g.ctx.flags };
+      return { player: { eye, heading, pitch, fov: g.ctx.settings.fovDeg }, ada: g.characters?.pose?.('ada') ?? null, flags: g.ctx.flags, motionBlur: !!g.pipeline?.()?.blurAvailable };
     },
   };
 

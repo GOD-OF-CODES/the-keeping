@@ -62,6 +62,20 @@ Until then, the lab runs standalone at `/src/audio/lab.html` in `npm run dev` (n
 - Listener: automatic from `ctx.camera.matrixWorld.elements`, or `setListener(px,py,pz, fx,fy,fz, ux,uy,uz)`.
   The listener's room comes from the layout (`roomAtWorld`), or `setListenerRoom(id)` explicitly.
 
+## C2-ESCAPE sounds (`src/audio/synth/escape.ts`, docs/C2-ESCAPE.md §2.3)
+
+21 recipes, all synthesized, mono (spatialised) except `score_hit` (stereo): `cleaver_sever` (contact at
+`SEVER_CONTACT_S` = 0.11 s into the buffer — schedule it at contact − 0.11 s), `cleaver_chop_partial` (B03 hall),
+`blood_drip` {depth} (Minnaert plip 3.26/a ≈ 1.6 kHz, −10 % as the pool deepens), `parlor_drip_loop` (one drop per
+0.7 s, B03 → C2), `arterial_spurt` {strength}, `blood_patter`, `head_drop` (85/160 Hz board modes τ 90 ms + bounce
+0.18 s), `head_nudge`, `hair_wring`, `stump_breath` (loop: 570 Hz quarter-wave tube + 1.7 kHz partial + bubble grains,
+0.4 Hz), `bare_feet_wet` {tread}, `handrail_squeak` (9–14 Hz stick-slip train), `newel_knock`, `torch_knock`,
+`body_fall_stairs`, `score_hit` (40 Hz 80 ms + a one-frame click), `ada_head_lift` (the LOOK tell, replaces
+`ada_bone_crack` in gameplay), `ada_head_knock` (the carried head on her thigh, from the brain's `tells.knock`),
+`parlor_key_turn`, `rope_zip`, `heart_restart`. Story-runtime virtual ids: `parlor_drip_loop`/`parlor_drip_stop`,
+`rocker_slow` (the `rocking_chair` loop at rate 0.935 → 0.55 Hz)/`rocker_stop`. Audition: all listed in
+`src/audio/lab.html` (render-checked headless: durations, peaks, no NaN; the listening pass is the lead's).
+
 ## Buses & mix
 
 `ambience, weather → volume.ambience` · `sfx, creature, player → volume.sfx` · `voice → volume.voice` ·

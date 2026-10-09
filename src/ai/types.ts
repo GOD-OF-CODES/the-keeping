@@ -9,7 +9,12 @@ export const ADA_STATES = ['SCRIPTED', 'VIGIL', 'PATROL', 'LISTEN', 'INVESTIGATE
 export type AdaState = (typeof ADA_STATES)[number];
 
 /** hanging = blind; lifting = the 1.2 s wind-up (crack at its start); lifted = she sees; lowering = blind again. */
-export type HeadState = 'hanging' | 'lifting' | 'lifted' | 'lowering';
+/**
+ * C2-ESCAPE K9: after C2 her head is severed and CARRIED. 'hanging' = held by the hair at her hip (blind);
+ * 'lifting' / 'lifted' / 'lowering' = raised in both hands to face height, the eye 0.25 m ahead of the stump (sees);
+ * 'placed' = set down (blind; its eye is the vision source only in hide_demo at the slats).
+ */
+export type HeadState = 'hanging' | 'lifting' | 'lifted' | 'lowering' | 'placed';
 
 /** 'open' covers open and ajar; 'locked' = bolted / boarded / key-locked (she cannot pass). */
 export type DoorState = 'open' | 'closed' | 'locked';
@@ -74,8 +79,10 @@ export interface TellCues {
   dripRate: number;
   /** She is listening: stop the drip (the LISTEN tell). */
   dripStopped: boolean;
-  /** Bone crack this tick (the LOOK wind-up starts; she will see in `lookWindup` s). */
+  /** The head-lift tell this tick (C2-ESCAPE K9 `ada_head_lift`, was the bone crack): the LOOK wind-up starts; she will see in `lookWindup` s. */
   crack: boolean;
+  /** The carried head knocks against her thigh this tick (`ada_head_knock`; walking/running with the head hanging). */
+  knock?: boolean;
   /** Throat gurgle this tick (she came within ~5 m; rate-limited). */
   gurgle: boolean;
   /** Looping foley: scraping wood (vigil / lured), nails on plaster (search). */
@@ -89,8 +96,11 @@ export type ScriptedMode =
   | 'hidden'
   /** Stand at a node, blind, while a cutscene owns her (C2 rise, C5). */
   | 'hold'
-  /** B04: held 2–4 m behind on the player's trail; catches only if the player stands still > 2 s. */
-  | 'b04_chase'
+  /**
+   * B05 (C2-ESCAPE §4.5): her return from the parlor after C2c — offstage ≥ 10 s, the parlor key + door, the hall,
+   * 16 risers, holding her head at her hip (blind). Never catches; the first hide turns it into hide_demo.
+   */
+  | 'b05_return'
   /** B05: the first (unfailable) hide check at the slats, then back to her vigil. */
   | 'hide_demo'
   /** B09 (C4): the dress visit — to the dress, hand on the cut hem, head lifts toward the wardrobe, leaves. */
@@ -111,6 +121,8 @@ export type AiEvent =
   | { type: 'finale'; phase: 'start' | 'take' | 'at_door' | 'lost' }
   | { type: 'lured'; phase: 'arrive' | 'end' }
   | { type: 'scripted_done'; mode: ScriptedMode }
+  /** b05_return progress (the story turns these into the parlor key, the door, the rocker, the second armoire flash). */
+  | { type: 'b05_return'; phase: 'key' | 'door' | 'hall' | 'rocker' | 'climb' | 'blind_wait' | 'top' }
   /** forced = placed under cutscene cover (the in-view guard was skipped). */
   | { type: 'relocated'; node: string; forced: boolean };
 

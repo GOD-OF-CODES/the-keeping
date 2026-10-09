@@ -78,17 +78,40 @@ test('beats: start plays C1; C1 → CP1 + B02; ring → the door opens by itself
   s.handle({ type: 'interact', id: 'P_BELL_KNOB', action: 'ring_bell' });
   const later = s.update(3, view({ playerRoom: 'EXT2' }));
   assert.ok(has(later, (c) => c.type === 'door' && c.id === 'D_FRONT' && c.action === 'rope_open'));
-  s.handle({ type: 'interact', id: 'T_B03_HALL', action: 'b03:hall_enter' });
+  const hall = s.handle({ type: 'interact', id: 'T_B03_HALL', action: 'b03:hall_enter' });
   assert.equal(s.beat, 'B03');
-  s.handle({ type: 'interact', id: 'T_B03_THRESHOLD', action: 'b03:threshold' });
+  // C2-ESCAPE §1: the first stroke from the parlor, then the slow drip into the pool (once)
+  assert.ok(has(hall, (c) => c.type === 'sfx' && c.id === 'cleaver_chop_partial' && c.room === 'G2'));
+  assert.ok(has(hall, (c) => c.type === 'sfx' && c.id === 'parlor_drip_loop'));
+  assert.ok(!has(s.handle({ type: 'interact', id: 'T_B03_HALL', action: 'b03:hall_enter' }), (c) => c.type === 'sfx'), 'stroke once');
+  const thr = s.handle({ type: 'interact', id: 'T_B03_THRESHOLD', action: 'b03:threshold' });
+  assert.ok(has(thr, (c) => c.type === 'cutscene' && c.id === 'C2'));
+  assert.ok(has(thr, (c) => c.type === 'sfx' && c.id === 'parlor_drip_stop'));
   const again = s.handle({ type: 'interact', id: 'T_B03_THRESHOLD', action: 'b03:threshold' });
   assert.deepEqual(again, [], 're-fired threshold during C2');
-  const c2 = s.handle({ type: 'cutscene_end', id: 'C2' });
-  assert.ok(has(c2, (c) => c.type === 'door' && c.id === 'D_FRONT' && c.action === 'rope_close'));
-  assert.ok(has(c2, (c) => c.type === 'door' && c.id === 'D_PARLOR' && c.action === 'lock'));
-  assert.equal(ai(c2, 'scripted').cmd.mode, 'b04_chase');
+  // C2's strike marker → severed + the strike time; C2c's first frame → B04 (the cutscene beat), parlor locked
+  s.update(4, view({ playerRoom: 'G1' }));
+  const st = s.handle({ type: 'flag', name: 'c2_struck', value: true });
+  assert.ok(has(st, (c) => c.type === 'door' && c.id === 'D_FRONT' && c.action === 'rope_close'));
+  assert.equal(s.s.flags.ada_severed, true);
+  assert.equal(s.s.c2StrikeTime, s.s.time);
+  assert.equal(s.beat, 'B03');
+  const c2c = s.handle({ type: 'flag', name: 'c2c_started', value: true });
   assert.equal(s.beat, 'B04');
+  assert.ok(has(c2c, (c) => c.type === 'door' && c.id === 'D_PARLOR' && c.action === 'lock'));
+  assert.equal(ai(c2c, 'scripted').cmd.mode, 'hidden', 'the C2c body is a puppet; the brain stays offstage');
+  // the host reports 'C2' once, at C2c's end → B05 at the stair top (CP2) with her return below
+  const c2 = s.handle({ type: 'cutscene_end', id: 'C2' });
+  assert.equal(ai(c2, 'scripted').cmd.mode, 'b05_return');
+  assert.ok(has(c2, (c) => c.type === 'checkpoint' && c.id === 'CP2'));
+  assert.equal(s.beat, 'B05');
+  assert.equal(s.s.flags.cs_C2c_done, true);
+  assert.ok(!has(c2, (c) => c.type === 'cutscene'), 'C2c is chained by the host, never requested');
   assert.deepEqual(s.handle({ type: 'cutscene_end', id: 'C2' }), [], 'duplicate cutscene end ignored');
+  // the armoire flash 2.5 s after control (not hidden), and the hint points at the armoire until the first hide
+  const fl = s.update(2.6, view({ playerRoom: 'U1' }));
+  assert.ok(has(fl, (c) => c.type === 'lightning' && c.reason === 'armoire'));
+  assert.equal(s.hintTarget(), 'P_ARMOIRE');
 });
 
 test('beats: gating — B09 needs all three boards, B10 needs the dress visit, B11 needs the unbolted passage', () => {
@@ -160,7 +183,7 @@ test('beats: the ledger pages through p1 → p2 → p3 (each voiced); CP4 on the
   assert.ok(cp);
 });
 
-test('deaths: catch → death cutaway → respawn at the checkpoint + grace; B04 replays C2 instead', () => {
+test('deaths: catch → death cutaway → respawn at the checkpoint + grace (no B04 death: C2c is a cutscene)', () => {
   const s = new Story(Story.debugStateAt('B06'));
   const d = s.handle({ type: 'ai', event: { type: 'catch', cause: 'bump' } });
   assert.ok(has(d, (c) => c.type === 'death') && has(d, (c) => c.type === 'cutscene' && c.id === 'death'));
@@ -174,12 +197,13 @@ test('deaths: catch → death cutaway → respawn at the checkpoint + grace; B04
   s.handle({ type: 'ai', event: { type: 'catch', cause: 'bump' } });
   const r2 = s.handle({ type: 'cutscene_end', id: 'death' });
   assert.ok(has(r2, (c) => c.type === 'ai' && c.cmd.op === 'assist' && c.cmd.slow === true));
-  // B04
-  const b4 = new Story(Story.debugStateAt('B04'));
-  b4.handle({ type: 'ai', event: { type: 'catch', cause: 'scripted' } });
-  const r4 = b4.handle({ type: 'cutscene_end', id: 'death' });
-  assert.ok(has(r4, (c) => c.type === 'cutscene' && c.id === 'C2_replay'));
-  assert.equal(ai(b4.handle({ type: 'cutscene_end', id: 'C2_replay' }), 'scripted').cmd.mode, 'b04_chase');
+  // C2-ESCAPE: nothing replays C2 any more — a death respawns like any other section
+  const b5 = new Story(Story.debugStateAt('B05'));
+  b5.s.checkpoint = 'CP2';
+  b5.handle({ type: 'ai', event: { type: 'catch', cause: 'bump' } });
+  const r5 = b5.handle({ type: 'cutscene_end', id: 'death' });
+  assert.ok(!has(r5, (c) => c.type === 'cutscene'), 'no C2 replay');
+  assert.ok(has(r5, (c) => c.type === 'respawn' && c.checkpoint === 'CP2'));
 });
 
 test('finale assists: 1st finale death → locket raised + one-time prompt; 2nd → she waits at 4 m', () => {
@@ -285,4 +309,28 @@ test('director: without a cutscene player each cutscene times out, emits cutscen
   for (let i = 0; i < 60; i++) dir.update(0.05);
   assert.equal(dir.story.s.flags.front_door_open, true);
   dir.dispose();
+});
+
+test('C2-ESCAPE: timeline marks arrive as flags mark:c2:strike / mark:c2c:start (host → bindings → bus); ignored outside C2; C2 end without marks still lands B05 severed', () => {
+  const s = new Story(Story.debugStateAt('B03'));
+  assert.deepEqual(s.handle({ type: 'flag', name: 'mark:c2c:start', value: true }), [], 'no C2 playing → ignored');
+  assert.equal(s.s.flags['mark:c2c:start'], undefined, 'markers are never stored as flags');
+  s.handle({ type: 'interact', id: 'T_B03_THRESHOLD', action: 'b03:threshold' });
+  s.update(7.56, view({ playerRoom: 'G1' }));
+  s.handle({ type: 'flag', name: 'mark:c2:strike', value: true });
+  assert.equal(s.s.flags.ada_severed, true);
+  const t = s.s.c2StrikeTime;
+  s.update(21.4, view({ playerRoom: 'G1' }));
+  s.handle({ type: 'flag', name: 'mark:c2c:start', value: true });
+  assert.equal(s.beat, 'B04');
+  assert.equal(s.s.c2StrikeTime, t, 'the strike time is the strike, not C2c');
+  s.handle({ type: 'cutscene_end', id: 'C2', skipped: false });
+  assert.equal(s.beat, 'B05');
+  // no marks at all (an old timeline / a skip before the strike): the C2 end still severs her and lands B05
+  const u = new Story(Story.debugStateAt('B03'));
+  u.handle({ type: 'interact', id: 'T_B03_THRESHOLD', action: 'b03:threshold' });
+  u.handle({ type: 'cutscene_end', id: 'C2', skipped: true });
+  assert.equal(u.beat, 'B05');
+  assert.equal(u.s.flags.ada_severed, true);
+  assert.equal(u.s.flags.parlor_locked, true);
 });

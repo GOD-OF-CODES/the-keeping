@@ -1,14 +1,14 @@
 {
   "tier": "low",
-  "generatedAt": "2026-10-09T03:47:53.965Z",
-  "totalBytes": 28277263,
+  "generatedAt": "2026-10-09T21:19:50.103Z",
+  "totalBytes": 28148940,
   "files": [
     {
       "id": "ada_albedo",
       "kind": "texture",
       "path": "assets/low/ada_albedo.webp",
-      "bytes": 135016,
-      "hash": "5c8970c542bf1013"
+      "bytes": 137734,
+      "hash": "d89a5c88d3f52515"
     },
     {
       "id": "ada_hair_albedo",
@@ -28,15 +28,15 @@
       "id": "ada_normal.png",
       "kind": "texture",
       "path": "assets/low/ada_normal.png",
-      "bytes": 129864,
-      "hash": "079521e018fff226"
+      "bytes": 126871,
+      "hash": "1e78cda8989e4428"
     },
     {
       "id": "ada",
       "kind": "character",
       "path": "assets/low/ada.glb",
-      "bytes": 4654568,
-      "hash": "2c69feb44a4e580b"
+      "bytes": 4156136,
+      "hash": "3ed12e6f30c15e8c"
     },
     {
       "id": "arms_albedo",
@@ -56,8 +56,8 @@
       "id": "arms",
       "kind": "character",
       "path": "assets/low/arms.glb",
-      "bytes": 1812020,
-      "hash": "6571131358ea5a43"
+      "bytes": 1953432,
+      "hash": "d9a56b9f3f1c6d6a"
     },
     {
       "id": "collision",
@@ -154,8 +154,8 @@
       "id": "harlan",
       "kind": "character",
       "path": "assets/low/harlan.glb",
-      "bytes": 1694520,
-      "hash": "11803d5e8346d815"
+      "bytes": 1806152,
+      "hash": "7006bb6f54c616cf"
     },
     {
       "id": "house_exterior",
@@ -302,28 +302,28 @@
       "kind": "probes",
       "path": "assets/low/probes.bin",
       "bytes": 14496,
-      "hash": "41b87841d62bd994"
+      "hash": "acf8b2acfe5cbafd"
     },
     {
       "id": "props_m1",
       "kind": "prop",
       "path": "assets/low/props_m1.glb",
-      "bytes": 4374764,
-      "hash": "c1178f81d32dc033"
+      "bytes": 4440304,
+      "hash": "aaf0805dfdcc59e6"
     },
     {
       "id": "props_m2",
       "kind": "prop",
       "path": "assets/low/props_m2.glb",
-      "bytes": 4121520,
-      "hash": "e5783b38b5ed3e25"
+      "bytes": 4173324,
+      "hash": "ef98ff389164d392"
     },
     {
       "id": "props_road",
       "kind": "prop",
       "path": "assets/low/props_road.glb",
-      "bytes": 359692,
-      "hash": "2c183eff219619ff"
+      "bytes": 359688,
+      "hash": "6271f156193ded50"
     }
   ]
 }
