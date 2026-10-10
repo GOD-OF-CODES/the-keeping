@@ -118,60 +118,139 @@ def _join_chains(chains, name):
     return out
 
 
-def relief(u, v, head_side=False):
-    """Cap relief (m) along the outward cap normal at in-plane coords u (her left +), v (front +), metres.
-    A2 owns the full anatomy; this is the shared height field (muscle retracted, vessels recessed, bone proud)."""
+def relief(u, v, head_side=False, inset=None):
+    """Cap relief (m) along the outward cap normal at in-plane coords u (her left +), v (front +), metres
+    (characters/neck_anatomy.py: muscle retracted, vessels/airway/canal recessed, bone proud, skin roll, ledge)."""
     from characters import neck_anatomy
-    return neck_anatomy.height(u + (0.002 if head_side else 0.0), v)
+    return neck_anatomy.height(u, v, inset=inset, head_side=head_side)
+
+
+GRID = 0.003           # cap interior triangle spacing (m): the 9 mm bundles, 17 mm vertebra, 18 mm windpipe resolve
+
+
+def _contours(head_side):
+    """Feature outlines (u, v) the triangulation follows, so bone ridges, holes and the ledge have crisp edges."""
+    from characters import neck_anatomy as na
+    du = -0.002 if head_side else 0.0             # section() shifts the head side by +2 mm in u
+    pts = []
+
+    def ell(cu, cv, ru, rv, k=1.0, step=0.0016):
+        ru, rv = ru * k, rv * k
+        m = max(10, int(2 * math.pi * math.sqrt((ru * ru + rv * rv) / 2) / step))
+        for i in range(m):
+            t = 2 * math.pi * i / m
+            pts.append((cu + du + ru * math.cos(t), cv + rv * math.sin(t)))
+    ell(*na.VERT, k=0.98)
+    ell(*na.ARCH, k=0.98)
+    ell(*na.CANAL, k=1.0)
+    ell(*na.CORD, k=0.97)
+    for t in na.TRANS:
+        ell(*t, k=0.98)
+    ell(*na.SPINE, k=0.98)
+    tu, tv, tr, tw = na.TRACHEA
+    ell(tu, tv, tr, tr, k=1.0)
+    ell(tu, tv, tr - tw, tr - tw, k=1.0, step=0.0013)
+    for cu, cv, r, wall in na.CAROTIDS:
+        ell(cu, cv, r - wall, r - wall, step=0.0012)
+    for k in (-0.0006, 0.0006):                   # the ledge: two rows straddling the step edge
+        for i in range(-30, 31):
+            u = i * 0.0016
+            pts.append((u + du, na.V_STEP + 0.12 * u * u + k))
+    return pts
 
 
 def _cap(bm, loop, c, n, fwd, side, outward, head_side, shape_layers):
-    """Fill one rim loop with RINGS rings + a centre vertex; returns the new faces."""
+    """Fill one rim loop with a constrained-Delaunay disc (~3 mm triangles + feature outlines), displaced by the
+    anatomy relief at full strength; returns (faces, new verts, centre, rim 2D)."""
+    from mathutils.geometry import delaunay_2d_cdt
+    from characters import neck_anatomy as na
     rim = [v.co.copy() for v in loop]
     cen = sum(rim, Vector()) / len(rim)
     cen = cen - n * (cen - c).dot(n)
-    rings = [loop]
-    new_verts = []
-    for k in range(1, RINGS):
-        f = 1.0 - k / RINGS
-        ring = []
-        for v in loop:
-            p = cen + (v.co - cen) * f
-            p = p - n * (p - c).dot(n)                     # on the plane
-            d = p - cen
-            h = relief(d.dot(side), d.dot(fwd), head_side) * min(1.0, k / 1.5)
-            nv = bm.verts.new(p + outward * h)
-            ring.append(nv)
-            new_verts.append((nv, v))
-        rings.append(ring)
-    h0 = relief(0.0, 0.0, head_side)
-    cv = bm.verts.new(cen + outward * h0)
-    new_verts.append((cv, loop[0]))
-    faces = []
     m = len(loop)
-    for k in range(RINGS - 1):
-        A, B = rings[k], rings[k + 1]
-        for i in range(m):
-            j = (i + 1) % m
-            try:
-                faces.append(bm.faces.new((A[i], A[j], B[j], B[i])))
-            except ValueError:
-                pass
-    last = rings[-1]
-    for i in range(m):
+    R2 = np.array([((p - cen).dot(side), (p - cen).dot(fwd)) for p in rim])
+    # interior: a hex grid, two rings following the rim (the skin-roll crest and the fat edge), the feature outlines
+    lo, hi = R2.min(0), R2.max(0)
+    cand = []
+    row = 0
+    y = lo[1]
+    while y <= hi[1]:
+        x = lo[0] + (GRID * 0.5 if row % 2 else 0.0)
+        while x <= hi[0]:
+            cand.append((x, y))
+            x += GRID
+        y += GRID * 0.866
+        row += 1
+    nxt, prv = np.roll(R2, -1, 0), np.roll(R2, 1, 0)
+    tang = nxt - prv
+    inward = np.stack([-tang[:, 1], tang[:, 0]], 1)
+    inward /= np.maximum(np.linalg.norm(inward, axis=1), 1e-9)[:, None]
+    if (R2.mean(0) - R2[0]) @ inward[0] < 0:
+        inward = -inward
+    rings = [R2 + inward * d for d in (0.0009, 0.0020)]
+    feats = np.array(_contours(head_side))
+    cand = np.array(cand)
+
+    def inside(Q):
+        x, y = Q[:, 0][:, None], Q[:, 1][:, None]
+        x0, y0, x1, y1 = R2[:, 0][None], R2[:, 1][None], nxt[:, 0][None], nxt[:, 1][None]
+        cross = ((y0 > y) != (y1 > y)) & (x < (x1 - x0) * (y - y0) / np.where(y1 - y0 == 0, 1e-12, y1 - y0) + x0)
+        return cross.sum(1) % 2 == 1
+
+    ring_pts = np.concatenate(rings)
+    ring_pts = ring_pts[inside(ring_pts) & (na.inset_dist(ring_pts, R2) > 0.0006)]
+    feats = feats[inside(feats) & (na.inset_dist(feats, R2) > 0.0028)]
+    cand = cand[inside(cand) & (na.inset_dist(cand, R2) > 0.0030)]
+    if len(feats):
+        dmin = np.min(np.linalg.norm(cand[:, None, :] - feats[None, :, :], axis=2), axis=1)
+        cand = cand[dmin > 0.0011]
+    inner = np.concatenate([ring_pts, feats, cand])
+    pts2 = [Vector((float(x), float(y))) for x, y in np.concatenate([R2, inner])]
+    out = delaunay_2d_cdt(pts2, [], [list(range(m))], 1, 1e-7, True)
+    overts, ofaces, oorig = out[0], out[2], out[3]
+    # heights for every output vertex (rim = 0 by construction)
+    O2 = np.array([(p[0], p[1]) for p in overts])
+    ins = na.inset_dist(O2, R2)
+    H = na.section(O2[:, 0], O2[:, 1], inset=ins, head_side=head_side)['macro']
+    rim_of = {}
+    for i, orig in enumerate(oorig):
+        r = [o for o in orig if o < m]
+        if r:
+            rim_of[i] = r[0]
+    nearest = np.argmin(np.linalg.norm(O2[:, None, :] - R2[None, :, :], axis=2), axis=1)
+    bv = []
+    new_verts = []
+    for i, p in enumerate(O2):
+        if i in rim_of:
+            bv.append(loop[rim_of[i]])
+            continue
+        co = cen + side * float(p[0]) + fwd * float(p[1]) + outward * float(H[i])
+        nv = bm.verts.new(co)
+        bv.append(nv)
+        new_verts.append((nv, loop[int(nearest[i])]))
+    faces = []
+    for f in ofaces:
+        vs = [bv[i] for i in f]
+        if len(set(vs)) < 3:
+            continue
         try:
-            faces.append(bm.faces.new((last[i], last[(i + 1) % m], cv)))
+            faces.append(bm.faces.new(vs))
         except ValueError:
             pass
-    # shape keys: the cap rides with its rim vertex's offset (keys are tiny near the cut)
+    # shape keys: the cap rides with its nearest rim vertex's offset (keys are tiny near the cut)
     for lay in shape_layers:
         for nv, src in new_verts:
             nv[lay] = nv.co + (src[lay] - src.co)
-    bmesh.ops.recalc_face_normals(bm, faces=faces)
+    bm.normal_update()
     for f in faces:
         if f.normal.dot(outward) < 0:
             f.normal_flip()
-    return faces, [nv for nv, _ in new_verts], cen
+    lay = bm.faces.layers.int.get('cap')
+    for f in faces:
+        f[lay] = 1
+    log(f'cap ({"head" if head_side else "body"}): {len(new_verts)} new verts, {len(faces)} tris, relief '
+        f'{H.min() * 1000:.1f}..{H.max() * 1000:.1f} mm, {len(feats)} outline pts')
+    return faces, [nv for nv, _ in new_verts], cen, R2
 
 
 def split_mesh(ob, rig):
@@ -206,6 +285,8 @@ def split_mesh(ob, rig):
         bm.from_mesh(piece.data)
         shape_layers = list(bm.verts.layers.shape.values())
         dl = bm.verts.layers.deform.verify()
+        if bm.faces.layers.int.get('cap') is None:      # before any BMFace refs: adding a layer invalidates them
+            bm.faces.layers.int.new('cap')
         neck = [f for f in bm.faces if all(in_neck(v.co) for v in f.verts)]
         geom = list({v for f in neck for v in f.verts}) + list({e for f in neck for e in f.edges}) + neck
         bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-7, plane_co=c, plane_no=n, clear_inner=False, clear_outer=False)
@@ -218,6 +299,14 @@ def split_mesh(ob, rig):
                 ws = [dict((piece.vertex_groups[g].name, w) for g, w in v[dl].items()) for v in f.verts]
                 votes = sum(1 for w in ws if _dominant_head(w))
                 is_head = votes * 2 > len(ws)
+            # fix round 2 (body14 halo ring): skin faces straddling the neck ellipse were classified by weight votes,
+            # and neck_02-dominant ones ABOVE the cut plane stayed on the body -> a jagged band of nape/throat skin
+            # 0-3 cm above the stump that lifted off as a ring once neck_02 moved. Any body face whose centre is above
+            # the plane (> 2 mm) within 11 cm of the cut centre goes to the head side.
+            # (both pieces use the same rule, so the head keeps exactly what the body drops — no hole, no flap)
+            dc = cen - c
+            if (dc - n * dc.dot(n)).length < 0.11 and dc.dot(n) > 0.002:
+                is_head = True               # (not the reverse: the chin/jaw may dip under the tilted plane in front)
             if is_head != keep_head:
                 kill.append(f)
         # debug: the throat band (fwd > 20 mm, |s| < 30 mm)
@@ -254,7 +343,7 @@ def split_mesh(ob, rig):
             key = tuple(round(x, 6) for x in v.co)
             rim_normals.setdefault(key, Vector())
             rim_normals[key] += v.normal
-        faces, cap_verts, cap_cen = _cap(bm, loop, c, n, fwd, side, outward, keep_head, shape_layers)
+        faces, cap_verts, cap_cen, rim2d = _cap(bm, loop, c, n, fwd, side, outward, keep_head, shape_layers)
         for e in bm.edges:                                # the rim is a hard edge between skin and cap
             if all(v in loop for v in e.verts) and e.is_manifold:
                 e.smooth = False
@@ -275,6 +364,9 @@ def split_mesh(ob, rig):
         bm.free()
         piece.data['_cap_faces'] = cap_ids
         piece['cap_center'] = tuple(cap_cen)
+        piece['cap_rim2d'] = [float(x) for x in rim2d.ravel()]
+        piece['cap_side'] = tuple(side)
+        piece['cap_fwd'] = tuple(fwd)
         piece.data.update()
         out[keep_head] = (piece, rim_keys)
     # averaged custom normals across the seam
@@ -403,5 +495,7 @@ def sever(rig, body, hair, eye):
     for ob in (head, hair, eye):
         _retarget(ob, hr)
     c, n, fwd, side = plane
-    cap = (tuple(c), tuple(n), tuple(fwd), tuple(side), tuple(body['cap_center']))
+    cap = (tuple(c), tuple(n), tuple(fwd), tuple(side), tuple(body['cap_center']),
+           np.array(body['cap_rim2d'], float).reshape(-1, 2), tuple(head['cap_center']),
+           np.array(head['cap_rim2d'], float).reshape(-1, 2))
     return dict(body=body, head=head, head_rig=hr, plane=plane, cap=cap)

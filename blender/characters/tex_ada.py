@@ -58,7 +58,7 @@ def finger_masks(P, J):
     return nail, pad, free_edge, crease
 
 
-def skin(P, N, AO, J, wound_c, seed=101, cap=None, head_side=False):
+def skin(P, N, AO, J, wound_c, seed=101, cap=None, head_side=False, G=None):
     n = len(P)
     base = np.array([0.27, 0.31, 0.36])      # grey-blue (spec avg 0.30/0.32/0.34)
     alb = np.tile(base, (n, 1))
@@ -67,8 +67,16 @@ def skin(P, N, AO, J, wound_c, seed=101, cap=None, head_side=False):
     alb *= (1.0 + 0.2 * m1 + 0.09 * m2)[:, None]
     # livor: purple-grey pooling in the feet, shins and fingertips
     z = P[:, 2]
-    livor = 0.55 * ss(0.32, 0.02, z) + 0.25 * ss(0.0, 0.6, noise.fbm(P * 6.0, 3, seed + 5))
-    alb = _mix(alb, [0.24, 0.215, 0.29], np.clip(livor, 0, 0.75))
+    # fix round 2: the shins/feet read lavender (two purple layers stacked) -> slate grey-blue cyanosis, max 0.5
+    livor = 0.45 * ss(0.32, 0.02, z) + 0.2 * ss(0.0, 0.6, noise.fbm(P * 6.0, 3, seed + 5))
+    alb = _mix(alb, [0.215, 0.225, 0.265], np.clip(livor, 0, 0.5))
+    # fix round (#6, feet read salmon-pink): she floated face-down in the cistern, feet hanging -> fixed dependent
+    # lividity in the feet and ankles: dusky purple (0.16/0.10/0.17), blanched only where the soles pressed
+    # fix round 2: confined to the DEPENDENT side (soles, toe pads, heels: normal facing down) + a faint band
+    # at the ankles; the dorsum stays grey-blue. Livor colour = dusky red-violet (deoxygenated Hb) 0.19/0.11/0.15.
+    down = ss(0.1, -0.6, N[:, 2])
+    feet = ss(0.12, 0.03, z) * (0.25 + 0.75 * down) * (0.75 + 0.25 * noise.fbm(P * 30.0, 2, seed + 6))
+    alb = _mix(alb, [0.19, 0.11, 0.15], np.clip(feet, 0, 0.7))
     # veins: thin branching blue-green lines (hands, wrists, feet, neck, temples)
     rv = noise.ridged(P * np.array([28.0, 28.0, 20.0]), 4, seed + 11)
     vein = ss(0.8, 0.95, rv) * (0.55 + 0.45 * ss(-0.2, 0.4, noise.fbm(P * 8, 2, seed + 12)))
@@ -86,7 +94,7 @@ def skin(P, N, AO, J, wound_c, seed=101, cap=None, head_side=False):
     sole = ss(-0.3, -0.75, N[:, 2]) * ss(0.06, 0.0, z)
     ground = ss(0.07, 0.0, z) * 0.6
     crevice = ss(0.85, 0.45, AO)
-    dirt = np.clip(sole + ground * (0.5 + 0.5 * noise.fbm(P * 40, 3, seed + 21)) + crevice * 0.7, 0, 1)
+    dirt = np.clip(0.55 * sole + ground * (0.35 + 0.35 * noise.fbm(P * 40, 3, seed + 21)) + crevice * 0.7, 0, 1)
     alb = _mix(alb, [0.055, 0.052, 0.04], dirt * 0.85)
     nail, pad, free_edge, crease = finger_masks(P, J)
     alb = _mix(alb, [0.2, 0.2, 0.19], nail * 0.9)
@@ -125,25 +133,30 @@ def skin(P, N, AO, J, wound_c, seed=101, cap=None, head_side=False):
     h += 0.0002 * nail - 0.00025 * crease
     h -= 0.0012 * gash
     if cap is not None:
-        # the cut faces (A2): texels on the plane facing along +-n get the §3.2 section (characters/neck_anatomy.py)
+        # the cut faces (A2, fix round): the cap faces' own texels (G['CAP'], rasterised from the cap UV islands) get
+        # the §3.2 section; the geometry carries the macro relief, the normal map only the fine detail
         from . import neck_anatomy
-        cen = np.asarray(cap[4], float)
-        sd = (P - cc) @ cn
-        on = (np.abs(sd) < 0.012) & (np.abs(N @ cn) > 0.55) & (np.linalg.norm(P - cen, axis=1) < 0.075)
+        if G is not None and 'CAP' in G:
+            on = np.asarray(G['CAP'], bool)
+        else:
+            on = (np.abs((P - cc) @ cn) < 0.012) & (np.abs(N @ cn) > 0.55) & (np.linalg.norm(P - np.asarray(cap[4]), axis=1) < 0.075)
         if on.any():
+            cen = np.asarray(cap[6] if head_side else cap[4], float)
+            rim2d = cap[7] if head_side else cap[5]
             d = P[on] - cen
             u, v = d @ cs, d @ cf
-            hh, ca, cr, film = neck_anatomy.fields(u + (0.002 if head_side else 0.0), v)
-            alb[on] = ca
-            rough[on] = cr
-            h[on] = 0.6 * hh
+            ins = neck_anatomy.inset_dist(np.stack([u, v], 1), rim2d)
+            sec = neck_anatomy.section(u, v, inset=ins, head_side=head_side)
+            alb[on] = sec['alb']
+            rough[on] = sec['rough']
+            h[on] = sec['fine'] * 1.5
     return np.clip(alb, 0, 1), np.clip(rough, 0.05, 1), h
 
 
 def gown(P, N, AO, body_fn, J, hem_z, seed=87):
     n = len(P)
     z = P[:, 2]
-    base = np.array([0.52, 0.47, 0.35])      # yellowed ivory cotton
+    base = np.array([0.48, 0.43, 0.32])      # yellowed ivory cotton (soaked: the bake's 'dry' base, darkened below)
     f = noise.fbm(P * 3.5, 4, seed)
     alb = np.tile(base, (n, 1)) * (1.0 + 0.05 * noise.fbm(P * 40, 3, seed + 1))[:, None]
     # wet cotton goes translucent where it clings: grey-blue skin shows through
@@ -185,10 +198,53 @@ def gown(P, N, AO, body_fn, J, hem_z, seed=87):
     alb *= (0.8 - 0.14 * wetm)[:, None]
     seam = ss(0.004, 0.0015, np.abs(z - 1.175)) * (np.abs(P[:, 1]) < 0.2)
     alb = _mix(alb, [0.2, 0.19, 0.15], seam * 0.6)
+    # fix round 2 (body14: the bodice read as bare skin): GARMENT CUES a nightgown has and a body doesn't — a 3.2 cm
+    # front placket from the neckline down 24 cm with its two stitch lines and 10 mm bone buttons every 3.4 cm
+    # (1890s-1900s cotton nightgown), and gathered pleats falling from the yoke seam (z 1.175) over the bust.
+    nl0 = 1.352 - 0.034 * np.clip((0.03 - P[:, 1]) / 0.08, 0, 1)
+    fr = P[:, 1] < -0.02
+    span = (z < nl0 + 0.002) & (z > nl0 - 0.24) & fr
+    ax_ = np.abs(P[:, 0])
+    plk = span & (ax_ < 0.016)
+    stitch = span * ss(0.0012, 0.0004, np.abs(ax_ - 0.0145))
+    alb = _mix(alb, [0.40, 0.36, 0.27], plk * 0.35)
+    alb = _mix(alb, [0.22, 0.20, 0.15], stitch * 0.7)
+    bz = np.round((nl0 - 0.022 - z) / 0.034)
+    bc = nl0 - 0.022 - bz * 0.034
+    bd = np.sqrt(P[:, 0] ** 2 + (z - bc) ** 2)
+    btn = span * (bz >= 0) * (bz <= 6) * ss(0.0052, 0.0042, bd)
+    brim = btn * ss(0.0030, 0.0042, bd)
+    alb = _mix(alb, [0.56, 0.53, 0.46], btn * 0.9)
+    alb = _mix(alb, [0.20, 0.18, 0.14], brim * 0.6 + span * (bz >= 0) * (bz <= 6) * ss(0.0009, 0.0003, bd) * 0.8)
+    pleat_zone = fr * ss(1.19, 1.17, z) * ss(1.02, 1.10, z) * (ax_ < 0.13)
+    pleat = np.sin(P[:, 0] * 2 * np.pi / 0.011 + 0.6 * noise.fbm(P * 9.0, 2, seed + 30))
+    alb *= (1.0 - 0.10 * pleat_zone * ss(-0.6, -1.0, pleat))[:, None]
+    G_EXTRA = (plk, stitch, btn, pleat_zone, pleat)
+    # fix round (#2): the collar and the front are SOAKED — blood from the neck wound wicks down the wet cotton: near
+    # black-red at the collar (wet whole blood on cotton ~0.08/0.02/0.018), water-diluted rust-pink further down in
+    # gravity streaks (front 20-28 cm, back ~14 cm); silt caked at the neck
+    nlz = 1.352 - 0.034 * np.clip((0.03 - P[:, 1]) / 0.08, 0, 1)
+    dn = nlz - z                                                     # m below the neckline (< 0: the collar)
+    front = ss(0.03, -0.05, P[:, 1])
+    reach = 0.14 + 0.12 * front
+    stk = noise.fbm(P * np.array([75.0, 75.0, 5.0]), 3, seed + 20)
+    soak = np.clip(ss(reach, 0.0, dn - 0.05 * stk) + 0.35 * ss(0.55, 0.85, stk) * ss(reach + 0.15, 0.0, dn), 0, 1)
+    collar_z = ss(-0.005, -0.02, dn)
+    alb = _mix(alb, [0.21, 0.085, 0.06], soak * 0.75)                 # diluted blood (rust-pink-brown)
+    core = ss(0.07 + 0.05 * front, 0.0, dn - 0.03 * stk) * (0.75 + 0.25 * front)
+    alb = _mix(alb, [0.085, 0.022, 0.018], np.clip(core + collar_z, 0, 1) * 0.9)
+    alb = _mix(alb, [0.10, 0.095, 0.065], collar_z * ss(0.2, 0.7, noise.fbm(P * 60.0, 3, seed + 21)) * 0.6)   # silt
+    # hem weight: the turned 2.5 cm hem, sodden and silted darker
+    hem = ss(hem_z + 0.03, hem_z + 0.015, z)
+    alb = _mix(alb, [0.16, 0.15, 0.10], hem * 0.45)
     alb *= (0.55 + 0.45 * AO)[:, None]
-    rough = 0.64 + 0.12 * silt - 0.24 * cl2 + 0.05 * f
+    rough = 0.64 + 0.12 * silt - 0.24 * cl2 + 0.05 * f - 0.3 * np.clip(soak + collar_z, 0, 1)
     h = 0.00012 * noise.fbm(P * 220.0, 2, seed + 6) - 0.0005 * holes + 0.00025 * band
     h += 0.0003 * noise.ridged(P * np.array([30.0, 30.0, 12.0]), 3, seed + 7)
+    h += 0.0012 * (noise.ridged(P * np.array([62.0, 62.0, 48.0]), 3, seed + 22) - 0.45)   # wet-cotton crinkle
+    h += 0.0010 * hem * ss(hem_z + 0.003, hem_z + 0.008, z)                                 # the hem roll
+    plk, stitch, btn, pleat_zone, pleat = G_EXTRA
+    h += 0.0006 * plk - 0.0004 * stitch + 0.0011 * btn + 0.0009 * pleat_zone * pleat           # placket, buttons, pleats
     return np.clip(alb, 0, 1), np.clip(rough, 0.05, 1), h
 
 

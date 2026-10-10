@@ -17,9 +17,9 @@
 import * as THREE from 'three/webgpu';
 import { Fn, uniform, instancedBufferAttribute, positionGeometry, varyingProperty, vec2, vec3, vec4, float, exp, normalize, cross, dot, max, min, step, smoothstep, pow, sqrt, mix, abs, cameraPosition, texture, length, clamp, select } from 'three/tsl';
 import { planToWorld } from '../shared/coords.ts';
-import { BLOOD_TIERS, poolRadius, rng, seedC2, stainsOf, tauFor, terminate, type Particle, type Stain } from './blood-math.ts';
+import { BLOOD_TIERS, ballistic, poolRadius, rng, seedC2, stainsOf, tauFor, terminate, type Particle, type Stain } from './blood-math.ts';
 import { C2_CONTACT, C2_PULSES, C2_DURATION } from '../cutscenes/c2-room.ts';
-import { NECK, HEAD_REST, treadNosing } from '../cutscenes/stage.ts';
+import { NECK, HEAD_REST, HEAD_LAND, treadNosing } from '../cutscenes/stage.ts';
 import { ADA_LAST_TREAD, adaOnTread } from '../cutscenes/c2c-up.ts';
 import type { P3 } from '../cutscenes/types.ts';
 import { BLOOD_UNIFORMS } from '../materials/blood.ts';
@@ -44,6 +44,8 @@ export interface BloodDeps {
   preset: 'low' | 'medium' | 'max';
   /** the severed head's world position (its cut end), when the head node exists */
   headPos?: () => any | null;
+  /** the severed head's centre (world), for its soft shadow on its own pool */
+  headCenter?: () => any | null;
 }
 
 export function createBloodFx(d: BloodDeps) {
@@ -89,6 +91,18 @@ export function createBloodFx(d: BloodDeps) {
   const uTorchI = uniform(0);
   const uTorchCos = uniform(new THREE.Vector2(Math.cos(0.4), Math.cos(0.05)));
   const uAmbient = uniform(0.02);
+  // escape fix round (lane CINE): the severed head occludes the lamp on its own pool (a sphere, r 0.09 m; y −100 = none)
+  const uReflK = uniform(1); // debug A/B (__bloodFx.uReflK)
+  const uStainDbg = uniform(0); // debug A/B (__bloodFx.uStainDbg)
+  const uHeadOcc = uniform(new THREE.Vector4(0, -100, 0, 0.09));
+  /** Soft sphere shadow of the head on the key light at P (1 = lit). */
+  const headShadow = (P: any) => {
+    const Ld = normalize(uKeyPos.sub(P));
+    const oc = uHeadOcc.xyz.sub(P);
+    const tca = dot(oc, Ld);
+    const dd = sqrt(max(dot(oc, oc).sub(tca.mul(tca)), 0));
+    return mix(float(1), smoothstep(uHeadOcc.w.mul(0.55), uHeadOcc.w.mul(1.5), dd), step(0, tca));
+  };
 
   const A = instancedBufferAttribute(bufA);
   const B = instancedBufferAttribute(bufB);
@@ -127,36 +141,59 @@ export function createBloodFx(d: BloodDeps) {
   })();
 
   /** GGX specular × N·L (height-correlated Smith), Schlick F. */
-  const ggx = (N: any, V: any, L: any, rough: any, f0: any) => {
+  // escape fix round (lane CINE): sphere-light normalisation (Karis 2013, "Real Shading in UE4"): a real source has a
+  // size — α' = α + r/(2d), energy × (α/α')². Without it a 0.05-rough film under a POINT lamp saturated far beyond the
+  // flame's image (peak D ≈ 5·10⁴): the jet-landing pool, at the lamp's mirror point from D, clipped to a cream disc.
+  // srcK = source radius (m): the flat-wick flame ≈ 0.012 m, the torch's 2-D-cell reflector ≈ 0.025 m.
+  const ggx = (N: any, V: any, L: any, rough: any, f0: any, srcR: any = float(0), dist: any = float(1)) => {
     const H = normalize(V.add(L));
     const nl = max(dot(N, L), 0);
     const nv = max(dot(N, V), 1e-3);
     const nh = max(dot(N, H), 0);
     const vh = max(dot(V, H), 0);
-    const a = rough.mul(rough);
+    const a0 = rough.mul(rough).max(1e-4);
+    const a = min(a0.add(srcR.div(dist.mul(2))), float(1));
     const a2 = a.mul(a);
+    const norm = a0.div(a).mul(a0.div(a));
     const dd = nh.mul(nh).mul(a2.sub(1)).add(1);
-    const D = a2.div(dd.mul(dd).mul(Math.PI));
+    const D = a2.div(dd.mul(dd).mul(Math.PI)).mul(norm);
     const vis = float(0.5).div(nl.mul(sqrt(nv.mul(nv).mul(float(1).sub(a2)).add(a2))).add(nv.mul(sqrt(nl.mul(nl).mul(float(1).sub(a2)).add(a2)))).max(1e-4));
-    const F = f0.add(float(1).sub(f0).mul(pow(float(1).sub(vh), 5)));
+    // fix round (the PRINTS' DARK SQUARES, found by A/B: alpha-0 → gone, magenta colour → clean feet): for the torch
+    // L ≈ V (the light is at the eye), so v·h rounds to 1 + ε, the Schlick base goes negative and WGSL pow(neg, 5) is
+    // NaN; NaN × alpha 0 is still NaN in the blend → a black quad (and min(NaN, 6) → the pale "foot images"). Every
+    // pow base is clamped to [0, 1].
+    const F = f0.add(float(1).sub(f0).mul(pow(clamp(float(1).sub(vh), 0, 1), 5)));
     return D.mul(vis).mul(F).mul(nl);
   };
 
   /** Lambert + GGX from the key light and the torch at P with normal N (radiance, linear). */
-  const shade = (P: any, N: any, albedo: any, rough: any, f0: any) => {
+  const shade = (P: any, N: any, albedo: any, rough: any, f0: any, kOcc: any = float(1)) => {
     const V = normalize(cameraPosition.sub(P));
     const Lk = uKeyPos.sub(P);
     const dk2 = dot(Lk, Lk).max(1e-4);
     const lk = Lk.div(sqrt(dk2));
-    const Ek = uKeyCol.mul(uKeyI.div(dk2));
+    const Ek = uKeyCol.mul(uKeyI.div(dk2)).mul(kOcc);
     const Lt = uTorchPos.sub(P);
     const dt2 = dot(Lt, Lt).max(1e-4);
     const lt = Lt.div(sqrt(dt2));
     const cone = smoothstep(uTorchCos.x, uTorchCos.y, dot(lt.negate(), uTorchDir));
     const Et = uTorchCol.mul(uTorchI.mul(cone).div(dt2));
     const diff = albedo.mul(1 / Math.PI);
-    const ck = Ek.mul(diff.mul(max(dot(N, lk), 0)).add(ggx(N, V, lk, rough, f0)));
-    const ct = Et.mul(diff.mul(max(dot(N, lt), 0)).add(ggx(N, V, lt, rough, f0)));
+    // fix round r3 (st8 diag: the 9.9 cream disc = the jet-landing pool at the lamp's mirror point; even Karis-normalised
+    // GGX at α 0.05 leaves a tail ≈ 30× over white across the whole 17 cm pool): a fresh liquid film is a MIRROR. The
+    // lamp's specular is the flame's IMAGE — radiance F·L_flame (flat-wick flame r ≈ 1.2 cm: L = I / (π r²) ≈ 26 kcd/m²
+    // for 12 cd) only where the reflected ray passes within r of the flame (widened by the film's roughness, energy kept)
+    const Rk = V.negate().reflect(N);
+    const tk = dot(Lk, Rk);
+    const dRay = length(Lk.sub(Rk.mul(tk.max(0))));
+    const rF = float(0.012);
+    const wF = rF.add(rough.mul(rough).mul(2).mul(tk.max(0)));
+    const covF = float(1).sub(smoothstep(wF.mul(0.6), wF, dRay)).mul(step(0, tk)).mul(step(0, dot(N, lk)));
+    const nvK = max(dot(N, V), 0);
+    const FK = f0.add(float(1).sub(f0).mul(pow(clamp(float(1).sub(nvK), 0, 1), 5)));
+    const flameImg = uKeyCol.mul(uKeyI.div(rF.mul(rF).mul(Math.PI))).mul(rF.div(wF).pow(2)).mul(FK).mul(covF).mul(kOcc);
+    const ck = Ek.mul(diff.mul(max(dot(N, lk), 0))).add(flameImg);
+    const ct = Et.mul(diff.mul(max(dot(N, lt), 0)).add(ggx(N, V, lt, rough, f0, float(0.025), sqrt(dt2))));
     return { c: ck.add(ct).add(albedo.mul(uAmbient)), V, Ek, lk };
   };
 
@@ -175,8 +212,8 @@ export function createBloodFx(d: BloodDeps) {
     const T = exp(muA.mul(dmm).negate());
     const cosT = dot(s.lk.negate(), s.V); // lamp → particle vs particle → eye: 1 = looking into the light through it
     const g = 0.95;
-    const pHG = float((1 - g * g) / (4 * Math.PI)).div(pow(float(1 + g * g).sub(cosT.mul(2 * g)), 1.5));
-    const F = float(0.022).add(float(0.978).mul(pow(float(1).sub(nv), 5)));
+    const pHG = float((1 - g * g) / (4 * Math.PI)).div(pow(max(float(1 + g * g).sub(cosT.mul(2 * g)), float((1 - g) * (1 - g))), 1.5));
+    const F = float(0.022).add(float(0.978).mul(pow(clamp(float(1).sub(nv), 0, 1), 5)));
     const back = s.Ek.mul(T).mul(pHG).mul(float(1).sub(F));
     return vec4(s.c.add(back), 1);
   })();
@@ -194,9 +231,13 @@ export function createBloodFx(d: BloodDeps) {
   const atlas = paintAtlas(1234);
   const atlasTex = new THREE.CanvasTexture(atlas);
   atlasTex.colorSpace = THREE.NoColorSpace;
-  atlasTex.generateMipmaps = true;
-  atlasTex.minFilter = THREE.LinearMipmapLinearFilter;
-  atlasTex.anisotropy = 4;
+  // escape fix round (lane CINE, item 2): NO mip chain. The "dark squares" under the prints were mip bleed: at the
+  // treads' grazing angle the sampler picks mip ≥ 5, where one texel averages a whole 128 px cell (a foot's mean
+  // coverage ≈ 0.3 passes the coverage floor) → a uniformly tinted QUAD. Level 0 only: each texel is its own cell's.
+  atlasTex.generateMipmaps = false;
+  atlasTex.minFilter = THREE.LinearFilter;
+  atlasTex.magFilter = THREE.LinearFilter;
+  atlasTex.anisotropy = 1;
 
   // stain instances: s1 = world centre.xyz + yaw, s2 = len, wid, cell, kind (0 blood, 1 pool, 2 print), s3 = t0, ml, seed, opacity
   const SMAX = tier.stains + 24;
@@ -275,7 +316,21 @@ export function createBloodFx(d: BloodDeps) {
     // albedo at ≈ 0.38 opacity + the film's specular (r5/r6: a 0.03 albedo under the torch read as pink stickers)
     const albedo = mix(mix(vec3(...ALB_POOL), vec3(0.06, 0.016, 0.012), dry), vec3(0.006, 0.0025, 0.002), isPrint);
     const rough = mix(roughB, float(0.22), isPrint);
-    const s = shade(vSP, mix(N, Np, isPrint), albedo, rough, float(0.022));
+    const Nn = mix(N, Np, isPrint);
+    const s = shade(vSP, Nn, albedo, rough, float(0.022), headShadow(vSP));
+    // escape fix round (lane CINE, item 2): a fresh film is a mirror — the room cube (box-projected) along the
+    // reflection × Schlick (F0 0.022, IOR 1.35): the pool shows the lit wall / ceiling / Harlan's dark shape in it
+    // instead of reading as a matte painted ellipse. Fallback (no probes): a dim warm room constant.
+    // r4 (s8med 9.9: the cream disc survived Karis, the env clamp AND the mirror-flame term; by the shader maths only the
+    // box-projected probe-cube lookup is left — a non-finite sample clipped by min(…, 6) to white, red at the tilted
+    // meniscus rim): the room-cube lookup is OFF; the film reflects a dim warm room constant (lamp-lit plaster seen at
+    // grazing incidence) and the flame's mirror image above. roomRadianceWorld stays for a later, verified retry.
+    const envP = vec3(0.03, 0.016, 0.008);
+    const envH = vec3(0.01, 0.008, 0.007);
+    const nvE = max(dot(Nn, s.V), 0.02);
+    const Fe = float(0.022).add(float(0.978).mul(pow(clamp(float(1).sub(nvE), 0, 1), 5)));
+    // capped at 0.5: a lamp-lit room never reflects brighter (a unit error must not paint a pool white again)
+    const refl = min(mix(envP, envH, isPrint).mul(Fe).mul(float(1).sub(dry.mul(0.85))).mul(uReflK), vec3(0.5));
     // opacity: a thick film hides the boards (blood transmits only red through ≲ 1–2 mm); a print is a thin wet film
     // r7: dark squares around the prints on the torch-lit treads — whatever leaks into a cell's border (mip bleed of
     // the neighbour cell, filtering) is cut: a soft fade to 0 at the quad edge and a coverage floor
@@ -284,7 +339,11 @@ export function createBloodFx(d: BloodDeps) {
     // r4: prints read as painted pink/white marks — a wet print is mostly darkened boards with a sparse glint
     const a = mix(cover.mul(mix(float(0.75), float(0.97), m.g)), cover.mul(0.38), isPrint).mul(smoothstep(SC.x, SC.x.add(0.04), uT));
     const ring = m.b.mul(dry).mul(0.5);
-    return vec4(min(s.c.mul(float(1).sub(ring)), vec3(6)), a);
+    // ?debug A/B (__bloodFx.uStainDbg): 1 = alpha 0 everywhere, 2 = magenta at the real alpha
+    const col = min(s.c.mul(float(1).sub(ring)).add(refl), vec3(6));
+    // belt and braces: where nothing is drawn the colour is exactly 0 (a select never blends the other branch)
+    const colS = select(a.greaterThan(1e-4), col, vec3(0));
+    return vec4(select(uStainDbg.equal(2), vec3(4, 0, 4), colS), select(uStainDbg.equal(1), float(0), a));
   })();
   const quad = new THREE.PlaneGeometry(1, 1);
   const stainMesh = new THREE.InstancedMesh(quad, stainMat, SMAX);
@@ -304,7 +363,9 @@ export function createBloodFx(d: BloodDeps) {
   /** Pools (§3.7: 4 on Medium/Max, 2 on Low): centre, fed volume over time. */
   const pools: Array<{ i: number; ml: (t: number) => number }> = [];
   const addPool = (p: P3, ml: (t: number) => number) => {
-    const i = addStain(p, r0() * 6.28, 0.01, 0.01, CELL.pool, 1, -1e6, 0);
+    // (fix round r5: t0 starts at 1e9 = off; updatePools stamps the real first-visible clock — the old −1e6 "on" flag
+    // made every pool ≈ 16 700 min old in the shader: fully clotted + dried, roughness 0.35–0.55 → the 9.9 cream disc)
+    const i = addStain(p, r0() * 6.28, 0.01, 0.01, CELL.pool, 1, 1e9, 0);
     if (i >= 0) pools.push({ i, ml });
   };
   const sat = (x: number) => Math.max(0, Math.min(1, x));
@@ -316,16 +377,25 @@ export function createBloodFx(d: BloodDeps) {
   if (d.preset !== 'low') {
     // the sheet-corner drip (1 mL/s from 10.4)
     addPool([5.3, 2.2, 0.6], (t) => Math.max(0, Math.min(t, 40) - 10.6) * 1.0);
-    // under the head at rest (the cut end bleeds 0.5 mL/s until it is lifted at 10.6)
-    addPool([HEAD_REST[0] + 0.04, HEAD_REST[1] + 0.03, 0.6], (t) => 3 * sat((t - 9.7) / 0.9) + 2);
+    // escape fix round (lane CINE): the head lies IN its own blood. A severed head drains from both carotids and
+    // jugulars (≈ 10 % of the 5 L blood volume is in the head/neck) — tens of mL in the first seconds. The landing
+    // (0.8 m fall, cut face first-ish) splashes ≈ 15 mL at HEAD_LAND at 7.9; at rest the pool is centred 8 cm toward
+    // the cut ring (bearing 174°, cutscene-fx REST_FACE) and grows 15 → 40 mL (r ≈ 4 → 7 cm, POOL_THICK 2.75 mm) by
+    // the lift at 10.6, then holds (the head is gone; the film only spreads)
+    addPool([HEAD_LAND[0] - 0.05, HEAD_LAND[1], 0.6], (t) => 15 * sat((t - 7.9) / 0.15));
+    addPool([HEAD_REST[0] - 0.065, HEAD_REST[1] + 0.047, 0.6], (t) => (t < 9.6 ? 0 : 15 + 25 * sat((t - 9.6) / 1.0))); // r2: the neck end points NW (144°)
   }
 
   // ---- C2c: her wet prints (hall + treads 1–11), the puddle on tread 11, the drip onto tread 10
   const C2C0 = C2_DURATION; // C2c t = 0 on the blood clock
   const prints: Array<{ p: P3; yaw: number; t: number; left: boolean }> = [];
   {
-    // the hall: from the parlor door to the stair foot (0–2.6 s), 0.55 m steps
+    // the hall: from the parlor door to the stair foot, 0.55 m steps — times follow c2c-up's walk (fix round: 0.5 m/s
+    // to G1_TO at 4.47, then 1.1 m/s round the newel)
     const path: P3[] = [[3.3, 1.75, 0.6], [2.3, 2.7, 0.6], [0.85, 3.35, 0.6]];
+    let sAll = 0;
+    // (r2: 0.61 m/s to G1_FROM at 3.84 (2.34 m), 0.52 m/s to G1_TO at 4.47, then ≈ 1.1 m/s round the newel)
+    const tAt = (sx: number) => (sx <= 2.34 ? sx / 0.61 : sx <= 2.67 ? 3.84 + (sx - 2.34) / 0.52 : 4.47 + (sx - 2.67) / 1.1);
     let s = 0;
     let left = true;
     for (let k = 0; k < path.length - 1; k++) {
@@ -336,13 +406,14 @@ export function createBloodFx(d: BloodDeps) {
       for (; s < L; s += 0.55) {
         const f = s / L;
         const side = left ? 0.07 : -0.07;
-        prints.push({ p: [a[0] + (b[0] - a[0]) * f - Math.sin(h) * side, a[1] + (b[1] - a[1]) * f + Math.cos(h) * side, 0.6], yaw: h, t: C2C0 + (k === 0 ? 1.2 * f : 1.2 + 1.4 * f), left });
+        prints.push({ p: [a[0] + (b[0] - a[0]) * f - Math.sin(h) * side, a[1] + (b[1] - a[1]) * f + Math.cos(h) * side, 0.6], yaw: h, t: C2C0 + tAt(sAll + s), left });
         left = !left;
       }
       s -= L;
+      sAll += L;
     }
     // the treads (her right hand on the rail: feet a little east of centre); the times follow her moves (§4.1)
-    const tTread = (k: number) => (k <= 4 ? 4.5 + (k - 1) * 0.653 : k <= 9 ? 6.46 + ((k - 4) / 5) * 0.39 : k === 10 ? 8.4 : 8.9);
+    const tTread = (k: number) => (k <= 4 ? 5.3 + (k - 1) * 0.387 : k <= 9 ? 6.46 + ((k - 4) / 5) * 0.39 : k === 10 ? 8.4 : 8.9);
     for (let k = 1; k <= ADA_LAST_TREAD; k++) {
       const a = adaOnTread(k);
       const left2 = k % 2 === 1;
@@ -383,6 +454,12 @@ export function createBloodFx(d: BloodDeps) {
   };
   // the head's stream (S5–S8): 3–4 mm stream breaking into 6–7 mm drops ≈ every 0.11 s, from the cut end
   let headNext = 10.9;
+  // fix round: the falling / lying head bleeds from its cut end too (carotids + jugulars of the head side): drops trail
+  // it through the fall (every 30 ms, carried at the head's own velocity) and drip into its pool while it lies (every
+  // 0.18 s) until the lift at 10.6 — the dark tumbling mass reads as a bleeding head
+  let fallNext = 7.6;
+  const fallPrev = new THREE.Vector3();
+  let fallPrevT = -1;
 
   // ------------------------------------------------------------------------------------------------ runtime
   let clock = -100;
@@ -425,7 +502,8 @@ export function createBloodFx(d: BloodDeps) {
       const on = r > 0.004;
       s2[p.i * 4] = on ? r * 2.1 : 0.0001;
       s2[p.i * 4 + 1] = on ? r * 2.0 : 0.0001;
-      s3[p.i * 4] = on ? -1e6 : 1e9;
+      if (on && s3[p.i * 4] > 1e8) s3[p.i * 4] = clock; // fresh from the moment it appears (wet, α 0.05)
+      else if (!on) s3[p.i * 4] = 1e9;
     }
     sb2.needsUpdate = true;
     sb3.needsUpdate = true;
@@ -442,6 +520,9 @@ export function createBloodFx(d: BloodDeps) {
         partMesh.visible = true;
         stainMesh.visible = true;
         headNext = 10.9;
+        for (const q of pools) s3[q.i * 4] = 1e9; // re-stamped by updatePools from this clock
+        fallNext = 7.6;
+        fallPrevT = -1;
       } else if (seq === 'c2' && phase === 'end') {
         clock = Math.max(clock, C2_DURATION);
         running = true;
@@ -477,6 +558,27 @@ export function createBloodFx(d: BloodDeps) {
         const since = clock - (C2C0 + 13.9);
         dripNext = clock + (since < 0 ? 0.6 : Math.min(2, 0.6 + (1.4 * since) / 60));
       }
+      // the head's soft shadow on its own pool (fix round): fed every frame from the head's centre
+      {
+        const hc = d.headCenter?.();
+        if (hc) uHeadOcc.value.set(hc.x, hc.y, hc.z, 0.09);
+        else uHeadOcc.value.y = -100;
+      }
+      if (d.headPos && clock >= fallNext && clock >= 7.6 && clock < 10.6) {
+        const hp = d.headPos();
+        if (hp) {
+          const dtv = fallPrevT >= 0 ? Math.max(1e-3, clock - fallPrevT) : 0;
+          const v: P3 = dtv > 0 ? [(hp.x - fallPrev.x) / dtv, -(hp.z - fallPrev.z) / dtv, (hp.y - fallPrev.y) / dtv] : [0, 0, 0];
+          const falling = clock < 7.95;
+          const r = falling ? 0.0028 : 0.0024;
+          const p: Particle = { kind: 1, t0: clock, p0: [hp.x, -hp.z, hp.y], v0: falling ? [v[0] * 0.8, v[1] * 0.8, v[2] * 0.8 - 0.2] : [0, 0, -0.05], r, tau: tauFor(r), tEnd: 0, ml: 0.06, hit: null };
+          terminate(p);
+          spawn(p);
+          fallPrev.copy(hp);
+          fallPrevT = clock;
+        }
+        fallNext = clock + (clock < 7.95 ? 0.03 : 0.18);
+      }
       // the head's stream (when the head node exists): 10.9 – 22 s of C2
       if (d.headPos && clock >= headNext && clock < 22) {
         const hp = d.headPos();
@@ -491,7 +593,12 @@ export function createBloodFx(d: BloodDeps) {
       // the blood stays wet for minutes: the stains fade only by drying (age), never vanish
       uGameAge.value = 0;
       // B6: the TSL masks on Harlan / the cleaver / the gown (src/materials/blood.ts) share this clock
-      BLOOD_UNIFORMS.amount.value = Math.max(0, Math.min(1, (clock - C2_CONTACT) / 3));
+      // fix round: the blade comes out of the neck COATED and the impact spatter reaches his apron at once — 45 % within
+      // 60 ms of contact, then the runs / soak spread over 3 s (was a linear 3 s ramp: 7 % wet at 7.78)
+      {
+        const k = clock - C2_CONTACT;
+        BLOOD_UNIFORMS.amount.value = 0.45 * Math.max(0, Math.min(1, k / 0.06)) + 0.55 * Math.max(0, Math.min(1, (k - 0.06) / 3));
+      }
       BLOOD_UNIFORMS.ageMin.value = Math.max(0, clock - C2_CONTACT) / 60;
     },
     /** Load warm-up: make both meshes compile (B11). */
@@ -517,6 +624,20 @@ export function createBloodFx(d: BloodDeps) {
     meshes: [partMesh, stainMesh],
   };
   stainMesh.userData.debug = () => api.debug(); // QA: scene.getObjectByName('blood-stains').userData.debug()
+  // ?debug handle (QA scenarios): reflection gain + the alive particles of a kind at the blood clock (PLAN coords)
+  if (typeof location !== 'undefined' && /[?&]debug\b/.test(location.search)) {
+    (globalThis as any).__bloodFx = {
+      uReflK,
+      uStainDbg,
+      atlas,
+      stainArrays: () => ({ s1: Array.from(s1), s2: Array.from(s2), s3: Array.from(s3) }),
+      keys: () => ({ keyI: uKeyI.value, keyPos: uKeyPos.value.toArray?.(), keyCol: uKeyCol.value.toArray?.(), torchI: uTorchI.value, amb: uAmbient.value }),
+      stainMesh,
+      clock: () => clock,
+      alive: (kind: number) =>
+        parts.filter((q) => q.kind === kind && q.t0 <= clock && clock < q.tEnd).map((q) => ({ p: ballistic(q.p0, q.v0, q.tau, clock - q.t0), r: q.r, age: +(clock - q.t0).toFixed(3) })),
+    };
+  }
   return api;
 }
 
@@ -610,19 +731,29 @@ function paintAtlas(seed: number): HTMLCanvasElement {
     const seam = Math.abs(v - 0.08) < 0.018 && Math.abs(u) < 0.46 ? 0.85 : 0; // wicked into a board seam
     return [Math.max(a[0], lobe[0], seam), Math.max(a[1], lobe[1] * 0.7, seam * 0.3), a[2]];
   });
-  // prints (12, 13): a bare foot — heel, the outer edge, the ball, five toes (left; the right is mirrored)
+  // prints (12, 13): a bare foot's WET SOLE in metres (fix round: the old cells were striped ellipses): an adult foot
+  // 24 cm long, ball 9.5 cm, heel 6 cm; contact = heel, the lateral band, the ball and five toe pads — the medial arch
+  // never touches. The quad is 0.25 × 0.10 m: u (−0.5…0.5) → x along (heel −, toes +), v → y across (medial +, left foot)
   const foot = (mirror: number) => (u0: number, v0: number): [number, number, number] => {
-    const u = u0; // along the foot (−0.5 heel … 0.5 toes)
-    const v = v0 * mirror * 2.4; // across (the quad is 0.25 × 0.10 m)
-    const e = (cx: number, cy: number, rx: number, ry: number) => Math.hypot((u - cx) / rx, (v - cy) / ry);
-    const heel = e(-0.32, 0, 0.15, 0.55);
-    const arch = e(-0.02, -0.38, 0.25, 0.28);
-    const ball = e(0.22, 0.05, 0.13, 0.75);
-    let d = Math.min(heel, arch, ball);
-    const toes: Array<[number, number, number]> = [[0.41, 0.42, 0.075], [0.4, 0.08, 0.06], [0.37, -0.18, 0.055], [0.33, -0.4, 0.05], [0.28, -0.6, 0.045]];
-    for (const [tx, ty, tr] of toes) d = Math.min(d, Math.hypot((u - tx) / tr, (v - ty) / (tr * 4.5)));
-    const cover = (1 - smooth(0.8, 1.05, d)) * (0.75 + 0.25 * Math.sin(u * 60 + v * 23));
-    return [cover, cover * 0.6, 0];
+    const x = u0 * 0.25;
+    const y = v0 * 0.1 * mirror;
+    const ell = (cx: number, cy: number, rx: number, ry: number) => Math.hypot((x - cx) / rx, (y - cy) / ry);
+    const cap = (ax: number, ay: number, bx: number, by: number, r: number) => {
+      const dx = bx - ax, dy = by - ay;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
+      return Math.hypot(x - ax - dx * t, y - ay - dy * t) / r;
+    };
+    let d = Math.min(
+      ell(-0.083, 0.0, 0.034, 0.028), // heel
+      cap(-0.07, -0.02, 0.035, -0.03, 0.013), // the lateral band
+      ell(0.045, 0.004, 0.026, 0.045), // the ball
+    );
+    const toes: Array<[number, number, number]> = [[0.097, 0.03, 0.0135], [0.103, 0.007, 0.009], [0.1, -0.011, 0.0082], [0.093, -0.026, 0.0076], [0.083, -0.039, 0.007]];
+    for (const [tx, ty, tr] of toes) d = Math.min(d, Math.hypot(x - tx, y - ty) / tr);
+    // a wet print breaks up at the rim (skin ridges, uneven pressure): coverage noise only near the edge
+    const n = 0.5 + 0.5 * Math.sin(x * 410 + Math.sin(y * 530) * 2.1) * Math.sin(y * 370 + x * 90);
+    const cover = 1 - smooth(0.78 - 0.12 * n, 1.02, d);
+    return [cover, cover * 0.55, 0];
   };
   put(0, 3, foot(1));
   put(1, 3, foot(-1));

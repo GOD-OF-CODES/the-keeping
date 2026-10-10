@@ -252,7 +252,7 @@ const doorSwing: Recipe = {
   bus: 'sfx',
   variants: 2,
   level: 0.7,
-  preload: false,
+  preload: true, // PERF G (ruling f): lazy = a JS synth on the main thread at the first door swing (a hitch at a room entry)
   gen(sr, rng) {
     const out = buf(sr, 4);
     const c = doorCreak.gen(sr, rng, { dur: 3.2, speed: 0.4 })[0];

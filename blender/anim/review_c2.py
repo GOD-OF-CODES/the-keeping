@@ -58,6 +58,8 @@ VIEWS = {
     'eye100': (D, None, 100, 'eye'),                                  # S6 insert: 100 mm from D on the eye
     'stump05': (None, None, 50, 'separate_cap'),        # the body's cap face-on-ish, 0.5 m along the neck axis
     'body': (T, RISEN + Vector((0, 0, 1.25)), 44, 'risen'),           # the headless body (S10), from T
+    'body14': (RISEN + Vector((0, 0, 1.38)) + (T - RISEN - Vector((0, 0, 1.38))).normalized() * 1.4,
+               RISEN + Vector((0, 0, 1.38)), 50, 'risen'),     # fix round: the risen stump from T's side at 1.4 m
 }
 want = [v for v in str(ARGS.get('views', 'd24,d76,d99,d246,t270')).split(',') if v in VIEWS]
 
@@ -307,8 +309,9 @@ def stage(state):
         elif state == 'separate_cap':
             head_world(Vector((5.12, 3.18, 0.70)), frame3((1, 0, 0.1), (0, 0, 1)))
         elif state == 'floor':
-            # on its side, the cut end toward the lamp (crown away from it), ear + jaw in profile to D
-            head_world(HEAD_REST, frame3(-to_lamp, (0, 0, 1)))
+            # on its LEFT side, the cut end toward the lamp (crown away from it): her parted RIGHT side (ear, jaw line,
+            # cheek; fix round hair part) faces up into the lamp light and toward D
+            head_world(HEAD_REST, frame3(-to_lamp, (0, 0, -1)))
         elif state == 'eye':
             head_in_fist(harlan, 'prop_l' if 'prop_l' in harlan.pose.bones else 'hand_l', math.atan2(D.y - 3.6, D.x - 5.0))
             eyelid(1.0)
@@ -385,6 +388,129 @@ def meter(path):
     return lavg, mult, float(np.percentile(lum[ell], 95))
 
 
+def coverage(out_name='coverage'):
+    """A14 (fix round): the carried head's face coverage from 12 gameplay angles (doc §4.6: >= 90 % each).
+    Ada mid-chase with her own head at prop_r (crown in the fist, face toward her right thigh), the hair chains hanging
+    to world-down. All lights off, world black, every object but Ada hidden; the FACE polygons of ada_head (front-facing,
+    hairline .. chin) emit white. Per view: face px with the hair vs without -> coverage = 1 - with / without.
+    Cameras: a 1.6 m eye (floor z 0.6) at 2.0 m, every 30 deg around the head, 60 deg vertical FOV."""
+    stage('walk')
+    hd = math.atan2(1.50 - 2.05, 3.70 - 4.45)
+    if 'prop_r' in ada.pose.bones:
+        head_in_fist(ada, 'prop_r', hd + math.pi / 2)
+    hair_gravity(True)
+    bpy.context.view_layer.update()
+    keep = set(ada_meshes) | {ada, H} | (set(H.children_recursive) if H else set())
+    for o in sc.objects:
+        if o.type in ('MESH', 'CURVE', 'LIGHT', 'EMPTY') and o not in keep and o is not cam:
+            o.hide_render = True
+    sc.world.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.0
+    me = HEAD_MESH.data
+    zs = [v.co.z for v in me.vertices]
+    zmax = max(zs)
+    white = bpy.data.materials.new('__face')
+    white.use_nodes = True
+    nt = white.node_tree
+    nt.nodes.clear()
+    em = nt.nodes.new('ShaderNodeEmission')
+    em.inputs['Strength'].default_value = 1.0
+    o_ = nt.nodes.new('ShaderNodeOutputMaterial')
+    nt.links.new(em.outputs[0], o_.inputs[0])
+    HEAD_MESH.data.materials.append(white)
+    wi = len(HEAD_MESH.data.materials) - 1
+    old = [p.material_index for p in me.polygons]
+    nface = 0
+    for p in me.polygons:
+        c = p.center
+        if p.normal.dot(Vector((0, -1, 0))) > 0.3 and zmax - 0.245 < c.z < zmax - 0.07:
+            p.material_index = wi
+            nface += 1
+    for m in bpy.data.materials:                     # nothing else may glow (flame meshes etc. are hidden anyway)
+        pass
+    hair = bpy.data.objects.get('ada_hair')
+    sc.cycles.use_denoising = False
+    head_c = H.matrix_world @ CROWN_TO_CENTRE if H else bone_world(ada, 'head')
+    floor_z = 0.6
+    rows = []
+    cam_d.sensor_fit = 'VERTICAL'
+    cam_d.sensor_height = 24.0
+    cam_d.lens = 24.0 / (2 * math.tan(math.radians(30)))
+    for k in range(12):
+        az = math.radians(30 * k)
+        eye = Vector((head_c.x + 2.0 * math.cos(az), head_c.y + 2.0 * math.sin(az), floor_z + 1.6))
+        cam.location = eye
+        cam.rotation_mode = 'QUATERNION'
+        cam.rotation_quaternion = (head_c - eye).to_track_quat('-Z', 'Y')
+        cnt = []
+        for hide in (False, True):
+            if hair:
+                hair.hide_render = hide
+            path = OUT / f'__cov_{k}_{int(hide)}.exr'
+            render(path, (960, 540), 8, True)     # fix round: 4x the face px (480x270 left 3-30 px views)
+            img = bpy.data.images.load(str(path), check_existing=False)
+            a = np.empty(img.size[0] * img.size[1] * 4, np.float32)
+            img.pixels.foreach_get(a)
+            bpy.data.images.remove(img)
+            path.unlink(missing_ok=True)
+            cnt.append(int((a.reshape(-1, 4)[:, 0] > 0.3).sum()))
+        cov = None if cnt[1] < 30 else round(1.0 - cnt[0] / cnt[1], 3)
+        rows.append({'az': 30 * k, 'face_px_hair': cnt[0], 'face_px_bare': cnt[1], 'coverage': cov})
+        scene.log(f'coverage az {30 * k:3d}: {rows[-1]}')
+    for p, mi in zip(me.polygons, old):
+        p.material_index = mi
+    vals = [r['coverage'] for r in rows if r['coverage'] is not None]
+    summ = {'face_polys': nface, 'views': rows, 'min': min(vals) if vals else None,
+            'mean': round(sum(vals) / len(vals), 3) if vals else None, 'pass_90': all(v >= 0.9 for v in vals)}
+    (OUT / f'{out_name}.json').write_text(json.dumps(summ, indent=1))
+    scene.log('COVERAGE', json.dumps({k: v for k, v in summ.items() if k != 'views'}))
+
+
+if ARGS.get('which'):      # fix round 2: which meshes have vertices in the halo-ring zone over the risen stump?
+    stage('risen')
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    j = bone_world(ada, 'head')
+    for o in sc.objects:
+        if o.type != 'MESH' or o.hide_render:
+            continue
+        ev = o.evaluated_get(dg)
+        mw = ev.matrix_world
+        near = [mw @ v.co for v in ev.data.vertices if (mw @ v.co - j).length < float(ARGS.get('which_r', 0.14))]
+        if near:
+            zs = [p.z - j.z for p in near]
+            scene.log(f'WHICH {o.name}: {len(near)} verts within 14 cm of the head joint, dz {min(zs):.3f}..{max(zs):.3f}')
+            if o.name == 'ada_body':
+                from collections import Counter
+                gn = {g.index: g.name for g in o.vertex_groups}
+                cnt, rz = Counter(), []
+                for v, ve in zip(o.data.vertices, ev.data.vertices):
+                    pw = mw @ ve.co
+                    if (pw - j).length < 0.14 and pw.z - j.z > -0.01:
+                        gs = sorted(((g.weight, gn[g.group]) for g in v.groups), reverse=True)
+                        cnt[' '.join(f'{n}:{w:.2f}' for w, n in gs[:2])] += 1
+                        rz.append(v.co.z)
+                scene.log(f'WHICH body dz>-1cm: {len(rz)} verts, rest z {min(rz, default=0):.3f}..{max(rz, default=0):.3f}, groups {cnt.most_common(8)}')
+                capf = set(o.data.get('_cap_faces', []))
+                capv = {vi for f in o.data.polygons if f.index in capf for vi in f.vertices}
+                scene.log(f'WHICH cap faces stored {len(capf)}, cap verts {len(capv)}')
+                for lab, sel in (('cap', capv), ('noncap', set(range(len(o.data.vertices))) - capv)):
+                    ds = [((mw @ ev.data.vertices[i].co) - (mw @ o.data.vertices[i].co)).length for i in sel
+                          if o.data.vertices[i].co.z > 1.38 and abs(o.data.vertices[i].co.x) < 0.07]
+                    if ds:
+                        scene.log(f'WHICH {lab} z>1.38: n {len(ds)} displacement-from-rest(world) {min(ds):.3f}..{max(ds):.3f} mean {sum(ds)/len(ds):.3f}')
+                # the same verts' evaluated z relative to the joint
+                for lab, sel in (('cap', capv), ('noncap', set(range(len(o.data.vertices))) - capv)):
+                    zz = [(mw @ ev.data.vertices[i].co).z - j.z for i in sel if o.data.vertices[i].co.z > 1.38 and abs(o.data.vertices[i].co.x) < 0.07]
+                    if zz:
+                        scene.log(f'WHICH {lab} z>1.38 posed dz {min(zz):.3f}..{max(zz):.3f}')
+                hz = [v.co.z for v in o.data.vertices]
+                scene.log(f'WHICH body rest z max {max(hz):.3f}; cut-ish verts z>1.40: {sum(1 for z in hz if z > 1.40)}')
+    want = []
+
+# fix round: --coverage 1 [--views a,b] -> the views render first (coverage hides the scene and does not restore it)
+if ARGS.get('coverage') and not ARGS.get('views'):
+    want = []
+
 report = {}
 for name in want:
     eye, tgt, lens, state = VIEWS[name]
@@ -404,6 +530,9 @@ for name in want:
         ev = eo.evaluated_get(dg)
         tgt = sum((ev.matrix_world @ v.co for v in ev.data.vertices), Vector()) / len(ev.data.vertices)
     aim(eye, tgt, lens)
+    for hn in [h for h in str(ARGS.get('hide', '')).split(',') if h]:      # fix round 2 diagnostics
+        if bpy.data.objects.get(hn):
+            bpy.data.objects[hn].hide_render = True
     sc.view_settings.exposure = 0.0
     mp = OUT / f'__meter_{name}.exr'
     render(mp, (RES[0] // 4, RES[1] // 4), 16, True)
@@ -414,4 +543,6 @@ for name in want:
                     'p95_spot': round(p95, 4), 's': round(time.perf_counter() - t0, 1)}
     scene.log(f'{name}: {report[name]}')
 (OUT / 'meter.json').write_text(json.dumps(report, indent=1))
+if ARGS.get('coverage'):
+    coverage()
 scene.result({'job': 'c2-review', 'ok': True, 'views': report, 'device': used, 'samples': SPP})

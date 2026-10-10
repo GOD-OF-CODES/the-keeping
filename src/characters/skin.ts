@@ -14,11 +14,15 @@
 // wider, fainter pelvis term — the ambient occlusion a standing body casts on the floor.
 
 import * as THREE from 'three/webgpu';
-import { Fn, property, dFdx, dFdy, diffuseColor, float, max, normalView, pow, positionView, positionViewDirection, positionWorld, sign, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl';
+import { Fn, property, dFdx, dFdy, diffuseColor, float, max, mx_noise_float, normalView, positionGeometry, select, pow, positionView, positionViewDirection, positionWorld, sign, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl';
 
 const SKIN_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).get('skin') === '0';
 export const uSkinWrap = uniform(0.3);
 export const uSkinTint = uniform(new THREE.Vector3(0.6, 0.25, 0.2));
+/** 1 = the hair veil in front of the severed head's face is gone (see applySkinOrHair; driven by ada.ts). */
+export const uHairVeilClear = uniform(0);
+/** 1 = severed: blood film on the skin around the cut (head stub + body neck; see applySkinOrHair). */
+export const uNeckBlood = uniform(0);
 
 // ---- C2-ESCAPE B13 (#17 runtime side): the wet cotton nightgown. Water fills the air gaps between the fibres, so
 // a soaked cotton sheet scatters far less: it darkens and lets light THROUGH (translucent / see-through where wet).
@@ -164,6 +168,21 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
       const cut = smoothstep(1.55, 2.1, c.r.div(c.g.max(1e-3)));
       p.colorNode = c.mul(vec3(1).sub(vec3(0.45, 0.78, 0.78).mul(cut)));
       p.roughnessNode = m.roughnessNode.mul(float(1).sub(cut)).add(cut.mul(0.1));
+      // Escape fix-round review: once severed, the skin AROUND the cut carries blood (the head's neck stub fell into
+      // and rolled through its pool; the carotid jets run down the body's neck). Without it the head's 8 cm neck stub
+      // was a clean beige cylinder — a doll part. Bind space (Y-up, face +Z): the cut sits at y ≈ 1.35 on the neck
+      // axis (x 0, z ≈ −0.012); the film covers the stub fully at the cut and breaks into run streaks up to 8 cm onto
+      // the head side / 3.5 cm onto the body side, only within the neck's 8.5 cm radius (not the shoulders).
+      // Whole-blood film over skin: albedo × (0.42, 0.06, 0.05) (Hb absorbs G/B within 0.1 mm), plasma-wet roughness 0.12.
+      const pg = positionGeometry;
+      const rad = vec2(pg.x, pg.z.add(0.012)).length();
+      const near = float(1).sub(smoothstep(0.065, 0.088, rad));
+      const dist = select(pg.y.greaterThan(1.35), pg.y.sub(1.35).div(0.08), float(1.35).sub(pg.y).div(0.035));
+      const band = float(1).sub(smoothstep(0.2, 1.0, dist));
+      const n = mx_noise_float(vec3(pg.x.mul(55), pg.y.mul(9), pg.z.mul(55)));
+      const film = smoothstep(0.35, 0.6, band.add(n.mul(0.4))).mul(near).mul(uNeckBlood);
+      p.colorNode = p.colorNode.mul(vec3(1).sub(vec3(0.58, 0.94, 0.95).mul(film)));
+      p.roughnessNode = p.roughnessNode.mul(float(1).sub(film)).add(film.mul(0.12));
     }
     p.normalMap = m.normalMap;
     p.normalScale = m.normalScale;
@@ -217,6 +236,20 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
     // C2-ESCAPE B13: wet-cotton translucency (see GownLightingModel)
     m.setupLightingModel = () => new GownLightingModel();
     return m;
+  }
+  // Escape fix-round review (art director): the severed head's FACE VEIL. 44 % of ada_hair (the scalp shell and the
+  // front veil over the face) is skinned to head_root, so no chain physics can lift it: on the floor (face-up) and in
+  // Harlan's fist the face stayed under an opaque hair ball and the head never read as a head (diag
+  // scratch/escfix-review d1/d2). Physically, wet hair on a face-up head falls off the face to the boards, and hair
+  // gathered in a fist is pulled off the face; so while uHairVeilClear = 1 (ada.ts: severed and not in her own hand)
+  // the cards that hang IN FRONT of the face (bind space, Y-up, face +Z: cornea at (−0.03, 1.54, 0.06), head z
+  // max 0.089, chin ≈ 1.39, hairline ≈ 1.60) are hashed out; the side curtains framing the cheeks stay.
+  if (String(ud.material_id) === 'hair_wet_black' && m.opacityNode) {
+    const pg = positionGeometry;
+    const front = smoothstep(0.012, 0.035, pg.z);
+    const below = float(1).sub(smoothstep(1.585, 1.61, pg.y)).mul(smoothstep(1.34, 1.37, pg.y));
+    const across = float(1).sub(smoothstep(0.06, 0.085, pg.x.abs()));
+    m.opacityNode = m.opacityNode.mul(float(1).sub(uHairVeilClear.mul(front).mul(below).mul(across)));
   }
   if (String(ud.material_id) === 'hair_wet_black' && presetId !== 'low') {
     if (!m.roughnessNode) m.roughness = 0.3; // indirect (probe/env) specular of wet hair (the direct lobes: HAIR)

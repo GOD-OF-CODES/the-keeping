@@ -638,6 +638,32 @@ again, glance #2 shows her grey hand on the rail, the empty stair is a strong fr
 Fixed in this review (logged, CONTRACT-CHANGES #97–#101): the black climb (beam clamp in C2c), glance #2's subject
 lit, the held head faces the camera 3/4 to the lamp, the eye-insert aim, the wet cut-tissue film.
 
+### Fix-round verdict (2026-10-10, art/horror-director review — STATUS-escape-cine "Review — fix round")
+
+Frames: `scratch/escfix-review/r1med-*` (fix-round tree as delivered), `r2med-*`, `r3med-*`, `r4med-*` (after this
+review's fixes), `r5max-*` (Max). Medium WebGPU, 1280×800. **Verdict: ruling (a) is now met by ONE frame — C2 9.30
+(`r4med-01-c2-9.30.jpg`): the cut neck on the table, the severed head on the boards with its red cut ring toward the
+lens and the face in profile, Harlan over it. Everything around it is still not a photograph** (mannequin-smooth skin,
+plaster gown, petal pools).
+
+| §8.2 frame | Fix-round verdict | Still not real |
+|---|---|---|
+| C2 7.50 (pre-contact) | FIXED this review: the seam was open 2.6 cm (head rig on the `head` bone, cut inside neck_02) — both red caps showed before the strike; now continuous | — |
+| C2 7.62 / 7.78 (strike) | PARTIAL+: the cut neck (red face + blood film) and two jet streaks read; the falling head is a dark mass | jets dotted (particle beads); gown plaster-cream |
+| **C2 9.30 (S4 hold, 40 mm)** | **PASS — the one-still beheading** | head small (≈ 120 px); face doll-smooth; lamp chimney glow in frame (> R9's 6 px) |
+| C2 10.5 (floor head at rest) | PASS for legibility (face up, eyes/nose/lips, bloody neck stub) | head touches the bottom bar; face grey mannequin; pools = flat lobed "petals" |
+| C2 13.9 (eye insert) | PARTIAL: since the veil fix a face hangs by the hair with a pale open eye and the red cut below; underexposed (insert cue added, see STATUS) | skin smooth, glint tiny |
+| C2 24.0 (rise) | FAIL: salmon/pink plaster torso with a red badge cap, half behind the table | gown/skin look, framing |
+| C2c 4.0 (glance #1) | FAIL "headless": a dark figure from above, the shoulder line lost; neon baluster rims | re-block / rim |
+| C2c 7.1 (glance #2) | PASS for the beat: her grey hand grips the rail in the beam | arm = grey mannequin |
+| C2c 12.6 (empty stair) | good composition; the wet prints read as pale slipper-shaped stickers | print shading/shape |
+| B05 1.5 m | composition works (headless reads); shoulders salmon-pink plaster, cap a pink rosette | skin/gown material (`?skin=0` A/B not run) |
+
+Asset problems no runtime code can fix (lane A): (1) 44 % of `ada_hair` (scalp shell + the veil over the face) is
+skinned to head_root — the runtime veil mask (#117) is a stop-gap; (2) the GLB ships shape-key weights [1, 1, 1] (the
+eye was open from load); (3) the head piece's neck stub swings on the head joint — put the cut on the bone it pivots
+from; (4) doll-smooth face and plaster gown under the lamp/torch (no pores, wrinkling, cloth folds at 1280 px).
+
 ## Merged and overruled QA points
 - Agreed: QA #1 (dark frames), #3 (outlines/CA, cause now found), #4 (grain), #5 (facade), #7 (C5), #8 (C6),
   #10 (rain glass).

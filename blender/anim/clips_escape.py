@@ -352,7 +352,7 @@ def ada_carry_r():
     hanging at the thigh, fist closed on the crown hair (prop_r = the crown, the head hangs cut-end down). The runtime
     takes only upperarm_r/forearm_r/hand_r and the right fingers from this clip."""
     pose = add(arm('r', down=64, fwd=8, elbow=16, wrist=4, fore_twist=10), fingers('r', curl=86, thumb=52))
-    return Clip('ada_carry_r', 1.0 / 30.0, lambda t: pose, milestone='M2',
+    return Clip('ada_carry_r', 0.2, lambda t: pose, milestone='M2',
                 note='override layer: right arm + right fingers only (head node attached to prop_r)')
 
 

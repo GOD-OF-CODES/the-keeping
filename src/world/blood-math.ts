@@ -173,7 +173,7 @@ export interface BloodTier {
   jetDt: number;
   /** mist satellites per jet element (0 on Low) */
   mist: number;
-  /** particle cap (Max 1450 / Medium 620 / Low 100) */
+  /** particle cap (Max 1750 / Medium 720 / Low 100; fix round: two carotid jets) */
   cap: number;
   /** stain cap (80 / 40 / 12) */
   stains: number;
@@ -181,8 +181,8 @@ export interface BloodTier {
 
 export const BLOOD_TIERS: Record<'low' | 'medium' | 'max', BloodTier> = {
   low: { spatter: 40, jetDt: 0.012, mist: 0, cap: 100, stains: 12 },
-  medium: { spatter: 120, jetDt: 0.004, mist: 0.35, cap: 620, stains: 40 },
-  max: { spatter: 250, jetDt: 0.0025, mist: 0.9, cap: 1450, stains: 80 },
+  medium: { spatter: 120, jetDt: 0.004, mist: 0.35, cap: 720, stains: 40 },
+  max: { spatter: 250, jetDt: 0.0025, mist: 0.9, cap: 1750, stains: 80 },
 };
 
 /** Pulse envelope: 40 ms ramp, hold, 80 ms fall (§3.3). */
@@ -229,8 +229,16 @@ export function seedC2(o: SeedOptions): Particle[] {
       if (env <= 0.02) continue;
       const az = Math.PI + ((4 * Math.PI) / 180) * Math.sin(2 * Math.PI * 9 * u) + (r() - 0.5) * 0.02;
       const s = pu.v * (0.55 + 0.45 * env);
-      const v: P3 = [Math.cos(az) * Math.cos(el) * s, Math.sin(az) * Math.cos(el) * s, Math.sin(el) * s];
-      add(0, pu.t + u, o.neck, v, 0.00225, ml);
+      // escape fix round (lane CINE): TWO jets, the left and right common carotids (≈ 2.2 cm either side of the
+      // midline, on the anterior = lower side as she lies face down), diverging ±6°. Volume check (pulse 1): 25 mL in
+      // 0.22 s = 114 mL/s at 2.8 m/s needs 41 mm² of stream; two 6 mm lumens (r 3 mm) = 57 mm² × the envelope ≈ ok
+      // (was ONE r 2.25 mm jet = 16 mm²: a 2–3 px thread at 2.6 m on Medium)
+      const v: P3 = [Math.cos(az) * Math.cos(el) * s, Math.sin(az) * Math.cos(el) * s, Math.sin(el) * s]; // the mist's mean
+      for (const side of [-1, 1]) {
+        const azs = az + side * ((6 * Math.PI) / 180);
+        const v: P3 = [Math.cos(azs) * Math.cos(el) * s, Math.sin(azs) * Math.cos(el) * s, Math.sin(el) * s];
+        add(0, pu.t + u, [o.neck[0], o.neck[1] + side * 0.022, o.neck[2] - 0.01], v, 0.003, ml / 2);
+      }
       if (o.tier.mist > 0 && r() < o.tier.mist) {
         const mr = (0.25 + r() * 0.75) / 1000;
         add(2, pu.t + u, jitter(r, o.neck, 0.004), [v[0] + (r() - 0.5) * 0.8, v[1] + (r() - 0.5) * 0.8, v[2] + (r() - 0.3) * 0.6], mr, 0.0005);

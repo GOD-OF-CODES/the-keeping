@@ -91,7 +91,7 @@ const chaseCluster: Recipe = {
   loop: true,
   stereo: true,
   level: 0.6,
-  preload: false,
+  preload: true, // PERF G (ruling f): lazy = a ~400 ms main-thread synth at C2 24.5 s (the chase cue; Medium 417 ms, Max 383 ms)
   params: { dur: { min: 4, max: 16, default: 8 } },
   gen(sr, rng, p) {
     const n = Math.floor(sr * (p.dur + 1));

@@ -48,7 +48,9 @@ const ONE_SHOTS = new Set(['arms_flashlight_toggle', 'arms_knock', 'arms_bell_pu
 
 /** C2-ESCAPE review: while on (C2c's climb, cue fx `beamClamp`; cleared when a cutscene releases the camera) the beam
  *  is held within BEAM_MAX of the gaze. Gameplay is unchanged (off). */
-export const BEAM_CLAMP = { on: false };
+export const BEAM_CLAMP: { on: boolean; at: [number, number, number] | null } = { on: false, at: null };
+/** (fix round) BEAM_CLAMP.at: a WORLD point the beam is aimed at while set (C2c glance #2: her hand on the rail — you
+ *  point the torch where you look; at the real 0.25 exposure the hand was outside the hot spot). */
 /** Max angle between the beam and the gaze (rig −Z): 12° (r3: 20° left glance #2 her hand outside the beam). */
 const BEAM_MAX_COS = Math.cos((12 * Math.PI) / 180);
 const BEAM_MAX_SIN = Math.sin((12 * Math.PI) / 180);
@@ -272,7 +274,12 @@ export class FpArms {
     // climb rendered black. While BEAM_CLAMP.on (C2c) the beam is clamped to a 12° cone around the rig's forward (−Z).
     // The real fix is lane A's arms_run_torch beam bone (requested); this keeps C2c lit until then.
     const cosDev = -dir.z; // dot(dir, (0, 0, −1))
-    if (BEAM_CLAMP.on && cosDev < BEAM_MAX_COS) {
+    if (BEAM_CLAMP.on && BEAM_CLAMP.at) {
+      this.parent.updateWorldMatrix(true, false);
+      const tgt = this.parent.worldToLocal(this._p2.set(BEAM_CLAMP.at[0], BEAM_CLAMP.at[1], BEAM_CLAMP.at[2]));
+      dir.copy(tgt.sub(this._p)).normalize();
+      this.beamClamped = true;
+    } else if (BEAM_CLAMP.on && cosDev < BEAM_MAX_COS) {
       const ortho = this._p2.set(dir.x, dir.y, 0);
       if (ortho.lengthSq() < 1e-8) ortho.set(0, -1, 0);
       ortho.normalize();

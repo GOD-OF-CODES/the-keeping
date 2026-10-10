@@ -1,14 +1,14 @@
 {
   "tier": "medium",
-  "generatedAt": "2026-10-09T21:19:50.166Z",
-  "totalBytes": 52606943,
+  "generatedAt": "2026-10-10T14:16:20.040Z",
+  "totalBytes": 53032325,
   "files": [
     {
       "id": "ada_albedo",
       "kind": "texture",
       "path": "assets/medium/ada_albedo.webp",
-      "bytes": 365318,
-      "hash": "1f307f16fcbb15ed"
+      "bytes": 393452,
+      "hash": "c3376d10cffe84db"
     },
     {
       "id": "ada_hair_albedo",
@@ -28,15 +28,15 @@
       "id": "ada_normal.png",
       "kind": "texture",
       "path": "assets/medium/ada_normal.png",
-      "bytes": 447096,
-      "hash": "f822bc41c3e38fae"
+      "bytes": 471532,
+      "hash": "e72217eed22b17f6"
     },
     {
       "id": "ada",
       "kind": "character",
       "path": "assets/medium/ada.glb",
-      "bytes": 4579708,
-      "hash": "40f93d8152f21ba0"
+      "bytes": 4952520,
+      "hash": "f0f6ca53e26fed3f"
     },
     {
       "id": "arms_albedo",
@@ -49,8 +49,8 @@
       "id": "arms_normal.png",
       "kind": "texture",
       "path": "assets/medium/arms_normal.png",
-      "bytes": 4229377,
-      "hash": "41d8936e695a8f22"
+      "bytes": 4229375,
+      "hash": "d55563db0ca91c6c"
     },
     {
       "id": "arms",
@@ -147,15 +147,15 @@
       "id": "harlan_normal.png",
       "kind": "texture",
       "path": "assets/medium/harlan_normal.png",
-      "bytes": 530171,
-      "hash": "1cbd4edb7578b89f"
+      "bytes": 530169,
+      "hash": "ead4629f2222c9f8"
     },
     {
       "id": "harlan",
       "kind": "character",
       "path": "assets/medium/harlan.glb",
-      "bytes": 2521900,
-      "hash": "e56c2f88ad56d72c"
+      "bytes": 2521904,
+      "hash": "3b893463826922b4"
     },
     {
       "id": "house_exterior",

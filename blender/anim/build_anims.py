@@ -124,6 +124,7 @@ def export_head_track(rig, baked):
 
 
 LOW = {'frame_step': 2, 'ratio': 0.5, 'min_tris': 3000}
+LOW_RATIO = {'ada_gown': 0.32}
 
 
 def strip_private(objs):
@@ -158,7 +159,8 @@ def export_low(char, rig, meshes):
         ob.select_set(True)
         md = ob.modifiers.new('low_dec', 'DECIMATE')
         md.decimate_type = 'COLLAPSE'
-        md.ratio = LOW['ratio']
+        # fix round (Low 27.07 > 27 MB after the folded gown + relief caps): the gown's fold geometry pays on Low
+        md.ratio = LOW_RATIO.get(ob.name, LOW['ratio'])
         md.use_collapse_triangulate = True
         bpy.ops.object.modifier_move_to_index(modifier=md.name, index=0)
         bpy.ops.object.modifier_apply(modifier=md.name)

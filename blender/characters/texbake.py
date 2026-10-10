@@ -23,8 +23,10 @@ TIERS = {'max': 1, 'medium': 2, 'low': 4}
 
 
 # ------------------------------------------------------------------------------------------------ UVs
-def atlas_uv(objs, importance, margin=0.003, angle=66.0):
-    """objs: list of mesh objects; importance: {obj.name: texel-density scale}."""
+def atlas_uv(objs, importance, margin=0.003, angle=66.0, planar=None):
+    """objs: list of mesh objects; importance: {obj.name: texel-density scale}.
+    planar: {obj.name: density} — faces with the int face attribute 'cap' = 1 get ONE planar island (projected on the
+    object's cap_side / cap_fwd plane around cap_center) at that texel density (Ada's cut faces, C2-ESCAPE fix round)."""
     for ob in objs:
         uvm = ob.data.uv_layers.get('UVMap') or ob.data.uv_layers.new(name='UVMap')
         ob.data.uv_layers.active = uvm
@@ -50,7 +52,25 @@ def atlas_uv(objs, importance, margin=0.003, angle=66.0):
             a2 += 0.5 * abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
         s = math.sqrt(area3d / max(a2, 1e-12)) * importance.get(ob.name, 1.0)
         log(f'uv: {ob.name} area3d {area3d:.4f} m2, uv area {a2:.4f}, scale {s:.3f}, uv span {co.min(0)}..{co.max(0)}')
-        uv.data.foreach_set('uv', (co * s).ravel())
+        co = co * s
+        if planar and ob.name in planar and me.attributes.get('cap') is not None:
+            fa = np.zeros(len(me.polygons), np.int32)
+            me.attributes['cap'].data.foreach_get('value', fa)
+            cc, cs, cf = (np.array(ob[k], float) for k in ('cap_center', 'cap_side', 'cap_fwd'))
+            vco = np.empty(len(me.vertices) * 3)
+            me.vertices.foreach_get('co', vco)
+            vco = vco.reshape(-1, 3)
+            lv = np.empty(len(me.loops), np.int64)
+            me.loops.foreach_get('vertex_index', lv)
+            nl = 0
+            for p in me.polygons:
+                if fa[p.index]:
+                    for li in range(p.loop_start, p.loop_start + p.loop_total):
+                        d = vco[lv[li]] - cc
+                        co[li] = (d @ cs * planar[ob.name] + 0.5, d @ cf * planar[ob.name] + 0.5)
+                        nl += 1
+            log(f'uv: {ob.name} cap faces {int(fa.sum())} -> planar island at density {planar[ob.name]:.2f} ({nl} loops)')
+        uv.data.foreach_set('uv', co.ravel())
     select(objs, objs[0])
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='SELECT')
@@ -122,8 +142,9 @@ def bake_pass(objs, size, kind, samples=1, normal_space='OBJECT'):
     return a
 
 
-def uv_coverage(ob, size, grow=1):
-    """Rasterise the object's UVMap triangles into a (size, size) bool mask (rows bottom-up)."""
+def uv_coverage(ob, size, grow=1, face_mask=None):
+    """Rasterise the object's UVMap triangles into a (size, size) bool mask (rows bottom-up).
+    face_mask: optional bool per polygon (only those faces)."""
     me = ob.data
     me.calc_loop_triangles()
     uv = me.uv_layers['UVMap']
@@ -133,6 +154,10 @@ def uv_coverage(ob, size, grow=1):
     tri = np.empty(len(me.loop_triangles) * 3, np.int64)
     me.loop_triangles.foreach_get('loops', tri)
     T = co[tri.reshape(-1, 3)]
+    if face_mask is not None:
+        pi = np.empty(len(me.loop_triangles), np.int64)
+        me.loop_triangles.foreach_get('polygon_index', pi)
+        T = T[np.asarray(face_mask, bool)[pi]]
     mask = np.zeros((size, size), bool)
     lo = np.floor(T.min(1)).astype(int)
     hi = np.ceil(T.max(1)).astype(int)
@@ -213,6 +238,12 @@ def bake_geometry(objs, size, ao_samples=16):
         res[ob.name] = dict(idx=idx, P=P, N=N, AO=A)
         if 'fab' in out[ob.name]:
             res[ob.name]['F'] = out[ob.name]['fab'][..., :2][idx].astype(np.float64)
+        if ob.data.attributes.get('cap') is not None:
+            fa = np.zeros(len(ob.data.polygons), np.int32)
+            ob.data.attributes['cap'].data.foreach_get('value', fa)
+            cm = uv_coverage(ob, size, grow=1, face_mask=fa > 0)
+            res[ob.name]['CAP'] = cm[idx]
+            log(f'tex: {ob.name} cap texels {int(cm[idx].sum())}')
         log(f'tex: {ob.name} covers {len(P)} texels')
     return res
 

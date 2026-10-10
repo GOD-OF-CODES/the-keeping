@@ -347,7 +347,7 @@ const tyresGravel: Recipe = {
   variants: 1,
   loop: true,
   level: 0.5,
-  preload: false,
+  preload: true, // PERF G (ruling f): lazy = rendered on the main thread at C1 end (the C1 71.8 s 200 ms frame)
   gen(sr, rng) {
     const dur = 4;
     const n = Math.floor(sr * dur);

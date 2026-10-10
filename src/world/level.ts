@@ -107,6 +107,11 @@ export class Level {
   room: string | null = null;
   visible: Set<string> = new Set();
   cullingEnabled = true;
+  /**
+   * PERF review (contract 115): feet height (plan z) that main.ts world() uses for the room lookup instead of the
+   * player's while a cutscene camera inside the house keeps culling on (src/cutscenes/bindings.ts); null = player's.
+   */
+  viewerFeetZ: number | null = null;
   private dirtyVis = true;
   private visScratch: Set<string> = new Set();
   private readonly scene: any;
@@ -203,7 +208,8 @@ export class Level {
 
   update(dt: number, t: number, lightning: number): void {
     this.doors.update(dt);
-    this.lights.update(dt, t, this.cullingEnabled ? this.visible : null, lightning, this.isOutside(), this.room ? this.visible : null, this.room);
+    // a cutscene camera that keeps culling (viewerFeetZ set) keeps the cutscene light path (`visible` null: snap, no fades)
+    this.lights.update(dt, t, this.cullingEnabled && this.viewerFeetZ === null ? this.visible : null, lightning, this.isOutside(), this.room ? this.visible : null, this.room);
   }
 
   /** A layout `mode: runtime` light (L_HEADLIGHT_L/R, L_DASH), created dark at load; null if absent. */

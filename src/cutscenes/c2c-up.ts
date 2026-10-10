@@ -39,6 +39,12 @@ export const adaOnTread = (k: number): P3 => {
 };
 
 const DEG = Math.PI / 180;
+/** Glance #1 (C2c 3.84–4.47): her root as the glance opens / closes (fix round re-block, see g1Target). */
+// r2 (s2med C2c 4.0): at (1.81, 2.92) only her HIPS covered the patch — the torso projected onto dark floor. From the
+// tread-5 eye (0.55, 4.87, 3.25) the chest (z ≈ 1.9) is 51 % of the way down the ray to the floor, so the chest and
+// the cut neck sit on the patch (≈ (2.15, 2.15)) only when she stands at ≈ (1.37, 3.48): by the newel.
+export const G1_FROM: P3 = [1.55, 3.3, GROUND];
+export const G1_TO: P3 = [1.25, 3.45, GROUND];
 
 export const c2cUp: TimelineFactory = (ctx) => {
   const L35 = lens(35);
@@ -62,7 +68,10 @@ export const c2cUp: TimelineFactory = (ctx) => {
   const topB: P3 = [0.75, 8.45, 4.1 + TOP_EYE];
   const north = Math.PI / 2;
   // glance #1: her silhouette rounding the newel (her root (0.85, 3.35)), seen from tread 5 back and down
-  const g1Target: P3 = [0.88, 3.25, 1.55];
+  // escape fix round (lane CINE, item 5): re-blocked so she reads HEADLESS — her torso stands between the tread-5 eye and
+  // the fanlight's lightning patch on the hall floor (≈ (1.9–2.4, 1.9–2.4); eye→torso ray × 1.43 lands in it), a hard
+  // silhouette on the brightest thing in the frame; she walks the hall at a relentless 0.5 m/s (G1_FROM → G1_TO)
+  const g1Target: P3 = [1.4, 3.38, 1.55];
   // glance #2: her right hand on the wet handrail 0.9 m away (the rail is on the east side, ≈ 0.9 m above the treads)
   const handAt: P3 = [ST_MAIN.x + 0.52, treadNosing(10.6)[1], treadNosing(10.6)[2] + 0.88];
 
@@ -128,11 +137,12 @@ export const c2cUp: TimelineFactory = (ctx) => {
   const t11 = adaOnTread(ADA_LAST_TREAD);
   const newel: P3 = [1.05, 3.45, GROUND];
   const moves: MoveTrack[] = [
-    { char: 'ada', t: 0, d: 1.2, path: [C2_ADA_END, [2.3, 2.7, GROUND]], ease: 'linear', heading: 'path' },
-    { char: 'ada', t: 1.2, d: 1.4, path: [[2.3, 2.7, GROUND], [0.85, 3.35, GROUND]], ease: 'linear', heading: 'path' },
-    // rounding the newel, the right hand flat on its cap (glance #1 sees this)
-    { char: 'ada', t: 2.6, d: 1.9, path: [[0.85, 3.35, GROUND], [0.92, 3.45, GROUND], add(newel, [-0.25, 0.25, 0]), t1], ease: 'linear', heading: [headingTo([2.3, 2.7, 0], [0.85, 3.35, 0]), Math.PI / 2] },
-    { char: 'ada', t: 4.5, d: 1.96, path: [t1, t4], ease: 'linear', heading: Math.PI / 2 },
+    // the hall at 0.5 m/s (a walk, never a run): through the lightning patch's sight line during glance #1
+    { char: 'ada', t: 0, d: 3.84, path: [C2_ADA_END, [2.3, 2.7, GROUND], G1_FROM], ease: 'linear', heading: 'path' },
+    { char: 'ada', t: 3.84, d: 0.63, path: [G1_FROM, G1_TO], ease: 'linear', heading: 'path' },
+    // rounding the newel unseen (the camera is back on the flight), the right hand on its cap
+    { char: 'ada', t: 4.47, d: 0.83, path: [G1_TO, [0.92, 3.45, GROUND], add(newel, [-0.25, 0.25, 0]), t1], ease: 'linear', heading: [headingTo([2.3, 2.7, 0], [0.85, 3.35, 0]), Math.PI / 2] },
+    { char: 'ada', t: 5.3, d: 1.16, path: [t1, t4], ease: 'linear', heading: Math.PI / 2 },
     // the unseen catch-up: the camera is in the treads
     { char: 'ada', t: 6.46, d: 0.39, path: [t4, t9], ease: 'linear', heading: Math.PI / 2 },
     { char: 'ada', t: 6.85, d: 0.6, path: [t9, add(t9, [0, 0.06, 0])], ease: 'linear', heading: Math.PI / 2 },
@@ -164,6 +174,8 @@ export const c2cUp: TimelineFactory = (ctx) => {
     { t: 0.6, type: 'loop', key: 'panting', id: 'panting', gain: 0.75 },
     { t: hallEnd - 0.05 + 0.15, type: 'sfx', id: 'newel_knock', pos: [1.05, 3.5, 1.6], room, gain: 0.9 },
     // the stair: Ada climbs with her right hand on the rail
+    // (fix round: kept at 4.5 — the 1.333 s loop's phase at glance #2 (7.1) puts her right hand ON the rail; she is unseen
+    // 4.47–5.3, so the climb cycle on the last flat metre never shows)
     { t: 4.5, type: 'clip', char: 'ada', clip: 'ada_climb_headless', loop: true, fade: 0.15, fallback: ['ada_stairs_up', 'ada_chase'] },
     // 3.62–4.47 the head turns back but the torch arm stays forward (§2.2): the beam keeps lighting the flight ahead,
     // not her (the rig holds its world orientation while the camera turns)
@@ -171,6 +183,10 @@ export const c2cUp: TimelineFactory = (ctx) => {
     // review: arms_run_torch's beam bone points off the flight (black climb) — hold the beam within 12° of the gaze
     { t: 0, type: 'fx', id: 'beamClamp', params: { on: true } },
     { t: 3.6, type: 'fx', id: 'torchHold', params: { on: true } },
+    // fix round (item 5): glance #1 — the lightning patch on the hall floor is the brightest thing in frame; the eye
+    // stops down for it (cap 1.0, was ≈ 2.2) so her front falls to silhouette and the near balusters stop glowing
+    { t: 3.62, type: 'fx', id: 'exposure', params: { max: 1.0, cap: true, hp: true } },
+    { t: 4.47, type: 'fx', id: 'exposure', params: { reset: true } },
     { t: 4.6, type: 'fx', id: 'torchHold', params: { on: false } },
     // 3.62 the fanlight stroke behind her — the reason to look back (the roaming shadow light)
     { t: FANLIGHT_STROKE.t, type: 'fx', id: 'shadowLight', params: { at: 'fanlight', pulses: FANLIGHT_STROKE.pulses } },
@@ -185,6 +201,14 @@ export const c2cUp: TimelineFactory = (ctx) => {
     { t: 6.64, type: 'sfx', id: 'torch_knock', pos: treadNosing(13), room, gain: 0.8 },
     { t: 6.66, type: 'sfx', id: 'gasp', gain: 0.9 },
     { t: 6.85, type: 'sfx', id: 'handrail_squeak', pos: handAt, room, gain: 1 },
+    // fix round (item 6): glance #2 — the torch's hot centre on her hand 0.9 m away, its spill on the stair wall 0.4 m
+    // away (≈ 15 klx) clipped at the climb's exposure 1.8 → capped at 0.55 for the glance (the pupil constricts), the
+    // highlight protect on; the climb's auto exposure comes back after it
+    { t: 6.85, type: 'fx', id: 'exposure', params: { max: 0.55, cap: true, hp: true } },
+    // (s8med at the real 0.25 exposure: the hot spot sat on the wall upper-left, her hand dark) — the torch on her hand
+    { t: 6.85, type: 'fx', id: 'beamClamp', params: { on: true, atX: handAt[0], atY: handAt[1], atZ: handAt[2] } },
+    { t: 7.66, type: 'fx', id: 'beamClamp', params: { on: true } },
+    { t: 7.66, type: 'fx', id: 'exposure', params: { reset: true } },
     { t: 7.66, type: 'clip', char: 'arms', clip: 'arms_run_torch', loop: true, fade: 0.1, fallback: ['arms_idle'] },
     // the top (9.0): her steps stopped with his; breath held 9.6; one drop below (10.0); heartbeat 120
     { t: 9.0, type: 'loop', key: 'panting', id: null, fade: 0.4 },
@@ -208,8 +232,9 @@ export const c2cUp: TimelineFactory = (ctx) => {
     { t: C2C_DURATION, type: 'player', pos: S.pos, heading: S.heading, pitch: S.pitch },
   ];
   // her heel slaps: 1.9 Hz on the flat, 1.5 Hz on the treads, stopping with the player's at 8.9
-  for (let t = 0.2; t < 2.6; t += 1 / 1.9) cues.push({ t: Math.round(t * 1000) / 1000, type: 'sfx', id: 'bare_feet_wet', pos: [2.0, 2.9, 0.6], room, gain: 0.8 });
-  for (const t of [4.6, 5.25, 5.9, 6.55, 7.2, 8.4, 8.9]) cues.push({ t, type: 'sfx', id: 'bare_feet_wet', pos: adaOnTread(Math.min(11, 1 + (t - 4.5) * 1.5)), room, gain: 0.9 });
+  // (fix round: a 0.5 m/s walk = 1.4 Hz heel slaps in the hall until the newel at 5.3)
+  for (let t = 0.2; t < 5.2; t += 1 / 1.4) cues.push({ t: Math.round(t * 1000) / 1000, type: 'sfx', id: 'bare_feet_wet', pos: t < 2.76 ? [2.8, 2.2, 0.6] : [1.5, 3.3, 0.6], room, gain: 0.8 });
+  for (const t of [5.35, 5.75, 6.15, 6.55, 7.2, 8.4, 8.9]) cues.push({ t, type: 'sfx', id: 'bare_feet_wet', pos: adaOnTread(Math.min(11, 1 + (t - 5.3) * 2.6)), room, gain: 0.9 });
   // the player's boots: the hall (2.6 Hz), the treads (3.1 risers/s; the creak on riser 5 at 3.45)
   for (let t = whipD + 0.05; t < hallEnd; t += 1 / 2.6) cues.push({ t: Math.round(t * 1000) / 1000, type: 'sfx', id: 'step_bare', pos: [1.6, 3.0, 0.6], room, gain: 1 });
   for (let k = 1; k <= 16; k++) {

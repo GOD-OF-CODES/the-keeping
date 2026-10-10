@@ -421,13 +421,18 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   // One output node per chain shape (gameplay / DOF / motion blur / both), built once and cached: a DOF cue only
   // updates the uniforms, and the node graph (bloom's render targets, the compiled output) is never rebuilt.
   const chains = new Map<string, any>();
+  /** ?dofmb=0 restores the old guard (DOF wins over motion blur) for an A/B. */
+  const DOF_MB_OK = !/[?&]dofmb=0\b/.test(typeof location !== 'undefined' ? location.search : '');
   let current = '';
   function build(fx: CutsceneFx | null) {
     const useDof = !!fx?.dof && preset.post.cutsceneDof;
     // C2-ESCAPE review (Max): the DOF + motion-blur chain logs the TSL `vec3()` join errors and never shows a new
     // scene image — every C2 frame on Max was the stale gameplay frame from before C2 (scratch/esc-review/r5max-01..04).
     // Until it is fixed, DOF wins where both are asked for (C2); the blur-only chain (C2c's whip) is unaffected.
-    const useMb = fx?.motionBlur !== undefined && fx.motionBlur !== null && preset.post.cutsceneMotionBlur && !useDof;
+    // escape fix round (lane CINE, item 7): ROOT CAUSE of the stale frame — DepthOfFieldNode.getTextureNode() is a plain
+    // texture() of its composite target: motion blur sampling it left the DOF node OUT of the output graph (its
+    // updateBefore never ran). The combined chain is now mb → dof (see build), which also avoids the vec3() errors.
+    const useMb = fx?.motionBlur !== undefined && fx.motionBlur !== null && preset.post.cutsceneMotionBlur && (!useDof || DOF_MB_OK);
     if (useDof) {
       dofU.focus.value = fx!.dof!.focusDistance;
       dofU.focal.value = fx!.dof!.focalLength;
@@ -439,13 +444,16 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
     let out = chains.get(key);
     if (!out) {
       let aa: any = sharpened;
-      if (useDof) {
+      if (useDof && useMb) {
+        // fix round r2 (s6max: the dof → mb order logged the 4 TSL `vec3()` join errors again): motion blur FIRST on the
+        // sharpened frame (the path C2c's whip already uses cleanly), then DOF on its result (dof() renders it to a
+        // texture). A camera blurs both at once; the order is invisible at the strike's 140 ms. Its own DOF instance.
+        aa = dof(motionBlur(sharpened.getTextureNode(), vel.mul(mbAmount)), scenePass.getViewZNode(), dofU.focus, dofU.focal, dofU.bokeh);
+      } else if (useDof) {
         dofNode ??= dof(sharpened, scenePass.getViewZNode(), dofU.focus, dofU.focal, dofU.bokeh);
         aa = dofNode;
-      }
-      if (useMb) {
-        const src = aa === sharpened ? sharpened.getTextureNode() : aa.getTextureNode();
-        aa = motionBlur(src, vel.mul(mbAmount));
+      } else if (useMb) {
+        aa = motionBlur(sharpened.getTextureNode(), vel.mul(mbAmount));
       }
       let hdr: any = aa;
       // LIGHTING lane: lateral CA on the HDR texture, before bloom (no extra RTT pass; highlights fringe once)
@@ -483,12 +491,26 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
     rp = next;
   }
   build(null);
+  const aoCamPrev = { ok: false, p: [0, 0, 0], f: [0, 0, 1] };
 
   return {
     kind: 'post',
     uniforms,
     meterTexture: scenePass.getTexture('output'),
     render: () => {
+      // escape fix round (lane CINE, item 9): on a camera cut / jump the reprojected AO history is another view's
+      // occlusion (dark smears across the first frame of every insert). Hold it (aoReady 0 = no AO this one frame)
+      // when the camera moved > 0.3 m or turned > 15° since the last frame (a 60 Hz whip of 154° in 650 ms turns
+      // ≈ 4°/frame; a hard cut is a jump).
+      if (aoReadyU) {
+        camera.updateMatrixWorld();
+        const e = camera.matrixWorld.elements;
+        const jump = aoCamPrev.ok && (Math.hypot(e[12] - aoCamPrev.p[0], e[13] - aoCamPrev.p[1], e[14] - aoCamPrev.p[2]) > 0.3 || e[8] * aoCamPrev.f[0] + e[9] * aoCamPrev.f[1] + e[10] * aoCamPrev.f[2] < Math.cos((15 * Math.PI) / 180));
+        aoCamPrev.p = [e[12], e[13], e[14]];
+        aoCamPrev.f = [e[8], e[9], e[10]];
+        aoCamPrev.ok = true;
+        if (jump) aoReadyU.value = 0;
+      }
       rp.render();
       if (aoReadyU) aoReadyU.value = 1;
       if (aoPrevVP) {

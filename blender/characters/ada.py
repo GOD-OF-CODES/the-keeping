@@ -69,7 +69,10 @@ def build_collar(fn, J, n_ang=84, rows=7):
             base_z = neckline(y_here) - 0.012
             # round 1 review (ada_detail): a full-height collar at the throat cut through the hair veil hanging in
             # front of the face -> high only at the back/sides, a low 1.5 cm band at the throat
-            top_rise = 0.035 - 0.075 * front ** 1.5
+            # fix round 2 (stump05/body14: the collar stood 3.5 cm ABOVE the cut — a cream halo ring crossing the cap;
+            # a collar that high would have been cut with the neck): the top now stops 8 mm UNDER the cut plane
+            # (back/sides) so the stump's skin roll and ragged margin show above the soaked cotton edge
+            top_rise = -0.008 - 0.04 * front ** 1.5
             # the plane height along this radial line, then up the neck axis
             p_plane = c + d * 0.05
             top = p_plane + axis * top_rise
@@ -143,6 +146,11 @@ def hair_chain_specs(groups):
 
 
 # ------------------------------------------------------------------------------------------------ gown
+def ss_np(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0.0, 1.0)
+    return t * t * (3 - 2 * t)
+
+
 def build_gown(body_full, fn, J):
     Pv, _ = body.mesh_arrays(body_full.data)
     core = [n for n in J if not n.startswith(('root',))]
@@ -154,7 +162,7 @@ def build_gown(body_full, fn, J):
     is_torso = np.isin(name, ['spine_02', 'spine_03', 'neck_01', 'neck_02', 'hips', 'spine_01'])
     mask = (is_torso & (z >= BODICE_BOTTOM) & (z < neckline(y))) | (is_arm & ~(is_torso))
     bodice = garments.extract(body_full, mask, 'ada_bodice')
-    garments.decimate(bodice, 0.16)
+    garments.decimate(bodice, 0.30)                    # fix round: 0.16 left ~10 mm edges, too coarse for folds
     # wet cotton: clings (3.5 mm) on the torso, a little looser along the sleeves, flaring slightly at the cuffs
     J_ = J
 
@@ -184,7 +192,24 @@ def build_gown(body_full, fn, J):
         tt = ((Pb - a) @ ab) / ab.dot(ab)
         near = sdf.norm(Pb - (a + np.clip(tt, 0, 1)[:, None] * ab)) < 0.07
         rings += near * 0.0035 * np.sin(tt * 55 + 2 * noise.fbm(Pb * 15, 2, 12)) * (0.4 + 0.6 * np.exp(-((tt - 0.55) / 0.12) ** 2))
-    garments.displace_normal(bodice, amp + drape + rings)
+    # fix round (the gown read as white plaster with no folds): wet cotton CLINGS over the convex forms and BRIDGES the
+    # hollows in tension folds — radiating from each bust apex toward the shoulders/sternum/under-bust, a few deep
+    # sag folds between the breasts, crinkled 2-3 cm wet-cotton wrinkles everywhere (ridged: sharp crests, wide valleys)
+    tension = np.zeros(len(Pb))
+    for sgn in (-1.0, 1.0):
+        cand = (Pb[:, 2] > 1.15) & (Pb[:, 2] < 1.27) & (Pb[:, 0] * sgn > 0.03) & (Pb[:, 0] * sgn < 0.15) & (Pb[:, 1] < 0)
+        if not cand.any():
+            continue
+        apex = Pb[cand][np.argmin(Pb[cand][:, 1])]
+        d = Pb - apex
+        r = np.linalg.norm(d[:, [0, 2]], axis=1)
+        ang = np.arctan2(d[:, 2], d[:, 0] * sgn)
+        prof = 1.0 - np.abs(np.sin(ang * 3.5 + 1.3 * noise.fbm(Pb * 9.0, 2, 30 + int(sgn > 0))))   # ridged
+        tension += 0.006 * prof ** 2 * ss_np(0.035, 0.07, r) * ss_np(0.20, 0.11, r) * (Pb[:, 1] < 0.02)
+    sternum = np.exp(-(Pb[:, 0] / 0.018) ** 2) * ss_np(1.16, 1.2, Pb[:, 2]) * ss_np(1.32, 1.26, Pb[:, 2]) * (Pb[:, 1] < 0)
+    sag = 0.007 * sternum * np.abs(np.sin(Pb[:, 0] * 260.0 + 2.0 * noise.fbm(Pb * 14.0, 2, 33)))
+    crinkle = 0.0028 * (noise.ridged(Pb * np.array([38.0, 38.0, 30.0]), 3, 34) - 0.45)
+    garments.displace_normal(bodice, amp + drape * 1.5 + rings + tension + sag + crinkle)
 
     # skirt: gathered under the bust, hangs to mid-shin, heavy and wet
     rows = S['torso']
@@ -230,6 +255,19 @@ def cling(ob, fn, reach=0.018, offset=0.0042, strength=0.75, zmax=None):
 
 
 # ------------------------------------------------------------------------------------------------ hair
+# fix round (the floor/lifted head read as a ball of hair): her RIGHT side (phi = -pi/2; the image-left eye side) is
+# swept back behind the ear, so the ear, jaw line and cheek profile read in the lamp light; the face veil stays
+PART_LO, PART_HI = -math.pi / 2 - 0.30, -math.pi / 2 + 0.45   # fix round 2: was +0.80 -> A14 min 0.73 (az 210); cheek-front veil kept, ear/jaw angle open
+
+
+def swept_phi(phi):
+    a = ((phi + math.pi) % (2 * math.pi)) - math.pi
+    if PART_LO < a < PART_HI:
+        t = (a - PART_LO) / (PART_HI - PART_LO)
+        return PART_LO - 0.22 - 0.30 * (1 - t)          # converge in a rope behind the ear
+    return phi
+
+
 def build_hair(fn, J, rng):
     hc = fn.head_center
     head = fn.head
@@ -248,8 +286,11 @@ def build_hair(fn, J, rng):
     M = 72
     veil_rows, veil_att, veil_arc, veil_grp = [], [], [], []
     roots, dirs, lens, phis = [], [], [], []
+    swept = []
     for k in range(M):
         phi = 2 * math.pi * k / M                         # 0 = front (-Y), + toward her left (+X)
+        swept.append(swept_phi(phi) != phi)
+        phi = swept_phi(phi)                              # fix round: her right side swept back behind the ear
         dirh = np.array([math.sin(phi), -math.cos(phi), 0.0])
         root = crown + dirh * 0.018 + np.array([0, 0, 0.004])
         root = sdf.project(head, root[None], iters=8)[0]
@@ -298,12 +339,22 @@ def build_hair(fn, J, rng):
         rows[c0][k] += side * 0.002 * wgt
         rows[c1][k] -= side * 0.002 * wgt
     skipset = {(c0, k) for k in ks[:-1]} if len(ks) > 1 else set()
+    # fix round: the part — the sheet never bridges two strands that the sweep pulled > 2.2 cm apart (the ear, jaw line
+    # and cheek of her right side show as wet skin between the swept bundle and the face veil)
+    npart = 0
+    for c in range(M):
+        c2 = (c + 1) % M
+        for r in range(nrow - 1):
+            gap = max(np.linalg.norm(rows[c][r] - rows[c2][r]), np.linalg.norm(rows[c][r + 1] - rows[c2][r + 1]))
+            if r >= 3 and gap > 0.022 and swept[c] != swept[c2]:
+                skipset.add((c, r))
+                npart += 1
     rows_closed = np.concatenate([rows, rows[:1]], 0)
     arc_closed = veil_arc + veil_arc[:1]
     att_closed = veil_att + veil_att[:1]
     hb.add_sheet(rows_closed, hair.VEIL_U, arc_closed, att_closed, [-1] * (M + 1), layer=0,
                  skip=lambda c, r: (c, r) in skipset)
-    log(f'hair veil: {M} strands x {nrow} rows, eye slit between columns {c0}/{c1} rows {ks}')
+    log(f'hair veil: {M} strands x {nrow} rows, eye slit between columns {c0}/{c1} rows {ks}, part: {npart} quads open')
 
     # ---- cards: clumps continuing each strand below the sheet + extra clumps over the veil
     ncard = 0
@@ -337,6 +388,8 @@ def build_hair(fn, J, rng):
         phi = rng.uniform(-math.pi, math.pi)
         if j < 26:
             phi = rng.normal(0.0, 0.55)                      # biased to the face
+        if PART_LO < ((phi + math.pi) % (2 * math.pi)) - math.pi < PART_HI:
+            phi = PART_LO - rng.uniform(0.05, 0.4)           # keep the part clear: these clumps join the swept bundle
         dirh = np.array([math.sin(phi), -math.cos(phi), 0.0])
         root = crown + dirh * rng.uniform(0.045, 0.085)
         root = sdf.project(head, root[None], iters=8)[0]
@@ -570,6 +623,10 @@ def build(h=0.003, log_=log):
     # C2-ESCAPE A0/A1: the head becomes its own node (ada_head_rig + ada_head/ada_hair/ada_eye), capped on both sides
     from . import sever
     SV = sever.sever(rig_ob, body_vis, hair_ob, eye)
+    # fix round 2 (body14 review: the collar floated as a halo ring 3-6 cm above the risen stump): the collar's top
+    # rows took 'head'/'jaw' weights in the transfer -> after the split they followed the (now empty) head bone.
+    # The gown, like the body, hangs every head-group weight on neck_02.
+    sever._merge_groups(gown, [g for g in sever.HEAD_GROUPS if gown.vertex_groups.get(g)], 'neck_02')
     # A3: the upper lid (Basis closed, key eyelid_l_open) and the cornea shell ada_cornea_l
     from . import eye_lid
     eye_c = fn.socket_r + np.array([0, 0.0095, 0])

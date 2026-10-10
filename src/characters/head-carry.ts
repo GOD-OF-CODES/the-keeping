@@ -136,6 +136,17 @@ export class HeadCarry {
     this.real = !!found;
     this.node = found ?? new THREE.Group();
     if (!found) this.node.name = 'ada_head_standin';
+    // Escape fix-round review (diag13): lane A's cut lies BELOW the head joint, inside neck_02 (bind: cut y ≈ 1.35,
+    // head joint 1.465), so a head piece riding the `head` bone swung its 8 cm neck stub with every head-joint bend and
+    // opened a 2.6 cm gap at the cut (both red caps visible before the blade lands, C2 7.48–7.55). Until severed the
+    // piece rides the bone the cut belongs to (neck_02 = the head bone's parent), attached in the load-time rest pose
+    // (= the bind: the GLB's head_root inverse-bind equals the rest chain), so the seam stays closed in every pose;
+    // the price is that the head no longer nods on its own joint while whole (it follows the neck).
+    const neck = found?.parent?.parent ?? null;
+    if (found && neck?.isBone) {
+      neck.updateWorldMatrix(true, true);
+      neck.attach(found);
+    }
     this.restParent = found ? found.parent : bones.head;
     if (found) {
       this.restPos.copy(found.position);

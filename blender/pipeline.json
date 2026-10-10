@@ -293,6 +293,23 @@
       "outputs": []
     },
     {
+      "id": "cap-test",
+      "group": "review",
+      "manual": true,
+      "description": "One-off probe of delaunay_2d_cdt for the A1 cap disc",
+      "script": "blender/tests/cap_cdt.py",
+      "outputs": []
+    },
+    {
+      "id": "ada-probe",
+      "group": "review",
+      "manual": true,
+      "description": "One-off probe: atlas colour painted on Ada's collar (fix round)",
+      "script": "blender/tests/probe_collar.py",
+      "inputs": [".cache/characters/ada.blend"],
+      "outputs": []
+    },
+    {
       "id": "c2-review",
       "group": "review",
       "manual": true,

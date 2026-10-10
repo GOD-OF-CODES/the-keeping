@@ -71,8 +71,17 @@ export const c2Room: TimelineFactory = (ctx) => {
   // aims (heading, pitch) — see the header for the yaw rule
   const T_TABLEAU = aim(C2E_T, T_MAX_YAW_50, -7 * DEG, 3.0); // Harlan's silhouette, the raised cleaver, her back
   const D_WORK = aim(C2E_D, D_MAX_YAW, -6.5 * DEG, 2.8); // S2: Harlan from the knees up, her back and hair
-  const D_STRIKE = aim(C2E_D, D_MAX_YAW, -12.7 * DEG, dNeck); // S3: the neck 4° under centre (lower third)
-  const D_FLOOR = aim(C2E_D, D_MAX_YAW, -29.5 * DEG, dist(C2E_D, HEAD_REST)); // S4: the head on the floor
+  // escape fix round (lane CINE, item 3): the rigid strike frame is 65 mm (1.3×: the neck 86 → 112 px at 1080p, the
+  // jets ≥ 4 px) — the frame creeps 50 → 65 mm through the settle (attention narrowing; no visible zoom in the hold).
+  // At 65 mm the lower third sits ≈ 3° under centre (was 4° at 50 mm): aim −13.7° (the neck is at −16.7°)
+  const L65 = lens(65);
+  const D_STRIKE = aim(C2E_D, D_MAX_YAW, -13.7 * DEG, dNeck); // S3: the neck 3° under centre (lower third)
+  // escape fix-round review (ruling a, "the beheading in ONE still"): the S4 hold was centred on the head (−29.5°), so
+  // the body's cut neck on the table (−16.7°) sat on the top bar. At −23.5° the letterboxed 50 mm frame (±10° visible)
+  // holds BOTH: the stump on the table edge in the upper third and the head on the boards in the lower third, with
+  // Harlan's boots between — 9.2–9.45 (the head landed, its cut ring toward the lens) is the one-still beheading.
+  // (40 mm: half-hfov 28.1° on 16:9 → the aim yaw ≤ 45.1° keeps the flame (73.2°) out of frame — test c2-escape-stage)
+  const D_FLOOR = aim(C2E_D, 44.5 * DEG, -23.5 * DEG, dist(C2E_D, HEAD_REST)); // S4: the head on the floor + the stump
   const D_LIFT = aim(C2E_D, D_MAX_YAW, 1 * DEG, 2.7); // S5: the head at his face height (fist z 2.62, head 2.30)
   // S6 insert (100 mm). Review r2: the old fixed aim (60°, +2.6°, 2.55 m) framed wallpaper with the head at the right
   // edge. Aimed at her image-left eye, measured in-game at 13.0 s (head node = crown at plan (5.363, 3.598, 2.539),
@@ -93,13 +102,14 @@ export const c2Room: TimelineFactory = (ctx) => {
     { t: 1.6, d: 1.4, path: [C2E_T, add(C2E_D, [0.03, 0.08, 0.01]), C2E_D], target: [T_TABLEAU, D_WORK], fov: L50, ease: 'inOut', handheld: 0.45 },
     { t: 3.0, d: 2.4, path: [C2E_D], target: [D_WORK], fov: L50, handheld: 0.45 },
     // S3 the strike: the frame settles (the player freezes) 5.4–7.30, then RIGID 7.30–8.60
-    { t: 5.4, d: 1.9, path: [C2E_D], target: [D_WORK, D_STRIKE], fov: L50, ease: 'inOut', handheld: 0.15 },
-    { t: 7.3, d: 1.3, path: [C2E_D], target: [D_STRIKE], fov: L50 },
+    { t: 5.4, d: 1.9, path: [C2E_D], target: [D_WORK, D_STRIKE], fov: [L50, L65], ease: 'inOut', handheld: 0.15 },
+    { t: 7.3, d: 1.3, path: [C2E_D], target: [D_STRIKE], fov: L65 },
     // S4 the floor 8.6–10.9: the deliberate tilt down (600 ms), then the head rocking to rest
-    { t: 8.6, d: 0.6, path: [C2E_D], target: [D_STRIKE, D_FLOOR], fov: L50, ease: 'inOut', handheld: 0.35 },
-    { t: 9.2, d: 1.7, path: [C2E_D], target: [D_FLOOR], fov: L50, handheld: 0.35 },
+    // review r3: the hold is 40 mm (letterboxed ≈ ±12.5° visible) — at 50 mm the stump (top) and the head (bottom) both sat on the bars
+    { t: 8.6, d: 0.6, path: [C2E_D], target: [D_STRIKE, D_FLOOR], fov: [L65, L40], ease: 'inOut', handheld: 0.35 },
+    { t: 9.2, d: 1.7, path: [C2E_D], target: [D_FLOOR], fov: L40, handheld: 0.35 },
     // S5 the lift 10.9–12.9: the tilt follows the head up to his face height
-    { t: 10.9, d: 2.0, path: [C2E_D], target: [D_FLOOR, D_LIFT], fov: L50, ease: 'inOut', handheld: 0.35 },
+    { t: 10.9, d: 2.0, path: [C2E_D], target: [D_FLOOR, D_LIFT], fov: [L40, L50], ease: 'inOut', handheld: 0.35 },
     // S6 the eye 12.9–14.9: a HARD-CUT 100 mm insert from D (no zoom), and a hard cut back
     { t: 12.9, d: 2.0, path: [C2E_D], target: [D_EYE], fov: L100, handheld: 0.25 },
     // S7 both of them look at you 14.9–17.9
@@ -142,7 +152,13 @@ export const c2Room: TimelineFactory = (ctx) => {
     // §2.4: spot-weighted meter on the work area (60 %), clamp [0.7, 8] (replaces the old blanket cap 2.8)
     // r2 look: spot 0.6 / max 8 metered the BLACK rubber sheet to middle grey and lit the room like day (+4 EV); the
     // work area now weighs 40 % and the clamp tops at 2.2 (the old cap 2.8 still read as a lit room)
-    { t: 0, type: 'fx', id: 'exposure', params: { min: 0.5, max: 2.2, spotX: 0.5, spotY: 0.42, spotR: 0.16, spotW: 0.4 } },
+    { t: 0, type: 'fx', id: 'exposure', params: { min: 0.5, max: 2.2, spotX: 0.5, spotY: 0.42, spotR: 0.16, spotW: 0.4, hp: true } },
+    // review r3: the 100 mm eye insert is a dark face on dark wallpaper keyed by a lamp 1 m below — at the 2.2 cap it
+    // read as a silhouette. An insert is metered on its subject (spot on the face, w 0.7) and may open up to 3.6
+    // (+0.7 EV); highlight protect stays on (the cornea glint never clips). Back to the room cue on the cut out.
+    // (r4: with the eye's 6 s brighten τ the 2 s insert never got there — an insert is a new set-up: the stop is set on the cut, τ 0.3 s)
+    { t: 12.9, type: 'fx', id: 'exposure', params: { min: 0.5, max: 3.6, spotX: 0.57, spotY: 0.45, spotR: 0.12, spotW: 0.7, hp: true, tauBrighten: 0.3 } },
+    { t: 14.9, type: 'fx', id: 'exposure', params: { min: 0.5, max: 2.2, spotX: 0.5, spotY: 0.42, spotR: 0.16, spotW: 0.4, hp: true, cap: true } },
     // B8: the motion-blur variant is switched in ONCE here (amount 0); only its uniform moves afterwards
     { t: 0, type: 'fx', id: 'blurAmount', params: { v: 0 } },
     // B4/B5: C2's blood (seeded, deterministic, every landing precomputed at load) runs on this clock

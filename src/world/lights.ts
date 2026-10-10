@@ -37,6 +37,131 @@ export const SHADOW_CANDLE_ID = SHADOW_LIGHT_ID;
  *  parlor (lamp, C5), the hall (fanlight stroke, B03 door gap), the upper hall/landing (U1 window stroke, B05 flash)). */
 export const SHADOW_ROAM_ROOMS = ['G2', 'G1', 'U1'] as const;
 
+/**
+ * Escape fix round (lane CINE, ruling (b)): the parlor lamp's cube renders ONLY this caster layer while it is home —
+ * Harlan, Ada (body + head), the cleaver, and the props within 2.5 m of the flame (sawbuck, stool, lamp, furniture).
+ * Walls and floors never cast into it (their occlusion is in the lightmap). Measured before: 268 casters incl. the
+ * yard terrain + 2 dead trees (scratch/cine/fix/cast.log) → 1025 draws / 3.6 M tris on a C2 redraw frame.
+ * While the light roams to a window for a lightning stroke the cube sees everything again (layer 0 = the view's mask).
+ */
+export const LAMP_CASTER_LAYER = 8;
+const _tv = new THREE.Vector3();
+const _tm = new THREE.Matrix4();
+/** Tag static props (not room shells / terrain) whose bounds come within `r` m of `flame` (WORLD). Returns the count. */
+export function tagLampCasters(root: any, flame: any, r = 2.5): number {
+  let n = 0;
+  root?.updateMatrixWorld?.(true);
+  root?.traverse?.((o: any) => {
+    if (!o.isMesh || !o.castShadow) return;
+    const kind = o.userData?.kind ?? o.parent?.userData?.kind;
+    // room shells never cast into the cube; props baked into the level batch do (fmed: P_SAWBUCK and P_STOOL are
+    // userData.kind 'level' — the table under her and the lamp's own stool were missing from the cube)
+    if ((kind === 'level' && !/^P_/.test(String(o.name))) || /terrain|tree|wall|floor|ceiling|roof/i.test(String(o.name))) return;
+    // ruling (b) names furniture, not small clutter: candles, jerry cans, the guest book, the locket (d3med: 18 k tris
+    // that cast ≤ 5 cm shadows) stay out of the cube
+    if (/candle|jerry|book|locket|bottle|cup|tin\b/i.test(String(o.name))) return;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    const bs = o.geometry.boundingSphere;
+    const rad = bs.radius * o.matrixWorld.getMaxScaleOnAxis();
+    if (o.isInstancedMesh) {
+      // an instanced prop casts when ANY of its instances is within r of the flame
+      let near = false;
+      for (let k = 0; k < o.count && !near; k++) {
+        o.getMatrixAt(k, _tm);
+        _tv.copy(bs.center).applyMatrix4(_tm).applyMatrix4(o.matrixWorld);
+        if (_tv.distanceTo(flame) - bs.radius * o.matrixWorld.getMaxScaleOnAxis() <= r) near = true;
+      }
+      if (!near || o.count > 16) return; // scattered clutter (dozens of instances) never casts into the cube
+    } else {
+      if (rad > 1.6) return; // room-scale shells: never a lamp caster
+      _tv.copy(bs.center).applyMatrix4(o.matrixWorld);
+      if (_tv.distanceTo(flame) - rad > r) return;
+    }
+    o.layers.enable(LAMP_CASTER_LAYER);
+    n++;
+  });
+  return n;
+}
+/**
+ * The roaming stroke's casters (lightning through the fanlight / the U1 window, C2c): the house's architecture
+ * (kind 'level' — the facade must stop the stroke everywhere but its openings), the doors, the figures, and the props
+ * within 6 m of a spot. Never the yard terrain (below the spots: it can only shadow the ground) or the dead trees.
+ * Measured before (layer 0): C2c 32.6–33.0 811–899 draws, 41.9 944 (scratch/cine/fix/d3med.log).
+ */
+export const STROKE_CASTER_LAYER = 9;
+export function tagStrokeCasters(root: any, spots: any[], r = 6): number {
+  let n = 0;
+  root?.updateMatrixWorld?.(true);
+  root?.traverse?.((o: any) => {
+    if (!o.isMesh || !o.castShadow || o.isInstancedMesh) return;
+    if (/terrain|tree|grass|ground/i.test(String(o.name))) return;
+    const kind = o.userData?.kind ?? o.parent?.userData?.kind;
+    if (kind !== 'level' && kind !== 'door') {
+      if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+      const bs = o.geometry.boundingSphere;
+      const rad = bs.radius * o.matrixWorld.getMaxScaleOnAxis();
+      _tv.copy(bs.center).applyMatrix4(o.matrixWorld);
+      if (!spots.some((p) => _tv.distanceTo(p) - rad <= r)) return;
+    }
+    o.layers.enable(STROKE_CASTER_LAYER);
+    n++;
+  });
+  return n;
+}
+/**
+ * Ruling (b) — the cube's PEAK frame: a full 6-face redraw of the lamp's casters cost ≈ 0.9 M tris on one frame (C2
+ * 7.62: 340 draws / 1.89 M). A light that sets `userData.cubeFaces` (e.g. [0, 1, 2]) has only those faces cleared and
+ * redrawn by the next shadow update; the others keep last update's depth. The scheduler alternates the halves at 2× the
+ * rate, so every face still refreshes at the policy rate (30 Hz in C2) and no frame pays more than half the cube.
+ * `cubeFaces` is consumed (reset to null) after each update, so every other needsUpdate redraws all six faces.
+ * (r186 PointShadowNode.renderShadow: setRenderTarget(map, face) → clear → render per face; verified in node_modules.)
+ */
+let splitPatched = false;
+function patchSplitCube(): void {
+  if (splitPatched) return;
+  splitPatched = true;
+  const P = (THREE as any).PointShadowNode?.prototype;
+  if (!P?.renderShadow) return;
+  const orig = P.renderShadow;
+  P.renderShadow = function (this: any, frame: any) {
+    const ud = this.light?.userData ?? {};
+    const r = frame.renderer;
+    // `cubeDirs` (e.g. ['-y', '-z']) names faces by world direction: the face order differs per backend (r186:
+    // WebGPU +x −x −y +y +z −z, WebGL +x −x +y −y +z −z)
+    const gpu = r.coordinateSystem === THREE.WebGPUCoordinateSystem;
+    const order = gpu ? ['+x', '-x', '-y', '+y', '+z', '-z'] : ['+x', '-x', '+y', '-y', '+z', '-z'];
+    const faces: number[] | null = ud.cubeFaces ?? (ud.cubeDirs ? (ud.cubeDirs as string[]).map((d2) => order.indexOf(d2)) : null);
+    if (!faces) return orig.call(this, frame);
+    const clearAll = ud.cubeClearAll === true; // skipped faces cleared (= unshadowed) instead of kept
+    const render0 = r.render;
+    const clear0 = r.clear;
+    const skip = () => !faces.includes(r.getActiveCubeFace());
+    r.render = function (...a: any[]) {
+      return skip() ? undefined : render0.apply(this, a);
+    };
+    r.clear = function (...a: any[]) {
+      return !clearAll && skip() ? undefined : clear0.apply(this, a);
+    };
+    try {
+      return orig.call(this, frame);
+    } finally {
+      r.render = render0;
+      r.clear = clear0;
+      this.light.userData.cubeFaces = null;
+    }
+  };
+}
+
+/** Tag every mesh of a moving figure (character group incl. its attached props): lamp + stroke casters. */
+export function tagFigureCasters(group: any): void {
+  group?.traverse?.((o: any) => {
+    if (o.isMesh && o.castShadow !== false) {
+      o.layers.enable(LAMP_CASTER_LAYER);
+      o.layers.enable(STROKE_CASTER_LAYER);
+    }
+  });
+}
+
 /** Turns the fixed candle shadow on (map re-rendered every frame, full strength) or off (muted, map frozen). */
 export function setCandleShadow(light: any, on: boolean): void {
   const sh = light?.shadow;
@@ -188,6 +313,8 @@ export class RuntimeLights {
             })();
           }
           setCandleShadow(light, false);
+          patchSplitCube();
+          light.userData.splitCube = true;
           light.shadow.needsUpdate = true; // one render so the map is initialised
         }
         light.position.set(x, y, z);
@@ -344,8 +471,18 @@ export class RuntimeLights {
         // the 10 Hz redraw cost 303 draws / 1.28 M tris every 6th frame on Max (C1 60.5 703 d / 2.54 M) for a light at
         // intensity 0, and at the B05 handover 482 d / 1.6 M at 0.02 cd (fade-out tail). Below 2 % of 12 cd its shadow
         // is invisible; the first frame above redraws at once (shT is not advanced while dark).
-        if (!f.light.shadow.autoUpdate && f.fade > 0.02 && (hz > 10 || (visible ? visible.has(f.room) : true)) && t - (f.light.userData.shT ?? -1) > 1 / hz - 1e-4) {
-          f.light.userData.shT = t;
+        // fix round (ruling b): a third of the cube per update at 3× the rate (patchSplitCube)
+        const ud = f.light.userData;
+        const split = ud.splitCube === true;
+        if (!f.light.shadow.autoUpdate && f.fade > 0.02 && (hz > 10 || (visible ? visible.has(f.room) : true)) && t - (ud.shT ?? -1) > (split ? 1 / 3 : 1) / hz - 1e-4) {
+          const fresh = t - (ud.shT ?? -1) > 2 / hz; // after a dark spell / the first draw: all six faces
+          ud.shT = t;
+          if (split && !fresh) {
+            // s5med: halves still left 369 C2 frames > 1.5 M tris (view ≈ 1.0–1.3 M + 0.45 M) → thirds: two faces per
+            // update at 3× the rate (C2: one update per 60 Hz frame, every face at 20 Hz, ≈ 0.3 M per frame)
+            ud.cubeThird = ((ud.cubeThird ?? 0) + 1) % 3;
+            ud.cubeFaces = [[0, 1], [2, 3], [4, 5]][ud.cubeThird];
+          }
           f.light.shadow.needsUpdate = true;
         }
         if (f.light.userData.uShadowOn) f.light.userData.uShadowOn.value = 1;
@@ -485,6 +622,9 @@ export class ShadowRoam {
   private pulses: RoamPulse[] = [];
   private next = 0;
   private readonly home: { pos: any; color: any; distance: number } | null;
+  /** static props tagged onto the lamp caster layer (diagnostic) */
+  casters = 0;
+  strokeCasters = 0;
   private readonly strokeColor = new THREE.Color(...kelvinToLinearRGB(STROKE_K));
 
   constructor(lights: RuntimeLights, root: any = null) {
@@ -499,6 +639,13 @@ export class ShadowRoam {
     });
     const L = lights.shadow?.light;
     this.home = L ? { pos: L.position.clone(), color: L.color.clone(), distance: L.distance } : null;
+    if (L) {
+      L.updateMatrixWorld?.(true);
+      const flame = L.getWorldPosition(new THREE.Vector3());
+      this.casters = tagLampCasters(root, flame);
+      this.strokeCasters = tagStrokeCasters(root, Object.values(ROAM_SPOTS).map((p) => new THREE.Vector3(...planToWorld(p as unknown as [number, number, number]))));
+      L.shadow.camera.layers.set(LAMP_CASTER_LAYER);
+    }
   }
 
   get where(): string {
@@ -517,10 +664,20 @@ export class ShadowRoam {
       L.position.copy(this.home.pos);
       L.color.copy(this.home.color);
       L.distance = this.home.distance;
+      L.shadow.camera.layers.set(LAMP_CASTER_LAYER);
+      L.userData.cubeDirs = null;
+      L.userData.cubeClearAll = false;
+      L.userData.cubeFaces = null;
       L.shadow.needsUpdate = true;
       return;
     }
     f.roaming = true;
+    L.shadow.camera.layers.set(STROKE_CASTER_LAYER); // a stroke through a window: its own caster set (tagStrokeCasters)
+    // the spots are OUTSIDE the south facade: only the faces looking into the house (north = world −z) and down onto
+    // the hall floor / treads (−y) can shadow anything indoors; the other four are cleared (d5med: the stroke cube was
+    // 418 draws / 1.15 M with every figure in all six faces)
+    L.userData.cubeDirs = ['-y', '-z'];
+    L.userData.cubeClearAll = true;
     if (at === 'off' || !(at in ROAM_SPOTS)) {
       this.at = 'off';
       L.intensity = 0;

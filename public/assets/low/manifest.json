@@ -1,14 +1,14 @@
 {
   "tier": "low",
-  "generatedAt": "2026-10-09T21:19:50.103Z",
-  "totalBytes": 28148940,
+  "generatedAt": "2026-10-10T14:16:19.942Z",
+  "totalBytes": 28252863,
   "files": [
     {
       "id": "ada_albedo",
       "kind": "texture",
       "path": "assets/low/ada_albedo.webp",
-      "bytes": 137734,
-      "hash": "d89a5c88d3f52515"
+      "bytes": 149886,
+      "hash": "b7da410f264351ad"
     },
     {
       "id": "ada_hair_albedo",
@@ -28,15 +28,15 @@
       "id": "ada_normal.png",
       "kind": "texture",
       "path": "assets/low/ada_normal.png",
-      "bytes": 126871,
-      "hash": "1e78cda8989e4428"
+      "bytes": 133970,
+      "hash": "89948c09f7204d7c"
     },
     {
       "id": "ada",
       "kind": "character",
       "path": "assets/low/ada.glb",
-      "bytes": 4156136,
-      "hash": "3ed12e6f30c15e8c"
+      "bytes": 4240804,
+      "hash": "f17f30c2594ce7ae"
     },
     {
       "id": "arms_albedo",
@@ -154,8 +154,8 @@
       "id": "harlan",
       "kind": "character",
       "path": "assets/low/harlan.glb",
-      "bytes": 1806152,
-      "hash": "7006bb6f54c616cf"
+      "bytes": 1806156,
+      "hash": "d476d823493c4451"
     },
     {
       "id": "house_exterior",

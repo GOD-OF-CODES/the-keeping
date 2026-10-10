@@ -160,6 +160,19 @@ views = [
     (tuple(hand_r + Vector((-0.05, -0.12, 0.2))), tuple(hand_r + Vector((0, 0.05, 0))), 38, EV, 0.22),
     ((0, 0, 0), tuple(hand_l + Vector((0.0, -0.05, -0.02))), 26, EV - 1.0, 0.22),         # the left cuff, eye's view
 ]
+if A.get('judge'):
+    # fix round A12: a USABLE glove close-up sheet (no tread plane; neutral 4300 K key 0.5 W (27 cd) at ~0.65 m, ~65 lux on the
+    # leather, so seams/creases/wear can be judged; exposure fixed, AgX): back of the right glove, the knuckles from
+    # the thumb side, the left glove on the torch, the cuff + snap
+    for o in [o for o in sc.objects if o.name in ('__tread', '__wall', '__side')]:
+        o.hide_render = True
+    lo.location = tuple(hand_r + Vector((0.35, -0.45, 0.35)))
+    views = [
+        (tuple(hand_r + Vector((0.02, -0.16, 0.16))), tuple(hand_r + Vector((0, 0.04, 0))), 30, 3.0, 0.5),
+        (tuple(hand_r + Vector((-0.17, -0.06, 0.07))), tuple(hand_r + Vector((0, 0.05, 0))), 30, 3.0, 0.5),
+        (tuple(hand_l + Vector((0.16, -0.14, 0.12))), tuple(hand_l + Vector((0, 0.03, 0))), 32, 3.0, 0.5),
+        (tuple(hand_l + Vector((-0.04, -0.2, 0.05))), tuple(hand_l + Vector((0, -0.06, 0))), 26, 3.0, 0.5),
+    ]
 tiles = [view(*v) for v in views]
 top = np.concatenate([tiles[2], tiles[3]], 1)
 bot = np.concatenate([tiles[0], tiles[1]], 1)

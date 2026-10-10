@@ -32,6 +32,7 @@ import { planToWorld } from '../shared/coords.ts';
 import { specById } from '../materials/spec-index.ts';
 import { uParlorBake } from './lightmap-material.ts';
 import { deferCompileWaits } from './parallel-compile.ts';
+import { disposeRenderObjectsFor, noRoGc } from './ro-gc.ts'; // PERF G (ruling f)
 
 /** Global reflection multiplier (look API `reflections`; 1 = physical). */
 export const uReflection = uniform(1);
@@ -128,6 +129,21 @@ class RoomEnvNode extends (THREE as any).LightingNode {
   }
 }
 
+/**
+ * Escape fix round (lane CINE): the room cube sampled along a WORLD-space reflection vector, for custom unlit shaders
+ * (blood pools: a glossy pool mirrors the room it lies in). Resolved when the material builds; null where there are
+ * no reflections (Low / WebGL2 / ?refl=0) — the caller falls back to its own constant.
+ */
+export function roomRadianceWorld(room: string, reflWorld: any, rough: any): any | null {
+  const p = attached?.probeFor(room);
+  if (!p) return null;
+  const dir = getParallaxCorrectNormal(reflWorld, p.uSize, p.uCenter);
+  const t = cubeTexture(p.cube.texture, dir, rough.mul(uReflLod));
+  p.texNodes.push(t);
+  const c = t.rgb.mul(p.uIntensity).mul(uReflection);
+  return room === 'G2' ? c.mul(uParlorBake) : c;
+}
+
 /** setupEnvironment factory for a character material that reflects `room`'s cube. */
 export function roomEnvironment(room: string): () => any {
   return () => new RoomEnvNode(room);
@@ -159,6 +175,8 @@ export class RoomReflections {
   private exterior: ReflectionProbe | null = null;
   private readonly cam = new THREE.Vector3();
   private dawn = false;
+  /** PERF G (ruling f): the exterior cube's last capture cameras (kept so the dawn re-capture reuses their states). */
+  private extCams: any[] = [];
 
   constructor(o: ReflectionsOptions) {
     this.o = o;
@@ -284,6 +302,7 @@ export class RoomReflections {
     const groupVis = [...roomGroups.values()].map((g) => [g, g.visible] as const);
     const dark = (this.o.darken ?? []).map((l) => [l, l.intensity] as const);
     const others = scene.children.filter((c: any) => !this.o.keep.includes(c)).map((c: any) => [c, c.visible] as const);
+    const oneShot: any[] = []; // PERF G: every CubeCamera of this call (each capture makes new ones: never drawn again)
     try {
       for (const [g] of groupVis) g.visible = true;
       for (const [l] of dark) l.intensity = 0;
@@ -296,6 +315,7 @@ export class RoomReflections {
           await deferCompileWaits(async () => {
           for (const p of this.probes.values()) {
             const cc = new THREE.CubeCamera(p.near, p.far, p.cube);
+            oneShot.push(cc);
             cc.coordinateSystem = renderer.coordinateSystem;
             cc.updateCoordinateSystem();
             cc.position.copy(p.center);
@@ -314,6 +334,7 @@ export class RoomReflections {
       }
       for (const p of only ?? this.probes.values()) {
         const cc = new THREE.CubeCamera(p.near, p.far, into ?? p.cube);
+        oneShot.push(cc);
         for (const c of cc.children) c.layers.enable(6); // RUNTIME F2: also the yard meshes the view's window cull parked on layer 6 (src/world/window-cull.ts)
         cc.position.copy(p.center);
         cc.updateMatrixWorld(true);
@@ -324,7 +345,15 @@ export class RoomReflections {
       for (const [l, i] of dark) l.intensity = i;
       for (const [c, v] of others) c.visible = v;
     }
+    // PERF G (ruling f): the render objects of these one-shot face cameras are garbage the renderer keeps forever
+    // (three keys them by camera) — free them; the exterior cube's latest capture set stays (dawn re-capture, C6/B12).
+    const ext = this.exterior;
+    const keep = ext && (only ?? [...this.probes.values()]).includes(ext) ? oneShot.filter((c) => c.renderTarget === (into ?? ext.cube)).slice(-1) : [];
+    const drop = [...oneShot.filter((c) => !keep.includes(c)), ...(keep.length ? this.extCams : [])].flatMap((c) => c.children);
+    if (keep.length) this.extCams = keep;
+    const freed = noRoGc() ? 0 : disposeRenderObjectsFor(renderer, drop);
     if (!only) this.stats.captureMs = Math.round(performance.now() - t0);
+    console.info(`[reflections] freed ${freed} one-shot capture render objects`);
   }
 
   /** Per frame: the exterior env follows the lightning (sky × 5 at the peak); which room box holds the camera. */

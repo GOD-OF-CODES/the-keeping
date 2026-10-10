@@ -147,6 +147,42 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
   verdict):** the 100 mm eye insert polish, per-clip head-carry retrofits where the override reads wrong, extra clips.
   Runtime F (U1 culling etc.) runs alongside and lands before the escape sequence's second art-director round.
 
+- **Escape Phase 1 verdict → fix round rulings (2026-10-10 03:00):** Phase 1 plays end to end and gates pass
+  (commit 86faa8d, pushed to origin/build only — held from the live site until the beheading reads clearly). (a) #1
+  priority for every lane: the beheading must read unmistakably in ONE still at play resolution on Medium (the stump
+  visible, jets visible, the head reading as a head — ear/jaw/cheek profile, hair parted), not a gown lump, dots and a
+  hair ball. (b) Parlor lamp cube shadow: a caster split is approved — the cube renders only a dedicated caster layer
+  (Harlan, Ada body + head, the cleaver, the sawbuck, the stool/lamp and furniture within 2.5 m of the flame); walls and
+  floors don't cast into it (their occlusion lives in the lightmap/bake). Every C2/C2c/B05-handover frame must meet
+  ≤ 400 draws / 1.5 M (Medium) and ≤ 500 / 2 M (Max). (c) Cutscene exposure keeps highlight protection (no plaster-white
+  gown). (d) The eye beat (head lifted, one clouded eye opens) is a core beat — a working version is in this round.
+  (e) Max must never render at a lower internal resolution than Medium in the same view; fix Max-only costs instead.
+  (f) GC pauses: no frame > 50 ms in real-time C0 → C1 and C2 → C2c runs (lazy per-beat warm/dispose).
+
+- **Fix round 1 verdict → fix round 2 rulings (2026-10-11):** fix round 1 meets (a) in exactly one Medium still (C2 9.30:
+  stump on the table, head on the floor, cut ring toward the camera) and the gates pass on Low/Medium/Max, but it is NOT
+  photoreal or horrifying yet: the floor head is ~120 px and reads as a dark jar with a red end, the face is a smooth
+  grey mannequin, pools read as flat lobed petals (decal shapes), jets as dotted beads, gown/torso as plaster or salmon
+  plastic, Harlan's leg as a mannequin with cream patches, glance #1 not headless. Committed to origin/build, **not
+  live** (main stays d70bdf1). (g) Build fix round 2 backwards from ONE hero beheading still — close (≤ 1.5 m), the cut
+  face ≥ 30° toward the camera, the lamp keying the stump, the head partly turned so wet hair hides most of the face; the
+  cut, the blood and Harlan's action carry the horror, the face is the subject only in the lit eye insert. (h) Blood as
+  volume, not FX: arterial jets are continuous ribbon/tube geometry pulsing with the heart (decaying pulses), not a
+  720-particle cap; pools are thick glossy liquid (dark core, meniscus edge, near-mirror fresh roughness reflecting the
+  lamp and room) that spread, run off the table edge and down the cloth, and drip; spatter on cloth, apron and floor.
+  Use measured numbers (blood optics, arterial pressure, flow) and state them. (i) The 13.9 eye insert is lit (a lamp
+  bounce or the face turned to the flame) — (d) still stands. (j) Cross-lane fixes: runtime `uSkinTint` toward the
+  grey-blue bake; gown wet base 0.30–0.35 linear + stronger folds; fat ring 3–8 mm and blood-smeared; front veil
+  re-weighted off head_root (retire `uHairVeilClear`); shape-key weights exported 0; the cut moved onto the joint it
+  pivots from (retire the neck_02 attach of #117 — today it only affects C2 pre-strike, the only time the head is
+  whole); head detail (pores, lips, lids, waterlogged skin) on a head-sized texture budget; Harlan's trousers/leg read
+  as cloth. (k) Glance #1 reads as headless (shoulders with nothing above them against the fanlight). (l) Perf rulings:
+  (f) is relaxed to: no frame > 50 ms at the strike or in C2c, the C2 entry ≤ 150 ms, major-GC frames ≤ 300 ms
+  tolerated in C0/C1 until a later perf round (dispose/re-warm and the 100 s cold load are parked for that round);
+  B05's 4 lightning-stroke frames ≤ 483 draws accepted for this commit, cine thins layer 9 next; (e) applies to WebGPU
+  only (WebGL2 Max may drop to Medium's floor); contract 116 is disabled (frustum-testing casters is unsound; the C5
+  change is unexplained); lazy sounds that still synthesise on first play are pre-rendered at load.
+
 ## Then — cutscene rounds (docs/CUTSCENES-PLAN.md §8): M-A … M-F, plus CR end credits (§9)
 Each round: builders → adversarial reviewer → QA (playthrough bot, perf, hero shots) → commit → push → verify live.
 

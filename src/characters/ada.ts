@@ -9,7 +9,7 @@
 //   • `override()` lets the cutscene lane (and the pre-C2 tableau) play any clip at a world pose; `release()` hands
 //     her back to the AI.
 
-import { ContactShadow } from './skin.ts';
+import { ContactShadow, uHairVeilClear, uNeckBlood } from './skin.ts';
 import * as THREE from 'three/webgpu';
 import type { AdaAnim, AdaOutput } from '../ai/types.ts';
 import { planToWorld } from '../shared/coords.ts';
@@ -162,6 +162,9 @@ export class AdaCharacter {
     const carryClip = c.clips.get('ada_carry_r');
     if (carryClip) this.headCarry.setGrip(carryClip, this.bones);
     for (const m of c.meshes) if (m.morphTargetDictionary && 'eyelid_l_open' in m.morphTargetDictionary && !this.morphMeshes.includes(m)) this.morphMeshes.push(m);
+    // escape fix-round review: the GLB ships every shape-key weight at 1 (glTF mesh.weights [1, 1, 1]) — the left eye was
+    // OPEN from load, so the C2 13.6 "one clouded eye opens" beat (ruling d) changed nothing. Closed until eyeOpen(true).
+    this.eyeOpen(false);
   }
 
   /** Per-tick AI output (Director host.ada). */
@@ -255,7 +258,8 @@ export class AdaCharacter {
     // part the strand nearest her image-left eye (her right eye, the one that opens): in the head node's frame
     // (origin = the crown, +Z = the face, +X = her left) the eye sits ≈ (−0.032, −0.10, +0.09) m (lane A's head)
     const node = this.headCarry.node;
-    if (!node) return;
+    if (!on) this.partedChain = null; // review: closing (load / restore) must not flick a strand up
+    if (!node || !on) return;
     node.updateWorldMatrix(true, false);
     const eye = new THREE.Vector3(-0.032, -0.1, 0.09).applyMatrix4(node.matrixWorld);
     const tmp = new THREE.Vector3();
@@ -425,6 +429,9 @@ export class AdaCharacter {
     // is flicked up and let go of its authored veil pose (stiffness 0.16 → 0.02); the rest of the curtain stays.
     // (only while another hand holds it: once she carries it herself — C2c / B05 — the curtain falls back)
     if (this.partedChain && this.headCarry.holder === this.headCarry.bones.propR) this.partedChain = null;
+    // escape fix-round review: the face veil is off a severed head on the floor / in Harlan's fist, back on in her own hand
+    uHairVeilClear.value = this.headCarry.severed && this.headCarry.holder !== this.headCarry.bones.propR ? 1 : 0;
+    uNeckBlood.value = this.headCarry.severed ? 1 : 0;
     for (const hc of this.hairChains) {
       const part = hc === this.partedChain;
       hc.gravity = part ? -40 : 9.81;

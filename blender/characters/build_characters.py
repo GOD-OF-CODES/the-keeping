@@ -83,10 +83,10 @@ def assign(ob, m):
 
 
 # ------------------------------------------------------------------------------------------------ texture assembly
-def bake_atlas(char, objs, importance, shaders, size, normal_strength=1.0, tiers=None, distance=0.002):
+def bake_atlas(char, objs, importance, shaders, size, normal_strength=1.0, tiers=None, distance=0.002, planar=None):
     """objs: list of objects; shaders: {obj.name: fn(P, N, AO) -> (albedo, rough, height)}."""
     t0 = time.time()
-    texbake.atlas_uv(objs, importance)
+    texbake.atlas_uv(objs, importance, planar=planar)
     geo = texbake.bake_geometry(objs, size)
     layers = []
     for ob in objs:
@@ -122,6 +122,9 @@ def hair_textures(char, size_w=1024, size_h=2048):
 
 
 # ------------------------------------------------------------------------------------------------ characters
+CAP_DENSITY = 6.0
+
+
 def build_ada():
     from characters import ada, tex_ada
     R = ada.build()
@@ -131,14 +134,24 @@ def build_ada():
     eye_c = ev.reshape(-1, 3).mean(0)
     cap = R['cap']
     shaders = {
-        'ada_body': lambda P, N, AO, G=None: tex_ada.skin(P, N, AO, J, fn.wound_center, cap=cap),
-        'ada_head': lambda P, N, AO, G=None: tex_ada.skin(P, N, AO, J, fn.wound_center, cap=cap, head_side=True),
+        'ada_body': lambda P, N, AO, G=None: tex_ada.skin(P, N, AO, J, fn.wound_center, cap=cap, G=G),
+        'ada_head': lambda P, N, AO, G=None: tex_ada.skin(P, N, AO, J, fn.wound_center, cap=cap, head_side=True, G=G),
         'ada_gown': lambda P, N, AO, G=None: tex_ada.gown(P, N, AO, fn.trunk, J, ada.HEM_Z),
         'ada_eye': lambda P, N, AO, G=None: tex_ada.eye(P, N, eye_c),
     }
     objs = [R['body'], R['head'], R['gown'], R['eye']]
     importance = {'ada_body': 2.2, 'ada_head': 2.6, 'ada_gown': 0.8, 'ada_eye': 5.0}
-    bake_atlas('ada', objs, importance, shaders, TEX)
+    # the cut faces get their own planar islands at ~2.7x the body's texel density (fix round: 120-150 px at Max
+    # was a flat disc; ~1.5 texel/screen px on Medium at 1.2 m)
+    bake_atlas('ada', objs, importance, shaders, TEX, planar={'ada_body': CAP_DENSITY, 'ada_head': CAP_DENSITY})
+    for ob in (R['body'], R['head']):              # build-only data: keep it out of the glTF extras
+        for k in ('cap_rim2d', 'cap_side', 'cap_fwd'):
+            if k in ob:
+                del ob[k]
+        if '_cap_faces' in ob.data:
+            del ob.data['_cap_faces']
+        if ob.data.attributes.get('cap') is not None:
+            ob.data.attributes.remove(ob.data.attributes['cap'])
     hair_textures('ada')
     mats = {
         'body': material('ada_skin', 'skin_ada', 'ada', extras={'sss': 0.3}),

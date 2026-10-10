@@ -15,7 +15,7 @@ import { EventBus } from '../core/events.ts';
 import { FpsOverlay } from '../core/fps-overlay.ts';
 import { Input } from '../core/input.ts';
 import { Loop } from '../core/loop.ts';
-import { PRESETS, type PresetConfig } from '../render/presets.ts';
+import { PRESETS, dynResFor, type PresetConfig } from '../render/presets.ts';
 import { createRenderer, effectivePixelRatio } from '../render/renderer.ts';
 import { createPipeline, type Pipeline } from '../render/pipeline.ts';
 import { DynamicResolution } from '../render/dynres.ts';
@@ -120,7 +120,10 @@ export async function startGame(h: BootHandoff): Promise<void> {
   h.status('Compiling shaders…');
   const pipeline = createPipeline(renderer, scene, camera, preset);
   (rt.expose.setPipeline as ((p: Pipeline) => void) | undefined)?.(pipeline);
-  const dynres = new DynamicResolution(preset.dynamicResolution, preset.sceneScale);
+  // PERF G (ruling e): the range comes from dynResFor (Max's floor = Medium's best internal resolution on this display)
+  const dr = dynResFor(preset, window.devicePixelRatio || 1);
+  const dynres = new DynamicResolution(dr, dr.initial);
+  if (Math.abs(dynres.scale - preset.sceneScale) > 1e-4) pipeline.setScale(dynres.scale);
   camera.updateMatrixWorld(true);
   const tc = performance.now();
   perfMark('warmup');
@@ -595,7 +598,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
   const world = (dt: number, t: number, lightning: number) => {
     // culling + room from the camera (hides move the camera, not the body)
     const cp = coords.worldToPlan([camera.position.x, camera.position.y, camera.position.z]);
-    const feetZ = hides.active ? hides.active.entry[2] : player.planFeet()[2];
+    const feetZ = level.viewerFeetZ ?? (hides.active ? hides.active.entry[2] : player.planFeet()[2]);
     const changed = level.setViewer(cp[0], cp[1], feetZ);
     level.updateWindowCull(camera.position, t); // RUNTIME F2
     const outside = level.isOutside();

@@ -2,7 +2,7 @@
 // preset's [min, max] from measured frame times. Pure logic; the pipeline applies the scale.
 //
 // We can only observe CPU-side frame deltas (vsync-bound when the GPU keeps up), so:
-//  - drop 0.05 when the 1 s average frame time exceeds the target by 12% (GPU can't keep up);
+//  - drop 0.05 when the 1 s average frame time (hitches > 3× target excluded) exceeds the target by 12% (GPU can't keep up);
 //  - raise 0.025 only after 4 s consistently at target, and never within 8 s of a drop (hysteresis: the drop
 //    proved the higher scale was too expensive).
 
@@ -17,12 +17,14 @@ export class DynamicResolution {
   private readonly cfg: DynResConfig;
   private acc = 0;
   private frames = 0;
+  private hitches = 0;
   private windowT = 0;
   private goodT = 0;
   private sinceDrop = Infinity;
 
   constructor(cfg: DynResConfig, initial: number) {
-    this.cfg = cfg;
+    this.cfg = { ...cfg, min: Math.min(cfg.min, cfg.max) };
+    cfg = this.cfg;
     this.scale = Math.min(cfg.max, Math.max(cfg.min, initial));
   }
 
@@ -32,14 +34,23 @@ export class DynamicResolution {
    */
   update(frameMs: number, targetMs: number): number | null {
     if (!this.cfg.enabled || !(frameMs > 0) || frameMs > 250) return null;
-    this.acc += frameMs;
-    this.frames++;
     this.windowT += frameMs;
     this.sinceDrop += frameMs;
+    // PERF G (ruling e): a hitch (> 3× target: a GC pause, a cut-frame shadow/probe refresh, a compile) is not GPU
+    // load and no lower scale fixes it, yet one 200 ms frame in a 1 s MEAN read as "over by 12 %" and cost 0.05 —
+    // Max sat at 0.55–0.675 in C1 while its measured throughput there is 15.9–18.9 ms at 0.85. Hitches leave the mean
+    // unless they are a quarter of the window's frames (then the load is real).
+    if (frameMs > targetMs * 3) this.hitches++;
+    else {
+      this.acc += frameMs;
+      this.frames++;
+    }
     if (this.windowT < 1000) return null;
-    const avg = this.acc / this.frames;
+    const all = this.frames + this.hitches;
+    const avg = this.hitches * 4 > all || this.frames === 0 ? this.windowT / Math.max(1, all) : this.acc / this.frames;
     this.acc = 0;
     this.frames = 0;
+    this.hitches = 0;
     const span = this.windowT;
     this.windowT = 0;
     const prev = this.scale;

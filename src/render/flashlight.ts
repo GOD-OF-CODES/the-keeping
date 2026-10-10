@@ -7,6 +7,7 @@ import { Fn, If, Loop, cameraPosition, dot, float, length, max, mx_noise_float, 
 import { SKY_U } from '../world/atmosphere.ts';
 import type { PresetConfig } from './presets.ts';
 import { kelvinToLinearRGB } from '../world/lights.ts';
+import { enableViewCasterCull } from './view-caster-cull.ts';
 
 /**
  * LIGHTING lane (REALISM-BACKLOG item 11) — beam profile of a 2-D-cell incandescent torch with a smooth reflector:
@@ -102,6 +103,7 @@ export function createFlashlight(camera: any, preset: PresetConfig): Flashlight 
   // in the opening's sub-frustum (still on layer 0). Measured u1-armoire before: torch pass 168–188 draws / 350 k tris,
   // of which EXT2 40–45 / 202 k (docs/RUNTIME-F-PLAN.md F3).
   light.userData.windowCullCasters = false;
+  enableViewCasterCull(light); // PERF review (contract 116): torch casters limited to what can shadow the view
   // Must be the TSL Fn itself (LightsNode hashes light.colorNode.getCacheKey(); SpotLightNode calls it with lightCoord).
   light.colorNode = flashlightCookie;
   uTorchPos.onRenderUpdate(() => uTorchPos.value.setFromMatrixPosition(light.matrixWorld));

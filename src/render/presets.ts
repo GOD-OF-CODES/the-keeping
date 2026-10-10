@@ -19,7 +19,12 @@ export interface PresetConfig {
   pipeline: 'direct' | 'post';
   /** Scene-pass resolution scale (post pipeline only). */
   sceneScale: number;
-  dynamicResolution: { enabled: boolean; min: number; max: number };
+  /**
+   * `floorOf` (PERF G, ruling e): this preset's INTERNAL resolution (pixel ratio × scale) never drops below that
+   * preset's best one (its max scale at its pixel ratio) on the same display — Max never renders fewer pixels than
+   * Medium in the same view. Applied by dynResFor().
+   */
+  dynamicResolution: { enabled: boolean; min: number; max: number; floorOf?: PresetId };
   post: {
     bloom: boolean;
     gtao: boolean;
@@ -95,8 +100,10 @@ export const PRESETS: Record<PresetId, PresetConfig> = {
     pixelRatioCap: 1.5,
     antialiasing: { webgpu: 'taau', webgl2: 'taau' },
     pipeline: 'post',
-    sceneScale: 0.667,
-    dynamicResolution: { enabled: true, min: 0.55, max: 0.8 },
+    // PERF G (ruling e): measured on the M1 at 1280×800, DPR 1 (scratch/pg cost-max-c1, fenced throughput ms at scale
+    // 0.85 / 1.0): C1 28.7 18.9 / 22.6, C1 60.5 15.9 / 18.5, parlor 15.6 / 18.0, u1-armoire 14.6 / 17.5, g1-hall 15.0 / 15.6
+    sceneScale: 0.85,
+    dynamicResolution: { enabled: true, min: 0.55, max: 1, floorOf: 'medium' },
     post: { bloom: true, gtao: true, volumetricBeam: true, chromaticAberration: 1, filmGrain: 0.03, vignette: 0.4, sharpen: 1.2, cutsceneDof: true, cutsceneMotionBlur: true },
     textures: { heroSize: 2048, baseSize: 1024, uniqueSize: 2048, anisotropy: 16 },
     lightmaps: { resolution: 2048, lightningFlashMaps: true },
@@ -113,4 +120,21 @@ export const PRESETS: Record<PresetId, PresetConfig> = {
 /** The anti-aliasing mode a preset uses on a backend (P0-3: Low is FXAA on WebGPU, MSAA on WebGL2). */
 export function antialiasingFor(p: PresetConfig, backend: 'webgpu' | 'webgl2'): 'msaa' | 'fxaa' | 'taau' {
   return p.antialiasing[backend];
+}
+
+/**
+ * Dynamic-resolution range for a preset at a device pixel ratio (PERF G, ruling e): with `floorOf`, the floor is
+ * raised so pixelRatio × min ≥ that preset's pixelRatio × max (DPR 1: Max 0.85 = Medium's best; DPR 2: Max ratio 1.5
+ * → 0.567 = Medium's 0.85 at ratio 1). Pure: the boot card and the game use the same numbers.
+ */
+export function dynResFor(p: PresetConfig, devicePixelRatio: number): { enabled: boolean; min: number; max: number; initial: number } {
+  const d = p.dynamicResolution;
+  const dpr = devicePixelRatio > 0 ? devicePixelRatio : 1;
+  let min = d.min;
+  if (d.floorOf) {
+    const o = PRESETS[d.floorOf];
+    const floor = (Math.min(dpr, o.pixelRatioCap) * o.dynamicResolution.max) / Math.min(dpr, p.pixelRatioCap);
+    min = Math.max(min, Math.min(d.max, Math.ceil(floor * 1000) / 1000));
+  }
+  return { enabled: d.enabled, min, max: d.max, initial: Math.min(d.max, Math.max(min, p.sceneScale)) };
 }

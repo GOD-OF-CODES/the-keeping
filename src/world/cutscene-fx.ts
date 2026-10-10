@@ -24,14 +24,16 @@ import { uniform, texture as tslTexture, vec4, vec3, float, vec2, uv, mix, smoot
 import type { Level } from './level.ts';
 import type { CharacterBank } from '../characters/bank.ts';
 import { planToWorld } from '../shared/coords.ts';
-import { setCandleShadow, kelvinToLinearRGB, ShadowRoam, parsePulses } from './lights.ts';
+import { setCandleShadow, kelvinToLinearRGB, ShadowRoam, parsePulses, tagFigureCasters } from './lights.ts';
 import { LOOK } from '../render/look.ts';
 import { uParlorBake } from '../render/lightmap-material.ts'; // AD review: C5 ghost-bake dimming
 import { requestExposureSnap } from '../render/exposure.ts'; // AD review: C5 cut
 import { hashRng, PENS, drawText } from '../render/handwriting.ts';
 import { createOpening } from './opening.ts';
 import { createBloodFx } from './blood-fx.ts';
-import { HEAD_LAND, HEAD_REST, NECK } from '../cutscenes/stage.ts';
+import { HEAD_LAND, HEAD_REST, NECK, GROUND } from '../cutscenes/stage.ts';
+import { C2_SEVER, C2_HEAD_LANDS } from '../cutscenes/c2-room.ts';
+import type { P3 } from '../cutscenes/types.ts';
 
 type Params = Record<string, number | string | boolean>;
 
@@ -71,6 +73,11 @@ class RainSim {
   /** Road spray sheet 0..1 (C1 S5, opening builder 2): a thick, blotchy water layer the blades clear in ≈ 2 strokes. */
   sheet = 0;
   private sheetImg: HTMLCanvasElement | null = null;
+  /** PERF G (ruling f): one drop-dome gradient per radius (1/32 px steps), defined at the origin and placed with the
+   *  transform — draw() made a CanvasGradient per drop per frame (≤ 1400 drops: ~6 MB/s of garbage in C0/C1, the
+   *  largest single source in scratch/pg/alloc-c1a). Same pixels: a canvas gradient is painted in the current
+   *  transform's space (a cached-sprite drawImage lost 7 % of the water to resampling: scratch/pg/dropab.mjs). */
+  private dropGrads = new Map<number, CanvasGradient>();
   readonly W: number;
   readonly H: number;
   constructor(W: number, H: number) {
@@ -122,7 +129,7 @@ class RainSim {
         const d = ds[k];
         const dx = d.x - b.s;
         const dy = d.y - b.t;
-        const rr = Math.hypot(dx, dy);
+        const rr = Math.sqrt(dx * dx + dy * dy); // PERF G: Math.hypot allocates its rest-args array per call
         let keep = rr > b.len || rr < 0.03;
         if (!keep) {
           const a = Math.atan2(dy, dx);
@@ -214,16 +221,28 @@ class RainSim {
         g.lineTo(x - Math.sin(d.y * 40) * 2, y - d.trail * ky);
         g.stroke();
       }
-      const gr = g.createRadialGradient(x, y, 0, x, y, rp);
-      gr.addColorStop(0, 'rgba(255,255,255,1)');
-      gr.addColorStop(0.55, 'rgba(255,255,255,0.8)');
-      gr.addColorStop(1, 'rgba(255,255,255,0)');
-      g.fillStyle = gr;
+      // the same dome (stops 1 / 0.8 @ 0.55 / 0 @ rim): this radius's cached gradient, translated to the drop
+      const q = Math.round(rp * 32) / 32;
+      g.setTransform(1, 0, 0, 1, x, y);
+      g.fillStyle = this.dropGrad(q);
       g.beginPath();
-      g.arc(x, y, rp, 0, Math.PI * 2);
+      g.arc(0, 0, q, 0, Math.PI * 2);
       g.fill();
+      g.setTransform(1, 0, 0, 1, 0, 0);
     }
     this.tex.needsUpdate = true;
+  }
+
+  /** PERF G: the drop dome gradient of radius q (px) centred on the origin, created once per radius. */
+  private dropGrad(q: number): CanvasGradient {
+    let gr = this.dropGrads.get(q);
+    if (gr) return gr;
+    gr = this.g.createRadialGradient(0, 0, 0, 0, 0, q);
+    gr.addColorStop(0, 'rgba(255,255,255,1)');
+    gr.addColorStop(0.55, 'rgba(255,255,255,0.8)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    this.dropGrads.set(q, gr);
+    return gr;
   }
 }
 
@@ -799,26 +818,79 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
 
   let lastDt = 0;
   // ---- C2-ESCAPE B4/B5: the blood of C2 / C2c (src/world/blood-fx.ts); the head puppet (C2 7.60–10.6)
+  // escape fix round (lane CINE, item 4): the ada_head_rig frame, measured from ada.glb's bind pose (rig origin = the
+  // crown at bind (0, 1.608, −0.02), world-aligned): +Y = crown, +Z = face, +X = her left; the head's centre is
+  // (0, −0.12, 0) below the crown, the cut (C4–C5 ring) at (0, −0.26, −0.01), her right eye's cornea (−0.031, −0.07, 0.08).
+  const HEAD_CENTER_L = new THREE.Vector3(0, -0.12, 0);
+  const HEAD_CUT_L = new THREE.Vector3(0, -0.26, -0.01);
+  const headWorld = (local: any): any | null => {
+    const h = (d.characters?.ada as any)?.headNode?.();
+    if (!h || !h.visible) return null;
+    h.updateWorldMatrix(true, false);
+    return h.localToWorld(local.clone());
+  };
   const blood = createBloodFx({
     scene: level.root.parent ?? level.root,
     keyLight: () => level.lights.shadow?.light ?? null,
     preset: d.preset?.id ?? 'medium',
-    headPos: () => {
-      const h = (d.characters?.ada as any)?.headNode?.();
-      if (!h || !h.visible) return null;
-      return h.getWorldPosition(new THREE.Vector3());
-    },
+    // the head's stream leaves the CUT end (was the node origin = the crown: drops fell from his fist)
+    headPos: () => headWorld(HEAD_CUT_L),
+    headCenter: () => headWorld(HEAD_CENTER_L),
   });
   /** The severed head in world space while nobody holds it (needs B-STORY's ada.headNode(); a no-op until then). */
   const head = { mode: 'none' as 'none' | 'fall' | 'nudge' | 'rest', t: 0, from: new THREE.Vector3(), q0: new THREE.Quaternion() };
   const headNode = (): any | null => (d.characters?.ada as any)?.headNode?.() ?? null;
-  const headPlace = (n: any, w: [number, number, number], yaw: number, roll: number, pitch: number) => {
-    const p = new THREE.Vector3(...planToWorld(w));
-    if (n.parent) n.parent.worldToLocal(p);
+  /**
+   * A head pose on the floor in PLAN terms: lying on its LEFT side (left ear down, the right ear / cheek / jaw line up),
+   * the face toward bearing `faceDeg` (the crown 90° clockwise of it), turned about the crown axis by `rollDeg`
+   * (+ = the face toward the ceiling; measured, scratch/cine/fix/hcu). The head's centre sits `lift` m over the floor at plan `c`.
+   * Returns the WORLD position of the rig origin (the crown) and its WORLD quaternion.
+   */
+  const floorPose = (c: P3, faceDeg: number, rollDeg: number, lift = 0.075) => {
+    const f = (faceDeg * Math.PI) / 180;
+    const crown = new THREE.Vector3(...planToWorld([Math.cos(f + Math.PI / 2), Math.sin(f + Math.PI / 2), 0])); // world dir
+    const face0 = new THREE.Vector3(...planToWorld([Math.cos(f), Math.sin(f), 0]));
+    const down = new THREE.Vector3(0, -1, 0);
+    const m = new THREE.Matrix4().makeBasis(down, crown, face0); // local X→down, Y→crown, Z→face
+    const q = new THREE.Quaternion().setFromRotationMatrix(m);
+    q.premultiply(new THREE.Quaternion().setFromAxisAngle(crown, (-rollDeg * Math.PI) / 180));
+    const centre = new THREE.Vector3(...planToWorld([c[0], c[1], GROUND + lift]));
+    const pos = centre.clone().sub(HEAD_CENTER_L.clone().applyQuaternion(q));
+    return { pos, q };
+  };
+  /** Rest (S4, from D): face toward 264° (≈ 30° right of the camera), the crown to 354°, so the cut ring faces 174°:
+   *  ≈ 60° off the camera ray and ≈ 65° off the lamp (lit at cos ≈ 0.36); the up-turned cheek / ear / jaw take the
+   *  lamp from 31° above. Landing: face-down-ish on the left cheek (roll +65°), face to 228°. */
+  // fix round r2 (s4med 9.9: on its ear with the face to 264° the face was unlit and under its hair, and the cut cap
+  // faced the lens as a pale block): at rest it lies on the back-left of the skull, the face toward the camera (math
+  // bearing 234° from HEAD_REST) rolled 55° UP → the face normal ≈ 25° off the view ray (D looks down 29.5°), the lamp
+  // (109°, 31° up) rakes it at ≈ 77° (relief: brow, nose, lips), gravity takes the hair off the face onto the boards;
+  // the neck end points NW toward the lamp (its ring lit, seen edge-on, bleeding into the pool). The boot nudge (9.45)
+  // is the reveal: it lands face-down in its hair, the toe rolls it face-up.
+  const REST_FACE = 234;
+  // (hcu diag: the floorPose roll sign is − = face toward the floor — the comment above it was wrong; measured: roll −55 put
+  // the cornea 3.6 cm BELOW the head centre)
+  const REST_ROLL = 55;
+  // QA tuning hook (escape fix-round review): ?debug sweeps set globalThis.__c2HeadRest = { face, roll }
+  const restFR = (): [number, number] => {
+    const o = (globalThis as any).__c2HeadRest;
+    return o ? [Number(o.face ?? REST_FACE), Number(o.roll ?? REST_ROLL)] : [REST_FACE, REST_ROLL];
+  };
+  const restPose = () => floorPose(HEAD_REST, restFR()[0], restFR()[1], 0.09); // the occiput's radius ≈ 9 cm
+  // r2: lands face-down in its hair with the neck end toward 171° — between the lamp (109°) and D (234°), ≈ 62° off
+  // each: the cut ring is LIT and SEEN (the only part of a head that can be both from D with the lamp behind it); the
+  // 8.6–9.45 frames read "a head face-down, its stump toward you", the nudge then rolls the face up
+  const landPose = () => floorPose(HEAD_LAND, 261, -65, 0.07);
+  const setWorld = (n: any, pos: any, q: any) => {
+    const p = pos.clone();
+    const qq = q.clone();
+    if (n.parent) {
+      n.parent.updateWorldMatrix(true, false);
+      n.parent.worldToLocal(p);
+      qq.premultiply(n.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
+    }
     n.position.copy(p);
-    // face-down in its hair, the cut end toward the lamp (NW) at rest: yaw about world up, then the roll
-    n.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
-    if (n.parent) n.quaternion.premultiply(n.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
+    n.quaternion.copy(qq);
   };
   const adaHead = (mode: string) => {
     const ada: any = d.characters?.ada;
@@ -828,8 +900,11 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
       const n = headNode();
       head.mode = 'fall';
       head.t = 0;
-      if (n) n.getWorldPosition(head.from);
-      else head.from.set(...planToWorld(NECK));
+      if (n) {
+        n.updateWorldMatrix(true, false);
+        n.getWorldPosition(head.from);
+        n.getWorldQuaternion(head.q0);
+      } else head.from.set(...planToWorld(NECK));
     } else if (mode === 'nudge') {
       head.mode = 'nudge';
       head.t = 0;
@@ -840,7 +915,9 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
       // face square to the camera is pure silhouette; 0.7 of the way to the lamp the lamp side (her right = the
       // image-left eye that opens) is lit and the flame can glint on the corneal bulge.
       const hc = ada?.headCarry;
-      if (hc) hc.faceAt = d.camera.position.clone().lerp(new THREE.Vector3(...planToWorld([4.6, 4.25, 1.35])), 0.7);
+      // fix round (d3med: rig +Z 44° off the camera at 0.7 = we saw cheek + hair): 0.35 → the face ≈ 3/4 front, the lamp
+      // (1 m below, ≈ 92° off the camera ray) up-lights her right side — the eye that opens is on the lit side
+      if (hc) hc.faceAt = d.camera.position.clone().lerp(new THREE.Vector3(...planToWorld([4.6, 4.25, 1.35])), 0.35);
     } else if (mode === 'eye_open') {
       ada?.eyeOpen?.(true);
     }
@@ -851,21 +928,30 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     const n = headNode();
     if (!n) return;
     if (head.mode === 'fall') {
-      // dragged off the edge by its weight and the hair: 0.70 m in 0.30 s (lands 7.90), turning over
-      const u = Math.min(1, head.t / 0.3);
-      const f = new THREE.Vector3(...planToWorld(HEAD_LAND));
-      const p = head.from.clone().lerp(f, u);
-      p.y = head.from.y + (f.y - head.from.y) * u * u;
-      const w = [p.x, -p.z, p.y] as [number, number, number];
-      headPlace(n, w, 2.6, 0, Math.PI * 0.55 * u);
+      // dragged off the edge by its weight and the hair: free fall 0.8 m ≈ 0.40 s (√(2h/g)); it leaves with the body's
+      // slump and tumbles ≈ 3/4 turn; lands 7.90 (the cue), then lies where it landed until the nudge
+      const T = C2_HEAD_LANDS - C2_SEVER;
+      const u = Math.min(1, head.t / T);
+      const L = landPose();
+      const p = head.from.clone().lerp(L.pos, u);
+      p.y = head.from.y + (L.pos.y - head.from.y) * u * u; // gravity: slow off the edge, fast at the floor
+      const q = head.q0.clone().slerp(L.q, Math.min(1, u * 1.15));
+      setWorld(n, p, q);
       if (u >= 1) head.mode = 'rest';
     } else if (head.mode === 'nudge') {
-      // the boot toe rolls it a quarter turn; a damped rock (0.6 s period) to rest by 10.1 (§2.1 S4)
+      // the boot toe rolls it over onto its side (0.35 s), the cut ring into the lamp; a damped rock (0.6 s period,
+      // 7° → 0) about the crown axis to rest by ≈ 10.4 (§2.1 S4 / §3.5 9.6–10.7)
       const u = Math.min(1, head.t / 0.35);
-      const rock = head.t > 0.35 ? 0.12 * Math.exp(-(head.t - 0.35) * 4) * Math.cos(((head.t - 0.35) * 2 * Math.PI) / 0.6) : 0;
-      const w: [number, number, number] = [HEAD_LAND[0] + (HEAD_REST[0] - HEAD_LAND[0]) * u, HEAD_LAND[1] + (HEAD_REST[1] - HEAD_LAND[1]) * u, HEAD_REST[2]];
-      headPlace(n, w, 2.6 + 0.7 * u, (Math.PI / 2) * u + rock, Math.PI * 0.55);
-      if (head.t > 1.2) head.mode = 'rest';
+      const e = u * u * (3 - 2 * u);
+      const L = landPose();
+      const R = restPose();
+      const rock = head.t > 0.35 ? 7 * Math.exp(-(head.t - 0.35) * 3.2) * Math.cos(((head.t - 0.35) * 2 * Math.PI) / 0.6) : 0;
+      const Rr = rock !== 0 ? floorPose(HEAD_REST, restFR()[0], restFR()[1] + rock, 0.09) : R;
+      setWorld(n, L.pos.clone().lerp(Rr.pos, e), L.q.clone().slerp(Rr.q, e));
+      if (head.t > 1.6) {
+        setWorld(n, R.pos, R.q);
+        head.mode = 'rest';
+      }
     }
   };
 
@@ -947,8 +1033,19 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   const prevWiperA: number[] = [];
   const bladeBuf: { s: number; t: number; len: number; a0: number; a1: number }[] = [];
   /** Per frame, after the cutscene player applied the camera. */
+  // ruling (b): the figures (+ their attached cleaver / head) are the lamp cube's moving casters; re-tagged every
+  // ≈ 1 s (attachments change: the head moves to his fist, the cleaver to a hand) — a traverse of ≈ 100 nodes
+  let tagT = 0;
   const update = (dt: number) => {
     lastDt += dt;
+    tagT -= dt;
+    if (tagT <= 0) {
+      tagT = 1;
+      const b: any = d.characters;
+      tagFigureCasters(b?.ada?.group);
+      tagFigureCasters(b?.harlan?.group);
+      tagFigureCasters(b?.ada?.headNode?.());
+    }
     blood.update(dt);
     updateHead(dt);
     uRainRefract.value = LOOK.rainRefract; // LIGHTING lane (item 18): live look value

@@ -26,6 +26,7 @@ const SFX_STANDIN: Record<string, string> = {
 import { requestExposureSnap } from '../render/exposure.ts';
 import { BEAM_CLAMP } from '../characters/arms.ts';
 import { CUTSCENES } from './index.ts';
+import { VIEW_CULL_SCOPE } from '../render/view-caster-cull.ts'; // PERF review (contract 116)
 import { TitleCards } from '../ui/title-card.ts'; // C0 date card + byline (opening lane)
 import type { CameraPose, DofSettings, DoorAction, LockMode, P3, TimelineFactory, VehiclePose } from './types.ts';
 
@@ -77,6 +78,17 @@ export interface CutsceneInput {
 }
 
 const POUR_HOLD_S = 1.2;
+/** PERF review (contract 115): interior cutscene cameras keep room/window culling; `?cscull=0` restores render-all. */
+const CS_CULL = typeof location === 'undefined' || new URLSearchParams(location.search).get('cscull') !== '0';
+/**
+ * Cutscenes verified with interior culling (same-build A/B, docs/STATUS-perf-g.md R8/R34). Not C5: the camera-feet
+ * room changes which flicker lamps its `seen` set lights (C5 shadowplay rendered brighter, R34) — opt others in only
+ * after an A/B of their stills.
+ */
+const CS_CULL_IDS = new Set(['C2', 'C2c']);
+/** PERF review (contract 116): the torch's view-frustum caster cull. Lead ruling 2026-10-11: OFF everywhere until it tests
+ *  each caster's shadow volume rather than the caster (it changed the C5 still for an unknown reason); add 'C2c' to re-enable. */
+const TORCH_CULL_IDS = new Set<string>();
 
 // ------------------------------------------------------------------ overlay (DOM, system fonts)
 
@@ -219,11 +231,21 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
   const deps: CutsceneDeps = {
     camera: {
       apply(p: CameraPose) {
-        if (!camHeld && g.level?.cullingEnabled && g.level.setCulling) {
-          // room culling follows the camera's room; road shots leave every room rect (and cut across floors):
-          // render everything while a cutscene owns the camera
-          cullWas = true;
-          g.level.setCulling(false);
+        if (!camHeld && g.level?.cullingEnabled && g.level.setCulling) cullWas = true;
+        if (cullWas) {
+          // room culling follows the camera's room; road shots leave every room rect (and cut across floors) →
+          // render everything there. PERF review (contract 115): a camera INSIDE the house keeps room + window
+          // culling on, its room looked up at the camera's own feet (cam z − 0.5 m: ground eye ≤ 3.9 m → ground,
+          // upper ≥ 4.4 m → upper; rooms.ts floorForZ threshold 3.5 m) — the C2 parlor / C2c stair views drew the
+          // yard pines, the parked sedan + its interior and (torch shadow) props of rooms the PVS hides: 205 + 240
+          // frames over 400 / 1.5 M on Medium. A doorway (roomAt null) keeps the last decision. ?cscull=0 = old path.
+          const lv = g.level;
+          VIEW_CULL_SCOPE.on = TORCH_CULL_IDS.has(player.active ?? '');
+          const feet = p.pos[2] - 0.5;
+          const r = CS_CULL && CS_CULL_IDS.has(player.active ?? '') ? lv.index?.roomAt?.(p.pos[0], p.pos[1], feet) : undefined;
+          const inside = r === null ? lv.viewerFeetZ !== null : r !== undefined && lv.index.rooms.get(r)?.kind === 'interior';
+          lv.viewerFeetZ = inside ? feet : null;
+          if (lv.cullingEnabled !== inside) lv.setCulling(inside);
         }
         const w = planToWorld(p.pos);
         const t = planToWorld(p.target);
@@ -250,8 +272,11 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
       release() {
         camHeld = false;
         BEAM_CLAMP.on = false;
+        BEAM_CLAMP.at = null;
         if (cullWas) {
           cullWas = false;
+          if (g.level) g.level.viewerFeetZ = null;
+          VIEW_CULL_SCOPE.on = false;
           g.level?.setCulling?.(true);
         }
         cam.fov = g.ctx.settings.fovDeg;
@@ -349,6 +374,8 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         if (id === 'lens_wet_hand') overlay?.lensHand(!!params.on);
         if (id === 'beamClamp') {
           BEAM_CLAMP.on = !!params.on; // C2-ESCAPE review: the climb's torch stays within 12° of the gaze (arms.ts)
+          // fix round: optional aim point (PLAN) — glance #2 points the torch at her hand on the rail
+          BEAM_CLAMP.at = params.atX !== undefined ? (planToWorld([Number(params.atX), Number(params.atY), Number(params.atZ)]) as [number, number, number]) : null;
           return;
         }
         if (id === 'torchHold' && g.rig) {

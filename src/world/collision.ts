@@ -1,4 +1,5 @@
-// World collision: one static Octree (three/addons Octree) built from
+// World collision: one static triangle BVH (src/world/collision-bvh.ts — the three/addons Octree query surface over
+// typed arrays; PERF G replaced the Octree, whose node duplication held 430 MB on Medium) built from
 //   - collision.glb (walls / floors / stair ramps / rails / porch / chimney / foundation, faces wound outward),
 //   - an exterior ground plane at grade (the terrain is not part of the Blender shell: docs/HOUSE.md),
 //   - prop colliders (layout `collider: box|mesh`): the prop's own `*-collider` proxy children when it has them
@@ -12,7 +13,7 @@
 // octree.capsuleIntersect + push-out, floor when normal.y > FLOOR_NORMAL_Y (the ST_MAIN ramp is 40°: n.y 0.77).
 
 import * as THREE from 'three/webgpu';
-import { Octree } from 'three/addons/math/Octree.js';
+import { TriangleBVH } from './collision-bvh.ts'; // PERF G (ruling f): replaces three's Octree (430 MB → ~3 MB)
 import { Capsule } from 'three/addons/math/Capsule.js';
 
 export { Capsule };
@@ -63,9 +64,11 @@ export class WorldCollision {
     // measured in the page: 10.3 s build with it, 3.4 s without (PERF-PLAN P1-5). `octree` keeps the Octree API
     // (capsuleIntersect / rayIntersect) the controller calls, answering for both. Ground meshes live on layer
     // GROUND_LAYER only (groundColliderMesh), which the main octree's layer test (Octree.fromGraphNode) skips.
-    const main = new Octree();
+    // PERF G (ruling f): TriangleBVH (src/world/collision-bvh.ts) = the Octree query surface over flat typed arrays
+    // (three's Octree held this set as ~9 M small objects / 430 MB on Medium: the bulk of every major-GC mark).
+    const main = new TriangleBVH();
     main.fromGraphNode(root);
-    const ground = new Octree();
+    const ground = new TriangleBVH();
     ground.layers.set(GROUND_LAYER);
     let hasGround = false;
     root.traverse((o: any) => {

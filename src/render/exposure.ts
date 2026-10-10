@@ -40,7 +40,11 @@ export interface MeterReading {
 let snapRequested = false;
 /** Opening (C1-OPENING §5.2, set by src/world/opening.ts `exposure` fx): hold = meter frozen; min/max override the
  *  room clamp (linear). null = the room's own range. */
-export const EXPOSURE_CUE: { hold: boolean; min: number | null; max: number | null; spot: { x: number; y: number; r: number; w: number } | null } = { hold: false, min: null, max: null, spot: null };
+// Escape fix round (lane CINE, ruling (c)): `hp` keeps the highlight protect ON under a cue's min/max (C2/C2c: the
+// lamp-lit gown at 0.5–1 m must stay textured cotton, never plaster white); its floor is LOOK.hpFloor, not cue min.
+// `cap` (C2c glance #2): the cue's max clamps the CURRENT exposure at once (a pupil constricting on a torch-lit wall
+// 0.4 m away, ≈ 15 klx — 0.2–0.5 s in life; the meter's readback would arrive after the 600 ms glance is over).
+export const EXPOSURE_CUE: { hold: boolean; min: number | null; max: number | null; spot: { x: number; y: number; r: number; w: number } | null; hp: boolean; cap: boolean } = { hold: false, min: null, max: null, spot: null, hp: false, cap: false };
 export function requestExposureSnap(): void {
   snapRequested = true;
 }
@@ -58,6 +62,10 @@ export class AutoExposure {
   private readonly weights = new Float32Array(SIZE * SIZE);
   private readonly vals = new Float32Array(SIZE * SIZE);
   private readonly order = new Uint16Array(SIZE * SIZE);
+  /** PERF G (ruling f): sort keys (quantised value × 65536 + index) — a comparator sort of `order` copied the array
+   *  into a fresh JS array every meter read (≈ 1.4 MB/s of garbage, scratch/pg/alloc-c1a); a numeric Float64Array sort
+   *  runs in place. Value step 1e-4 (log2 luminance), far below any visible exposure change. */
+  private readonly keys = new Float64Array(SIZE * SIZE);
   private weightSum = 0;
   private t = 0;
   private nextMeter = 0;
@@ -156,6 +164,11 @@ export class AutoExposure {
       const tau = this.targetEV > this.ev ? LOOK.tauBrighten : LOOK.tauDarken;
       this.ev += (this.targetEV - this.ev) * (1 - Math.exp(-dt / Math.max(1e-3, tau)));
     }
+    if (EXPOSURE_CUE.cap && EXPOSURE_CUE.max != null) {
+      const capEV = Math.log2(EXPOSURE_CUE.max) + LOOK.biasEV;
+      if (this.ev > capEV) this.ev = capEV;
+      if (this.targetEV > capEV) this.targetEV = capEV;
+    }
     this.out.value = this.exposure;
     return this.exposure;
   }
@@ -188,7 +201,10 @@ export class AutoExposure {
         // LOOK.meterLow and meterHigh percentiles — black voids don't drag the exposure up, a lamp or the torch
         // hotspot can pull it down (the surroundings sink), specular sparkles above meterHigh are ignored
         const vals = this.vals;
-        this.order.sort((x, y) => vals[x] - vals[y]);
+        const keys = this.keys;
+        for (let i = 0; i < n; i++) keys[i] = Math.round((vals[i] + 20) * 1e4) * 65536 + i;
+        keys.sort();
+        for (let i = 0; i < n; i++) this.order[i] = keys[i] % 65536;
         const lo = LOOK.meterLow * this.weightSum;
         const hi = LOOK.meterHigh * this.weightSum;
         let cum = 0;
@@ -236,7 +252,7 @@ export class AutoExposure {
           if (sn > 0) metered = log2Avg * (1 - sp.w) + (ss / sn) * sp.w;
         }
         let target = clampEV(Math.log2(LOOK.key) - metered);
-        if (LOOK.hpWhite > 0 && hpLog > -20 && EXPOSURE_CUE.min == null && EXPOSURE_CUE.max == null) target = Math.max(Math.log2(LOOK.hpFloor), Math.min(target, Math.log2(LOOK.hpWhite) - hpLog + LOOK.biasEV));
+        if (LOOK.hpWhite > 0 && hpLog > -20 && (EXPOSURE_CUE.hp || (EXPOSURE_CUE.min == null && EXPOSURE_CUE.max == null))) target = Math.max(Math.log2(LOOK.hpFloor), Math.min(target, Math.log2(LOOK.hpWhite) - hpLog + LOOK.biasEV));
         this.targetEV = target;
         this.haveTarget = true;
         this.last = { log2Avg, target: Math.pow(2, this.targetEV), t: issuedAt, hp: hpLog };

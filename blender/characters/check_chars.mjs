@@ -26,7 +26,7 @@ const SPEC = {
   // C2-ESCAPE A0: the head is its own skinned node ada_head_rig (head_root + hair_*), bone-parented to ada_rig.head
   ada: { bones: [...CORE, 'jaw_hold', 'head_root'], prefixes: ['hair_', 'gown_'], skins: 2, headNode: 'ada_head_rig',
     morphs: { ada_head: ['jaw_open', 'gurgle', 'eyelid_l_open'], ada_hair: ['jaw_open', 'gurgle'] },
-    meshes: ['ada_body', 'ada_head', 'ada_gown', 'ada_hair', 'ada_eye', 'ada_cornea_l'], maxTris: 62000, textures: ['ada_albedo.webp', 'ada_normal.png', 'ada_hair_albedo.webp', 'ada_hair_normal.png'] },
+    meshes: ['ada_body', 'ada_head', 'ada_gown', 'ada_hair', 'ada_eye', 'ada_cornea_l'], maxTris: 82000, textures: ['ada_albedo.webp', 'ada_normal.png', 'ada_hair_albedo.webp', 'ada_hair_normal.png'] },
   harlan: { bones: [...CORE, 'cleaver'], prefixes: ['sack_', 'apron_'], morphs: {},
     meshes: ['harlan_body', 'harlan_shirt', 'harlan_trousers', 'harlan_boots', 'harlan_gloves', 'harlan_apron', 'harlan_suspenders',
       'harlan_sack', 'harlan_twine', 'harlan_void', 'harlan_cleaver', 'harlan_cleaver_handle'], maxTris: 75000, textures: ['harlan_albedo.webp', 'harlan_normal.png'] },

@@ -32,6 +32,12 @@ import { createRoadGlints } from './road-glints.ts';
 
 type Params = Record<string, number | string | boolean>;
 
+/** PERF G: L_DOME's own shadow-caster layer (the car and what rides in it; never the road set). Layers in use:
+ *  5 headlamp casters (headlamps.ts), 6 window cull (window-cull.ts), 30 ground collider (collision.ts). */
+const DOME_SHADOW_LAYER = 7;
+const _tl = new THREE.Vector3();
+const _tc = new THREE.Vector3();
+
 export interface OpeningDeps {
   level: Level;
   presetId: 'low' | 'medium' | 'max';
@@ -84,6 +90,53 @@ export function createOpening(d: OpeningDeps) {
     });
   }
   const shadowLights = [...lamps.lights, dome, veil].filter((l) => l?.castShadow);
+  // PERF G (item 2, Medium C1 28.6–28.95 at 485–490 draws): the dome's shadow camera used the view's layers, so every
+  // road-set mesh within its 3 m cutoff (room_RC9 74 draws, the diner 6) rendered into it. Behind glass, the only
+  // shadows that 38 cd festoon can throw are the car's own (cabin, body, the arms/map on board): it gets its own
+  // caster layer = every shadow-casting layer-0 mesh outside the exterior room groups, plus both car props.
+  const domeTruckLights = new Set<any>([dome, ...['L_TRUCK_HI_L', 'L_TRUCK_HI_R'].map((id) => level.runtimeLight(id))].filter(Boolean));
+  const tagDomeCasters = () => {
+    if (!dome?.castShadow) return;
+    const skip = new Set(['RC9', 'EXT1', 'EXT2'].map((id) => level.roomGroups.get(id)).filter(Boolean));
+    const tag = (o: any) => { if (o.isMesh && o.castShadow && o.layers.isEnabled(0)) o.layers.enable(DOME_SHADOW_LAYER); };
+    const walk = (o: any) => { if (skip.has(o)) return; tag(o); for (const c of o.children) walk(c); };
+    let top = level.root; while (top.parent) top = top.parent;
+    walk(top);
+    gate?.traverse(tag);
+    interior?.traverse(tag);
+  };
+  // PERF G (item 2): the oncoming truck's high beam (512² map) sees our cabin from 50–250 m, where one shadow texel is
+  // 2·d·tan(θ)/512 ≈ 3–16 cm wide: cabin meshes smaller than half a texel (keys, cassettes, ashtray, cig pack …) can
+  // only add a sub-texel smudge under the PCF kernel, yet each cost its draw(s) every frame of the pass. They leave
+  // the headlamp caster layer while the truck's map is rendering (interior only: it never stands in our own beams).
+  const truckShadow = level.runtimeLight('L_TRUCK_HI_L');
+  const cabCasters: { o: any; r: number }[] = [];
+  interior?.traverse((o: any) => {
+    if (!o.isMesh || !o.castShadow) return;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    cabCasters.push({ o, r: o.geometry.boundingSphere?.radius ?? 1 });
+  });
+  let cabCulled = 0;
+  const cullCabForTruck = (on: boolean) => {
+    let n = 0;
+    const l = truckShadow;
+    if (on && l) {
+      const lp = l.getWorldPosition(_tl);
+      const k = (2 * Math.tan(Math.min(1.5, l.angle * (l.shadow.focus ?? 1)))) / l.shadow.mapSize.x;
+      for (const c of cabCasters) {
+        const r = c.r * c.o.matrixWorld.getMaxScaleOnAxis();
+        const dist = _tc.setFromMatrixPosition(c.o.matrixWorld).distanceTo(lp);
+        const keep = 2 * r >= 0.5 * k * dist; // diameter ≥ half a texel at its distance
+        if (keep) c.o.layers.enable(HEADLAMP_SHADOW_LAYER);
+        else { c.o.layers.disable(HEADLAMP_SHADOW_LAYER); n++; }
+      }
+    } else if (cabCulled) for (const c of cabCasters) c.o.layers.enable(HEADLAMP_SHADOW_LAYER);
+    cabCulled = n;
+  };
+  if (dome?.castShadow) {
+    dome.shadow.camera.layers.set(DOME_SHADOW_LAYER);
+    tagDomeCasters();
+  }
   for (const l of shadowLights) {
     l.shadow.autoUpdate = false; // gated per frame in update(); one render so each map is initialised
     l.shadow.needsUpdate = true;
@@ -318,6 +371,8 @@ export function createOpening(d: OpeningDeps) {
     EXPOSURE_CUE.max = p.max !== undefined ? Number(p.max) : null;
     // C2-ESCAPE B1: spot meter {spotX, spotY, spotR, spotW} (uv; w = share of the spot in the reading)
     EXPOSURE_CUE.spot = p.spotW !== undefined ? { x: Number(p.spotX ?? 0.5), y: Number(p.spotY ?? 0.5), r: Number(p.spotR ?? 0.2), w: Number(p.spotW) } : null;
+    EXPOSURE_CUE.hp = p.hp === true; // escape fix round (lane CINE): highlight protect under the cue
+    EXPOSURE_CUE.cap = p.cap === true; // escape fix round (lane CINE): max clamps the CURRENT exposure at once
     if (p.snap === true) requestExposureSnap();
   };
   const resetExposure = () => {
@@ -327,6 +382,8 @@ export function createOpening(d: OpeningDeps) {
     EXPOSURE_CUE.min = null;
     EXPOSURE_CUE.max = null;
     EXPOSURE_CUE.spot = null;
+    EXPOSURE_CUE.hp = false;
+    EXPOSURE_CUE.cap = false;
   };
 
   // ---- the logging truck (S5): eastbound along the road at constant speed, wheels turning
@@ -416,6 +473,7 @@ export function createOpening(d: OpeningDeps) {
         return true;
       case 'dome':
         domeOn = !!p.on;
+        if (domeOn) tagDomeCasters(); // the arms / anything added since load
         return true;
       case 'hibeam':
         uHibeam.value = p.on ? 1 : 0;
@@ -477,7 +535,10 @@ export function createOpening(d: OpeningDeps) {
     // shadow passes only while a lamp actually shines (castShadow stays on, so no shader variant changes): a dark
     // shadow-casting light still re-renders the scene into its map every frame (look 4: +600 draws at the gate)
     for (const l of shadowLights) {
-      const on = l.intensity > 1e-4 && l.visible !== false;
+      // PERF G: the dome / truck maps also rest below a perceptible level (dome 38 cd: its 150 ms off-tail spent
+      // ≈ 0.2 s at < 0.05 cd = 0.13 % of full with its own 165-draw pass; the map is only frozen, never dropped)
+      const on = l.intensity > (domeTruckLights.has(l) ? 0.05 : 1e-4) && l.visible !== false;
+      if (l === truckShadow && (on || cabCulled)) cullCabForTruck(on);
       if (l.shadow.autoUpdate !== on) {
         l.shadow.autoUpdate = on;
         if (on) l.shadow.needsUpdate = true;
