@@ -400,10 +400,10 @@ p('P_CANDLE_TABLE', 'candle', 'G2', [5.6, 2.3, zG + 0.82], 0, { params: { holder
 p('P_CANDLE_SILL', 'candle', 'G2', [5.0, 0.18, zG + 0.78], 0, { params: { holder: 'saucer', height: 0.1, mat: 'wax_candle' }, lighting: 'dynamic', collider: 'none' });
 // C2-ESCAPE K1: the stool moves to the NW of the sawbuck and carries the parlor lamp (the C2 hard side-key, flame
 // 0.75 m above the floor); the whetstone goes to the floor beside it
-p('P_STOOL', 'stool', 'G2', [4.6, 4.25, zG], 0.3, { params: { mat: 'wood_raw_plank', height: 0.45 }, note: 'C2-ESCAPE A8: seat top z 1.05 (stool generator height 0.45; flame anchor of P_LAMP_PARLOR wick high = base + 0.309 = z 1.359).' });
-p('P_WHETSTONE', 'whetstone', 'G2', [4.85, 4.5, zG], 0.3, { params: { mat: 'stone_foundation' }, lighting: 'dynamic', collider: 'none' });
-p('P_LAMP_PARLOR', 'kerosene_lamp', 'G2', [4.6, 4.25, zG + 0.45], 0.4, { params: { wick: 'high', mat: 'glass_grimy', burnerMat: 'brass_tarnished' }, lighting: 'dynamic', collider: 'none',
-  note: 'C2-ESCAPE K1: on the stool seat (z 1.05); flame anchor (4.60, 4.25, 1.35) = L_LAMP_PARLOR.' });
+p('P_STOOL', 'stool', 'G2', [4.3, 3.6, zG], 0.3, { params: { mat: 'wood_raw_plank', height: 0.45 }, note: 'C2-ESCAPE A8: seat top z 1.05 (stool generator height 0.45; flame anchor of P_LAMP_PARLOR wick high = base + 0.309 = z 1.359). Fix round 4 (ruling s, contract #129): moved from (4.6, 4.25) to (4.3, 3.6) so the lamp keys the strike past Harlan.' });
+p('P_WHETSTONE', 'whetstone', 'G2', [4.55, 3.85, zG], 0.3, { params: { mat: 'stone_foundation' }, lighting: 'dynamic', collider: 'none' });
+p('P_LAMP_PARLOR', 'kerosene_lamp', 'G2', [4.3, 3.6, zG + 0.45], 0.4, { params: { wick: 'high', mat: 'glass_grimy', burnerMat: 'brass_tarnished' }, lighting: 'dynamic', collider: 'none',
+  note: 'C2-ESCAPE K1: on the stool seat (z 1.05); flame anchor (4.30, 3.60, 1.35) = L_LAMP_PARLOR (fix round 4, #129).' });
 p('P_SPRING_BELL', 'spring_bell', 'G2', [3.85, 1.45, zG + 2.8], FACE.E, { params: { mat: 'brass_tarnished', ringsFor: 'P_BELL_KNOB,P_BELL_PULL' }, lighting: 'dynamic', collider: 'none' });
 p('P_CLEAT', 'rope_cleat', 'G2', [3.8, 1.9, zG + 1.6], FACE.E, { params: { mat: 'cast_iron' }, collider: 'none' });
 p('P_CLEAVER', 'hog_cleaver', 'G2', [5.95, 3.95, zG + 0.83], 1.2, { params: { mat: 'steel_cleaver', handleMat: 'wood_furniture_dark', state: 'bitten' }, lighting: 'dynamic', collider: 'none',
@@ -523,7 +523,7 @@ const lights = [
   { id: 'L_CANDLE_TABLE', room: 'G2', role: 'candle', type: 'point', pos: [5.6, 2.3, zG + 0.98], watts: 12, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   // C2-ESCAPE K2: the parlor kerosene lamp on the stool — flat-wick lamp ≈ 10–15 cd (CLAUDE.md) → 12 cd = 151 W / 4π,
   // 1950 K. Baked indirect-only (bakePass) once the release bake lands; until then runtime-only (CONTRACT-CHANGES)
-  { id: 'L_LAMP_PARLOR', room: 'G2', role: 'lamp', type: 'point', pos: [4.6, 4.25, zG + 0.75], watts: 151, kelvin: 1950, radius: 0.012, mode: 'runtime', bakePass: 'indirect' },
+  { id: 'L_LAMP_PARLOR', room: 'G2', role: 'lamp', type: 'point', pos: [4.3, 3.6, zG + 0.75], watts: 151, kelvin: 1950, radius: 0.012, mode: 'runtime', bakePass: 'indirect' },
   { id: 'L_CANDLE_MANTEL', room: 'G2', role: 'candle', type: 'point', pos: [8.6, 3.4, zG + 1.44], watts: 10, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   { id: 'L_CANDLE_SILL', room: 'G2', role: 'candle', type: 'point', pos: [5.0, 0.18, zG + 0.9], watts: 10, kelvin: 1850, radius: 0.012, mode: 'bake_flicker' },
   { id: 'L_CANDLE_KITCHEN', room: 'G3', role: 'candle', type: 'point', pos: [6.75, 9.6, zG + 0.86], watts: 6, kelvin: 1800, radius: 0.01, mode: 'bake_flicker' },

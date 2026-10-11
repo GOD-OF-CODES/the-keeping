@@ -32,7 +32,7 @@ import { requestExposureSnap } from '../render/exposure.ts'; // AD review: C5 cu
 import { hashRng, PENS, drawText } from '../render/handwriting.ts';
 import { createOpening } from './opening.ts';
 import { createBloodFx } from './blood-fx.ts';
-import { HEAD_LAND, HEAD_REST, NECK, GROUND } from '../cutscenes/stage.ts';
+import { HEAD_LAND, HEAD_REST, NECK, GROUND, LAMP_FLAME } from '../cutscenes/stage.ts';
 import { C2_SEVER, C2_HEAD_LANDS } from '../cutscenes/c2-room.ts';
 import type { P3 } from '../cutscenes/types.ts';
 
@@ -875,7 +875,7 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   // fix round 2 (ruling g, the hero still from E4 (4.62, 2.38, 1.92), sweep scratch/esc2/c2-*): face 241°, rolled 60°
   // face-DOWN into its wet hair, the neck end tilted 35° up → the cut ring square to the lens (≈ 40° off the view ray)
   // and keyed by the lamp (≈ 55° incidence); the boot nudge is the reveal (the landing showed it edge-on)
-  const REST_FACE = 241;
+  // (fix rounds 2–3: REST_FACE 241, roll 0, tilt 20 — on its left side; superseded in fix round 4 below)
   // (hcu diag: the floorPose roll sign is − = face toward the floor — the comment above it was wrong; measured: roll −55 put
   // the cornea 3.6 cm BELOW the head centre)
   // fix round 3 LOOK (sweeps scratch/fr3-look/l1–l3 at the physical f/2: from E4 the lamp is BEHIND the head (lamp–head–
@@ -883,8 +883,15 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   // a black lump). On its left side (roll 0) the right EAR, jaw line and temple take the lamp (ear L 0.09–0.10, max 0.24
   // vs hair 0.003) and the settled wet hair fans across the boards; tilt 20° lifts the neck end so the cut ring stays in
   // view, ≈ 60° off the lamp's mirror direction (the bisector is ≈ 63° up toward bearing 146°).
-  const REST_ROLL = 0;
-  const REST_TILT = 20;
+  // fix round 4 (ruling u, #129: the lamp moved to plan (4.3, 3.6, 1.35)): FACE-UP on the occiput — the natural rest of a
+  // severed head, the boot nudge flips it face-down → face-up (≈ 150° roll, NUDGE_T 0.5 s). Measured in the real run
+  // (scratch/restage/rg, head axes logged): face normal (0.10, 0.04, 0.99), face·lens 0.79 (38° off — a 3/4 view from
+  // above the chin, never square), face·lamp 0.54 (lamp → head → E4 = 67.8°, inside the ruling's 60–80°); the neck end
+  // toward the lens (cut·lens 0.69 ≥ 30° above grazing) but unlit (cut·lamp 0.00) — the accepted trade: the face is the
+  // subject. The wet hair lies on the boards (ada.ts: floor clamp + slack chains while nobody holds the head).
+  const REST_FACE = 330;
+  const REST_ROLL = 85;
+  const REST_TILT = 5;
   // QA tuning hook (escape fix-round review): ?debug sweeps set globalThis.__c2HeadRest = { face, roll }
   const restFR = (): [number, number] => {
     const o = (globalThis as any).__c2HeadRest;
@@ -931,13 +938,13 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     } else if (mode === 'held') {
       head.mode = 'none'; // attached to Harlan's prop_l: the character lane's pendulum drives it
       // reviewer fix (C2 S5–S7): he shows you the face (the eye insert, "both look at you") — head-carry.faceAt. Turned
-      // 3/4 toward the parlor lamp (L_LAMP_PARLOR plan (4.6, 4.25, 1.35)): from D the lamp is ≈ 95° off her face, so a
+      // 3/4 toward the parlor lamp (L_LAMP_PARLOR = stage LAMP_FLAME, plan (4.3, 3.6, 1.35) since fix round 4): from D the lamp is ≈ 95° off her face, so a
       // face square to the camera is pure silhouette; 0.7 of the way to the lamp the lamp side (her right = the
       // image-left eye that opens) is lit and the flame can glint on the corneal bulge.
       const hc = ada?.headCarry;
       // fix round (d3med: rig +Z 44° off the camera at 0.7 = we saw cheek + hair): 0.35 → the face ≈ 3/4 front, the lamp
       // (1 m below, ≈ 92° off the camera ray) up-lights her right side — the eye that opens is on the lit side
-      if (hc) hc.faceAt = d.camera.position.clone().lerp(new THREE.Vector3(...planToWorld([4.6, 4.25, 1.35])), 0.35);
+      if (hc) hc.faceAt = d.camera.position.clone().lerp(new THREE.Vector3(...planToWorld(LAMP_FLAME)), Number((globalThis as any).__c2FaceAtK ?? 0.35)); // QA: __c2FaceAtK
     } else if (mode === 'eye_open') {
       ada?.eyeOpen?.(true);
     }
@@ -976,11 +983,13 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     } else if (head.mode === 'nudge') {
       // the boot toe rolls it over onto its side (0.35 s), the cut ring into the lamp; a damped rock (0.6 s period,
       // 7° → 0) about the crown axis to rest by ≈ 10.4 (§2.1 S4 / §3.5 9.6–10.7)
-      const u = Math.min(1, head.t / 0.35);
+      // fix round 4 (ruling u): the face-down → face-up roll is ≈ 150° — 0.5 s (≈ 0.5 m/s at the 9 cm occiput), was 0.35 s
+      const NUDGE_T = 0.5;
+      const u = Math.min(1, head.t / NUDGE_T);
       const e = u * u * (3 - 2 * u);
       const L = landPose();
       const R = restPose();
-      const rock = head.t > 0.35 ? 7 * Math.exp(-(head.t - 0.35) * 3.2) * Math.cos(((head.t - 0.35) * 2 * Math.PI) / 0.6) : 0;
+      const rock = head.t > NUDGE_T ? 7 * Math.exp(-(head.t - NUDGE_T) * 3.2) * Math.cos(((head.t - NUDGE_T) * 2 * Math.PI) / 0.6) : 0;
       const Rr = rock !== 0 ? floorPose(restC(), restFR()[0], restFR()[1] + rock, 0.09, restTilt()) : R;
       setWorld(n, L.pos.clone().lerp(Rr.pos, e), L.q.clone().slerp(Rr.q, e));
       if (head.t > 1.6) {

@@ -314,7 +314,12 @@ export class RuntimeLights {
               If(uShadowOn.greaterThan(0.5), () => { s.assign(inner); });
               return s;
             })();
+          } else {
+            light.shadow.shadowNode = pointShadow(light); // = PointLightNode.setupShadowNode(), made explicit to share it
           }
+          // fix round 4 LOOK (ruling v): the SAME shadow node (one cube map, no extra pass) is the visibility term of the
+          // unlit blood particles / jets (blood-fx.ts samples it at their own world position via receivedShadowPositionNode)
+          light.userData.shadowVis = light.shadow.shadowNode;
           setCandleShadow(light, false);
           patchSplitCube();
           light.userData.splitCube = true;

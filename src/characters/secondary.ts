@@ -74,6 +74,9 @@ export class VerletChain {
   damping: number;
   gravity: number;
   colliders: Capsule3[] = [];
+  /** World Y of a floor the particles may not pass (null = none). Fix round 4: a severed head's wet hair lies ON the
+   *  boards — without it the chains hung through the floor and whipped into a 40 cm fan on the nudge's roll. */
+  floorY: number | null = null;
 
   constructor(bones: any[], o: { stiffness?: number; damping?: number; gravity?: number; tipLength?: number } = {}) {
     this.bones = bones;
@@ -142,6 +145,12 @@ export class VerletChain {
         const l = d.length() || 1e-6;
         p.copy(a).addScaledVector(d, this.len[i - 1] / l);
         for (let ci = 0; ci < this.colliders.length; ci++) pushOutOfCapsule(p, this.colliders[ci]); // no iterator objects per call
+        if (this.floorY !== null && p.y < this.floorY) {
+          p.y = this.floorY;
+          this.prev[i].y = p.y; // wet hair on the boards: no bounce
+          this.prev[i].x = p.x - (p.x - this.prev[i].x) * 0.3; // …and it drags (wet friction)
+          this.prev[i].z = p.z - (p.z - this.prev[i].z) * 0.3;
+        }
       }
     }
     // write back (FK, root → tip): rotate each bone so its segment points at the solved particle

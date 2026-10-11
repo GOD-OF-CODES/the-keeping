@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.00021,
-    "p99": 0.0041,
-    "max": 0.14274,
-    "coverage": 0.4006
+    "mean": 0.00024,
+    "p99": 0.00438,
+    "max": 0.09424,
+    "coverage": 0.3988
   },
   "file": "lm_upper_rooms.klm"
 }

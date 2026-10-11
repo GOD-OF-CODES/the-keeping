@@ -576,6 +576,7 @@ export class LiveLayers {
   // heartbeat
   private bpm = 0;
   private beatNext = 0;
+  private heartCine = false;
   private score: ScoreState = 'none';
   private scoreBeforeChase: ScoreState = 'drone';
   private holdHandle: PlayHandle | null = null;
@@ -605,7 +606,14 @@ export class LiveLayers {
         // LOUDEST thing in the scene (player bus ≈ −15 LUFS, pinning the −3 dB limiter, ~10 dB over the beheading's
         // sfx). A heard heartbeat is a subjective film device, not a diegetic sound: it sits under the room. −12 dB at
         // rest, rising to −8 dB at 150 bpm (a racing heart is felt harder). Single featured beats (cue sfx) are unchanged.
-        if (b) this.fire(b, this.beatNext, this.e.buses.player, 0.25 + 0.15 * Math.min(1, Math.max(0, (this.bpm - 90) / 60)), 1);
+        // fix round 4 (ruling x, the real recording scratch/listen, heart layer metered on its own): at 150 bpm the
+        // layer (0.40) was the loudest STEADY element of C2c (≈ 3 dB over the weather bed), so every stair-run peak sat
+        // within 0.5 LU of the strike; its 150 bpm beats peaked −18 (100 ms) ON the C2c stumble. Now 0.2 (≤ 90 bpm) …
+        // 0.22 (150 bpm): −5 dB racing, −2 dB at rest — a felt pulse under the room, never a peak of its own.
+        // Lead ruling 2026-10-11 (fix round 4): that trim applies to CUTSCENE heartbeats only (the strike must stay the
+        // loudest moment of C2/C2c); a gameplay chase keeps the round-2 racing rise (0.25 … 0.40) — it is a chase tell.
+        const k = Math.min(1, Math.max(0, (this.bpm - 90) / 60));
+        if (b) this.fire(b, this.beatNext, this.e.buses.player, this.heartCine ? 0.2 + 0.02 * k : 0.25 + 0.15 * k, 1);
         this.beatNext += 60 / this.bpm;
       }
     }
@@ -675,8 +683,10 @@ export class LiveLayers {
 
   // ---- heartbeat
 
-  setHeartRate(bpm: number): void {
+  /** `cine` = driven by a cutscene cue (the trimmed C2/C2c mix level); gameplay chases leave it false. */
+  setHeartRate(bpm: number, cine = false): void {
     this.bpm = Math.max(0, bpm);
+    this.heartCine = cine;
   }
 
   // ---- loops (rain, wind, drones…)

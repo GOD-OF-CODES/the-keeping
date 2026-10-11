@@ -437,10 +437,14 @@ export class AdaCharacter {
     const hc0 = this.headCarry;
     uHairVeilClear.value = veilQa ?? (hc0.severed && hc0.holder && hc0.holder !== hc0.bones.propR ? 1 : 0);
     uNeckBlood.value = this.headCarry.severed ? 1 : 0;
+    // fix round 4 (ruling u): a severed head nobody holds lies on the floor her root stands on — its wet hair lies on the
+    // boards (≈ 3 mm of hair thickness above them) and goes slack (wet hair has no spring of its own)
+    const loose = hc0.severed && !hc0.holder;
     for (const hc of this.hairChains) {
       const part = hc === this.partedChain;
       hc.gravity = part ? -40 : 9.81;
-      hc.stiffness = part ? 0.02 : 0.16;
+      hc.stiffness = part ? 0.02 : loose ? Number((globalThis as { __c2HairK?: number }).__c2HairK ?? 0.05) : 0.16; // QA: __c2HairK
+      hc.floorY = loose ? this.group.position.y + 0.003 : null;
     }
     for (const ch of this.chains) ch.update(cdt);
 

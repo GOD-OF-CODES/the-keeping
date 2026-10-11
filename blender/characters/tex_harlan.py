@@ -127,22 +127,29 @@ def flannel(P, N, AO, ctx):
     a = np.floor((x + warp) / size) % 2
     b = np.floor((y + warp) / size) % 2
     # buffalo check: red, dark (one black stripe), black (both)
-    red = np.array([0.22, 0.035, 0.03])
-    blk = np.array([0.02, 0.018, 0.018])
-    dark = red * 0.35 + blk * 0.65
-    alb = np.where((a * b)[:, None] > 0.5, blk, np.where(((a + b) % 2)[:, None] > 0.5, dark, red))
+    # fix round 4 (ruling t; ab2-08: 'pink-reading plaid' with olive-grey squares under the restaged lamp): a worn red-black
+    # buffalo check is DARK. Red yarn ~0.25/0.04/0.03 linear new, sweat/grease-faded work flannel ~0.17-0.2 with LOW blue
+    # (a 1950 K key x the 3300 K grade's blue gain turned any blue in the red into pink); black yarn ~0.02. A one-stripe
+    # cell is black weft over red warp: ~75 % black by area -> ~0.06/0.015/0.012 (was 0.09/0.024/0.022 + a 70 % brown-grey
+    # grime mix = olive grey). Grime is now dark red-brown and capped at 35 %.
+    red = np.array([0.17, 0.038, 0.022])         # r2: lower chroma (R/G 4.5): AgX rendered the 6:1 red as salmon-pink
+    blk = np.array([0.018, 0.014, 0.013])
+    dark = red * 0.22 + blk * 0.78
+    cid = np.floor((x + warp) / size) * 7.31 + np.floor((y + warp) / size) * 3.17
+    cell = 0.88 + 0.24 * (np.sin(cid * 12.9898) * 43758.5453 % 1.0)      # per-cell dye/fade variance
+    alb = np.where((a * b)[:, None] > 0.5, blk, np.where(((a + b) % 2)[:, None] > 0.5, dark, red)) * cell[:, None]
     fuzz = noise.fbm(P * 300, 2, 12)
     alb = alb * (1 + 0.15 * fuzz)[:, None]
     # wear, sweat, old blood spatter on the sleeves and chest
-    grime = ss(0.9, 0.5, AO) * 0.6 + 0.3 * ss(0.3, 0.8, noise.fbm(P * 5, 3, 13))
-    alb = _mix(alb, [0.05, 0.035, 0.025], np.clip(grime, 0, 0.7))
+    grime = ss(0.9, 0.5, AO) * 0.35 + 0.2 * ss(0.3, 0.8, noise.fbm(P * 5, 3, 13))
+    alb = _mix(alb, [0.035, 0.016, 0.011], np.clip(grime, 0, 0.35))
     spat = ss(0.72, 0.8, noise.fbm(P * 90, 3, 14)) * ss(0.2, 0.6, noise.fbm(P * 4, 2, 15))
     alb = _mix(alb, [0.04, 0.006, 0.004], spat * 0.8)
     # button placket down the front
     front = (P[:, 1] < -0.05) & (np.abs(P[:, 0]) < 0.012)
     btn = front & (((P[:, 2] - 1.1) % 0.085) < 0.012) & (np.abs(P[:, 0]) < 0.006)
     alb = _mix(alb, [0.3, 0.28, 0.24], btn.astype(float) * 0.9)
-    rough = 0.88 + 0.05 * fuzz - 0.2 * spat
+    rough = 0.92 + 0.05 * fuzz - 0.2 * spat          # napped wool flannel: fully diffuse (no grazing gloss)
     h = 0.00025 * noise.fbm(P * 400, 2, 16) + 0.0006 * btn - 0.0003 * front
     return np.clip(alb, 0, 1), np.clip(rough, 0.05, 1), h
 
@@ -204,6 +211,49 @@ def rubber(P, N, AO, ctx, boots=False):
         sm = ss(0.5, 0.8, noise.fbm(P * np.array([10, 10, 3.0]), 4, 39)) * ss(1.3, 0.8, P[:, 2])
         alb = _mix(alb, [0.03, 0.006, 0.005], sm * 0.9)
         rough = rough * (1 - sm) + 0.22 * sm
+    return np.clip(alb, 0, 1), np.clip(rough, 0.05, 1), h
+
+
+def gauntlet(P, N, AO, ctx):
+    # fix round 4 (ruling t; scratch/escfix3-review/ab2-08: 'pale tan plastic gauntlets' once the restaged lamp keys his
+    # arms): black neoprene/rubber slaughterhouse gauntlets. Black rubber albedo ~0.03-0.05 linear (carbon-black filled;
+    # worn rubber blooms a little greyer), roughness ~0.35-0.5 (wet/greasy film 0.25-0.35), fresh blood smeared over the
+    # fingers and palm (wet whole blood film on black: ~0.06/0.009/0.007, rough 0.15-0.25), thinner tacky smears on the
+    # back of the hand and dried flecks up the cuff. Flex creases across the knuckles and the wrist.
+    n = len(P)
+    J = ctx['J']
+    alb = _tile([0.034, 0.034, 0.036], n) * (1 + 0.18 * noise.fbm(P * 30, 3, 131))[:, None]
+    bloom = ss(0.55, 0.85, noise.fbm(P * np.array([14, 14, 6.0]), 3, 132))          # grey ozone/soap bloom
+    alb = _mix(alb, [0.055, 0.055, 0.056], bloom * 0.5)
+    wet = ss(0.4, 0.7, noise.fbm(P * np.array([8, 8, 3.0]), 3, 133))
+    rough = 0.54 - 0.16 * wet + 0.08 * bloom      # r2: worn satin neoprene (0.46 read silver along the lit forearm)
+    hand = np.zeros(n)
+    palm = np.zeros(n)
+    crease = np.zeros(n)
+    for side in ('l', 'r'):
+        a, b = (np.asarray(x, float) for x in J[f'hand_{side}'])
+        ab = b - a
+        L2 = float(ab @ ab)
+        t = ((P - a) @ ab) / L2
+        d = np.linalg.norm(P - (a + np.outer(np.clip(t, 0, 1.6), ab)), axis=1)
+        on = ss(0.07, 0.035, d) * ss(-0.35, 0.05, t)                   # the hand + fingers (t > 1: the fingers)
+        hand = np.maximum(hand, on)
+        inward = -np.sign(a[0]) if abs(a[0]) > 1e-4 else 1.0
+        palm = np.maximum(palm, on * ss(0.0, 0.6, N[:, 0] * inward))
+        # knuckle + wrist flex creases (across the hand axis)
+        cr = (0.5 + 0.5 * np.sin(t * 2 * math.pi * 7.0 + 2.5 * noise.fbm(P * 40, 2, 134))) ** 6
+        crease = np.maximum(crease, cr * on * (ss(0.7, 0.85, t) + ss(0.15, 0.0, np.abs(t))))
+    smear = ss(0.38, 0.62, noise.fbm(P * np.array([45, 45, 25.0]), 4, 135))
+    fresh = np.clip(palm * (0.55 + 0.45 * smear) + hand * smear * 0.6, 0, 1)
+    tacky = hand * ss(0.5, 0.75, noise.fbm(P * 70, 3, 136)) * (1 - fresh)
+    fleck = ss(0.78, 0.86, noise.fbm(P * 160, 3, 137)) * (1 - hand) * 0.8
+    alb = _mix(alb, [0.012, 0.012, 0.013], crease * 0.5)
+    alb = _mix(alb, [0.06, 0.009, 0.007], fresh * 0.92)
+    alb = _mix(alb, [0.045, 0.012, 0.009], tacky * 0.7)
+    alb = _mix(alb, [0.05, 0.012, 0.009], fleck)
+    rough = rough * (1 - fresh) + 0.2 * fresh
+    rough = rough * (1 - tacky) + 0.5 * tacky
+    h = -0.0005 * crease + 0.00008 * noise.fbm(P * 260, 2, 138) + 0.00012 * fresh * noise.fbm(P * 90, 2, 139)
     return np.clip(alb, 0, 1), np.clip(rough, 0.05, 1), h
 
 
@@ -302,7 +352,7 @@ def shader(kind, ctx):
         'trousers': lambda P, N, AO, G: trousers(P, N, AO, ctx),
         'boots': lambda P, N, AO, G: rubber(P, N, AO, ctx, boots=True),
         'apron': lambda P, N, AO, G: rubber(P, N, AO, ctx, boots=False),
-        'gloves': lambda P, N, AO, G: leather(P, N, AO, ctx, gloves=True),
+        'gloves': lambda P, N, AO, G: gauntlet(P, N, AO, ctx),        # fix round 4: black rubber gauntlets
         'suspenders': lambda P, N, AO, G: leather(P, N, AO, ctx, gloves=False),
         'sack': lambda P, N, AO, G: burlap(P, N, AO, ctx, G),
         'twine': lambda P, N, AO, G: twine(P, N, AO, ctx),

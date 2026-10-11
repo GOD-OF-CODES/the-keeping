@@ -9,7 +9,7 @@
 const C2_LEN = 29.0;
 
 // Named points. plan = PLAN space (x east, y north, z up, absolute: ground floor at 0.6). obj = 'root/child' (+ local).
-const LAMP = [4.6, 4.25, 1.35]; // L_LAMP_PARLOR flame (12 cd, 1950 K)
+const LAMP = [4.3, 3.6, 1.35]; // fix round 4 (#129) — was (4.6, 4.25) // L_LAMP_PARLOR flame (12 cd, 1950 K)
 const POINTS = [
   { name: 'floor_lamp_0.5m', plan: [4.95, 3.9, 0.6] }, // boards ≈ 0.5 m from below the lamp, toward the head
   { name: 'floor_head', plan: [5.25, 2.95, 0.6] }, // boards beside the resting head

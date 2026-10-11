@@ -33,6 +33,30 @@ const CSS = `
 @media (prefers-reduced-motion: reduce){.tk-subs__cue,.tk-subs__w{transition:none}}
 `;
 
+/**
+ * QA (fix round 4, ruling x): hide every subtitle AND caption for judge stills — debug builds only.
+ * `?debug&nosubs` starts hidden; `window.__tkHideSubs(true|false)` toggles at runtime. Hidden = visibility only:
+ * timing, events and the voice duck are unchanged. Without `?debug` neither exists.
+ */
+function installQaHideSubs(): void {
+  if (typeof window === 'undefined' || typeof location === 'undefined') return;
+  const q = new URLSearchParams(location.search);
+  if (!q.has('debug')) return;
+  const w = window as unknown as { __tkHideSubs?: (hide?: boolean) => boolean };
+  if (w.__tkHideSubs) return;
+  if (!document.getElementById('tk-qa-nosubs-style')) {
+    const st = document.createElement('style');
+    st.id = 'tk-qa-nosubs-style';
+    st.textContent = '.tk-qa-nosubs .tk-subs{visibility:hidden!important}';
+    document.head.appendChild(st);
+  }
+  w.__tkHideSubs = (hide = true) => {
+    document.documentElement.classList.toggle('tk-qa-nosubs', !!hide);
+    return !!hide;
+  };
+  if (q.has('nosubs')) w.__tkHideSubs(true);
+}
+
 export class Subtitles {
   readonly root: HTMLElement;
   private cueEl: HTMLElement;
@@ -59,6 +83,7 @@ export class Subtitles {
     this.cueEl.className = 'tk-subs__cue';
     this.root.appendChild(this.cueEl);
     parent.appendChild(this.root);
+    installQaHideSubs();
   }
 
   /** Show a cue; returns a token for `clear(token)` (clearing a stale token is a no-op). */

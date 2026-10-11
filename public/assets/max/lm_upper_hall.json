@@ -14,9 +14,9 @@
   "intensity": 3.141592653589793,
   "stats": {
     "mean": 0.02211,
-    "p99": 0.14369,
-    "max": 9.37585,
-    "coverage": 0.5025
+    "p99": 0.14394,
+    "max": 9.20333,
+    "coverage": 0.5031
   },
   "file": "lm_upper_hall.klm"
 }

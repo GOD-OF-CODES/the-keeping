@@ -43,6 +43,23 @@ export const LOOK = {
   hpWhite: 3,
   /** Lowest exposure the highlight cap may set (linear; the room clamp's minExposure no longer binds it). */
   hpFloor: 0.03,
+  /** Fix round 4 LOOK (B05: Ada's gown in the 2 kcd core at 2.3–4 m rendered 40× the balusters in the spill, a blown
+   *  white blob with a bloom halo; measured b05m: gown 2.3 vs baluster 0.058 pre-exposure, specular ≈ 0 — it is diffuse):
+   *  FIXATION protect — the eye fixes what is at the centre of gaze and adapts to it (local adaptation the global meter
+   *  cannot see: the subject is ≈ 1 % of the weighted histogram, below hpPct). The fixPct percentile of the log luminance
+   *  inside a centre disk (radius fixR in meter uv, aspect-agnostic like the cue spot) may map to at most fixWhite (pre-AgX; ≈ a lit light cotton,
+   *  below the AgX shoulder and the bloom threshold) — only when it stands fixRatio..fixRatioMax× above the metered
+   *  average and no exposure cue runs. It can also bind on the torch hot spot on a near surface (core/spill ≈ 40×);
+   *  measured: the gate playthrough's gameplay views (upper-hall-ada, armoire-slats, harlan-bedroom) are within 5 %
+   *  of round 3's mean frame brightness. */
+  // b05uv: the torch core sits ≈ 0.12 below the frame centre at 2.3 m (the torch is held low; L 3.5 at uv 0.48/0.62) → r 0.15.
+  // b05p: p90 of the disk = the gown's lit flank (0.41) while its torch-core hot spot is 2.3 → p97 (the hot spot); a
+  // flame / bare bulb at the centre (≥ 2^10 × the metered average) is excluded by fixRatioMax, so it still clips.
+  fixR: 0.15,
+  fixPct: 0.97,
+  fixWhite: 0.6,
+  fixRatio: 4,
+  fixRatioMax: 256,
   /** Exposure compensation in EV on top of the meter. */
   biasEV: 0,
   /** Adaptation time constants (s). Rod dark adaptation is minutes; 6 s is a game-scale slow brightening.

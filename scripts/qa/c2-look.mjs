@@ -7,7 +7,7 @@
 //        --out scratch/<dir> --name <n> --timeout 2400
 // env: POSES='[{"name":"p0","face":241,"roll":-60,"tilt":35,"c":[x,y,z]?}]' (none = the shipped rest pose only),
 //      MARKS (default '7.75'), LATE (default '13.9,24.0'; '' none), CAP=1 (the cut probes), SWEEP_ONLY=1.
-const LAMP = [4.6, 4.25, 1.35];
+const LAMP = [4.3, 3.6, 1.35]; // fix round 4 (#129) — was (4.6, 4.25)
 const HEADPTS = [
   // ada_head_rig frame: origin = the crown, +Y crown, +Z face, +X her left; centre (0, −0.12, 0)
   { name: 'cut', obj: 'ada_head_rig', local: [0, -0.212, 0.01], r: 3 },
@@ -124,6 +124,8 @@ export default async function (qa) {
   const late = (process.env.LATE ?? '13.9,24.0').split(',').filter((v) => v.trim() !== '').map(Number);
   for (const m of late) {
     await until(m);
+    // fix round 4 (ruling u): the 13.9 insert must have the eye open — log the live eyelid_l_open influence
+    qa.log(`eyelid ${m} ` + await qa.eval(`JSON.stringify((() => { const o = []; window.__game.scene.traverse((x) => { const d = x.morphTargetDictionary; if (d && 'eyelid_l_open' in d) o.push([x.name, x.morphTargetInfluences?.[d.eyelid_l_open]]); }); return o; })())`));
     await meter(`c2-${m.toFixed(2)}`, m < 15 ? HEADPTS.slice(0, 7) : JETPTS);
     await qa.shot(`c2-${m.toFixed(2)}`);
   }

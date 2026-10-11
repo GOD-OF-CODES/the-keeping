@@ -30,6 +30,8 @@ export interface MeterReading {
   t: number;
   /** log2 of the centre-weighted LOOK.hpPct percentile luminance (highlight protect). */
   hp?: number;
+  /** log2 of the centre-disk LOOK.fixPct percentile (fixation protect, fix round 4). */
+  fix?: number;
 }
 
 /**
@@ -68,6 +70,7 @@ export class AutoExposure {
   private readonly weights = new Float32Array(SIZE * SIZE);
   private readonly vals = new Float32Array(SIZE * SIZE);
   private readonly order = new Uint16Array(SIZE * SIZE);
+  private readonly fixScratch = new Float32Array(SIZE * SIZE);
   /** PERF G (ruling f): sort keys (quantised value × 65536 + index) — a comparator sort of `order` copied the array
    *  into a fresh JS array every meter read (≈ 1.4 MB/s of garbage, scratch/pg/alloc-c1a); a numeric Float64Array sort
    *  runs in place. Value step 1e-4 (log2 luminance), far below any visible exposure change. */
@@ -285,9 +288,26 @@ export class AutoExposure {
         }
         let target = clampEV(Math.log2(LOOK.key) - metered);
         if (LOOK.hpWhite > 0 && hpLog > -20 && (EXPOSURE_CUE.hp || (EXPOSURE_CUE.min == null && EXPOSURE_CUE.max == null))) target = Math.max(Math.log2(LOOK.hpFloor), Math.min(target, Math.log2(LOOK.hpWhite) - hpLog + LOOK.biasEV));
+        // fix round 4 LOOK — fixation protect (look.ts fixR/fixPct/fixWhite/fixRatio): gameplay only (no cue)
+        let fixLog = -20;
+        if (LOOK.fixWhite > 0 && EXPOSURE_CUE.min == null && EXPOSURE_CUE.max == null) {
+          // PERF G fix round 4 (#132): a preallocated scratch + a typed-array numeric sort (no per-readback array/closure)
+          const fs = this.fixScratch;
+          let m = 0;
+          for (let i = 0; i < n; i++) {
+            const dx = ((i % SIZE) + 0.5) / SIZE - 0.5;
+            const dy = (Math.floor(i / SIZE) + 0.5) / SIZE - 0.5;
+            if (dx * dx + dy * dy <= LOOK.fixR * LOOK.fixR) fs[m++] = vals[i];
+          }
+          if (m > 0) {
+            const fv = fs.subarray(0, m).sort();
+            fixLog = fv[Math.min(m - 1, Math.floor(LOOK.fixPct * m))];
+            if (fixLog - metered >= Math.log2(LOOK.fixRatio) && fixLog - metered <= Math.log2(LOOK.fixRatioMax)) target = Math.max(Math.log2(LOOK.hpFloor), Math.min(target, Math.log2(LOOK.fixWhite) - fixLog + LOOK.biasEV));
+          }
+        }
         this.targetEV = target;
         this.haveTarget = true;
-        this.last = { log2Avg, target: Math.pow(2, this.targetEV), t: issuedAt, hp: hpLog };
+        this.last = { log2Avg, target: Math.pow(2, this.targetEV), t: issuedAt, hp: hpLog, fix: fixLog };
         if (this.snapAfter >= 0 && issuedAt > this.snapAfter) {
           this.ev = this.targetEV;
           this.snapAfter = -1;

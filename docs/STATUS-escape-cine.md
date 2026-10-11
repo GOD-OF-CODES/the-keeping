@@ -621,3 +621,253 @@ remove fake light; they do not move either hero frame to "photograph".
 7. **Someone must LISTEN** to C2 → C2c on speakers (strike crack sync, head drop, spurt) before any ship; the C2 voice clips are still missing.
 8. QA tools added (scratch, reusable): scratch/escfix3-review/lampab.mjs (same-state A/B of the key position), rt.mjs (real-time rAF hitches mapped to cutscene id + clock), prints.mjs (stain light diag), hitch.mjs (sim-time build counter per frame) — candidates for scripts/qa/.
 READY: review — fix round 3 complete: NO-GO (verdicts above + REALISM-BACKLOG "Fix-round 3 verdict"; contract #127).
+
+## Fix round 4 — look (stage 1, 2026-10-11, CINE/LOOK)
+- (start) AC power 100 %, disk 17 GiB free, tree clean at 531f195. Scope rulings (v)(w): (1) cut face per lane A's s2 request, (2) strike spurt visible + particle shadow term, (3) flannel grazing strip, (4) cleaver, (5) B05 gown, (6) pools if time.
+- (1) measured the cut plane in bind space from max/ada.glb (meshopt-decoded cap verts |n_y|>0.9, r<5 cm, both pieces): y = 1.393 − 0.57·z (body 1.3932, head 1.3919; 30° in bind space) → rim zone for the neck-blood film = |Δ| < 6 mm of that plane.
+
+### Fix round 4 — restage (lane CINE + lead-authorised layout edit; rulings (s), (u))
+- Start: tree clean at 531f195. Power AC, no Blender. Dist scratch/dist-restage (current tree).
+- Flame-in-frame sweep (scratch/flame-sweep.ts: every C2 / C2c camera pose, 16:9, 3D frustum, angle-only): shipped
+  (4.6, 4.25) is in frame only at C2 0–1.05 (threshold) and 18.9–19.95 (the Harlan exit follow) — (4.4, 3.6) the same
+  windows (0–0.7, 19–19.95), nothing new. Min margin on the D/E4 shots: shipped 0.6°, (4.4, 3.6) 0.5°, (4.3, 3.6) 2.2°,
+  (4.25, 3.75) 3.2°; (4.5, 3.5) enters frame at 5.95–6.35 (rejected). C2c angles hit only on the stair glances, where
+  walls/floor occlude the parlor (checked in stills below).
+- Lamp A/B (scripts/qa/c2-lamp-ab.mjs, Medium WebGPU, same state, fixed film exposure 0.625; scratch/restage/ab-*.jpg):
+  stump L at 7.75 / 7.95 / 8.2 — shipped S 0.0021 / 0.0020 / 0.0042 · A (4.4, 3.6) 0.0061 / 0.0060 / 0.0063 ·
+  G (4.3, 3.6) 0.0059 / 0.0064 / 0.0067 · E (4.25, 3.75) 0.0021 / 0.0020 / 0.0021 (back in his shadow). 10.5 pool_N
+  S 0.0075 → A 0.085 / G 0.071; head hair 0.0095 → 0.015 / 0.013 (the head is still a hair mass: the pose must turn).
+  Stills: G keys Harlan's front, the cleaver and the neck end at 7.95 (ab-07 vs ab-05); 10.5 the pools/boards around
+  the head are lamp-lit (ab-15 vs ab-13). → CHOSE G (4.3, 3.6, 1.35): equal-or-better stump than A at 7.95/8.2 and a
+  2.2° (vs 0.5°) flame margin on the D shots.
+- (1)(2) code: skin.ts cut face (capK mask: no cut tint / neck film / r3 fat tint on the face; roughness = max(baked, 0.135) + geometric AA, clearcoat follows; rim film 0.25 within 6 mm of the measured plane); lights.ts shares the shadow light's node as userData.shadowVis (Max: explicit pointShadow = the default); blood-fx particles + jets take it as their key visibility (receivedShadowPositionNode = their world pos). typecheck clean. look round 1 (Medium) running → scratch/look4/r1-*
+- LAYOUT EDITED (lead-authorised, ruling s; contract #129): scripts/layout/build-layout.mjs P_STOOL (4.3, 3.6, zG),
+  P_LAMP_PARLOR (4.3, 3.6, zG+0.45), L_LAMP_PARLOR (4.3, 3.6, zG+0.75 = 1.35), P_WHETSTONE (4.55, 3.85, zG) (same
+  +0.25/+0.25 offset from the stool); build-layout + validate-layout: 0 errors (28 warnings, none on these props).
+  Consumers updated: stage.ts LAMP_FLAME; cutscene-fx.ts held-head 3/4 aim now uses LAMP_FLAME (was a hard-coded
+  (4.6, 4.25, 1.35)); c2-room.ts flame-bearing comments (D 75.6°, T 67.3°, E4 104.7°); scripts/qa/{c2-meter,c2-look}.mjs
+  LAMP; c2-lamp-ab.mjs delta base. tests/c2-escape-stage.test.ts reads LAMP_FLAME → 8/8 pass; typecheck clean.
+  Lane A: blender/anim/review_c2.py still has STOOL/LAMP_BASE/FLAME at (4.60, 4.25) (review render only, lane A's file).
+READY: layout (4.3, 3.6) — P_STOOL (4.3, 3.6, 0.6), P_LAMP_PARLOR (4.3, 3.6, 1.05), L_LAMP_PARLOR flame (4.3, 3.6, 1.35), P_WHETSTONE (4.55, 3.85, 0.6); lane A may rebuild the G2 props / indirect bake now.
+- (4) code: src/characters/loader.ts steel_cleaver (Harlan's blade — the one in C2; cleaver-prop.ts is Ada's C5 prop): patina = dielectric oxide 0.06/0.05/0.045 rough 0.6 (metalnessNode 1−patina), honed 1.2 cm bevel rough 0.2 + a 12° normal tilt toward the edge (surface gradient of the blade's spine→edge coordinate, frame decoded from max/harlan.glb), blood coat on the edge half × BLOOD_UNIFORMS.amount (bloodOver). Round 1 waiting on lane A's Blender.
+- 13:50 r1 withdrawn from the Chrome queue: lane A's BUILD fr4-1 (harlan flannel/gauntlets, ada gown/stub) holds blender.lock — re-queue on a dist built after it lands (else my look would judge stale assets).
+- Consumers BEFORE (old dist; scratch/restage/pre-0[5-8]: C5 17.6/20.6, C7 22.0/24.6) captured. Note: a goto to the
+  threshold at B03 triggers C2, so the fixed parlor views are taken at B05 after the move (views-only scenario
+  scratch/restage/consumers.mjs). Dist rebuilt from the tree with the new layout.
+- Head rest (ruling u) — analytic pre-sweep (scratch/restage/pose.mjs, replicates floorPose; normals from the head centre):
+  at the new lamp the lamp–head–E4 angle is 67.8° in 3D (in the 60–80° band) with HEAD_REST unchanged (5.02, 3.05) —
+  no head move needed. The shipped pose (241, 0, 20) leaves the cut face 72° off the lens (fails ≥ 30° above grazing).
+  Candidates for the in-engine sweep: (300, 60, 0) (280, 45, 15) (260, 30, 20) (20, 60, 20) (220, 30, 45).
+- 14:30 dist scratch/dist-look4 rebuilt on lane A fr4-1 (characters+anims; manifests low 26.97 / med 53.82 / max 77.17 MB) + layout (4.3, 3.6) + my (1)(2)(4) code; r1 (Medium: 7.75/8.0/8.3/10.5 + lamp-side close + gown close) queued behind lane A's chain2 (parlor indirect re-bake not in this dist yet).
+- Pose sweep 1 (c2-look POSES, Medium, film 0.625, new lamp; scratch/restage/s1-0[1-6]): shipped (241,0,20) ear L 0.15,
+  cut 0.051, cheek 0.003, eye 0.002 → a hair ball with an ear. (300,60,0): the face up toward E4 under a blood mask,
+  cheek 0.017 / jaw 0.035 / eye 0.011, wet hair 0.37 (sheen) — reads as a HEAD for the first time but the face sits at
+  the lamp terminator (dim, red). (20,60,20): ear 0.063 / eye 0.061 / cheek 0.044 lit, but the cut unlit (0.003) and
+  the face turned away — reads as an ear + hair. Eyelid at 13.9 = 1 (ada_head eyelid_l_open live) ✓.
+  Geometry limit (pose.mjs): the cut normal is ⟂ the face; with lamp and lens 68° apart, a face square to the bisector
+  leaves the cut ≤ 56° toward the lens and unlit. Sweep 2 tries the lit-profile family (face toward the lamp).
+- Sweep 2 (q80/q60/q40 lit-profile family, q290/q330): the back/top of the skull with an ear blob — none reads as a face
+  (s2-02/03). New family from the geometry: FACE-UP on the occiput (roll ≈ 90–105, the natural rest of a severed head;
+  the boot nudge flips it face-down → face-up as the r2 design intended), the neck end toward E4's side (crown ≈ az
+  90–110), face ≈ 45° off the lens and 35–45° off the lamp (pose.mjs: face l 0.53–0.81 / c 0.71–0.82, cut c 0.5–0.7).
+- r1 (Medium, scratch/look4/r1-*; errors 0/0): (a) cut face with NO runtime tint = pale salmon disc + cream rings at the lamp-side close (r1-06) — the baked face is tissue, not filmed tissue → ONE film tint ×(0.42,0.06,0.05) on capK restored (cut tint + neck film stay off the face); (b) 7.75: the stream = a 1 px level red line along the cleaver/forearm band → JET_EL 18° → 28° (≤ 30°, ruling v); (c) cleaver now reads as a dark blade with a blood-coated edge (was a black plane); (d) flannel: pink/peach plaid — the restaged lamp is ≈ 0.6 m from his right sleeve (E ≈ 33 lx vs boards ≈ 12 lx): a saturated red 1.5 stops over the boards desaturates in AgX — staging/exposure, not a material sheen (baked rough 0.92); gloves read pale satin grey (lane A).
+- Walk lines (straight legs from c2-room constants; stool / whetstone clearance, m): Harlan exit (5.15,3.95)→(4.6,2.9)
+  0.59 / 0.49; →(4.15,2.1) 0.76 / 0.95; →HARLAN_CORNER 1.51 / 1.80; Ada rise 1.66 / 1.49; ADA_WALK legs ≥ 1.80. Harlan's
+  strike stance root → whetstone 0.61, → stool 0.92. No prop in a walk line (body radius ≈ 0.25 m).
+- Sweep 3 (face-up r0 (0,90,0), r2 (0,105,15); s3-01/03): with the QA per-frame re-pose the hair chains get 0.08 s and
+  the wet hair lies over the face (eye_R L 0.11 at r0 — the eye is lit — but the face reads as a hair-stippled dome).
+  p300 (s1-02) still reads most as a head. Next: the REAL nudge → rest (scratch/restage/real.mjs: pose set at 9.0,
+  no re-pose, the hair settles 1.6 s as in the game) for (330, 85, 5) [pose.mjs: face l .45 c .76, cheek .86/.78,
+  eye .67/.29, cut c .65 unlit] vs (300, 60, 0). Dist rebuilt after lane A's READY (props at the restage, lm_parlor).
+- r2max (Max, errors 0/0; scratch/look4/r2max-*): face dark red now but pale pink anatomy rings (salami) + a cream beaded rim (clearcoat lobe 0.12 on the rim tags) → face albedo 65 % to whole-blood film colour (opaque ≥ 0.2 mm), rim zone 8–12 mm: base + clearcoat roughness ≥ 0.3. Jet at 7.75 (28°): a lit red arc from the stump peaking and passing behind his left hand — visible from D; still a clean 2–3 px line (physically lit now: the restaged key reaches it; the shadow term makes it dark only where Harlan occludes). Cleaver: dark steel slab with a red-coated edge; no bevel glint at 7.75 from D.
+- REAL nudge → rest at (330, 85, 5) (scratch/restage/ra-02 9.70, ra-04 10.5; console errors 0): the face-down → face-up
+  roll whipped the hair chains into a ≈ 40 cm black fan across the boards (the chains have no floor and a 0.16 spring
+  to the authored pose); 10.5 head probes all ≤ 0.015 (face 0.007) — worse than the sweep. Fixes (lane CINE,
+  src/characters): VerletChain.floorY (secondary.ts: particles stop at the boards, no bounce, wet drag 0.3) and, for a
+  severed head nobody holds, hair floorY = her root's floor + 3 mm and stiffness 0.16 → 0.05 (wet hair is slack);
+  cutscene-fx nudge roll 0.35 → 0.5 s (≈ 150° roll at ≈ 0.5 m/s). Re-run: (330, 85, 5) full nudge + (300, 60, 0) at 10.5.
+- r3 (Medium, errors 0/0): lamp-side close at 0.6 m: face = one flat red-orange disc with faint anatomy (0.11 R × 24 lx at 0.7 m from the lamp ≈ the boards' R) — reads as a wet red cut, no longer a grey lid / salami; the rim beads are softened but a pale scalloped lip remains (the torn-rim geometry). E4 10.5: the cut face is not in view (the head pose turns it away; restage (u)); the biggest fake thing in the hero frame is now the POOLS (flat matte red lobes, uniform, smooth outline). B05 carry running.
+- Real runs with the hair floor/slack fix: (330,85,5) rc-04 — the hair now lies ON the boards (no airborne fan) but the
+  wet hair covers the face (the floor veil, uHairVeilClear 0 on the floor) and the head reads as a dark hair mound
+  (face L 0.0096, cheek 0.0074). (300,60,0) rd-01: darker still (face 0.004). The 13.9 insert (s1-07): eyelid influence
+  1, but both eyes read as lids in brow shadow (the lamp is 1 m below; only the chin is lit). Next: partial floor veil
+  (ruling u: "partly veiled") 0.7 + the held face aimed half-way to the lamp (faceAt k 0.35 → 0.5).
+- 14:45 B05 r1 (Medium, scratch/look4/b05-*; errors 0/0): still a blown white gown + bloom halo at 2.3 m (exp 0.667; torch core 2000 cd → E ≈ 380 lx at 2.3 m, diffuse L ≈ 0.33·380/π ≈ 40 ≈ 27× white × exposure) while balusters in the spill read fine. Measuring diffuse vs specular (gown roughness=1 A/B in the same frame) before touching anything. Face normal flatten 0.85 → 0.4 (relief in lane A's normal map). Dist rebuilt on lane A fr4-2.
+- re (330,85,5 + floor veil 0.7 + held faceAt k 0.5; re-02 10.5, re-03 13.9): the veil clear changes nothing at 10.5 —
+  the slack hair itself lies over the face (face L 0.005); 13.9 at k 0.5: the face 3/4 toward the lamp, the chin and
+  lips up-lit, both eyes still read as lids in the brow shadow (eye L 0.006–0.007, the lamp 1 m below). Next A/B: loose
+  hair stiffness 0.02 (falls off a face-up face) vs 0.16 (authored shape) — QA hook __c2HairK, floor clamp kept.
+- r4max (Max, errors 0/0; scratch/look4/r4max-*): the body stump from D at 8.2 (the face the film actually shows): dark red wet tissue with small glossy flame glints + blood sheeting onto the shoulders — no grey lid, no salami rings at this distance.
+- B05 measurement (b05m, Medium, errors 0/0): pre-exposure L at 3 m gown_hip 2.3 (max 4.6) vs baluster 0.058 (40×: 2 kcd core vs spill — physical); gown roughness→1 A/B: 0.024→0.026 chest, hip up → the blob is DIFFUSE, not a specular lobe; hp (p98 of the weighted histogram) never sees a 1 % subject. Fix: FIXATION protect (look.ts fixR 0.1 / fixPct 0.75 / fixWhite 0.5 / fixRatio 4; exposure.ts, gameplay only — no cue): the p75 of the centre disk ≤ 0.5 pre-AgX when it is ≥ 4× the metered average. Gown at 3 m → exposure ≈ 0.22 (was 0.6).
+- Hair A/B at (330,85,5) (rf-01 k 0.02, rg-01 k 0.16): k 0.16 stands the authored locks up in the air; k 0.02/0.05 lie
+  them on the boards. Logged head axes in the real run (rg): face normal (0.10, 0.04, 0.99) — face-up as designed,
+  face·lens 0.79, face·lamp 0.54, cut·lens 0.69 / cut·lamp 0.00. Yet face L 0.008 where 12 cd at 1.0 m and cos 0.54 gives
+  E ≈ 6.5 lx → L ≈ 0.6 → the head is SHADOWED at 10.5 (the A/B already showed floor_head (5.25, 2.95) 0.035 → 0.004 with
+  the lamp move). Suspect: Harlan bending over it for the 10.6 pick-up. Mapping the lit floor + his bones (rh).
+- b05n: fix log −4.3 at 3 m — p75 of the r 0.1 disk misses the gown (≈ 22 % of the disk) → fixR 0.08 / fixPct 0.9 (a candle/lamp flame ≤ 2–10 % of the disk still never binds).
+- NOTE to restage: JET_EL is 28° now — pulse 1 (2.8 m/s) still lands ≈ 1.1 m west of the cut (drag-limited range barely changes), i.e. near the south edge of the stool at (4.3, 3.6): the floor pool there vs the stool legs wants one look in your consumer stills.
+- b05p: p90 binds nothing (disk p90 0.41 = the gown's flank; its core hot spot 2.3) → fixPct 0.97 / fixWhite 0.6 and a ratio window 4×–256× above the metered average (flames/bulbs ≫ 2^8 never bind — they still clip).
+- Head diagnosis (crop of rf-01 ×3, scratch/restage/crop-rf.jpg): the face IS up toward the lens, but it renders as a
+  uniform dark-red blood-coated disc with one wet glint — no brow/nose/lip relief. The cover is the face's blood coat
+  (LOOK) rather than the pose or the lamp; the hair now lies on the boards. → request LOOK.
+- COMMITTED (cutscene-fx.ts): REST_FACE 330, REST_ROLL 85, REST_TILT 5 (face-up on the occiput; comment block states the
+  trade: face 38° off the lens, 57° off the lamp; neck end toward the lens, unlit), NUDGE_T 0.5 s; QA hook
+  __c2FaceAtK (held-face lamp lerp, default 0.35 unchanged). ada.ts: a severed head nobody holds → hair floorY = her
+  root's floor + 3 mm, stiffness 0.05 (QA __c2HairK); this also applies when she sets the head down later ('placed'):
+  the clamp only pushes particles up, so it is harmless there. secondary.ts: VerletChain.floorY.
+- 13.9 insert: eyelid_l_open = 1 verified live (ada_head influence 1); the eye still reads as a lid in brow shadow
+  (the lamp is 1 m below the held head — physics); k 0.5 did not open it up (re-03) → kept 0.35; lane-A request.
+- b05uv (uv probes at 2.3 m): the blob = gown surface L 3.5 (max 4.3) at uv (0.48, 0.62), the rest 0.001–0.1 — it lies 0.12 below centre (torch held low) → outside the r 0.08 disk → fixR 0.15.
+- AFTER stills, Medium WebGPU, final code (scratch/restage/fm-*; console errors 0 / exceptions 0; AC power):
+  C2 7.95 stump L 0.0058 (shipped 0.002), Harlan's front, the cleaver and the wet neck end keyed (fm-03); 10.5 face
+  0.0069 / cheek 0.0099 (fm-05) — the face is up toward the lens but still a dark blood-coated disc under a hair dome:
+  NOT a readable face yet. Same-frame diagnostic at 10.5: veil cleared (__veil 1) → face 0.0038 (the hair was not the
+  cover); lamp shadow off → face 0.017 / cheek 0.029 (×2.5: hair self-shadow is part of it) — even unshadowed the face
+  reads ≈ 30× below skin under 5 lx: the face blood coat (ρ ≈ 0.01) is the cover → LOOK. Draws/tris: C2 0.5 175 / 829 k,
+  7.95 150 / 828 k, 10.5 76 / 293 k, 19.5 144 / 801 k — no new geometry.
+  Consumers: C2 0.5 (B03 threshold, fm-01) the lamp out of frame, table candle key unchanged; parlor views at B05
+  (fm-10 wide, fm-12 stool): the stool + lamp on the west wall, no intersection, Harlan clear of it; the threshold
+  view at B05 is the shut door (D_PARLOR bolted) — the B03 threshold is C2 0.5. C5 17.6/20.6 and C7 22/24.6
+  (fm-13…16) match the before set (pre-05…08): the C5 shadow light is moved to its own fixed spot, so the shadow-play
+  is unaffected; the C7 sting frames are the same.
+- Max WebGPU (scratch/restage/fx-*; console errors 0 / exceptions 0, Ada on screen): 7.95 stump 0.0059, 151 draws /
+  952 k tris; 10.5 face 0.0078, 76 / 337 k; 13.9 76 / 338 k, cheek 0.040. Same read as Medium: the strike is keyed past
+  Harlan (wet neck end, cleaver, his front lit); the plaid reads salmon-pink and the gauntlets grey-tan (lane A build
+  in my dist), the jet a faint red diagonal line.
+- GATE so far (tree at this point): typecheck clean · npm test 254/254 · npm run build OK + verify-boot OK ·
+  assets.mjs --check ok (medium 53.86/60, max 77.20/120). Playthrough Medium queued (scratch/restage/pt.log).
+- b05r (Medium, errors 0/0; scratch/look4/b05r-03): at 2.3 m the fixation protect sets 0.27 (target 0.30; was 0.71): the gown reads as a pale grey wet gown with the torch core as a brighter patch — no white blob, no halo; balusters/stairs fall darker (eye fixed on her). Still flat (few folds) with dithered hem edges, and the carried head does not read as a head at 2.3 m (pose/asset; not fixed). GATE chain started on dist-look4 (current tree): WebGL2 look → Max B05 (Ada on screen) → Medium playthrough.
+- GATE (restage stage; dist scratch/dist-restage built from the tree incl. lane A's fr4 props/bake/characters, deleted
+  after; AC power): typecheck clean · npm test 254/254 · npm run build OK + verify-boot OK · assets.mjs --check ok
+  (medium 53.86/60, max 77.20/120) · playthrough.mjs Medium WebGPU (QA_STRICT default) **15/15**, B01…B13 in order,
+  C1/C2/C3/C5/C6/C7 played (C2c in C2's chain), deaths 0, ended=true B13 (game 451 s / wall 194 s), console errors 0 /
+  exceptions 0 · Medium (fm) and Max (fx) with Ada on screen 0 / 0. After my dist build the LOOK lane changed
+  src/render/look.ts (not in my dist); typecheck + npm test re-run on the current tree: clean, 254/254.
+- WHERE IT STANDS (honest): the KEY restage works — the strike is now lit past Harlan (stump ×3, his front, the cleaver,
+  the wet neck end read; no new flame-in-frame window, D-shot flame margin 0.6° → 2.2°). The 10.5 head is now face-up
+  toward the lens and the lamp (lamp–head–lens 67.8°), its hair lies on the boards instead of fanning, but the FACE
+  still does not read: a dark-red blood-coated disc with one wet glint (ρ ≈ 0.01 even with the shadow off). The 10.5
+  frame is NOT yet horrifying or photographic; the remaining cover is the face material (LOOK) and the hair asset (A).
+
+### Requests for the lead (fix round 4 — restage)
+1. Commit #129 (layout: P_STOOL / P_LAMP_PARLOR / L_LAMP_PARLOR → (4.3, 3.6), P_WHETSTONE → (4.55, 3.85); regenerated
+   level-layout.json; stage.ts LAMP_FLAME; cutscene-fx held-face aim → LAMP_FLAME; QA LAMP constants) and the head rest
+   (cutscene-fx REST 330/85/5, NUDGE_T 0.5; ada.ts + secondary.ts loose-head hair floor clamp + slack 0.05).
+2. LOOK: the floor head's FACE renders as a uniform dark-red coat (face L 0.007–0.017 under ≈ 5 lx; skin would be ≈ 0.5):
+   real blood on a face is streaks/runs from the cut and the hairline over visible skin, not a full mask — leave brow,
+   eyelid, nose ridge and cheek skin showing (the lamp now keys them at cos 0.54). This is the single biggest 10.5 fix.
+3. Lane A: the 13.9 insert — eyelid_l_open = 1 is live but the opened eye still reads as a lid in brow shadow (cornea/
+   open-lid morph needs a visible clouded iris + wet lid margin); the hair scalp shell/front veil is rigid on head_root
+   (44 % of ada_hair), so on a face-up head it forms a dome — a lighter, partly separated wet-lock shell would read.
+4. Accepted trade (ruling u): the cut ring at 10.5 faces the lens (cut·lens 0.69) but is unlit (cut·lamp 0) — the face
+   is the subject in this pose; the ring is lit at the strike and in the landing frames.
+5. Known QA hooks left in (all inert by default): globalThis.__c2FaceAtK (held-face lamp lerp), __c2HairK (loose-hair
+   stiffness); scratch/restage/{real,final,consumers}.mjs + scratch/flame-sweep.ts + scratch/restage/pose.mjs are
+   reusable (candidates for scripts/qa/).
+READY: restage fix round 4 — layout (4.3, 3.6) final (contract #129); head rest (330, 85, 5); gate passed (see above).
+- gl (WebGL2 Medium, dist-look4 = current tree; errors 0/0; scratch/look4/gl-*): 10.5 renders like WebGPU — the restaged head now shows its cut face to E4 as a dark red disc with one sharp flame glint (cut_face L 0.049 incl. the glint); no seams/NaN/white blobs; the particle/jet shadow sample compiles on GLSL.
+- b05max (Max, errors 0/0 with Ada on screen): exposure 0.24/0.34/0.33 at 4/3/2.3 m (the volumetric beam adds to the fixation disk on Max); the frame stays legible (balusters, stairs), Ada a pale gown in the beam with a light haze — not a blown blob.
+- GATE (dist scratch/dist-look4 built from the current tree incl. lane A fr4-2 + restage (4.3, 3.6); AC power; no Blender during my runs): npm run typecheck clean · npm test 254/254 · npm run build OK + verify-boot OK · assets --check ok (low 26.97/27, medium 53.86/60, max 77.20/120) · playthrough Medium WebGPU (QA_STRICT default): ended=true B13 → title, B01…B13 deaths 0, no input in C2/C2c, B05 handover (0.55, 8.25, 4.1), firstSeen 11.47 s, game 451.9 s / wall 197 s, console errors 0 / exceptions 0 · Max with Ada on screen (b05max: C2 → C2c → B05) 0/0 · WebGL2 (gl) 0/0. Low C2 check running.
+- low (Low WebGPU, C2 7.75/10.5): console errors 0 / exceptions 0. Dist deleted (disk 19 GiB free).
+
+### Fix round 4 — look: where it stands (honest)
+- (1) CUT FACE — done, judged where the film shows it: the body stump from D at 8.2 (Max) is dark red wet tissue with
+  small flame glints; at E4 10.5 (restaged head) the face is a dark red disc with one sharp glint (WebGL2 = WebGPU).
+  Lane A's premise (face already filmed in the bake) did not hold in-game (no tint → pale salmon disc, r1-06), so the
+  face takes ONE film tint mixed 65 % to the blood colour; satin floor 0.135 from the baked roughness (lumens 0.95 kept);
+  rim film 0.3 (base + clearcoat). In the 0.6 m lamp-side debug close it is still a flat red disc with a pale scalloped
+  lip — the torn-rim geometry, not shading.
+- (2) STRIKE SPURT — done: JET_EL 28°; under the restaged key the stream is a lit red arc from the stump at 7.75,
+  passing behind his left hand; particles + jets take the lamp's REAL shadow-map visibility (dark only where Harlan
+  occludes). Honest: it is still a clean 2–3 px line (no spray/mist) — reads as blood only because it is red and arcs.
+- (3) FLANNEL — not changed by LOOK: measured staging/tone, not sheen (baked rough 0.92; the restaged lamp is 0.73 m
+  from his right forearm); lane A owns the dye chroma (fr4-2 lowered it). Still pink-peach plaid in the strike frames.
+- (4) CLEAVER — done: patina + honed bevel + blood-coated edge; reads as a dark steel blade with a red edge at
+  7.75–8.2 (was a flat black plane). No visible bevel glint from D at these frames.
+- (5) B05 — improved, not photoreal: the blob was the 2 kcd core on a diffuse gown (40× the spill-lit balusters,
+  specular ≈ 0); the new FIXATION protect brings the gown to a pale textured grey at 2.3–3 m with no halo; Max 4 m a
+  pale gown in the beam haze. The gown is still smooth (few folds), its hem dithered, and the carried head does not
+  read as a head at 2.3 m.
+- (6) POOLS — NOT DONE (time): at E4 10.5 the pools are now the biggest fake thing in the hero frame (flat matte red
+  lobes, smooth outlines, no thickness variation or seam-following).
+READY: look — fix round 4 stage 1 (contract #130): cut face, particle/jet shadow term + JET_EL 28°, cleaver, B05 fixation protect; gate passed on the current tree.
+
+### Requests for the lead (fix round 4 — look)
+1. Commit #130 (src/characters/skin.ts, src/characters/loader.ts, src/world/blood-fx.ts, src/world/lights.ts,
+   src/render/exposure.ts, src/render/look.ts) with the restage (#129) and lane A fr4-2 — gate above passed on that tree.
+2. B05 exposure — a decision: the fixation protect is GAMEPLAY-wide (no-cue only): when the centre disk's p97 is
+   4–256× the metered average it maps to ≤ 0.6 pre-AgX. It binds on Ada in the core AND can bind on the torch hot spot
+   on any near surface (core/spill ≈ 40×). Measured on the gate playthrough: upper-hall-ada / armoire-slats /
+   harlan-bedroom mean frame brightness 21.5 / 14.1 / same-looking vs round 3's 22.5 / 15.2 (−4 to −7 %); B05 Ada
+   −1.4 stops (0.71 → 0.27 at 2.3 m). Options: keep (fixWhite 0.6) · middle (fixWhite 1.0: Ada ≈ −0.7 stop, less
+   protection) · revert (fixWhite 0).
+3. Lane A: the 0.6 m lamp-side close still shows a pale scalloped lip on the head's cut rim (torn-rim geometry/albedo);
+   the B05 gown needs fold/cling relief that survives a frontal torch, its hem's dither, and the carried head readable
+   at 2.3 m; the flannel pink is dye chroma × the 0.73 m lamp (yours).
+4. Pools (next round): seam-following outlines, satellites, thickness-dependent tone (thin edges lighter, centre darker)
+   — the biggest remaining fake element at E4 10.5.
+5. The spurt is physically lit now but still a clean line: spray/mist breakup is a next-round item if the AD wants the
+   strike to read more violently.
+
+## Review — fix round 4 (2026-10-11, art/horror director reviewer)
+- start: tree = 531f195 + fix-round-4 work uncommitted (#129 restage, #130 LOOK, #131 lane A, #132 AUDIO + #132 PERF — NOTE: number 132 is used twice in CONTRACT-CHANGES; next free = 133). AC 100 %, no Blender; disk 19 GiB. Dist scratch/dist-escfix4-review (current tree); shots → scratch/escfix4-review/. Judge scenario scratch/escfix4-review/judge.mjs (= restage final.mjs, subtitles hidden by CSS on any build, NOPROBE for live). Live comparison: worktree d70bdf1 → scratch/dist-live (live has NO escape sequence — its C2 is the pre-Phase-1 cutscene, 86faa8d added the escape).
+- jmax (MAX WebGPU 1280×800, dist escfix4-review = current tree, subtitles hidden; AC; Chrome shared FIFO with a PERF reviewer): exposure 0.625 at every C2 mark (the film camera holds). PROBES: stump 7.75/7.95/8.2/8.4 = 0.0060/0.0064/0.0064/0.0078 (round 3: 0.004 → ×1.5–2; the restage works); 10.5 face 0.0076, cheek_R 0.010, eye_R 0.0045, cut 0.0054 (boards 0.05–0.18 → the head is still 5–20× under the floor). Draws/tris C2 strike 151 / 0.95 M, 10.5 76 / 0.34 M.
+  - 7.75 / 8.2 (jmax-01/03): the strike now READS as an event — a man in plaid with a cleaver over a headless body on the table, the neck end a wet dark-red mass with glints, a thin red jet arc at 7.75. Not a photograph: Harlan's plaid is a high-contrast PINK/brown check (salmon stripes), the 'black rubber' gauntlets render as pale grey-gold plastic tubes (forearm 0.73 m from the 12 cd flame), the cleaver reads as a red-edged cardboard card, the sawbuck top is a glossy black plastic sheet with one broad sheen, the gown a pale lump. Horror: legible, not frightening — it looks staged, not caught.
+  - 10.5 (jmax-06, THE HERO STILL): NO face. A black mass with a vertical 'comb' of hair-shell strips, one small lit wet ring, beside two flat saturated red discs (pools = red felt cut-outs) on orange laminate-like boards; the out-of-focus table/body is a black wedge. The beheading is NOT readable in this frame without context. Not a photograph, not horrifying.
+  - 13.9 (jmax-07, insert): a smooth mannequin face lit from below, the eyes read CLOSED, gold chin highlight, red lip line at the cut, hair a dithered fringe. Uncanny, not photographic.
+  - C2c (jmax-10…13; montages mm-c2c-a/b): glance #1 4.1 = black frame, a dark figure in the lightning patch, neon-rimmed baluster stubs — unchanged from round 3; glance #2 7.1 = plaster-white balusters blown out under the torch + a white plaster arm at frame right (the fixation protect is gameplay-only, so it does not touch C2c) — still the least photographic frame of the sequence; 13.0 empty stair = moody, the most photographic frame; BUT a head-and-shoulders-shaped dark silhouette sits bottom-left in the foreground (crop-12.jpg; also in round 3 r5max-04 → not a regression) — on the 'she is not there' beat it reads as someone crouched at the top: identify (newel cap / player body?) next round. 15.5 handover: torch pool on the treads, OK.
+  - parlor fixed views at B05 (q-views.jpg): stool + lamp at (4.3, 3.6) stand on the boards against the west wall, nothing floating or intersecting; the blood stain by the stool legs reads; no ghost of the old stool visible in 'wide'. C5 17.6/20.6 + C7 22/24.6 (q-c5c7.jpg) as the restage agent's after-stills (shadow-play intact). Max console errors 0 / exceptions 0 (jmax-report).
+- jmed (MEDIUM WebGPU 1280×800, same dist, DIAG2): stump 7.75–8.4 = 0.0056–0.0079; 10.5 face 0.0085 / cheek 0.0055 / eye 0.0055; reads as Max (mm-med-hero.jpg): 10.5 = a strip of hair cards + a black mass beside a flat red pool, no head readable; 8.2 = pink-check sleeves, grey-gold gauntlets, card cleaver.
+  - DIAG at 10.5 (same frame): ada_head's skin swapped to a plain grey 0.5-albedo material → face 0.0085 → 0.0103 only, and in the still (mm-diag-grey.jpg) only a small patch at the neck end turns grey; the rest of the 'head' stays black. So the 10.5 problem is NOT the blood film (LOOK) — what E4 sees is the HAIR (Ada's hair is not a separate /hair/ mesh; it was not swapped) plus deep shadow on the face (grey albedo 0.5 at 0.01 ⇒ E ≈ 1/40 of the boards beside it, which a 12 cd flame at 1.16 m and cos 0.54 cannot explain unless the face is occluded: the hair shell dome over the face-up head). Owner: lane A (hair shell for a face-up head) + CINE (pose), M-A backlog.
+  - 22.95 (audio's ada_slap check): the camera at 22.95 shows the table end + candle and the door edge — her knees are OFF-screen, so the slap's sync cannot be checked or mis-seen in picture; 24.0: the table, candle, red mass on the table top; the rise does not read as a headless body getting up (unchanged).
+- gate (current tree, no edits by me so far): npm run typecheck clean · npm test 257/257 · assets --check ok (see ac.log). Our-dist chain queued: dg3 (10.5 hair-hidden diag + 13.0 silhouette id), b05med (b05-carry, nosubs), rtmed (c2-realtime with PERF's drain), gate (playthrough Medium, QA_STRICT).
+- dg3 (MEDIUM, same dist; dg3-01/02, mm-diag-nohair.jpg): at 10.5 the only hair mesh (ada_hair) hidden → face 0.0073 → 0.0037, cheek 0.0055 → 0.0018: the head under the hair is a uniformly BLACK ovoid with only the small wet cut lit. With the grey-albedo swap (jmed) it also stayed black. ⇒ The 10.5 failure is LIGHT ON THE HEAD (the lamp does not reach the face side E4 sees), not the blood film and not the hair veil. A big black occluder mass fills frame right (Harlan's legs / the sawbuck end, defocused) — candidate shadow caster; the restage agent's shadow-off test (face 0.017) shows even unshadowed the face gets ≈ 1/6 of the boards' light. Next round (CINE): place a probe at the face and log the lamp N·L and shadow term separately; consider the 1 cd table candle P_CANDLE_TABLE / a second practical as the head's key. Owner CINE (+LOOK), M-A backlog.
+- 13.0 empty-stair foreground silhouette: no static mesh within 1.6 m of the eye; the only near meshes are the POV arms rig (arms_sleeves/gloves/flashlight, 0.4–0.65 m) → it is the player's own torch arm in silhouette. Not Ada. Still reads as a crouched head in the dark → CINE: drop the arm 10 cm or let the torch spill rim it (M-A).
+- b05med (MEDIUM, b05-carry, nosubs; mm-b05.jpg; console 0/0): exposure 0.28 / 0.38 / 0.37 at 4 / 3 / 2.3 m (the fixation protect binds). She now reads as a HEADLESS WOMAN in a white gown with a red neck end, climbing into the torch pool — legible and creepy at 4 m, no more blown blob/halo. Not photographic: the gown is a smooth pale shape with no folds/cling, her edges soft-dithered, the carried head does not read as a head at any distance; the frame overall is very dark (the stairwell reads only in the beam).
+- rtmed (MEDIUM real time, c2-realtime.mjs with PERF's drain; AC, no Blender; Chrome FIFO-exclusive): C2 29.0 s + C2c 13.9 s in 42.8 s wall (pacing as authored), 2529 frames = 59.1 fps, frames > 50 ms: NONE (round 3: 200–383 ms entry + a one-off 517 ms), 40 frames at 33 ms (a periodic single-frame drop every ≈ 0.12 s at C2 2.5–3.6 s — vsync misses during the opening dolly, not visible as a hitch). Audio (read, not re-measured): strike is the loudest moment (−13.8 vs −14.7 LUFS Medium), sync −1…+25 ms, TP −3.0 dBTP — nobody has listened on speakers yet.
+- GATE playthrough (MEDIUM WebGPU, QA_STRICT default, dist = current tree; gate.log): **15/15**, ended=true B13 → title, deaths 0, no input in C2/C2c, B05 control at CP2 (0.55, 8.25, 4.1), her return first seen +11.47 s, game 480 s / wall 209 s, console errors 0 / exceptions 0. Gate stills scratch/escfix4-review/gate-01…09 (compare with live + round 3).
+- **REGRESSION FOUND (gameplay, all lanes' gates missed it): the U1 hall RUNNER RUG renders BLACK** since lane A's 13:59 props rebuild (scratch/escfix4-review/runner-timeline.jpg: lead-fix3 13:33 red runner → restage 15:16 / look4 15:31 / listen 16:22 / my gate 18:05 black strip; cmp-r3r4-b.jpg). Cause: the props job writes each static prop's UV2 into its room's atlas band; `assets.mjs --list` shows EVERY bake-house-* except parlor stale vs the new props.blend (lane A ran only `--only props,bake-house-parlor,encode`), so lm_upper_hall (dev bake 10-08) no longer matches the runner's new UV2. Same risk for every non-parlor baked prop (ground, kitchen, upper-rooms, exterior, car — props_road was rebuilt too). The "−4 to −7 % upper-hall brightness" LOOK attributed to the fixation protect is at least partly this. FIX (mine, through the pipeline, contract #133): `assets.mjs --only bake-house-upper-hall,encode` first (verify the runner), then `--only bake-house,encode`. KLM bytes are content-dependent (low lm_parlor 321223 → 321601 B after its rebake) → re-check Low after.
+- live (d70bdf1, dist-live built from a detached worktree, live's own playthrough bot; MEDIUM; live.log): ended=true B13, deaths 0, console 0/0. Live vs ours (cmp-live-a…d.jpg): C1 car same; facade flash — ours has ORANGE-lit grass patches along the path and an orange-red dead-tree trunk that neither live nor round 3 has (props_road rebuilt at 13:59 → same stale-lightmap/UV2 mismatch suspected, exterior atlas); C2 parlor — live's (no beheading, candle-lit tableau) is a warmer, more legible still than our dark strike frame; upper hall — live is near-black, ours reads (but the black runner); armoire slats — live black, ours reads; Harlan bedroom same; C5 — ours brighter/more legible; C6 dawn drive identical.
+- lmax (live d70bdf1, MAX, C2 at 3/6/9.2/12.5/16/20 + the same fixed views/C5/C7; q-live-c2.jpg; console 0/0): live's C2 is the pre-escape 'stopped stroke' tableau — Harlan hooded with a sack, Ada alive on the table, a candle, the rope; evenly lit, legible, warm, NOT horrifying and with no beheading, no headless rise, no stair chase, no look-back. It is a clean game render, not a photograph either. ⇒ the escape sequence the user asked for exists only in our build.
+- BAKE (#133) started: `node scripts/assets.mjs --only bake-house,encode` (dev bakes of the 6 stale rooms; parlor fresh) — waits for the Chrome lock; scratch/escfix4-review/bake.log.
+- BAKE done (#133): bake-house-ground 1st, kitchen 29 s, upper-hall 47 s, upper-rooms 61 s, exterior 39 s, car 21 s, encode 59 s (parlor cached). Changed: lm_{ground,kitchen,upper_hall(+_flash),upper_rooms(+_flash),exterior,car}.{klm,json} × 3 tiers. assets --check ok: low 26.99/27 (was 26.97 → Low headroom now ≈ 10 KB), medium 53.91/60, max 77.28/120. dist-live + worktree removed. chain3 (dist rebuilt from the current tree): gate2 playthrough → fmax (Max console with Ada, 8.2/10.5/C2c 4.1/13.0) → b05med2.
+- gate2 (MEDIUM playthrough, QA_STRICT, dist = current tree after #133): **15/15**, ended=true B13, deaths 0, console 0/0. **Runner FIXED** (cmp-bake.jpg: red runner back in the upper hall). The facade's orange 'dry grass' patches + orange-red trunk are UNCHANGED by the re-bake → not a lightmap mismatch; investigating (same-state facade with ?urpatch=0 — PERF's #132 uniform-range patch is the only runtime change touching every material; its A/B was only done in the parlor).
+- facade A/B (MEDIUM, same state, --beat B02 goto + strike; cmp-urpatch.jpg; fa-on/fa-off): ?urpatch=0 vs the patch = the same frame → PERF's uniform-range patch is NOT it. The warm patches are the TORCH beam (2–3 kcd hot centre, 2900 K) on the grass/trunk — physically right under ≈ 0.01 lux moonlight; the playthrough's round-3 frame had the beam elsewhere. Not a regression.
+- fmax (MAX, after #133): stump 8.2 0.0061, 10.5 face 0.0082 (unchanged: the parlor atlas was not re-baked) · console 0/0 with Ada on screen. b05med2 (MEDIUM, after #133): exposure 0.36 / 0.45 / 0.25 at 4 / 3 / 2.3 m (the stairwell's re-baked atlas shifts the meter a little), console 0/0.
+- FINAL GATE (current tree = all fix-round-4 lanes + #133 lightmaps; dist rebuilt from it at the post-bake chain; no src edit by me): npm run typecheck clean · npm test 257/257 · npm run build OK + verify-boot OK · assets --check ok (low 26.99/27, medium 53.91/60, max 77.28/120) · strict playthrough Medium 15/15 → B13 → title, 0 deaths, console 0/0 (gate2) · Max with Ada on screen 0/0 (fmax) · Medium with Ada on screen 0/0 (b05med2, jmed). Real time (rtmed, pre-bake tree; lightmaps don't change draws/tris): 59.1 fps, 0 frames > 50 ms. PERF reviewer's budgets (tree 16:40) stand: every C2/C2c frame in budget. AC power throughout; Blender ran only between my Chrome sessions (shot.mjs waited). My dists + the live worktree are deleted; disk 19 GiB free.
+
+### Review — fix round 4: where it stands (honest, 2026-10-11)
+**(A) PHOTOREAL: NO-GO (unchanged bar).** On Medium and Max at the fixed film exposure neither hero frame reads as a
+photograph. The restage worked where it was aimed: the stump is out of Harlan's shadow (0.004 → 0.006–0.008) and the
+strike now READS as an event — a man in plaid with a cleaver over a headless body, a wet dark-red neck end, a lit red
+arc at 7.75. But it looks staged and CG: pink-salmon plaid stripes, pale grey-gold 'rubber' gauntlets (his forearm is
+0.73 m from the 12 cd flame), a cleaver like a red-edged card, a glossy black plastic table top. **The 10.5 hero still
+is the failure**: a black mass with a vertical comb of hair-shell strips and one small lit wet ring beside two flat red
+felt-like pools — nothing says "her head". Same-frame diagnostics: with a plain grey 0.5-albedo skin the head stays
+black; with the hair hidden it is a uniformly black ovoid → the lamp does not reach the face side E4 sees (light/
+occlusion, not the blood film, not the veil). 13.9 is an uncanny mannequin with closed-reading eyes; C2c glance #2 is
+still plaster-white balusters and a plaster arm. The best frames are the empty stair (13.0) and the handover — moody
+and close to photographic. B05 Ada now reads as a headless woman in a white gown (no more blown blob), not as a
+photograph. The beheading is legible at the strike; it is NOT clearly visible in the hero still; not horrifying as a
+photograph on either tier.
+**(B) RULING (y) SHIP CHECK: better than live = YES (after #133).** Live d70bdf1 has NO escape sequence: its C2 is the
+pre-escape 'stopped stroke' tableau (evenly lit, legible, not horrifying) followed by a gameplay chase. Ours delivers the
+user's sequence — the strike, the headless rise, the stair chase, the look-back to an empty stair, then gameplay — with
+honest low-key light, 59 fps real time and no hitch > 50 ms, the strike the loudest moment in the mix. Elsewhere:
+C1 car and C6 identical; upper hall, armoire slats and C5 read better than live's near-black frames; Harlan's bedroom
+the same; playthrough 15/15; console 0/0. ONE REGRESSION WAS FOUND AND FIXED HERE: the U1 hall runner rendered black
+since lane A's props rebuild (stale non-parlor lightmaps; #133 re-bake) — the ship is better than live only WITH #133.
+Not regressions: the facade's warm grass patches are the torch beam (urpatch A/B identical); the fixation protect makes
+gameplay −4…−7 % vs round 3 but far more legible than live. Lead's call, not a blocker: the heart layer is 5 dB quieter
+in every chase (AUDIO #132) — nobody has listened.
+
+### Requests for the lead (review — fix round 4)
+1. **Ship (ruling y): GO for main ONLY together with #133** (the re-baked lm_{ground,kitchen,upper_hall(+flash),upper_rooms(+flash),exterior,car}.{klm,json} × low/medium/max + manifests). Without #133 the U1 runner is black in gameplay = a regression vs live. Commit #129–#133 together; no Co-Authored-By trailer.
+2. **Renumber one of the two #132 entries** in CONTRACT-CHANGES (AUDIO and PERF both used 132) to #134.
+3. Low download headroom is now ≈ 10 KB (26.99/27 MB) — a hard stop for every lane.
+4. Lane A: add "after any `props` or `house` rebuild, re-run every stale `bake-house-*` (`assets.mjs --list`) and shoot one non-parlor room" to the rebuild checklist — four gates missed the black runner because only parlor frames were judged.
+5. Decide the heart layer (−5 dB in every chase, AUDIO #132) and the fixation protect (LOOK #130): I judge neither a ship blocker (gameplay is more legible than live), but someone must LISTEN to `scratch/listen/c2-c2c.wav` on speakers before the M-A round.
+6. M-A backlog, biggest first (REALISM-BACKLOG "Fix-round 4 verdict"): the 10.5 head has no key light on the side E4 sees (CINE: a second practical / repose / re-frame — proven by the grey-albedo and no-hair diagnostics); Harlan blown at 0.73 m from the flame (flag/reflector, CINE + A); pools (LOOK); 13.9 eye (A); glance #2 plaster balusters/arm (A/LOOK); the empty-stair torch-arm silhouette (CINE).
+7. Reusable QA: scratch/escfix4-review/judge.mjs (C2/C2c marks + parlor views + C5/C7 on ANY build incl. live; DIAG2 grey-skin swap, DIAG3 hair-hide + near-camera mesh list; NOPROBE for live) and facade.mjs (?urpatch A/B) — candidates for scripts/qa/.
+READY: review — fix round 4 complete: photoreal NO-GO; better than live YES with #133 (lightmap re-bake fixing the black U1 runner).
+- #133 re-check (3rd look, post-bake stills already shot): C1 car (lm_car) and Harlan's bedroom (lm_upper_rooms) match pre-bake (cmp-bake2.jpg), C2c glance #1 / empty stair (lm_ground, lm_upper_hall + flash) match (cmp-bake3.jpg) — no new black or shifted bake anywhere looked at; the runner is fixed (cmp-bake.jpg). C7 live vs ours (cmp-live-c7.jpg, forced play out of story context): live stages C7 in the hall, ours in the parlor (changed by earlier rounds, not this one; ours matches the restage agent's pre-stills); ours 22.0 is very dark — noted for M-A, not a fix-round-4 regression.

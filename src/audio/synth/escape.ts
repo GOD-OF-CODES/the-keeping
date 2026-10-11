@@ -647,6 +647,15 @@ const bodyFallStairs: Recipe = {
   bus: 'player',
   variants: 2,
   level: 0.85,
+  // fix round 4 (ruling x, the real recording scratch/listen/c2-c2c.wav): this fall + the torch knock + the gasp at
+  // C2c 6.62–6.66 measured −11.1 LUFS momentary (EBU R128, 400 ms) — 2.6 LU LOUDER than the strike (−13.7). The
+  // beheading must be the loudest moment of the escape: −10.5 dB here (REC 2 at −6 dB still tied the strike; the
+  // thuds are 120–150 Hz, felt more than heard; it is a CAUGHT stumble, not a fall down the flight). Max REC still put
+  // it within 0.3 LU of the strike with the rain bed (−24, a third of the moment's energy) and the 150 bpm heart on top:
+  // a close impact masks the bed exactly like the strike does (Recipe.hdr), smaller: 4 dB / 0.3 s.
+  playGain: 0.3,
+  hdr: 4,
+  hdrHold: 0.3,
   gen(sr, rng) {
     const out = buf(sr, 0.9);
     for (const [at, g] of [[0, 1], [0.14, 0.75]] as const) {

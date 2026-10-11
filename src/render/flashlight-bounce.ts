@@ -102,12 +102,86 @@ const RESAMPLE_FRAMES = 15; // trace frames (every 2nd frame) ≈ 0.5 s at 60 fp
  *  source of the major GC at the B05 hand-back); the colour is lerped at k = 12/s (τ ≈ 83 ms) anyway. */
 const RESAMPLE_MIN = 3;
 
+const _inv = new THREE.Matrix4();
+const _lo = new THREE.Vector3();
+const _ld = new THREE.Vector3();
+/** PERF G fix round 4 (#132): the nearest ray hit on ONE static mesh in [near, far] (world units; d must be unit length),
+ *  as three's Mesh.raycast → checkIntersection would find it (same side rules: FrontSide culls back faces, BackSide front
+ *  faces, DoubleSide none; groups → materialIndex) but read straight from the typed arrays with local doubles — the
+ *  Raycaster's getVertexPosition / fromBufferAttribute / intersectTriangle walk allocated ≈ 65 MB per 14 s of C2c (round-3
+ *  allocation profile), the bulk of the garbage behind the Max B05 hand-back major GC. Returns false when the mesh is not
+ *  a plain non-interleaved float mesh (the caller then uses the Raycaster). out = [distance, materialIndex], -1 = no hit. */
+export function traceMesh(mesh: any, o: any, d: any, near: number, far: number, out: number[]): boolean {
+  const g = mesh.geometry;
+  const pa = g?.attributes?.position;
+  if (!pa || pa.isInterleavedBufferAttribute || pa.normalized || !(pa.array instanceof Float32Array) || mesh.isInstancedMesh || mesh.isSkinnedMesh || mesh.isBatchedMesh || g.morphAttributes?.position?.length) return false;
+  const P = pa.array as Float32Array;
+  const I = g.index ? (g.index.array as ArrayLike<number>) : null;
+  _inv.copy(mesh.matrixWorld).invert();
+  _lo.copy(o).applyMatrix4(_inv);
+  _ld.copy(o).add(d).applyMatrix4(_inv).sub(_lo); // not normalised: the ray parameter stays the world distance
+  const ox = _lo.x, oy = _lo.y, oz = _lo.z, dx = _ld.x, dy = _ld.y, dz = _ld.z;
+  const mats = mesh.material;
+  const multi = Array.isArray(mats);
+  const groups = multi && g.groups.length ? g.groups : null;
+  const drawStart = Math.max(0, g.drawRange.start);
+  const drawEnd = Math.min(I ? I.length : pa.count, g.drawRange.start + (Number.isFinite(g.drawRange.count) ? g.drawRange.count : Infinity));
+  let best = far;
+  let bestMat = -1;
+  const ng = groups ? groups.length : 1;
+  for (let gi = 0; gi < ng; gi++) {
+    let s0 = drawStart;
+    let s1 = drawEnd;
+    let mi = 0;
+    if (groups) {
+      const gr = groups[gi];
+      mi = gr.materialIndex ?? 0;
+      s0 = Math.max(gr.start, drawStart);
+      s1 = Math.min(gr.start + gr.count, drawEnd);
+    }
+    const mat = multi ? mats[mi] : mats;
+    if (!mat) continue;
+    const side = mat.side;
+    for (let k = s0; k + 2 < s1; k += 3) {
+      const ia = (I ? I[k] : k) * 3, ib = (I ? I[k + 1] : k + 1) * 3, ic = (I ? I[k + 2] : k + 2) * 3;
+      const ax = P[ia], ay = P[ia + 1], az = P[ia + 2];
+      const e1x = P[ib] - ax, e1y = P[ib + 1] - ay, e1z = P[ib + 2] - az;
+      const e2x = P[ic] - ax, e2y = P[ic + 1] - ay, e2z = P[ic + 2] - az;
+      // three Ray.intersectTriangle: normal = e1 × e2, DdN = d · normal (BackSide: three swaps a and c → the sign flips)
+      const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+      const DdN = dx * nx + dy * ny + dz * nz;
+      if (DdN === 0) continue;
+      if (side === 0 && DdN > 0) continue; // FrontSide: back face culled
+      if (side === 1 && DdN < 0) continue; // BackSide: front face culled
+      // Möller–Trumbore
+      const px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
+      const det = e1x * px + e1y * py + e1z * pz;
+      const inv = 1 / det;
+      const tx = ox - ax, ty = oy - ay, tz = oz - az;
+      const u = (tx * px + ty * py + tz * pz) * inv;
+      if (u < 0 || u > 1) continue;
+      const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+      const v = (dx * qx + dy * qy + dz * qz) * inv;
+      if (v < 0 || u + v > 1) continue;
+      const t = (e2x * qx + e2y * qy + e2z * qz) * inv;
+      if (t < near || t > best) continue;
+      best = t;
+      bestMat = mi;
+    }
+  }
+  out[0] = bestMat >= 0 ? best : -1;
+  out[1] = bestMat;
+  return true;
+}
+
 export class FlashlightBounce {
   private readonly fl: Flashlight;
   private readonly collision: { rayDistance(o: any, d: any, far: number): number; octree?: any };
   private readonly cands: Candidate[] = [];
   private readonly ray = new THREE.Raycaster();
   private readonly rayObj = new THREE.Ray();
+  private readonly tr = [0, 0];
+  private readonly sampleCol = new THREE.Color();
   private readonly o = new THREE.Vector3();
   private readonly d = new THREE.Vector3();
   private readonly hit = new THREE.Vector3();
@@ -225,6 +299,8 @@ export class FlashlightBounce {
   private sample(dist: number): { rho: number; col: any } | null {
     let fallback: any = null;
     let best: any = null;
+    let bestD = Infinity;
+    let bestMi = 0;
     let tested = 0;
     this.ray.set(this.o, this.d);
     this.ray.near = Math.max(0, dist - 0.3);
@@ -236,17 +312,29 @@ export class FlashlightBounce {
         continue;
       }
       if (tested++ >= 4) break;
+      if (traceMesh(c.mesh, this.o, this.d, this.ray.near, this.ray.far, this.tr)) {
+        if (this.tr[0] >= 0 && (!best || this.tr[0] < bestD)) {
+          best = c.mesh;
+          bestD = this.tr[0];
+          bestMi = this.tr[1];
+        }
+        continue;
+      }
       const hits = this.ray.intersectObject(c.mesh, false);
-      if (hits[0] && (!best || hits[0].distance < best.distance)) best = hits[0];
+      if (hits[0] && (!best || hits[0].distance < bestD)) {
+        best = hits[0].object;
+        bestD = hits[0].distance;
+        bestMi = hits[0].face?.materialIndex ?? 0;
+      }
     }
     let mat: any = null;
-    if (best) mat = Array.isArray(best.object.material) ? best.object.material[best.face?.materialIndex ?? 0] : best.object.material;
+    if (best) mat = Array.isArray(best.material) ? best.material[bestMi] : best.material;
     else if (fallback) mat = Array.isArray(fallback.material) ? fallback.material[0] : fallback.material;
     if (!mat) return null;
     const spec = specById(String(mat?.userData?.material_id ?? ''));
     const a: [number, number, number] = spec ? (spec.avgAlbedo as [number, number, number]) : [0.3, 0.3, 0.3];
     const lum = 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
-    const col = new THREE.Color(a[0] / Math.max(1e-4, lum), a[1] / Math.max(1e-4, lum), a[2] / Math.max(1e-4, lum));
+    const col = this.sampleCol.setRGB(a[0] / Math.max(1e-4, lum), a[1] / Math.max(1e-4, lum), a[2] / Math.max(1e-4, lum)); // reused (#132)
     // the beam's own colour (2900 K) is applied by the light colour × albedo tint
     col.multiply(this.fl.light.color);
     return { rho: lum, col };

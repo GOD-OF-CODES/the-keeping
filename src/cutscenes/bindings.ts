@@ -309,7 +309,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
             if (stinger) g.audio.layers?.stinger(stinger);
           },
           weather: (w) => g.audio.layers?.setWeather(w),
-          heartbeat: (bpm) => g.audio.layers?.setHeartRate(bpm),
+          heartbeat: (bpm) => g.audio.layers?.setHeartRate(bpm, true),
         }
       : undefined,
     voice: (trigger) => {

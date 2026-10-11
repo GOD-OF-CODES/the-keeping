@@ -16,7 +16,10 @@ export default async function (qa) {
   })()`);
   qa.log('C2 start ' + w);
   const r = await qa.eval(`(async () => {
-    const g = window.__game; const P = g.cutscenes?.player; g.loop.start();
+    const g = window.__game; const P = g.cutscenes?.player;
+    // PERF fix round 4 (#132): the stepped walk's advance() frames are unfenced — let their GPU queue drain before the real
+    // loop restarts, or the first real frames wait on it (measured 183–267 ms with 0 node builds: a tool artifact)
+    await new Promise((r) => setTimeout(r, 1500)); g.loop.start();
     const out = []; let last = performance.now(); const t0 = performance.now(); let n = 0; const seen = {};
     await new Promise((res) => { const f = (now) => { const dt = now - last; last = now; n++;
       const id = P?.active ?? null; const t = P?.time ?? -1; if (id) seen[id] = Math.max(seen[id] ?? 0, t);

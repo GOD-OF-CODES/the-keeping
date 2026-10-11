@@ -8,7 +8,7 @@
 //
 // One key: the restaged kerosene lamp L_LAMP_PARLOR (12 cd, 1950 K, NW of the neck, shadowed — the session's one
 // cube-shadow light, K3). No lightning in C2 (thunder is heard). Every shot from D aims at a yaw ≤ 49° so the flame
-// (bearing 73.2° from D) stays ≥ 1° outside the frame even on a 16:9 screen (half-hfov 23.2° at 50 mm).
+// (bearing 75.6° from D since fix round 4, #129; was 73.2°) stays ≥ 2° outside the frame even on a 16:9 screen (half-hfov 23.2° at 50 mm).
 // Clip origin O = 0.6: Harlan's and Ada's clip time = t − 0.6 (A4 clips harlan_c2 / ada_c2 / ada_rise_headless; the
 // fallbacks keep the sequence playable until they land).
 
@@ -67,9 +67,9 @@ export const HARLAN_CORNER: P3 = [4.2, 0.65, GROUND];
 export const ADA_WALK: P3[] = [ADA_RISE, [5.95, 2.0, GROUND], [5.0, 1.6, GROUND], [4.2, 1.5, GROUND], [3.75, 1.5, GROUND], C2_ADA_END];
 
 const DEG = Math.PI / 180;
-/** Max aim yaw from D (bearing CCW from east): the flame is at 73.2°. */
+/** Max aim yaw from D (bearing CCW from east): the flame is at 75.6° (fix round 4; was 73.2°). */
 export const D_MAX_YAW = 49 * DEG;
-/** Max aim yaw from T (flame bearing 66.8°): 42° at 50 mm, 40° at 44 mm. */
+/** Max aim yaw from T (flame bearing 67.3° since fix round 4; was 66.8°): 42° at 50 mm, 40° at 44 mm. */
 export const T_MAX_YAW_50 = 42 * DEG;
 export const T_MAX_YAW_44 = 40 * DEG;
 
@@ -97,7 +97,7 @@ export const c2Room: TimelineFactory = (ctx) => {
   // the body's cut neck on the table (−16.7°) sat on the top bar. At −23.5° the letterboxed 50 mm frame (±10° visible)
   // holds BOTH: the stump on the table edge in the upper third and the head on the boards in the lower third, with
   // Harlan's boots between — 9.2–9.45 (the head landed, its cut ring toward the lens) is the one-still beheading.
-  // (40 mm: half-hfov 28.1° on 16:9 → the aim yaw ≤ 45.1° keeps the flame (73.2°) out of frame — test c2-escape-stage)
+  // (40 mm: half-hfov 28.1° on 16:9 → the aim yaw ≤ 45.1° keeps the flame (75.6°) out of frame — test c2-escape-stage)
   const D_FLOOR = aim(C2E_D, 44.5 * DEG, -23.5 * DEG, dist(C2E_D, HEAD_REST)); // S4: the head on the floor + the stump
   const D_LIFT = aim(C2E_D, D_MAX_YAW, 1 * DEG, 2.7); // S5: the head at his face height (fist z 2.62, head 2.30)
   // S6 insert (100 mm). Review r2: the old fixed aim (60°, +2.6°, 2.55 m) framed wallpaper with the head at the right
@@ -116,7 +116,7 @@ export const c2Room: TimelineFactory = (ctx) => {
   const E4 = C2_E4;
   const HEAD_T: P3 = [5.08, 3.1, 0.76]; // between the landing (HEAD_LAND) and the rest (HEAD_REST), a head's height up
   const E_LIFT: P3 = [5.33, 3.62, 2.3]; // the head at his face height (fist z 2.62, crown 2.54 at 13.0)
-  const E_BOTH: P3 = [5.3, 3.72, 2.38]; // his sack (yaw 71°) and the held head (58°) from E4, aim 63.1° (the flame 90.6° is 4.3° out)
+  const E_BOTH: P3 = [5.3, 3.72, 2.38]; // his sack (yaw 71°) and the held head (58°) from E4, aim 63.1° (the flame 104.7° since fix round 4 is 18° out)
 
   const shots: CameraShot[] = [
     // S1 Freeze 0–1.6: the body halts, the head pushes forward; the gameplay FOV eases to 50 mm
@@ -132,7 +132,7 @@ export const c2Room: TimelineFactory = (ctx) => {
     // the 65 mm settle drifting back to the 50 mm prime inside the body motion) and you are standing over it — E4 is
     // 1.42 m from the head on the boards (≤ 1.5 m): it lies face-down in its wet hair with its cut toward you and the
     // lamp (landPose), his boot rolls it (9.45) so the cut ring faces you full in the lamp (restPose), the pool spreading
-    // under it, the stream from the table edge falling into frame. From E4 the flame bears 90.6° and every aim below
+    // under it, the stream from the table edge falling into frame. From E4 the flame bears 104.7° (fix round 4) and every aim below
     // is ≤ 64° (50 mm 16:9 half-hfov 23.2°) → the flame stays ≥ 3° out of frame; the 100 mm insert is from E4 too.
     { t: 8.6, d: 0.7, path: [C2E_D, add(C2E_D, [0.55, 0.62, -0.05]), E4], target: [D_STRIKE, HEAD_T], fov: [L65, L50], ease: 'inOut', handheld: 0.9 },
     { t: 9.3, d: 1.6, path: [E4], target: [HEAD_T], fov: L50, handheld: 0.3 },
@@ -267,7 +267,12 @@ export const c2Room: TimelineFactory = (ctx) => {
     // S10: she gets up — the headless body slides back off the east side, climbing up its own arms (4.0 s)
     { t: 21.9, type: 'place', char: 'harlan', pos: HARLAN_CORNER, heading: headingTo(HARLAN_CORNER, [5.5, 3.0, 0]) },
     { t: 21.9, type: 'clip', char: 'ada', clip: 'ada_rise_headless', fade: 0.15, fallback: ['ada_rise'] },
-    { t: 22.2, type: 'sfx', id: 'ada_slap', pos: ADA_RISE, room },
+    // fix round 4 (audio lane, ruling x; contract #132): synced to the CLIP's own keys (blender/anim/clips_escape.py
+    // ada_rise_headless, clip 0 = 21.9): she leaves the table at clip 0.3 (22.2) — the sodden gown dragging off the
+    // edge — and her KNEES HIT THE BOARDS at clip 1.05 (22.95). The slap used to sit at 22.2, 750 ms before the knees.
+    { t: 22.2, type: 'sfx', id: 'ada_gown_slap', pos: [ADA_RISE[0] - 0.25, ADA_RISE[1], GROUND + 0.75], room, gain: 0.8 },
+    { t: 22.95, type: 'sfx', id: 'ada_slap', pos: ADA_RISE, room },
+    { t: 22.97, type: 'sfx', id: 'ada_gown_slap', pos: ADA_RISE, room, gain: 0.9 },
     { t: 22.3, type: 'loop', key: 'stump', id: 'stump_breath', gain: 0.8 },
     { t: 22.0, type: 'dof', dof: { focusDistance: 2.9, focalLength: 1.4, bokehScale: 2 } },
     // S11: she walks out of the parlor at you; the door closes behind her (27.6) and the key turns (28.3)

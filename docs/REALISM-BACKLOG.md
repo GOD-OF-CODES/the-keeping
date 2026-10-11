@@ -728,6 +728,29 @@ strike past Harlan (`ab2-05`, `ab2-08` vs `ab2-04`); on the sawbuck's south end 
 (`ab1-02`) but the table then shadows the floor head (`ab1-05`). No single position fixes the 10.5 head: that needs
 the head turned so the lamp keys the face/ear toward E4, or the face shown (ruling g).
 
+### Fix-round 4 verdict (2026-10-11, art/horror-director review — STATUS-escape-cine "Review — fix round 4")
+
+Frames: `scratch/escfix4-review/jmax-*` (Max), `jmed-*` / `dg3-*` (Medium + same-frame diagnostics), `b05med*`, `gate-*` /
+`gate2-*` (playthrough, before/after #133), `live-*` / `lmax-*` (live d70bdf1), `cmp-*` montages. WebGPU 1280×800 at the
+fixed film camera (C2 0.625, 13.9 1.27, C2c 0.458). **Photoreal: NO-GO. Ship check (ruling y): better than live — YES,
+only with #133** (the stale-lightmap re-bake that fixes the black U1 runner). Everything below moves to the **M-A cutscene
+round's backlog** (this was the last beheading-only round).
+
+| Frame | Fix-round 4 verdict | Still not real (ranked inside the row) → owner |
+|---|---|---|
+| **C2 10.5 hero (E4)** | FAIL. A black mass with a vertical comb of hair-shell strips, one small lit wet ring, beside two flat red felt pools; the head is not readable | the head gets no lamp light on the side E4 sees — grey-albedo swap and hair-hidden diagnostics both stay black (dg3, mm-diag-*) → a key for the head (second practical / repose / camera) CINE; rigid hair-shell dome over a face-up head A; pools = flat matte lobes, no seams/satellites/thickness LOOK |
+| **C2 7.75–8.4 strike** | PARTIAL → the beheading READS (stump out of Harlan's shadow, 0.004 → 0.006–0.008; a lit red arc at 7.75) but looks staged/CG | Harlan's plaid pink-salmon + gauntlets pale grey-gold at 0.73 m from the flame (flag/reflector on the lamp's Harlan side or re-block) CINE + A; cleaver reads as a red-edged card (geometry/bevel glint) A/LOOK; sawbuck top = glossy black plastic sheet LOOK; jet a clean 2–3 px line, no spray LOOK |
+| C2 9.3 (head lands) | FAIL: dark hair mass | as 10.5 |
+| C2 13.9 insert | FAIL: smooth mannequin face lit from below, the eyes read closed, gold chin glint, dithered hair | open eye (iris/lid margin) + face sculpt A; key from above CINE; hair AA LOOK |
+| C2 22.95 / 24.0 rise | FAIL: knees off-screen at 22.95 (audio's slap can't be mis-seen); 24.0 the rise does not read as a headless body getting up | staging of the rise CINE |
+| C2c 4.1 glance #1 | PARTIAL: dark figure on the lightning patch, neon baluster rims (unchanged) | rims A/LOOK; re-block CINE |
+| C2c 7.1 glance #2 | FAIL: plaster-white balusters + plaster arm under the torch (unchanged) | baluster/arm materials A; cutscene exposure for the torch core LOOK |
+| C2c 13.0 empty stair | the most photographic frame; a dark head-shaped silhouette bottom-left = the player's own torch arm (no other mesh within 1.6 m) — on the 'she is not there' beat it reads as someone crouched | lower/rim the arm CINE |
+| C2c 15.5 handover | close to photographic | — |
+| B05 carry | IMPROVED: reads as a headless woman in a white gown climbing into the beam (fixation protect); not photographic | gown folds/cling, dithered hem, carried head unreadable A; protect binds on any near hot spot (lead's call) LOOK |
+| Real time + sound | 59.1 fps, 0 frames > 50 ms (round 3: 200–383 ms entry); strike loudest (−13.8 vs −14.7 LUFS), sync −1…+25 ms | nobody has listened on speakers; cleaver_sever variants ±0.4 LU C |
+| Gameplay regression check | the U1 runner was BLACK after lane A's props rebuild (stale non-parlor lightmaps) → FIXED by #133 (re-bake ground/kitchen/upper_hall/upper_rooms/exterior/car); facade warm patches = torch beam (urpatch A/B identical) | rule: after any props/house rebuild re-run every stale bake-house-* A |
+
 ## Merged and overruled QA points
 - Agreed: QA #1 (dark frames), #3 (outlines/CA, cause now found), #4 (grain), #5 (facade), #7 (C5), #8 (C6),
   #10 (rain glass).

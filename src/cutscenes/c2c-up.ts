@@ -203,8 +203,11 @@ export const c2cUp: TimelineFactory = (ctx) => {
     { t: 6.46, type: 'sfx', id: 'step_creaker', pos: treadNosing(12), room, gain: 1.2 },
     { t: 6.46, type: 'clip', char: 'arms', clip: 'arms_stumble_catch', fade: 0.05, fallback: ['arms_idle'] },
     { t: 6.62, type: 'sfx', id: 'body_fall_stairs', pos: treadNosing(13), room, sched: true },
-    { t: 6.64, type: 'sfx', id: 'torch_knock', pos: treadNosing(13), room, gain: 0.8 },
-    { t: 6.66, type: 'sfx', id: 'gasp', gain: 0.9 },
+    // fix round 4 (audio lane, ruling x; contract #132): measured in the real mix (scratch/listen) this stumble was the
+    // LOUDEST moment of the escape (−11.1 LUFS momentary vs the strike's −13.7) — the knock 0.8 → 0.5, the gasp
+    // 0.9 → 0.45 (below the strike's own 0.8 gasp: it is a caught stumble, not the beheading)
+    { t: 6.64, type: 'sfx', id: 'torch_knock', pos: treadNosing(13), room, gain: 0.5 },
+    { t: 6.66, type: 'sfx', id: 'gasp', gain: 0.45 },
     { t: 6.85, type: 'sfx', id: 'handrail_squeak', pos: handAt, room, gain: 1 },
     // fix round (item 6): glance #2 — the torch's hot centre on her hand 0.9 m away, its spill on the stair wall 0.4 m
     // away (≈ 15 klx) clipped at the climb's exposure 1.8 → capped at 0.55 for the glance (the pupil constricts), the

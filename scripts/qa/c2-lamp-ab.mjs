@@ -30,7 +30,7 @@ export default async function (qa) {
       const r = await qa.eval(`(async () => {
         const g = window.__game; const s = window.__lab; const pos = ${JSON.stringify(pos)};
         // plan → world (x, z, −y): a delta on the shipped flame
-        const d = pos ? [pos[0] - 4.6, pos[2] - 1.35, -(pos[1] - 4.25)] : [0, 0, 0];
+        const d = pos ? [pos[0] - 4.3, pos[2] - 1.35, -(pos[1] - 3.6)] : [0, 0, 0]; // fix round 4: shipped flame (4.3, 3.6)
         for (const [o, o0] of [[s.L, s.L0], [s.F, s.F0], [s.P, s.P0]]) if (o) { o.position.copy(o0); o.position.x += d[0]; o.position.y += d[1]; o.position.z += d[2]; o.updateMatrixWorld(true); }
         if (s.L?.shadow) s.L.shadow.needsUpdate = true;
         await g.advance(1, 1/1000); await g.advance(1, 1/1000);

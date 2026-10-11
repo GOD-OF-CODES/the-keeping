@@ -55,7 +55,11 @@ export const JET_AZ = (175.0 * Math.PI) / 180;
 // its last 10 cm, LOOK gl1); a cut carotid retracts ≈ 1.5–2.5 cm into the stump, so its lumen — the jet's direction — lies
 // on the deeper, steeper axis: 18° (mid-range). At 4.8° the jets ran level at the cleaver's height into Harlan's hands
 // and were hidden from the strike camera D at 7.75–8.2.
-export const JET_EL = (18 * Math.PI) / 180;
+// fix round 4 LOOK (ruling v; r1-01 at 7.75 under the restaged key: the stream is a 1 px level line hidden along the
+// cleaver/forearm band): 28° — inside the measured chord (4.8° at 6–8 cm … 30.5° at 10–12 cm; ≤ 30° by ruling v): a
+// cut carotid retracts ≈ 2 cm into the stump, so the lumen's axis is the deeper, steeper one. Pulse 1 (2.8 m/s) now
+// arcs ≈ 8 cm higher (v²sin²θ/2g = 0.09 m vs 0.04 m) and clears the arm band from D.
+export const JET_EL = (28 * Math.PI) / 180;
 
 export interface BloodDeps {
   scene: any;
@@ -135,6 +139,12 @@ export function createBloodFx(d: BloodDeps) {
   // and the light on the same side of that box (the lamp inside, a lightning stroke outside) keep it.
   const inParlor = (P: any) => step(3.75, P.x).mul(step(P.x, 8.75)).mul(step(-6, P.z)).mul(step(P.z, 0)).mul(step(P.y, 3.8));
   const sameRoom = (P: any) => float(1).sub(abs(inParlor(P).sub(inParlor(uKeyPos))));
+  // fix round 4 LOOK (ruling v; R3 review: 'a jet inside Harlan's shadow renders as a lamp-lit red laser line'): the
+  // particles and the stream take the key light's REAL shadow-map visibility — the light's own shadow node (lights.ts
+  // userData.shadowVis: one cube map, no extra pass; gated/muted exactly like every lit surface), sampled at the
+  // particle's world position (material.receivedShadowPositionNode). 1 = lit; no shadow light → 1.
+  const visNode = d.keyLight()?.userData?.shadowVis ?? null;
+  const keyVis = () => (visNode ? vec3(visNode).x : float(1));
   const A = instancedBufferAttribute(bufA);
   const B = instancedBufferAttribute(bufB);
   const C = instancedBufferAttribute(bufC);
@@ -247,12 +257,13 @@ export function createBloodFx(d: BloodDeps) {
   partMat.positionNode = position;
   partMat.transparent = true; // fix round 3: motion-blurred drops (vAlpha)
   partMat.depthWrite = false;
+  partMat.receivedShadowPositionNode = vPos; // the key's shadow map at the drop (fix round 4)
   partMat.colorNode = Fn(() => {
     const N = normalize(vNormal);
     const jet = step(vKind, 0.5);
     const albedo = mix(vec3(...ALB_POOL), vec3(...ALB_JET), jet);
     // R3 (#127): outside the parlor the key is the roaming lightning light (unshadowed here) — drops there take the torch only
-    const s = shade(vPos, N, albedo, float(0.12), float(0.022), sameRoom(vPos).mul(inParlor(vPos)));
+    const s = shade(vPos, N, albedo, float(0.12), float(0.022), sameRoom(vPos).mul(inParlor(vPos)).mul(keyVis()));
     // the back-lit term: chord d (mm) through the drop at this pixel, Beer–Lambert per channel, Henyey–Greenstein
     const nv = max(dot(N, s.V), 0.05);
     const dmm = vRad.mul(2000).mul(nv);
@@ -383,9 +394,10 @@ export function createBloodFx(d: BloodDeps) {
     const jetMat = new THREE.MeshBasicNodeMaterial();
     jetMat.name = 'blood-jets';
     jetMat.positionNode = jetPos;
+    jetMat.receivedShadowPositionNode = vJP; // fix round 4: the key's shadow map along the stream
     jetMat.colorNode = Fn(() => {
       const N = normalize(vJN);
-      const s0 = shade(vJP, N, vec3(...ALB_JET), float(0.06), float(0.022));
+      const s0 = shade(vJP, N, vec3(...ALB_JET), float(0.06), float(0.022), keyVis());
       const nv = max(dot(N, s0.V), 0.05);
       const dmm = vJR.mul(2000).mul(nv);
       // review fix round 2 (the jets read as glowing red neon wires at 7.75): whole blood is not a clear absorber — red

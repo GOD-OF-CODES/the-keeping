@@ -13,7 +13,7 @@ import { ContactShadow, applySkinOrHair } from './skin.ts';
 import { roomEnvironment } from '../render/reflections.ts';
 import { BLOOD_UNIFORMS, bloodMask, bloodOver, type BloodMaskOptions } from '../materials/blood.ts';
 import * as THREE from 'three/webgpu';
-import { float, mx_noise_float, positionGeometry, texture, uniform, vec3 } from 'three/tsl';
+import { cross, dFdx, dFdy, dot, float, materialNormal, mix, mx_noise_float, normalize, positionGeometry, positionView, sign, smoothstep, texture, uniform, vec3 } from 'three/tsl';
 import type { PresetConfig } from '../render/presets.ts';
 import type { AssetManifest, PresetId } from '../shared/types.ts';
 import { assetUrl, fetchBytes, fetchManifest, parseGlb } from '../world/assets.ts';
@@ -169,6 +169,39 @@ export async function loadCharacter(id: CharacterId, o: CharacterLoadOptions): P
         const pits = mx_noise_float(pos.mul(260)).max(0);
         m.roughnessNode = t.a.mul(smear.mul(0.3).add(1)).add(bloom.mul(0.2)).add(pits.mul(0.1)).clamp(0.18, 0.9);
         m.colorNode = t.rgb.mul(float(1).sub(bloom.mul(0.45))).mul(smear.mul(0.12).add(1));
+        // fix round 4 LOOK (ruling t: 'the cleaver renders as a flat black plane at 7.75'): a metal box with no room
+        // cube (Max) reflects nothing but the flame's mirror point → black. Real used carbon steel is three surfaces:
+        //  • PATINA: iron oxide (magnetite/hematite) is a DIELECTRIC — dark grey-brown diffuse, albedo ≈ 0.05–0.08, rough
+        //    0.6 — over most of the flat; it reads under any light (the grey of an old blade), no mirror needed;
+        //  • the HONED BEVEL (≈ 1 cm at the edge, ground at ≈ 12° to the flat): bright bare steel (F0 ≈ 0.56), rough 0.2
+        //    — a second facet angle, so a lamp highlight runs along the edge when the flat misses it;
+        //  • the BLOOD COAT on the edge half after the strike (whole blood, BLOOD_UNIFORMS), runs toward the spine.
+        // Blade frame from max/harlan.glb (bind space, the blade is one box): spine corner S0 (−0.6631, 1.0254, 0.0674),
+        // spine → edge (−0.69, −0.67, 0.27) × 0.11 m, heel → tip (0.33, 0.04, 0.94) × 0.28 m.
+        const rel = pos.sub(vec3(-0.6631, 1.0254, 0.0674));
+        const sE = rel.dot(vec3(-0.69, -0.67, 0.27).normalize()).div(0.11).clamp(0, 1); // 0 spine → 1 edge
+        const uL = rel.dot(vec3(0.33, 0.04, 0.94).normalize()).div(0.28).clamp(0, 1);
+        const bevel = smoothstep(0.885, 0.9, sE); // the last ≈ 1.2 cm
+        const patina = mx_noise_float(pos.mul(22).add(1.3)).mul(0.5).add(0.5).mul(0.6).add(bloom.mul(0.5)).smoothstep(0.25, 0.6).mul(float(1).sub(bevel)).mul(0.85);
+        // blood: the edge half, ragged boundary, thin runs toward the spine (it was raised after the cut)
+        const bN = mx_noise_float(pos.mul(vec3(70, 70, 25))).mul(0.12);
+        const runs = mx_noise_float(vec3(uL.mul(40), float(0), float(0))).smoothstep(0.35, 0.6);
+        const bloodK = smoothstep(0.5, 0.56, sE.add(bN).add(runs.mul(0.25))).mul(BLOOD_UNIFORMS.amount.mul(1.6).clamp(0, 1));
+        const steelR = mix(m.roughnessNode, float(0.2), bevel);
+        const rP = mix(steelR, float(0.6), patina);
+        const bo = bloodOver(mix(m.colorNode, vec3(0.06, 0.05, 0.045), patina), rP, bloodK, 1, BLOOD_UNIFORMS.ageMin);
+        m.colorNode = bo.color;
+        m.roughnessNode = bo.roughness;
+        m.metalnessNode = float(1).sub(patina).mul(float(1).sub(bloodK));
+        // the bevel's 12° facet: tilt the shading normal toward the edge (surface gradient of sE in view space)
+        const dpx = dFdx(positionView);
+        const dpy = dFdy(positionView);
+        const n0 = materialNormal; // the normal-mapped view normal (normalView when no map)
+        const r1 = cross(dpy, n0);
+        const r2 = cross(n0, dpx);
+        const g = r1.mul(dFdx(sE)).add(r2.mul(dFdy(sE))).mul(sign(dot(dpx, r1))); // ∇s on the surface (its direction)
+        const gd = g.div(g.length().max(1e-8));
+        m.normalNode = normalize(n0.add(gd.mul(Math.tan((12 * Math.PI) / 180)).mul(bevel)));
         // the parlor's cube (B02 sharpening, C5) — reflections.ts. Not on Max: Harlan's fragments there already use all
         // 16 samplers an M1 allows per stage (more shadowed lights); the cube made it 17 (invalid pipeline).
         if (o.presetId !== 'max') m.setupEnvironment = roomEnvironment('G2');

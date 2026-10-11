@@ -128,7 +128,8 @@ export const C2E_T: P3 = [3.42, 1.5, 2.22];
 /** The cut point (C4–C5) on the west edge of the sawbuck; the cap normal points west, 20° up. */
 export const NECK: P3 = [5.31, 3.25, 1.4];
 /** L_LAMP_PARLOR flame (K2) on the moved stool. */
-export const LAMP_FLAME: P3 = [4.6, 4.25, 1.35];
+// fix round 4 (ruling s, #129): moved from (4.6, 4.25) to (4.3, 3.6) — keys the strike past Harlan (stump L ×3).
+export const LAMP_FLAME: P3 = [4.3, 3.6, 1.35];
 /** Harlan's strike root and heading (SSE). */
 export const HARLAN_C2: { pos: P3; heading: number } = { pos: [5.15, 3.95, GROUND], heading: -1.25 };
 /** The head's landing (centre) and its rest after the boot nudge (cut end toward the lamp, NW). */

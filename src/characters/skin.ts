@@ -172,7 +172,18 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
       // ≈ 0.09/0.016/0.014, and the plasma film is a smooth dielectric (roughness ≈ 0.08–0.12, F0 ≈ 0.02):
       // sharp glints of the lamp/torch instead of a matte disc. Bone/cartilage (low r/g) is left as painted.
       const c = m.colorNode;
-      const cut = smoothstep(1.55, 2.1, c.r.div(c.g.max(1e-3)));
+      const cut0 = smoothstep(1.55, 2.1, c.r.div(c.g.max(1e-3)));
+      // fix round 4 LOOK (lane A s2 request, ruling w): the cut FACE (axial geometric normal inside the neck radius, at
+      // the measured cut plane) already carries lane A's baked whole-blood film (≈ 0.10/0.008/0.007) and its baked
+      // roughness (0.95 in the open lumens) — every runtime darkening below took it to ~0.005 = black, so only the white
+      // sheen was left (a grey lid). capK masks the face out of the cut tint, the neck film and the r3 fat tint.
+      const pg = positionGeometry;
+      const rad = vec2(pg.x, pg.z.add(0.012)).length();
+      const near = float(1).sub(smoothstep(0.065, 0.088, rad));
+      // cut plane measured from max/ada.glb (cap verts |n_y| > 0.9, r < 5 cm, both pieces): y = 1.393 − 0.57·z (bind)
+      const dPlane = pg.y.sub(float(1.393).sub(pg.z.mul(0.57))).abs().mul(0.869); // ⊥ distance (cos 29.7°)
+      const capK = smoothstep(0.55, 0.85, normalGeometry.y.abs()).mul(near).mul(float(1).sub(smoothstep(0.02, 0.03, dPlane)));
+      const cut = cut0.mul(float(1).sub(capK));
       p.colorNode = c.mul(vec3(1).sub(vec3(0.58, 0.86, 0.86).mul(cut)));
       // fix round 2 (E4 look, 1.4 m: the cut face glinted gold in a cellular pattern = salami): the blood film fills the
       // tissue's relief, so the lamp's highlight is one broad sheen, not a sparkle per normal-map cell → 0.1 → 0.24
@@ -183,17 +194,22 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
       // axis (x 0, z ≈ −0.012); the film covers the stub fully at the cut and breaks into run streaks up to 8 cm onto
       // the head side / 3.5 cm onto the body side, only within the neck's 8.5 cm radius (not the shoulders).
       // Whole-blood film over skin: albedo × (0.42, 0.06, 0.05) (Hb absorbs G/B within 0.1 mm), plasma-wet roughness 0.12.
-      const pg = positionGeometry;
-      const rad = vec2(pg.x, pg.z.add(0.012)).length();
-      const near = float(1).sub(smoothstep(0.065, 0.088, rad));
       // (fix round 2: lane A's build 1b cut sits at y ≈ 1.39 (body cap top 1.396) — the film is FULL across 1.33–1.42 so
       // the cap's fat/tissue specks lie under it, then breaks into runs 8 cm up / 3.5 cm down)
       const dist = select(pg.y.greaterThan(1.42), pg.y.sub(1.42).div(0.08), select(pg.y.lessThan(1.33), float(1.33).sub(pg.y).div(0.035), float(0)));
       const band = float(1).sub(smoothstep(0.2, 1.0, dist));
       const n = mx_noise_float(vec3(pg.x.mul(55), pg.y.mul(9), pg.z.mul(55)));
       const film = smoothstep(0.35, 0.6, band.add(n.mul(0.4))).mul(near).mul(uNeckBlood);
-      p.colorNode = p.colorNode.mul(vec3(1).sub(vec3(0.58, 0.94, 0.95).mul(film)));
-      p.roughnessNode = p.roughnessNode.mul(float(1).sub(film)).add(film.mul(0.12));
+      const filmS = film.mul(float(1).sub(capK)); // the stub skin only — the face's film is baked (fix round 4)
+      p.colorNode = p.colorNode.mul(vec3(1).sub(vec3(0.58, 0.94, 0.95).mul(filmS)));
+      // fix round 4 (lane A l2: bright beads along the rim = film-0.12 glints on the torn skin tags): within 6 mm of the
+      // cut the film is clotting serum over torn tags (fibrin roughens it within seconds) → 0.25; the runs below stay 0.12.
+      // (r2max-05: the beads survived 0.25 — the Max/Medium clearcoat film lobe at 0.12 was still a mirror there: the
+      // lobe takes the same rim roughness below; 0.3 = a serum film over clot, its glints merge into one soft lip)
+      const rimZ = float(1).sub(smoothstep(0.008, 0.012, dPlane));
+      const rimF = filmS.max(rimZ.mul(near).mul(uNeckBlood).mul(float(1).sub(capK)));
+      p.roughnessNode = p.roughnessNode.mul(float(1).sub(filmS)).add(filmS.mul(mix(float(0.12), float(0.3), rimZ)));
+      p.roughnessNode = mix(p.roughnessNode, max(p.roughnessNode, float(0.3)), rimZ.mul(rimF));
       // review fix round 2 (E4 close-up: the head's cut face was a disc of hundreds of gold sparkles = 'salami' / a jar
       // lid): lane A's physical normal maps (bump distance fix) give the cut tissue mm-scale relief, and at the film's
       // roughness 0.12 every bump threw its own image of the flame. Liquid fills that relief: a whole-blood film
@@ -205,24 +221,41 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
       // each bump a tiny mirror of the flame. A 3 s-old cut is not a polished film: serum + clotting blood + torn
       // fibres scatter → roughness ≈ 0.2 on the cut FACE (r4: 0.36 washed the whole disc cream at E4's near-mirror angle) (axial normal, inside the neck radius, in the cut band),
       // plus geometric specular AA (Kaplanyan–Hoffman: α² += 2·|fwidth n|²) so sub-pixel relief never sparkles.
-      const capF = smoothstep(0.55, 0.85, normalGeometry.y.abs()).mul(near).mul(float(1).sub(smoothstep(0.0, 0.35, dist)));
       const nvar = fwidth(normalView).length();
-      const rAA = p.roughnessNode.mul(p.roughnessNode).add(nvar.mul(nvar).mul(2)).sqrt().min(1);
+      // fix round 4: on the face start from the BAKED roughness (lumens 0.95 survive via max), satin floor 0.135
+      // (planar cap + 2.5 mm smooth dome now: one sharp flame highlight on near-black red, not a broad grey sheen)
+      const capR = max(m.roughnessNode, float(0.135));
+      const rIn = mix(p.roughnessNode, capR, capK);
+      const rAA = rIn.mul(rIn).add(nvar.mul(nvar).mul(2)).sqrt().min(1);
       // fix round 3 LOOK (m6max-03 at the physical stop: the cut = a crumpled gold-foil disc, the brightest thing in frame):
       // on MAX the clearcoat film lobe (roughness 0.12, its own geometric normal) still mirrored the flame off every mm
       // facet of the cap — the base roughness above never reached it. A 3 s-old cut face is serum + clotting blood over
       // torn fibre ends: a SATIN film, not a mirror (the clot's fibrin mesh roughens it within seconds) — film lobe and
       // base ≥ 0.32 on the face (geometric AA kept): the facets merge into one broad wet sheen with the anatomy as colour.
-      p.roughnessNode = mix(rAA, max(rAA, float(0.32)), capF.mul(uNeckBlood));
+      // fix round 4: the 0.32 satin floor (r3, for the faceted cap) is retired — rAA already carries the 0.135 floor
+      p.roughnessNode = rAA;
       const ccAA = float(0.12 * 0.12).add(nvar.mul(nvar).mul(2)).sqrt().min(1);
-      ccRough = mix(ccAA, max(ccAA, float(0.32)), capF.mul(uNeckBlood));
+      // the film lobe follows the face (no clearcoat glint inside a matte 0.95 lumen)
+      ccRough = mix(mix(ccAA, max(ccAA, float(0.3)), rimZ.mul(rimF)), max(ccAA, capR.mul(capR).add(nvar.mul(nvar).mul(2)).sqrt().min(1)), capK);
       // r3 (the cap still read as a pale cream disc with red specks = pepperoni): the cut face of a neck is ≈ 85 %
       // muscle / vessels / trachea and only a 3–8 mm subcutaneous fat ring; 3 s after the cut, lying in its own pool,
       // the whole face is under a whole-blood film. Painted fat/cream texels on the FACE (not the stub's skin) are
       // taken to the filmed-tissue colour: albedo × (0.42, 0.06, 0.05) again (≈ 0.1 mm Hb film on fat ≈ 0.1/0.01/0.01).
-      p.colorNode = p.colorNode.mul(vec3(1).sub(vec3(0.58, 0.94, 0.95).mul(capF.mul(uNeckBlood))));
+      // fix round 4 (lane A s2 asked to drop ALL runtime tints on the face; measured r1-06 lamp-side close at 0.6 m: the
+      // face then rendered as a pale salmon disc with cream rings ≈ the boards' brightness — the baked atlas texels are
+      // the tissue, not the filmed tissue). Exactly ONE whole-blood film on the face: albedo × (0.42, 0.06, 0.05)
+      // (Hb absorbs G/B within 0.1 mm; muscle 0.30/0.10/0.08 → 0.13/0.006/0.004, fat 0.4/0.3/0.2 → 0.17/0.018/0.01).
+      // The double/triple darkening (cut tint × neck film × this) that made it black under a grey sheen stays retired.
+      // r2max-05 (one film: the face dark red, but the carotid walls / fat ring / windpipe still pale pink rings = a salami
+      // cross-section): a ≥ 0.2 mm whole-blood film is opaque in G/B and ~1–2 mm deep in red, so on a 3 s-old face lying
+      // in its pool the anatomy shows only as faint relief/tone under the blood — 65 % of the face goes to the film's own
+      // colour (whole blood 0.11/0.009/0.008, BLOOD_ALBEDO), 35 % keeps the filmed tissue's variation.
+      const filmed = p.colorNode.mul(vec3(0.42, 0.06, 0.05));
+      p.colorNode = mix(p.colorNode, mix(filmed, vec3(0.11, 0.009, 0.008), 0.65), capK.mul(uNeckBlood));
       if (m.normalMap) {
-        const flat = max(cut, film);
+        // the face: lane A moved its ±3 mm relief INTO the normal map — a 0.2 mm film rounds that relief (capillary length
+        // 2.4 mm), it does not erase it: flatten the face only × 0.4 (its specular variation is what reads as tissue)
+        const flat = max(max(cut, film).mul(float(1).sub(capK)), capK.mul(0.4 / 0.85));
         const ns = m.normalScale ?? new THREE.Vector2(1, 1);
         p.normalNode = normalMap(texture(m.normalMap), vec2(ns.x, ns.y).mul(float(1).sub(flat.mul(0.85))));
       }

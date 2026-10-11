@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.03897,
-    "p99": 0.20643,
-    "max": 5.31939,
-    "coverage": 0.5962
+    "mean": 0.03894,
+    "p99": 0.20407,
+    "max": 5.32237,
+    "coverage": 0.5959
   },
   "file": "lm_parlor.klm"
 }

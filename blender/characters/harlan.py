@@ -526,7 +526,7 @@ def build_all(material, bake_atlas):
     R['cleaver_handle'] = garments.split_faces(R['cleaver'], mask, 'harlan_cleaver_handle')
     keys = keys + ['cleaver_handle']
     spec = {'body': 'skin_harlan', 'shirt': 'flannel_red', 'trousers': 'trousers_wool', 'boots': 'rubber_black',
-            'gloves': 'leather_worn', 'apron': 'rubber_black', 'suspenders': 'leather_worn', 'sack': 'burlap_sack',
+            'gloves': 'rubber_black', 'apron': 'rubber_black', 'suspenders': 'leather_worn', 'sack': 'burlap_sack',
             'twine': 'twine_jute', 'void': 'crepe_black', 'cleaver': 'steel_cleaver', 'cleaver_handle': 'wood_furniture_dark'}
     mats = {}
     for k in keys:

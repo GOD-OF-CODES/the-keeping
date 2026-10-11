@@ -233,6 +233,21 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
   photoreal), the lead pushes main; the remaining photoreal items move into the M-A cutscene round's backlog. The AD
   still says plainly what doesn't look real.
 
+- **Fix round 4 verdict → ship + M-A rulings (2026-10-11 19:00):** photoreal NO-GO (the 10.5 floor head is still an
+  unlit dark mass; the strike is legible but CG: salmon plaid, grey gauntlets 0.73 m from the flame, card-like cleaver,
+  plastic sawbuck top), but the AD's ruling-(y) check says the build is strictly better than live d70bdf1 (live has no
+  beheading or escape at all) with no regression elsewhere once #133 (the stale non-parlor lightmaps re-baked — the U1
+  runner had gone black) is included. (z1) Ship it: the lead pushes main after the full gate. (z2) The heart layer's
+  −5 dB trim (#132) applies to cutscene heartbeats only (`setHeartRate(bpm, true)` from the cue binding); gameplay
+  chases keep the round-2 racing rise 0.25 → 0.40 — it is a chase tell. (z3) LOOK's gameplay "fixation" exposure
+  protect stays (B05 Ada no longer a blown gown; gameplay frames −4 to −7 %, far more legible than live). (z4) Lane A
+  checklist: after ANY props/house rebuild re-run every stale bake job (`assets.mjs --list`) and shoot one non-parlor
+  room before posting READY. (z5) The beheading's remaining photoreal items join M-A as the "C2 upgrades", biggest
+  first: a key for the 10.5 head (a second practical / re-frame), a flag or reflector keeping the flame off Harlan's
+  arms, pools that follow the board seams, the 13.9 eye (lit, open, not a mannequin), glance #2 materials, the
+  empty-stair torch-arm silhouette, the B05 gown and carried head. (z6) Hard stops for every lane: Low ≈ 10 KB of
+  download left, Medium C2c 3.6 k triangles. Duplicate contract #132 (PERF) renumbered #134.
+
 ## Then — cutscene rounds (docs/CUTSCENES-PLAN.md §8): M-A … M-F, plus CR end credits (§9)
 Each round: builders → adversarial reviewer → QA (playthrough bot, perf, hero shots) → commit → push → verify live.
 

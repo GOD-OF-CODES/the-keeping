@@ -137,9 +137,26 @@ def skin(P, N, AO, J, wound_c, seed=101, cap=None, head_side=False, G=None):
         dw = np.linalg.norm((P - wound_c) * np.array([0.8, 1.0, 2.6]), axis=1)
         gash = ss(0.03, 0.012, dw)
         bruise = ss(0.06, 0.02, dw)
-    alb = _mix(alb, [0.2, 0.12, 0.17], bruise * 0.6)
+    # fix round 4: congested dark red-purple lips (was lilac 0.2/0.12/0.17 = the 24.0 'pink' read)
+    alb = _mix(alb, [0.12, 0.05, 0.06] if cap is not None else [0.2, 0.12, 0.17], bruise * 0.6)
     alb = _mix(alb, [0.07, 0.012, 0.012], gash)
     rough = 0.42 + 0.08 * m1 + 0.25 * dirt - 0.12 * nail - 0.2 * gash
+    coat = np.zeros(len(P))
+    if cap is not None:
+        # fix round 4 (ruling t, m6max-05 24.0: 'a red tank-top badge on pale flesh sides' = the lilac bruise lips + the
+        # pale ring on clean stub skin between the collar and the cut): a severed neck is never clean skin. Whole blood
+        # sheets over the stump from the cut: a full wet coat within ~1-1.6 cm of the cut (ragged edge), breaking into
+        # gravity runs 3-6 cm onto the body side; the head's stub gets the coat only. Wet whole blood on skin
+        # ~0.08/0.012/0.01 linear, film roughness ~0.2. (Inside skin.ts's r/g cut key -> its cut tint + film: dark wet.)
+        down = -np.sign(cn[2]) if abs(cn[2]) > 1e-3 else 1.0        # +sd on the body side (below the cut)
+        db = sd * (-down if head_side else down)                      # m from the cut into this piece
+        edge = 0.012 + 0.005 * noise.fbm(P * np.array([90.0, 90.0, 40.0]), 3, seed + 60)
+        runs = ss(0.45, 0.7, noise.fbm(P * np.array([110.0, 110.0, 9.0]), 3, seed + 61))
+        reach = 0.0 if head_side else 0.03 + 0.03 * runs
+        coat = np.clip(ss(edge + 0.003, edge - 0.003, db) + runs * ss(edge + reach, edge, db), 0, 1)
+        coat *= (db > -0.004) * near
+        alb = _mix(alb, [0.08, 0.012, 0.01], coat * 0.95)
+        rough = rough * (1 - coat) + 0.2 * coat
     # height: pores, fine wrinkles, raised veins, washer-woman fingertips, nail plates
     f1, _ = noise.worley(P * 650.0, seed + 31)
     h = -0.00006 * ss(0.35, 0.1, f1)
@@ -187,9 +204,12 @@ def gown(P, N, AO, body_fn, J, hem_z, seed=87):
     # REALISM #17 / C2-ESCAPE A11: soaked cotton is translucent where it clings — the grey-blue skin shows through
     # (wet thin cotton transmits ~50-60 % against skin; the albedo trends to cloth x skin), softly graded with the
     # contact distance so the body reads under it without hard patches
-    through = np.array([0.24, 0.27, 0.31])
-    cl2 = ss(0.016, 0.003, d) * (0.75 + 0.25 * noise.fbm(P * 18.0, 2, seed + 11))
-    alb = _mix(alb, through, np.clip(cl2, 0, 1) * 0.55)
+    # fix round 4 (ruling t/j, ab2-08: 'a white plaster gown lump' under the restaged key): where it clings the soaked
+    # cotton goes translucent-DARK (cloth x dead grey skin, ~0.15-0.2), over a wider contact band, so the body under it
+    # and the cling/free-hang boundary read as cloth
+    through = np.array([0.15, 0.155, 0.165])
+    cl2 = ss(0.022, 0.003, d) * (0.75 + 0.25 * noise.fbm(P * 18.0, 2, seed + 11))
+    alb = _mix(alb, through, np.clip(cl2, 0, 1) * 0.72)
     # cistern silt: heavier toward the hem, splotched, with dried tide lines (low contrast on the bodice: the round-1
     # review read high-contrast silt patches on the chest as flat white blotches)
     up = ss(0.9, 1.25, z)
@@ -217,7 +237,7 @@ def gown(P, N, AO, body_fn, J, hem_z, seed=87):
     alb = _mix(alb, [0.08, 0.08, 0.08], holes * 0.5)
     # sodden cotton: darker, blotchy water marks everywhere, seams (yoke under the bust, shoulders, sleeves)
     wetm = ss(0.3, 0.7, noise.fbm(P * np.array([5.0, 5.0, 3.0]), 4, seed + 8))
-    alb *= (0.8 - 0.14 * wetm)[:, None]
+    alb *= (0.84 - 0.26 * wetm)[:, None]          # fix round 4: stronger sodden blotching (plaster is uniform)
     seam = ss(0.004, 0.0015, np.abs(z - 1.175)) * (np.abs(P[:, 1]) < 0.2)
     alb = _mix(alb, [0.2, 0.19, 0.15], seam * 0.6)
     # fix round 2 (body14: the bodice read as bare skin): GARMENT CUES a nightgown has and a body doesn't — a 3.2 cm
@@ -248,11 +268,11 @@ def gown(P, N, AO, body_fn, J, hem_z, seed=87):
     nlz = 1.352 - 0.034 * np.clip((0.03 - P[:, 1]) / 0.08, 0, 1)
     dn = nlz - z                                                     # m below the neckline (< 0: the collar)
     front = ss(0.03, -0.05, P[:, 1])
-    reach = 0.14 + 0.12 * front
+    reach = 0.14 + 0.18 * front                    # fix round 4: the front soaks ~32 cm down from the neck
     stk = noise.fbm(P * np.array([75.0, 75.0, 5.0]), 3, seed + 20)
     soak = np.clip(ss(reach, 0.0, dn - 0.05 * stk) + 0.35 * ss(0.55, 0.85, stk) * ss(reach + 0.15, 0.0, dn), 0, 1)
     collar_z = ss(-0.005, -0.02, dn)
-    alb = _mix(alb, [0.21, 0.085, 0.06], soak * 0.75)                 # diluted blood (rust-pink-brown)
+    alb = _mix(alb, [0.15, 0.04, 0.03], soak * 0.8)                   # diluted blood (fix round 4: darker, not pink)
     core = ss(0.07 + 0.05 * front, 0.0, dn - 0.03 * stk) * (0.75 + 0.25 * front)
     alb = _mix(alb, [0.085, 0.022, 0.018], np.clip(core + collar_z, 0, 1) * 0.9)
     alb = _mix(alb, [0.10, 0.095, 0.065], collar_z * ss(0.2, 0.7, noise.fbm(P * 60.0, 3, seed + 21)) * 0.6)   # silt
@@ -260,7 +280,8 @@ def gown(P, N, AO, body_fn, J, hem_z, seed=87):
     hem = ss(hem_z + 0.03, hem_z + 0.015, z)
     alb = _mix(alb, [0.16, 0.15, 0.10], hem * 0.45)
     alb *= (0.55 + 0.45 * AO)[:, None]
-    rough = 0.64 + 0.12 * silt - 0.24 * cl2 + 0.05 * f - 0.3 * np.clip(soak + collar_z, 0, 1)
+    # fix round 4: soaked cotton carries a water film — a soft, broken sheen (0.45-0.6), glossier where it clings
+    rough = 0.56 + 0.12 * silt - 0.22 * cl2 + 0.06 * f + 0.08 * wetm - 0.3 * np.clip(soak + collar_z, 0, 1)
     h = 0.00012 * noise.fbm(P * 220.0, 2, seed + 6) - 0.0005 * holes + 0.00025 * band
     h += 0.0003 * noise.ridged(P * np.array([30.0, 30.0, 12.0]), 3, seed + 7)
     h += 0.0012 * (noise.ridged(P * np.array([62.0, 62.0, 48.0]), 3, seed + 22) - 0.45)   # wet-cotton crinkle
@@ -269,7 +290,10 @@ def gown(P, N, AO, body_fn, J, hem_z, seed=87):
     # what reads as CLOTH under a single raking lamp. Ridged wrinkle field (mostly horizontal ridges along the body:
     # compressed in z), 1.5 mm, stronger where the cloth clings / bunches (cling), weaker on the free skirt.
     wr = noise.ridged(P * np.array([16.0, 16.0, 38.0]) + 0.6 * noise.fbm(P * 9.0, 2, seed + 30)[:, None], 3, seed + 31)
-    h += 0.0015 * (wr - 0.45) * (0.55 + 0.45 * np.clip(cling, 0, 1))
+    h += 0.0025 * (wr - 0.45) * (0.55 + 0.45 * np.clip(cling, 0, 1))      # fix round 4: 1.5 -> 2.5 mm
+    # fix round 4: the fold troughs hold water and shadow each other (inter-reflection-limited cavities of a 1.5-4 cm ruck)
+    # -> 18 % darker in the valleys, so the folds still read when the key is near-frontal
+    alb = alb * (1.0 - 0.18 * ss(0.5, 0.15, wr))[:, None]
     h += 0.0010 * hem * ss(hem_z + 0.003, hem_z + 0.008, z)                                 # the hem roll
     plk, stitch, btn, pleat_zone, pleat = G_EXTRA
     h += 0.0006 * plk - 0.0004 * stitch + 0.0011 * btn + 0.0009 * pleat_zone * pleat           # placket, buttons, pleats

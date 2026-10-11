@@ -26,6 +26,7 @@ import { bakeProbeGrid, excludeGridFromLightmapped } from '../render/probes.ts';
 import { deferCompileWaits, installParallelCompile } from '../render/parallel-compile.ts';
 import { requestExposureSnap } from '../render/exposure.ts';
 import { installPerf, perfBuildClasses, perfBuilds, perfLog, perfMark } from '../render/perf.ts';
+import { installUniformRangePatch } from '../render/uniform-ranges.ts';
 import { SHADOW_CANDLE_ID, setCandleShadow } from '../world/lights.ts';
 import type { GameContext } from './context.ts';
 import type { LevelLayout, TriggerVolume } from '../shared/layout-types.ts';
@@ -149,6 +150,9 @@ export async function startGame(h: BootHandoff): Promise<void> {
   else await compileView();
   perfMark('firstFrame');
   frame();
+  // PERF G fix round 4 (#132): allocation-free uniform update ranges (three's per-frame Set/Array churn was ≈ 90 % of the
+  // old-generation growth behind the ~0.4 s major GCs — src/render/uniform-ranges.ts)
+  console.info(`[perf] uniform ranges ${installUniformRangePatch(renderer)}`);
   // PERF (review): the cutscene DoF chain builds its post passes on first use (measured: ~16 node builds at the first
   // DoF cut). Build it once here, behind the loading screen; chains are cached per key in the pipeline.
   if (preset.post.cutsceneDof && pipeline.kind === 'post') {
@@ -794,7 +798,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
           // C2-ESCAPE B11: C2 / C2c draw through the DOF chain, the DOF + motion-blur chain (C2 switches the blur variant in
           // at t = 0 and only moves its amount) and the blur-only chain (C2c): build the parlor + characters + the blood
           // in those scene-pass contexts now, not at C2's first frame / the strike / the whip
-          if (label === 'tableau' && warmPipe?.kind === 'post' && preset.post.cutsceneDof) {
+          if (label.startsWith('tableau') && warmPipe?.kind === 'post' && preset.post.cutsceneDof) {
             const chains: Array<{ dof?: { focusDistance: number; focalLength: number; bokehScale: number }; motionBlur?: number }> = [{ dof: { focusDistance: 2.73, focalLength: 0.8, bokehScale: 2 } }];
             if (preset.post.cutsceneMotionBlur) chains.push({ dof: { focusDistance: 2.73, focalLength: 0.8, bokehScale: 2 }, motionBlur: 0 }, { motionBlur: 0 });
             for (const c of chains) {
@@ -845,6 +849,19 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
               level.setViewer(3.3, 1.5, e);
             },
             [-Math.PI / 2 + 0.3],
+          );
+          // PERF G fix round 4 (ruling l, the C2-start hitch): C2's first shot starts at the PLAYER's eye on the hall side of
+          // T_B03_THRESHOLD (G1, plan x 2.75–3.6), so the hall's visible set (G1 + G3P, the closet, the slatted cabinet, the
+          // hall table, the portrait) was drawn for the first time in the DOF + blur scene-pass contexts and the lamp's cube
+          // shadow at C2 0.02 (measured: 8 node builds, 48 ms, in a 100 ms entry frame). Warm that view too.
+          await step(
+            'tableau-hall',
+            () => {
+              const eye = coords.planToWorld([2.85, 1.35, e + 1.6]);
+              camera.position.set(eye[0], eye[1], eye[2]);
+              level.setViewer(2.85, 1.35, e);
+            },
+            [Math.atan2(1.95, 2.4) - Math.PI / 2, -Math.PI / 2 + 0.3], // toward the tableau (5.2, 3.3) · the parlor heading
           );
           if (candle) setCandleShadow(candle, false);
           story.warmTableau(false);
