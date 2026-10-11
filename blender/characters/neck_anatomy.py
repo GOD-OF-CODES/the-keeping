@@ -27,6 +27,16 @@ from lib import noise
 
 A_U, B_V = 0.0525, 0.055           # section half-axes (10.5 x 11 cm)
 V_STEP = -0.034                    # the second stroke's ledge (posterior third)
+# fix round 3 (AD: "a bottle with a salami-slice cut"): the ledge and the ragged skin margin are now GEOMETRY shared by
+# both pieces and by the skin rim itself (sever.split_mesh moves the rim + the skin within 12 mm of it, the caps follow),
+# so the cut OUTLINE steps where the second stroke landed and the skin edge is torn, not a planar ellipse.
+CAP_GEOM_RELIEF = 0.0              # fix round 3 stage 2: cap interior is planar geometry (relief -> normal map)
+CAP_DOME = 0.0025                  # stage 2: smooth convex bulge of the relaxed section (m)
+GEOM_TO_NORMAL = 0.5               # share of the (clipped) macro relief baked into the cap normal map
+LEDGE = 0.0055                     # second-stroke step (m): the blade landed 5.5 mm lower over the posterior third
+LEDGE_SLOPE = 0.08                 # ... and at its own angle (~4.6 deg steeper than the first stroke)
+JAG = 0.0024                       # torn skin margin: +-2.4 mm along the cut normal, 2-3 cm wavelength around the neck
+TAG = 0.0042                       # a few 4-6 mm skin tags / notches (cleaver skips and tears on the second stroke)
 
 # bony / airway landmarks (u, v, ru, rv)
 VERT = (0.0, -0.008, 0.0085, 0.0075)            # vertebral body 17 x 15 mm
@@ -108,13 +118,16 @@ def section(u, v, inset=None, head_side=False, seed=211):
     warp = 0.45 * np.stack([noise.fbm(P3 * 45.0, 3, seed + 20), noise.fbm(P3 * 45.0 + 4.1, 3, seed + 21)], 1)
     f1, f2, cid = _worley_id(np.stack([u / 0.0115, v / 0.0080], 1) + warp, seed + 3)    # irregular fascicle groups
     cid = cid * 2.0 - 1.0
-    retr = 0.0040 + 0.0014 * cid                                 # 2.6-5.4 mm
+    # fix round 3 (in-game ig1: the cut face read as gold crumpled foil — every 3 mm facet of 2.6-5.4 mm bundle relief
+    # caught the lamp under the wet film): the pooled blood film fills the fascia grooves, so the SHAPE the lamp sees is
+    # much flatter — bundles 2.4-3.6 mm retracted, 0.4 mm domes, grooves 3.6 mm (bundle colour variation unchanged)
+    retr = 0.0030 + 0.0006 * cid                                 # 2.4-3.6 mm
     dome = np.clip(1.0 - (f1 / 0.62) ** 2, 0, 1)
     fascia = 1.0 - _ss(0.0, 0.10, f2 - f1)
     soft = 1.0 - _ss(0.0, 0.30, f2 - f1)                                     # bundles meet in a rounded groove
-    macro = (-retr + 0.0010 * dome) * (1 - soft) + (-0.0046) * soft
+    macro = (-retr + 0.0004 * dome) * (1 - soft) + (-0.0036) * soft
     fib = noise.fbm(np.stack([u * 1100.0, v * 150.0, np.zeros(n)], 1), 3, seed + 5)     # fibre grain (one direction)
-    fine += 0.00025 * fib
+    fine += 0.00008 * fib                 # fix round 3: 0.25 -> 0.08 mm (lamp glints 'sparkled' on the wet film)
     tone = 1.0 + 0.22 * cid + 0.12 * fib
     alb = np.array([0.165, 0.052, 0.046])[None, :] * tone[:, None]
     alb = _mixc(alb, [0.26, 0.12, 0.11], 0.22 * fascia)
@@ -128,7 +141,7 @@ def section(u, v, inset=None, head_side=False, seed=211):
     # ---- the second stroke: a ledge across the posterior third
     step_v = V_STEP + 0.001 * noise.fbm(np.stack([u * 120.0, np.zeros(n), np.zeros(n)], 1), 2, seed + 6) + 0.12 * u * u
     post = _ss(step_v + 0.0005, step_v - 0.0005, vv)
-    macro = macro + (0.0035 if head_side else -0.0035) * post
+    # fix round 3: the step itself is geometry now (plane_offset, both pieces) — only its colour/roughness live here
     alb = _mixc(alb, [0.11, 0.035, 0.032], 0.35 * post)
     rough = rough + 0.12 * post
 
@@ -187,14 +200,16 @@ def section(u, v, inset=None, head_side=False, seed=211):
     alb = _mixc(alb, [0.24, 0.10, 0.095], wo * _ss(0.35, 0.7, do))
     alb = _mixc(alb, [0.04, 0.012, 0.012], wo * (1 - _ss(0.2, 0.45, do)))   # the collapsed lumen slit
     # carotids: a pale 1 mm wall, a 7 mm-deep lumen (jet sources); jugulars: collapsed dark slits
+    vessel_void = np.zeros(n)
     for cu, cv, r, wall in CAROTIDS:
         d = np.sqrt((uu - cu) ** 2 + (vv - cv) ** 2)
         wl = _ss(r - wall - 0.0003, r - wall, d) * (1 - _ss(r, r + 0.0003, d))
         lu = 1 - _ss(r - wall - 0.0003, r - wall, d)
         macro = macro * (1 - wl) + 0.0004 * wl
-        alb = _mixc(alb, [0.44, 0.36, 0.33], wl)
+        alb = _mixc(alb, [0.30, 0.17, 0.15], wl)      # stage 2: 0.44 pale rings read as drawn circles (filmed wall)
         macro = macro * (1 - lu) - 0.007 * lu
         alb = _mixc(alb, [0.04, 0.004, 0.004], lu)
+        vessel_void = np.maximum(vessel_void, lu)
     for cu, cv in JUGULARS:
         dj = np.sqrt(((uu - cu) / 0.0055) ** 2 + ((vv - cv) / 0.0013) ** 2)
         sl = 1 - _ss(0.8, 1.1, dj)
@@ -208,11 +223,16 @@ def section(u, v, inset=None, head_side=False, seed=211):
     lob1, lob2 = noise.worley(P3 * 600.0, seed + 11)
     lob = np.clip(1 - (lob1 / 0.7) ** 2, 0, 1)
     edge = _ss(0.0, 0.0025, inset)                                         # 0 on the rim (meets the skin exactly)
-    macro = macro * (1 - skin_w - fat_w) + skin_w * (0.0016 * roll) + fat_w * (-0.0012 + 0.0007 * lob)
+    macro = macro * (1 - skin_w - fat_w) + skin_w * (0.0008 * roll) + fat_w * (-0.0012 + 0.0007 * lob)
+    # fix round 3 (retracted skin): cut skin pulls back 2-4 mm more than the tissue under it, so the section stands
+    # PROUD of the skin edge and the fat layer shows as a sloped yellow wall, not a flush painted ring
+    macro = macro + 0.0028 * _ss(0.0018, 0.0095, inset)
     macro = macro * np.where(inset < 0.0025, edge ** 0.5, 1.0)
     # fix round 2 (ruling j): subcutaneous fat 3-8 mm, NOT a clean cream ring — dull yellow-tan under blood (fresh
     # subcutis ~0.30/0.20/0.10 linear), and the film below now covers it 75-90 % instead of 65 %
-    alb = _mixc(alb, np.array([0.30, 0.20, 0.10])[None, :] * (0.8 + 0.3 * lob)[:, None], fat_w)
+    # stage 2 l1 (close: the fat ring = a pale bright BEADED rim, the brightest thing on the cut): blood from the
+    # vessels a few mm inside runs over the fat at once — blood-stained subcutis ~0.20/0.11/0.06, not clean 0.30/0.20/0.10
+    alb = _mixc(alb, np.array([0.20, 0.11, 0.06])[None, :] * (0.85 + 0.25 * lob)[:, None], fat_w)
     dermis = _ss(0.0004, 0.0011, inset)
     alb = _mixc(alb, _mixc(np.tile([0.24, 0.22, 0.26], (n, 1)), [0.30, 0.14, 0.13], dermis), skin_w)   # fix round 2: in-game the margin read as a pale cream ring
     rough = rough * (1 - fat_w - skin_w) + 0.45 * fat_w + 0.42 * skin_w
@@ -228,11 +248,26 @@ def section(u, v, inset=None, head_side=False, seed=211):
     alb = _mixc(alb, [0.10, 0.008, 0.007], film * 0.92)
     # a thin smear on bone/cartilage (lighter red than a pooled film): 45-75 %, no clean ivory left
     smear = np.clip(bone + cart, 0, 1) * np.clip(0.6 + 0.35 * noise.fbm(P3 * 260.0, 3, seed + 14), 0, 1) * (1 - film)
-    alb = _mixc(alb, [0.24, 0.06, 0.05], smear * 0.75)
-    rough = rough * (1 - film) + 0.12 * film
-    fine += 0.0003 * film * (1 - _ss(0.2, 0.6, film))                     # meniscus at the film edge
-    fine += 0.00015 * noise.fbm(P3 * 500.0, 2, seed + 13) * (1 - bone)       # ragged torn fibre ends
-    return dict(h=macro + fine, macro=macro, fine=fine, alb=np.clip(alb, 0, 1), rough=np.clip(rough, 0.04, 1),
+    alb = _mixc(alb, [0.24, 0.06, 0.05], smear * 0.5)     # fix round 3: 0.75 -> 0.5, the vertebra reads off-white
+    rough = rough * (1 - film) + 0.2 * film        # fix round 3: 0.12 -> 0.2 (wet clotting blood, not a mirror)
+    fine += 0.00012 * film * (1 - _ss(0.2, 0.6, film))                    # meniscus at the film edge
+    fine += 0.00004 * noise.fbm(P3 * 250.0, 2, seed + 13) * (1 - bone)       # ragged torn fibre ends (fix round 3: no sparkle)
+    # fix round 3 stage 2 (cine's lamp-pool list #1, m6max-03: the cut = a crumpled gold-foil disc): ANY mm relief in the
+    # cap GEOMETRY tilts its facets past skin.ts's axial-normal gate (|n_y| 0.55-0.85), so those facets kept the mirror
+    # film and each threw an image of the flame. A real 3 s-old cut lying in its pool is levelled by the film (blood's
+    # capillary length ~2 mm >> the relief): the cap is now PLANAR geometry (only plane_offset's ledge + torn rim stay
+    # geometric, sever.py), and the anatomy reads as colour + a clipped (+-3 mm) share of the relief in the normal map.
+    fine = fine + GEOM_TO_NORMAL * np.clip(macro, -0.003, 0.003)
+    macro = macro * CAP_GEOM_RELIEF
+    # stage 2 l1 (lamp-side close: a flat grey LID): cut soft tissue is not a planar lid — the section bulges as the
+    # elastic tissue under it relaxes (a smooth 2.5 mm dome, slope <= 7 deg: inside skin.ts's axial gate, no facets),
+    # and the open lumens (airway, gullet slit, carotids, canal gap) are VOIDS, not a filmed surface: matte black
+    # (roughness 0.95) so no sheen lies over them.
+    rho2 = (u / A_U) ** 2 + (v / B_V) ** 2
+    macro = macro + CAP_DOME * np.clip(1.0 - rho2, 0, 1) ** 1.5 * _ss(0.0, 0.006, inset)
+    voids = np.clip(np.maximum(np.maximum(lumen * (1 - mucosa), wcn * (1 - wcd)), np.maximum(vessel_void, wo * (1 - _ss(0.2, 0.45, do)))), 0, 1)
+    rough = rough * (1 - voids) + 0.95 * voids
+    return dict(h=macro + fine, macro=macro, fine=fine, alb=np.clip(alb, 0, 1), rough=np.clip(rough, 0.12, 1),
                 film=film, bone=bone)
 
 
@@ -245,3 +280,36 @@ def fields(u, v, seed=211, inset=None, head_side=False):
 def height(u, v, inset=None, head_side=False):
     h = section(u, v, inset=inset, head_side=head_side)['macro']
     return float(h[0]) if np.ndim(u) == 0 else h
+
+
+def ledge_offset(u, v, seed=211):
+    """Fix round 3: metres along the cut normal +n (toward the head) of the second stroke's face — the posterior
+    third lies LEDGE + LEDGE_SLOPE * depth lower than the first stroke (same field for both pieces and the skin rim)."""
+    u = np.atleast_1d(np.asarray(u, float))
+    v = np.atleast_1d(np.asarray(v, float))
+    z = np.zeros_like(u)
+    step_v = V_STEP + 0.001 * noise.fbm(np.stack([u * 120.0, z, z], 1), 2, seed + 6) + 0.12 * u * u
+    post = _ss(step_v + 0.0005, step_v - 0.0005, v)
+    return -(LEDGE + LEDGE_SLOPE * np.clip(step_v - v, 0, None)) * post
+
+
+def rim_jag(u, v, seed=311):
+    """Torn skin margin (m along +n), a periodic function of the angle around the neck: a 2-3 cm undulation plus a
+    few sharp 4-6 mm tags/notches."""
+    u = np.atleast_1d(np.asarray(u, float))
+    v = np.atleast_1d(np.asarray(v, float))
+    th = np.arctan2(v, u)
+    Q = np.stack([np.cos(th), np.sin(th), np.zeros_like(th)], 1)
+    j = JAG * noise.fbm(Q * 4.5, 3, seed) / 0.5
+    tags = _ss(0.62, 0.9, noise.ridged(Q * 2.4, 2, seed + 1)) * np.sign(noise.fbm(Q * 1.3, 1, seed + 2) + 1e-6)
+    return np.clip(j, -JAG, JAG) + TAG * tags
+
+
+def plane_offset(u, v, inset=None, seed=211):
+    """Fix round 3: the shared displacement (m along +n) of the cut: ledge everywhere + the rim jag fading out over
+    the first 9 mm inside the rim (skin + fat), so cap and skin rim meet exactly."""
+    off = ledge_offset(u, v, seed)
+    if inset is None:
+        return off + rim_jag(u, v)
+    return off + rim_jag(u, v) * (1.0 - _ss(0.0, 0.009, np.asarray(inset, float)))
+

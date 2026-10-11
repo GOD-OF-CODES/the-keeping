@@ -1,7 +1,7 @@
 // Shared TSL building blocks for the material generators (tile space, periodic — see tsl-noise.ts).
 // Every helper takes the tile uv and returns nodes; frequencies are integer cells per tile (ctx.cells(sizeM)).
 
-import { abs, exp, float, floor, fract, max, min, mix, smoothstep, vec2, vec3 } from 'three/tsl';
+import { abs, exp, float, floor, fract, max, min, mix, smoothstep, step, vec2, vec3 } from 'three/tsl';
 import type { GenCtx, GenResult, N, RGB } from '../gen-types.ts';
 import { fbm, fbm01, gn, hashf, worley } from '../tsl-noise.ts';
 import { coverThreshold } from '../noise-cpu.ts';
@@ -85,14 +85,28 @@ export interface Boards {
  * Floorboard layout in tile space: boards run along u; `rows` = integer rows per tile; each row gets 1..k boards
  * per tile with a random joint offset (tile-safe: joints repeat with the tile).
  */
-export function boards(c: GenCtx, widthM: number, lenMin: number, lenMax: number, gapM: number, seed: number): Boards {
+export function boards(c: GenCtx, widthM: number, lenMin: number, lenMax: number, gapM: number, seed: number, widthJitter = 0): Boards {
   const rows = c.cells(widthM);
   const widthE = c.tile / rows;
   const nMin = Math.max(1, Math.round(c.tile / lenMax));
   const nMax = Math.max(nMin, Math.round(c.tile / lenMin));
   const v = c.uv.y.mul(rows);
-  const row = floor(v);
-  const across = fract(v);
+  let row: N = floor(v);
+  let across: N = fract(v);
+  let wNode: N = float(widthE);
+  // lane A fix round 3 stage 2 (opt-in, widthJitter > 0; rows must be even to stay tile-safe): mill-run boards of a
+  // 19th-c. floor are NOT one width — each pair of rows shares its seam at a random split, so neighbours run e.g.
+  // 9 / 13 cm (± widthJitter of the nominal width). Uniform widths are the strongest 'laminate' cue.
+  if (widthJitter > 0 && rows % 2 === 0) {
+    const pair = floor(v.mul(0.5));
+    const local = v.sub(pair.mul(2));
+    const split = float(1).add(hashf(pair, seed + 7).sub(0.5).mul(2 * widthJitter));
+    const second = step(split, local); // 0/1: local ≥ split
+    row = pair.mul(2).add(second);
+    const wRel = mix(split, float(2).sub(split), second);
+    across = mix(local.div(split), local.sub(split).div(float(2).sub(split)), second);
+    wNode = wRel.mul(widthE);
+  }
   const hr = hashf(row, seed);
   const n = floor(mix(float(nMin), float(nMax + 1), hashf(row, seed + 1)).min(nMax));
   const s = c.uv.x.add(hr).mul(n);
@@ -102,7 +116,7 @@ export function boards(c: GenCtx, widthM: number, lenMin: number, lenMax: number
   const id = hashf(key, seed + 2);
   const id2 = hashf(key, seed + 3);
   const lenM = float(c.tile).div(n);
-  const dAcross = min(across, float(1).sub(across)).mul(widthE);
+  const dAcross = min(across, float(1).sub(across)).mul(wNode);
   const dAlong = min(along, float(1).sub(along)).mul(lenM);
   const edge = min(dAcross, dAlong);
   const gap = float(1).sub(smoothstep(gapM * 0.35, gapM, edge));

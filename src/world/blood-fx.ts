@@ -15,7 +15,7 @@
 // Draws: 2 (particles + stains). Tiers: particles 100 / 620 / 1450, stains 12 / 40 / 80.
 
 import * as THREE from 'three/webgpu';
-import { Fn, uniform, instancedBufferAttribute, positionGeometry, varyingProperty, vec2, vec3, vec4, float, exp, normalize, cross, dot, max, min, step, smoothstep, pow, sqrt, mix, abs, cameraPosition, texture, length, clamp, select, attribute, sin, cos, fwidth } from 'three/tsl';
+import { Fn, uniform, instancedBufferAttribute, positionGeometry, varyingProperty, vec2, vec3, vec4, float, exp, normalize, cross, dot, max, min, step, smoothstep, pow, sqrt, mix, abs, cameraPosition, texture, length, clamp, select, attribute, sin, cos, fwidth, atan, tanh, screenUV, viewportOpaqueMipTexture } from 'three/tsl';
 import { planToWorld } from '../shared/coords.ts';
 import { BLOOD_TIERS, ballistic, poolRadius, rng, seedC2, stainsOf, tauFor, terminate, type Particle, type Stain } from './blood-math.ts';
 import { C2_CONTACT, C2_PULSES, C2_DURATION } from '../cutscenes/c2-room.ts';
@@ -36,15 +36,26 @@ const MUA_JET: [number, number, number] = BW.muA ?? [1.0, 100, 120];
 const MUA_POOL: [number, number, number] = BW.muA_pool ?? [3.0, 110, 130];
 const ALB_JET: [number, number, number] = BW.albedoJet ?? [0.18, 0.012, 0.01];
 const ALB_POOL: [number, number, number] = (specById('blood_wet')?.avgAlbedo as [number, number, number]) ?? [0.11, 0.009, 0.008];
+// review fix round 3 (#127): the boards' luminance albedo (floor_varnished avg 0.145/0.086/0.047) for the pools' key visibility
+const FLOOR_RHO = (specById('floor_varnished')?.avgAlbedo as [number, number, number]) ?? [0.145, 0.086, 0.047];
+const FLOOR_RHO_LUM = 0.2126 * FLOOR_RHO[0] + 0.7152 * FLOOR_RHO[1] + 0.0722 * FLOOR_RHO[2];
 
 /** Fix round 2 (probe scratch/esc2/sweep2.mjs, Medium, C2 8.45, lane A build 1b): the body's cut cap centroid and the
  *  neck axis there (cap − the ring 7 cm below it): (−0.809, 0.052, +0.586) = bearing 176.3°, elevation +35.9° — the
  *  stump points west and UP off the table end, so the carotids fountain: pulse 1 (2.8 m/s) peaks 0.14 m above the cut
  *  and lands 1.3 m west at 0.63 s (x 4.2), pulse 4 (1.0 m/s) at x 5.07 (scratch/esc2/land.ts). Stage NECK sits 17 cm
  *  west of the real cut: the jets used to start in mid-air. */
-export const JET_CUT: P3 = [5.478, 3.31, 1.484];
-export const JET_AZ = (176.3 * Math.PI) / 180;
-export const JET_EL = (35.9 * Math.PI) / 180;
+// fix round 3 (#124, lane A build 3: the cut 25 mm further up the neck, tilted 20°): re-probed at C2 8.45 on the posed
+// body (scripts/qa/c2-look.mjs CAP=1, 800 cap verts): cap centroid plan (5.484, 3.307, 1.446), neck axis (cap − the ring
+// 6–8 cm below) bearing 175.0°, elevation +4.8° — the stump now lies near-level along the table end, so the carotids
+// throw west almost horizontally from 0.85 m: pulse 1 (2.8 m/s) lands ≈ 1.1 m west in ≈ 0.42 s.
+export const JET_CUT: P3 = [5.484, 3.307, 1.446];
+export const JET_AZ = (175.0 * Math.PI) / 180;
+// review fix round 3 (#127): the ring axis is +4.8° at 6–8 cm but +30.5° at 10–12 cm (the posed neck curves ≈ 25° over
+// its last 10 cm, LOOK gl1); a cut carotid retracts ≈ 1.5–2.5 cm into the stump, so its lumen — the jet's direction — lies
+// on the deeper, steeper axis: 18° (mid-range). At 4.8° the jets ran level at the cleaver's height into Harlan's hands
+// and were hidden from the strike camera D at 7.75–8.2.
+export const JET_EL = (18 * Math.PI) / 180;
 
 export interface BloodDeps {
   scene: any;
@@ -82,7 +93,10 @@ export function createBloodFx(d: BloodDeps) {
     const v = WV(p.v0);
     aA.set([w[0], w[1], w[2], p.t0], i * 4);
     aB.set([v[0], v[1], v[2], p.tEnd], i * 4);
-    aC.set([p.r, p.tau, p.kind, (i * 0.618) % 1], i * 4);
+    // fix round 3 LOOK: a jet element becomes ONE Rayleigh–Plateau drop past its break time — its radius from its own
+    // volume (pulse 1 on Medium: 25 mL / 55 elements / 2 jets = 0.23 mL → r 3.8 mm; RP predicts d ≈ 1.89·2a ≈ 9.5 mm)
+    const r = p.kind === 0 ? Math.min(0.0048, Math.max(0.0015, Math.cbrt((3 * p.ml * 1e-6) / (4 * Math.PI)))) : p.r;
+    aC.set([r, p.tau, p.kind, (i * 0.618) % 1], i * 4);
   };
   parts.forEach((p, i) => write(i, p));
   for (let i = parts.length; i < N; i++) aA[i * 4 + 3] = 1e9; // dynamic slots: not born
@@ -115,6 +129,12 @@ export function createBloodFx(d: BloodDeps) {
     return mix(float(1), smoothstep(uHeadOcc.w.mul(0.55), uHeadOcc.w.mul(1.5), dd), step(0, tca));
   };
 
+  // fix round 3 LOOK (the C2c stair prints glowing pink under a lamp two walls away): the analytic shading has no shadow
+  // map, so the parlor lamp lit every stain in the house. The walls are the occluder that matters: the key light only
+  // reaches stains in its own room box (the parlor G2: world x 3.75–8.75, z −6…0, below the 3.8 m ceiling) — a stain
+  // and the light on the same side of that box (the lamp inside, a lightning stroke outside) keep it.
+  const inParlor = (P: any) => step(3.75, P.x).mul(step(P.x, 8.75)).mul(step(-6, P.z)).mul(step(P.z, 0)).mul(step(P.y, 3.8));
+  const sameRoom = (P: any) => float(1).sub(abs(inParlor(P).sub(inParlor(uKeyPos))));
   const A = instancedBufferAttribute(bufA);
   const B = instancedBufferAttribute(bufB);
   const C = instancedBufferAttribute(bufC);
@@ -122,12 +142,15 @@ export function createBloodFx(d: BloodDeps) {
   const vPos = varyingProperty('vec3', 'vBloodP');
   const vRad = varyingProperty('float', 'vBloodR');
   const vKind = varyingProperty('float', 'vBloodK');
+  const vAlpha = varyingProperty('float', 'vBloodA');
 
   const position = Fn(() => {
     const t = uT.sub(A.w);
     const life = B.w.sub(A.w);
-    // fix round 2: the jet beads (kind 0) are retired — the continuous stream tube below draws the jets
-    const alive = step(0, t).mul(step(t, life)).mul(step(0.5, C.z));
+    // fix round 2: the jet beads (kind 0) were retired for the continuous stream tube; fix round 3: they are the DROPS
+    // the ligament breaks into — alive only past their break time (0.075–0.12 s, the tube's tBr band)
+    const tBrk = C.w.mul(0.045).add(0.075);
+    const alive = step(0, t).mul(step(t, life)).mul(max(step(0.5, C.z), step(tBrk, t)));
     const tau = C.y;
     const e = exp(t.max(0).negate().div(tau));
     const k = tau.mul(float(1).sub(e));
@@ -149,6 +172,9 @@ export function createBloodFx(d: BloodDeps) {
     vPos.assign(wp);
     vRad.assign(r);
     vKind.assign(C.z);
+    // fix round 3 LOOK: film motion blur — a drop crossing its own length many times inside the exposure leaves a faint
+    // streak, not an opaque red rod: coverage ≈ its diameter over the streak length (energy kept)
+    vAlpha.assign(clamp(r.div(r.add(half)), 0.12, 1));
     return mix(p, wp, alive).mul(alive); // dead/unborn: collapsed at the origin (degenerate, nothing drawn)
   })();
 
@@ -210,18 +236,23 @@ export function createBloodFx(d: BloodDeps) {
     const FK = f0.add(float(1).sub(f0).mul(pow(clamp(float(1).sub(nvK), 0, 1), 5)));
     const flameImg = uKeyCol.mul(uKeyI.div(rF.mul(rF).mul(Math.PI))).mul(rF.div(wF).pow(2)).mul(FK).mul(covF).mul(kOcc);
     const ck = Ek.mul(diff.mul(max(dot(N, lk), 0))).add(flameImg);
-    const ct = Et.mul(diff.mul(max(dot(N, lt), 0)).add(ggx(N, V, lt, rough, f0, float(0.025), sqrt(dt2))));
-    return { c: ck.add(ct).add(albedo.mul(uAmbient)), V, Ek, lk };
+    const tSpec = Et.mul(ggx(N, V, lt, rough, f0, float(0.025), sqrt(dt2)));
+    const ct = Et.mul(diff.mul(max(dot(N, lt), 0))).add(tSpec);
+    // review fix round 3 (#127): the specular pieces separately (the floor-stain path takes its diffuse from the boards)
+    return { c: ck.add(ct).add(albedo.mul(uAmbient)), V, Ek, lk, Et, lt, flame: flameImg, tSpec };
   };
 
   const partMat = new THREE.MeshBasicNodeMaterial();
   partMat.name = 'blood-particles';
   partMat.positionNode = position;
+  partMat.transparent = true; // fix round 3: motion-blurred drops (vAlpha)
+  partMat.depthWrite = false;
   partMat.colorNode = Fn(() => {
     const N = normalize(vNormal);
     const jet = step(vKind, 0.5);
     const albedo = mix(vec3(...ALB_POOL), vec3(...ALB_JET), jet);
-    const s = shade(vPos, N, albedo, float(0.12), float(0.022));
+    // R3 (#127): outside the parlor the key is the roaming lightning light (unshadowed here) — drops there take the torch only
+    const s = shade(vPos, N, albedo, float(0.12), float(0.022), sameRoom(vPos).mul(inParlor(vPos)));
     // the back-lit term: chord d (mm) through the drop at this pixel, Beer–Lambert per channel, Henyey–Greenstein
     const nv = max(dot(N, s.V), 0.05);
     const dmm = vRad.mul(2000).mul(nv);
@@ -232,7 +263,7 @@ export function createBloodFx(d: BloodDeps) {
     const pHG = float((1 - g * g) / (4 * Math.PI)).div(pow(max(float(1 + g * g).sub(cosT.mul(2 * g)), float((1 - g) * (1 - g))), 1.5));
     const F = float(0.022).add(float(0.978).mul(pow(clamp(float(1).sub(nv), 0, 1), 5)));
     const back = s.Ek.mul(T).mul(pHG).mul(float(1).sub(F));
-    return vec4(s.c.add(back), 1);
+    return vec4(s.c.add(back), vAlpha);
   })();
   const sphere = new THREE.IcosahedronGeometry(1, d.preset === 'low' ? 0 : 1);
   const partMesh = new THREE.InstancedMesh(sphere, partMat, N);
@@ -257,7 +288,7 @@ export function createBloodFx(d: BloodDeps) {
   // (We = ρv²d/σ ≈ 900, Re ≈ 5000 at μ 3.5 mPa·s) is metres, so the stream stays coherent over its ≈ 1 m arc to the
   // boards; each pulse front is a slug (faster fluid catching slower). The jet beads (particle kind 0) are retired;
   // the mist and the drops stay particles, the jet LANDINGS stay stains. Draws +1 (child of the particle mesh).
-  const JSEG = d.preset === 'low' ? 24 : 56;
+  const JSEG = d.preset === 'low' ? 32 : 96;
   const JRING = d.preset === 'low' ? 5 : 8;
   const JAGE = 0.7; // s: the oldest element drawn (pulse 1's flight to the boards is 0.63 s)
   {
@@ -285,7 +316,7 @@ export function createBloodFx(d: BloodDeps) {
     const tauJ = tauFor(0.0025, 2.5);
     const pulses = C2_PULSES.slice(0, 4);
     const jetPos = Fn(() => {
-      const age = J.x.mul(JAGE);
+      const age = J.x.mul(J.x).mul(JAGE); // fix round 3: x² spacing — ≈ 3 ms segments over the coherent first 0.12 s
       const te = uT.sub(age); // emission time of this element
       let sp: any = float(0);
       let el: any = float(0);
@@ -310,13 +341,20 @@ export function createBloodFx(d: BloodDeps) {
       sp = mix(vb, sp, pulse).max(1e-3).mul(J.z.mul(0.06).add(1));
       el = mix(float(Math.min(JET_EL, (-38 * Math.PI) / 180)), el, pulse).add(J.z.mul((3 * Math.PI) / 180));
       const born = step(C2_CONTACT, te).mul(step(age, uT.sub(C2_CONTACT)));
-      // look 1: two clean parallel ribbons read as neon — a real jet from a ragged cut is varicose (Rayleigh–Plateau:
-      // the fastest-growing wavelength ≈ 9 × the radius ≈ 2–3 cm, growing with flight time) and pinches into drops
-      // after ≈ 0.25–0.4 s; the two carotids differ (the left/right cut is not symmetric: speed ±6 %, elevation ±3°)
+      // fix round 3 LOOK (m6max-01: the jets = two constant-radius glowing arcs): a torn carotid is not a quiet nozzle —
+      // the pulsing, ragged exit seeds disturbances δ0/a ≈ 0.1–0.3, so Rayleigh–Plateau break-up governs, not Weber's
+      // quiet-nozzle length. Jet a ≈ 2.5 mm, ρ 1060 kg/m³, σ 0.058 N/m: capillary time √(ρa³/σ) = 17 ms, max growth rate
+      // 0.34/17 ms → e-folding τ ≈ 50 ms; pinch-off after ln(a/δ0) ≈ 1.2–2.3 τ ≈ 60–120 ms (≈ 15–30 cm at 2.5 m/s); the
+      // fastest wavelength λ = 9.02 a ≈ 23 mm → drops of d ≈ 1.89 × 2a ≈ 9.5 mm (the beads below, alive past their own
+      // break time). The tube is the coherent ligament only: varicose from the cut (growing e^(age/τ)), pinched to 0 by
+      // tBr; the drops carry on as particles (kind 0).
       const ph = J.z.mul(1.7);
-      const vari = float(1).add(sin(age.mul(2 * Math.PI * 34).add(ph)).mul(0.38).mul(smoothstep(0.02, 0.22, age)));
-      const pinch = mix(float(1), pow(abs(sin(age.mul(Math.PI * 26).add(ph))), 1.5).mul(1.7), smoothstep(0.24, 0.42, age));
-      const rad = max(rr, rb).mul(born).mul(vari).mul(pinch);
+      const sAl = age.mul(sp); // m along the stream
+      const tBr = float(0.095).add(sin(te.mul(2 * Math.PI * 3.1).add(ph)).mul(0.025));
+      const grow = min(exp(age.div(0.05)).mul(0.04), float(0.6));
+      const vari = float(1).add(sin(sAl.mul(2 * Math.PI / 0.023).add(ph)).mul(grow));
+      const brk = float(1).sub(smoothstep(tBr.sub(0.02), tBr, age));
+      const rad = mix(rb, rr.mul(vari).mul(brk), pulse).mul(born);
       const az = J.z.mul((6 * Math.PI) / 180).add(JET_AZ).add(sin(te.mul(2 * Math.PI * 9)).mul((4 * Math.PI) / 180));
       // PLAN direction → WORLD (x, z, −y)
       const dirW = vec3(cos(az).mul(cos(el)), sin(el), sin(az).mul(cos(el)).negate());
@@ -357,7 +395,10 @@ export function createBloodFx(d: BloodDeps) {
       const muEff = sqrt(vec3(...MUA_JET).mul(vec3(...MUA_JET).add(1.5)).mul(3));
       const T = exp(muEff.mul(dmm).negate());
       const F = float(0.022).add(float(0.978).mul(pow(clamp(float(1).sub(nv), 0, 1), 5)));
-      return vec4(s0.c.add(s0.Ek.mul(T).mul(1 / Math.PI).mul(float(1).sub(F))), 1);
+      // fix round 3 LOOK: diffuse transmission leaves the stream on its FAR side from the lamp only (the old term lit
+      // every silhouette edge whatever the light direction → a glowing rim on both sides = the neon outline)
+      const back = max(dot(N, s0.lk.negate()), 0);
+      return vec4(s0.c.add(s0.Ek.mul(T).mul(back).mul(1 / Math.PI).mul(float(1).sub(F))), 1);
     })();
     const jetMesh = new THREE.Mesh(g, jetMat);
     jetMesh.name = 'blood-jets';
@@ -448,9 +489,39 @@ export function createBloodFx(d: BloodDeps) {
     // review fix round 2 (zoom of the E4 pool: the rim is a 12 px band of pink lit bumps): the meniscus of blood on
     // varnish is ≈ 1–2 mm wide (≈ 1–2 px at 1.4 m), but the atlas ramp spans ≈ 3 texels (≈ 1.5 cm) and the gain 1.4
     // tilted it ≈ 55° toward the lamp → a broad lit band with 8-bit quantisation bumps. Gain 1.4 → 0.45 (≤ 25°).
-    const N = normalize(vec3(hx.mul(-0.45), 1, hz.mul(0.45)));
+    const Na = normalize(vec3(hx.mul(-0.45), 1, hz.mul(0.45)));
+    // fix round 3 LOOK (m6max-03: the pool = a perfect circle with a fuzzy dotted rim — one 128 px atlas cell magnified
+    // ≈ 4×): POOLS are analytic. Edge r(θ) = R·(1 + Σ a_k cos(kθ + φ_k)) — a viscous front creeping along the boards
+    // (7 seeded harmonics, a ∝ k^−1.3, + a 1.2× stretch along the quad's long axis) — and a signed distance d (m, + inside)
+    // anti-aliased over one pixel (fwidth). The meniscus is the capillary profile h = h0·tanh(d/lc), lc = √(σ/ρg) =
+    // √(0.058 / (1060·9.81)) = 2.4 mm (whole blood σ ≈ 58 mN/m), h0 = 2.75 mm (the settled film, blood-math): the tilt
+    // lives in the outer ≈ 2–3 mm only (≈ 2 px at 1.4 m) — a thin bright lip where it faces the flame, not a band.
+    const isPool = step(0.5, kind).mul(step(kind, 1.5));
+    const pl = vec2(vLoc.x.mul(SB.x), vLoc.y.mul(SB.y)); // metres in the quad frame
+    const rq = length(pl).max(1e-5);
+    const th = atan(pl.y, pl.x.mul(0.83));
+    let hsum: any = float(0);
+    [0.12, 0.08, 0.055, 0.041, 0.035, 0.03, 0.026].forEach((a, i) => {
+      const k = i + 2;
+      hsum = hsum.add(cos(th.mul(k).add(SC.z.mul(6.283 * (k * 1.618 + 0.37)).fract().mul(6.283))).mul(a));
+    });
+    const Rp = SB.y.mul(0.9 / 3.8).mul(float(1).add(hsum)); // pools: SB = 3.8·r (updatePools) → mean edge 0.9 r (the 1.2× stretch keeps the area)
+    const Rdir = float(1).div(length(vec2(cos(th).mul(0.83), sin(th))).max(0.5)); // the 1.2× stretch along x
+    const dP = Rp.mul(Rdir).sub(rq).mul(mix(float(0.55), float(1), smoothstep(SC.x, SC.x.add(0.25), uT))); // grows with the quad
+    const lc = 0.0024;
+    const hP = tanh(clamp(dP.div(lc), 0, 8)); // 0 at the contact line → 1 in the flat film (clamped: tanh(≫ 40) is inf/inf = NaN on WGSL/GLSL)
+    const slope = float(1).sub(hP.mul(hP)).mul(2.75 / 2.4).mul(step(0, dP)); // dh/dd = h0/lc · sech²
+    const cy = SA.w.cos();
+    const sy = SA.w.sin();
+    const rl = pl.div(rq); // outward, quad frame → world (x' = lx·c + lz·s, z' = −lx·s + lz·c)
+    const outW = vec3(rl.x.mul(cy).add(rl.y.mul(sy)), 0, rl.x.mul(sy).negate().add(rl.y.mul(cy)));
+    const Npool = normalize(vec3(0, 1, 0).add(outW.mul(slope)));
+    const wP = max(fwidth(dP), float(1e-4));
+    const coverP = smoothstep(wP.negate(), wP, dP);
+    const N = normalize(mix(Na, Npool, isPool));
+    const mg = mix(m.g, hP, isPool);
     const ageMin = uGameAge.add(uT.sub(SC.x).max(0).div(60));
-    const edge = float(1).sub(m.g);
+    const edge = float(1).sub(mg);
     const clot = clamp(ageMin.sub(3).div(7), 0, 1);
     const dry = clamp(ageMin.sub(10).div(20), 0, 1);
     const roughB = float(0.05).add(edge.mul(clot).mul(0.2)).add(dry.mul(0.3));
@@ -465,11 +536,42 @@ export function createBloodFx(d: BloodDeps) {
     // (wood ≈ (0.10, 0.06, 0.04) × T(0.2 mm) ≈ (0.07, 0.008, 0.006)); plasma-wet roughness 0.15
     // fix round 2: a thick pool is darkest at its core (the light path through ≥ 2 mm of whole blood is absorbed even
     // in the red) and redder at the thin meniscus where the boards show through: × 0.5 at full height → × 1.5 at the rim
-    const thickK = mix(float(1.15), float(0.5), m.g); // (review r5: the × 1.5 rim + the tilt = the pink band)
+    const thickK = mix(float(1.15), float(0.5), mg); // (review r5: the × 1.5 rim + the tilt = the pink band)
     const albedo = mix(mix(vec3(...ALB_POOL).mul(thickK), vec3(0.06, 0.016, 0.012), dry), vec3(0.07, 0.008, 0.006), isPrint);
     const rough = mix(roughB, float(0.15), isPrint);
     const Nn = mix(N, Np, isPrint);
-    const s = shade(vSP, Nn, albedo, rough, float(0.022), headShadow(vSP));
+    // review fix round 3 (#127): the analytic key had no shadow map, so a pool lobe lying in the table's / Harlan's
+    // shadow stayed lit saturated red beside black boards (the 'red cardboard' read, r1max-04). The boards UNDER the
+    // pool already carry the true lamp visibility: the opaque frame behind it (mip 5 ≈ 32 px — R5: mip 3 let the board seams show through — averages out the
+    // wood figure) holds L_floor ≈ ρ_floor/π·E·V (+ the small indirect). With ρ_floor = floor_varnished's luminance and
+    // the unshadowed E from the analytic key, R = L_floor / L_expected ≈ V: ≥ 0.7 lit, ≤ 0.2 in shadow. Floor stains
+    // only (world y < 0.66: the boards at 0.6); table / rubber-sheet stains keep the old occlusion.
+    // R3 (pr1, C2c 13.0 'pink sticker' prints): outside the parlor the blood key is the ROAMING lightning light (1100 cd
+    // at plan (2.1, −1.4, 5.6), outside the house) — unshadowed it lit every stair print at L ≈ 1.1 (rgb 4.5, 0.23, 0.07:
+    // 30× the treads beside them). Every stain outside the parlor (hall boards, stair treads: horizontal varnished wood
+    // like the parlor boards) takes the same visibility from the surface under it: lit only inside the real window patch.
+    const lkF = uKeyPos.sub(vSP);
+    const dkF = dot(lkF, lkF).max(1e-4);
+    const cosF = max(lkF.y.div(sqrt(dkF)), 0);
+    const keyLum = dot(vec3(uKeyCol), vec3(0.2126, 0.7152, 0.0722));
+    const expF = keyLum.mul(uKeyI).div(dkF).mul(cosF).mul(FLOOR_RHO_LUM / Math.PI);
+    const behind = viewportOpaqueMipTexture(screenUV).level(float(5)).rgb;
+    const visF = smoothstep(0.2, 0.7, dot(behind, vec3(0.2126, 0.7152, 0.0722)).div(expF.max(1e-6)));
+    const onFloor = max(step(vSP.y, 0.66), float(1).sub(inParlor(vSP)));
+    const keyVis = mix(float(1), visF, onFloor.mul(step(1e-6, expF)));
+    const s = shade(vSP, Nn, albedo, rough, float(0.022), headShadow(vSP).mul(sameRoom(vSP)).mul(keyVis));
+    // R4 (r3max 13.0: the stair prints still red-orange stickers brighter than the treads): the analytic TORCH lights
+    // its whole 45° cone at the hot-centre 2 kcd (the real beam is a hot centre + a far dimmer spill ring, and it is
+    // shadowed). For the board stains the DIFFUSE now comes from the boards themselves: L = L_behind ⊙ ρ_blood / ρ_floor
+    // per channel — every light (lamp, torch profile, lightmap, the lightning patch) with its real shadows. Only the
+    // speculars stay analytic: the flame image (× the key visibility above) and the torch lobe × its own visibility.
+    const ltF = uTorchPos.sub(vSP);
+    const cosT = max(ltF.y.div(length(ltF).max(1e-4)), 0);
+    const expT = dot(vec3(s.Et), vec3(0.2126, 0.7152, 0.0722)).mul(cosT).mul(FLOOR_RHO_LUM / Math.PI);
+    const visT = smoothstep(0.2, 0.7, dot(behind, vec3(0.2126, 0.7152, 0.0722)).div(expT.max(1e-6)));
+    const diffB = behind.mul(albedo).div(vec3(...FLOOR_RHO));
+    const cBoards = diffB.add(s.flame).add(s.tSpec.mul(visT));
+    const cStain = mix(s.c, cBoards, onFloor);
     // escape fix round (lane CINE, item 2): a fresh film is a mirror — the room cube (box-projected) along the
     // reflection × Schlick (F0 0.022, IOR 1.35): the pool shows the lit wall / ceiling / Harlan's dark shape in it
     // instead of reading as a matte painted ellipse. Fallback (no probes): a dim warm room constant.
@@ -496,8 +598,9 @@ export function createBloodFx(d: BloodDeps) {
     const cosH = max(dot(nW, Lh.div(sqrt(dh2))), 0);
     const rhoW = mix(vec3(0.3, 0.234, 0.15), vec3(0.6, 0.58, 0.55), ceil);
     const roomL = uKeyCol.mul(uKeyI.div(dh2)).mul(cosH).mul(rhoW).mul(1 / Math.PI).add(vec3(0.004, 0.003, 0.0025));
-    const envP = roomL;
-    const envH = vec3(0.01, 0.008, 0.007);
+    const envH0 = vec3(0.01, 0.008, 0.007);
+    const envP = mix(envH0, roomL, inParlor(vSP)); // R4: the analytic room box is the parlor's — elsewhere the dim constant
+    const envH = envH0;
     const nvE = max(dot(Nn, s.V), 0.02);
     const Fe = float(0.022).add(float(0.978).mul(pow(clamp(float(1).sub(nvE), 0, 1), 5)));
     // capped at 0.5: a lamp-lit room never reflects brighter (a unit error must not paint a pool white again)
@@ -512,7 +615,7 @@ export function createBloodFx(d: BloodDeps) {
     // pools/streaks take the iso-line m.r = 0.5 anti-aliased over one screen pixel (fwidth), like an SDF edge.
     const wE = max(fwidth(m.r), float(0.02));
     const sharp = smoothstep(float(0.5).sub(wE), float(0.5).add(wE), m.r);
-    const cover = mix(sharp, m.r.mul(smoothstep(0.06, 0.2, m.r)), isPrint).mul(SC.w).mul(float(1).sub(smoothstep(0.42, 0.5, edgeQ)));
+    const cover = mix(mix(sharp, coverP, isPool), m.r.mul(smoothstep(0.06, 0.2, m.r)), isPrint).mul(SC.w).mul(float(1).sub(smoothstep(0.42, 0.5, edgeQ)));
     // r4: prints read as painted pink/white marks — a wet print is mostly darkened boards with a sparse glint
     // review fix round 2 (every pool rim a soft PINK halo): the thin meniscus was alpha-blended at 0.75 over the tan
     // boards — tan G/B leaking through reads salmon-pink. A 0.1 mm whole-blood film is a red FILTER (Hb absorbs G/B
@@ -521,7 +624,7 @@ export function createBloodFx(d: BloodDeps) {
     const a = mix(cover.mul(0.97), cover.mul(0.85), isPrint).mul(smoothstep(SC.x, SC.x.add(0.04), uT));
     const ring = m.b.mul(dry).mul(0.5);
     // ?debug A/B (__bloodFx.uStainDbg): 1 = alpha 0 everywhere, 2 = magenta at the real alpha
-    const col = min(s.c.mul(float(1).sub(ring)).add(refl), vec3(6));
+    const col = min(cStain.mul(float(1).sub(ring)).add(refl), vec3(6));
     // belt and braces: where nothing is drawn the colour is exactly 0 (a select never blends the other branch)
     const colS = select(a.greaterThan(1e-4), col, vec3(0));
     return vec4(select(uStainDbg.equal(2), vec3(4, 0, 4), colS), select(uStainDbg.equal(1), float(0), a));
@@ -618,7 +721,7 @@ export function createBloodFx(d: BloodDeps) {
   const t11 = treadNosing(ADA_LAST_TREAD);
   addStain([adaOnTread(ADA_LAST_TREAD)[0], t11[1] - 0.13, t11[2]], 1.3, 0.2, 0.15, CELL.puddle, 2, C2C0 + 8.95, 6, 1);
   const t10 = treadNosing(10);
-  addStain([adaOnTread(10)[0], t10[1] - 0.04, t10[2]], 0.2, 0.06, 0.05, CELL.puddle, 1, C2C0 + 10.05, 1, 0.8);
+  addStain([adaOnTread(10)[0], t10[1] - 0.04, t10[2]], 0.2, 0.1, 0.095, CELL.puddle, 1, /* fix round 3: analytic pool, 3.8 r */ C2C0 + 10.05, 1, 0.8);
 
   // ---- dynamic particles: the tread-11 drip (one drop every 0.6 s; slowing to one every 2 s by B05 + 60 s) + crowns
   let dynNext = parts.length;
@@ -690,8 +793,9 @@ export function createBloodFx(d: BloodDeps) {
     for (const p of pools) {
       const r = poolRadius(p.ml(clock));
       const on = r > 0.004;
-      s2[p.i * 4] = on ? r * 2.1 : 0.0001;
-      s2[p.i * 4 + 1] = on ? r * 2.0 : 0.0001;
+      // fix round 3 LOOK: analytic pools need room for the lobes + the stretch inside the quad's edge fade (0.84 × half)
+      s2[p.i * 4] = on ? r * 3.8 : 0.0001;
+      s2[p.i * 4 + 1] = on ? r * 3.8 : 0.0001;
       if (on && s3[p.i * 4] > 1e8) s3[p.i * 4] = clock; // fresh from the moment it appears (wet, α 0.05)
       else if (!on) s3[p.i * 4] = 1e9;
     }

@@ -421,6 +421,8 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
       n.castShadow = true;
       n.receiveShadow = true;
     }
+    // contract #128: the terrain tiles skip the torch's map while its view cull is in scope (src/render/view-caster-cull.ts)
+    if (n.isMesh && /^EXT2_terrain_\d+$/.test(n.name || n.parent?.name || '')) n.userData.torchNoShadow = true;
   });
 
   // ---- 5. doors, collision, lights

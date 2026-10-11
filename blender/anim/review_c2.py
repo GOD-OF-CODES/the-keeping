@@ -72,6 +72,7 @@ VIEWS = {
     'facelab45': (None, None, 50, 'lab'),       #   ... 45 deg off the face normal (cheek, ear, jaw line)
     'caplab': (None, None, 50, 'lab'),          #   ... the head's cut face from below, ~45 deg
     'stump05': (None, None, 50, 'separate_cap'),        # the body's cap face-on-ish, 0.5 m along the neck axis
+    'cuff06': (None, None, 50, 'separate'),     # fix round 3: Harlan's rolled cuff + forearm at 0.6 m (the pink band)
     'body': (T, RISEN + Vector((0, 0, 1.25)), 44, 'risen'),           # the headless body (S10), from T
     'body14': (RISEN + Vector((0, 0, 1.38)) + (T - RISEN - Vector((0, 0, 1.38))).normalized() * 1.4,
                RISEN + Vector((0, 0, 1.38)), 50, 'risen'),     # fix round: the risen stump from T's side at 1.4 m
@@ -548,6 +549,14 @@ for name in want:
         dd = Vector((tl.x * math.cos(a) - tl.y * math.sin(a), tl.x * math.sin(a) + tl.y * math.cos(a), 0))
         eye = HEAD_REST + dd * float(ARGS.get('hero_d', 1.0)) + Vector((0, 0, float(ARGS.get('hero_h', 0.6))))
         tgt = HEAD_REST + Vector((0, 0, 0.04))
+    if name == 'cuff06':
+        sd = str(ARGS.get('cuff_side', 'r'))
+        fa, fb = bone_world(harlan, f'forearm_{sd}'), bone_world(harlan, f'forearm_{sd}', tail=True)
+        tgt = fa.lerp(fb, 0.4)
+        dd = D - tgt
+        dd.z = 0.0
+        dd.normalize()
+        eye = tgt + dd * float(ARGS.get('cuff_d', 0.6)) + Vector((0, 0, 0.12))
     if name == 'face08':
         eo = bpy.data.objects.get('ada_eye')
         dg = bpy.context.evaluated_depsgraph_get()

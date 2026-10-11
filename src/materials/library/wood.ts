@@ -4,7 +4,7 @@
 import type { MaterialFamily } from '../../shared/material-types.ts';
 import type { GenCtx, Generator, N, RGB } from '../gen-types.ts';
 import { fbm, fbm01, gn, hashf } from '../tsl-noise.ts';
-import { abs, band, boards, c3, chipMask, dots, float, fract, lines, max, min, mix, nyqOctaves, paintOver, patches, rot45, smoothstep, tideStain, vec2, vec3, woodGrain } from './common.ts';
+import { abs, band, boards, c3, chipMask, dots, float, floor, fract, lines, max, min, mix, nyqOctaves, paintOver, patches, rot45, smoothstep, tideStain, vec2, vec3, woodGrain } from './common.ts';
 
 interface Species {
   rings: number; // visible rings across a 0.11 m board
@@ -42,7 +42,9 @@ const woodFloor: Generator = (c) => {
   const sp = SPECIES[c.str('species', 'oak')] ?? SPECIES.oak;
   const bw = c.num('boardWidth', 0.11);
   const isStair = c.spec.id.includes('stair');
-  const b = boards(c, bw, c.num('boardLengthMin', isStair ? 5 : 0.9), c.num('boardLengthMax', isStair ? 5 : 2.6), isStair ? 0.0015 : 0.0028, seed);
+  // lane A fix round 3 stage 2 (cine's lamp-pool list, C2 10.5: the boards read as modern laminate): floors get mill-run
+  // widths ±18 % (9–13 cm on an 11 cm nominal; stair treads stay single boards)
+  const b = boards(c, bw, c.num('boardLengthMin', isStair ? 5 : 0.9), c.num('boardLengthMax', isStair ? 5 : 2.6), isStair ? 0.0015 : 0.0028, seed, isStair ? 0 : 0.18);
   const base = c.col('baseColor', [0.1, 0.056, 0.028]);
   const wood = woodAlbedo(c, b, base, sp, c.num('grainContrast', 0.35) * 1.4, seed + 5);
 
@@ -77,9 +79,27 @@ const woodFloor: Generator = (c) => {
   alb = mix(alb, dirt, gapDirt);
   rough = mix(rough, float(0.9), b.gap);
 
+  // lane A fix round 3 stage 2: face-nailed boards. A 19th-c. floor is cut-nailed through the face into joists at 16 in
+  // (0.406 m) centres — two nail heads per board per joist (≈ 3 × 5 mm rectangular cut-nail heads, set ≈ 0.5 mm), in
+  // straight lines ACROSS the whole floor; in oak each one sits in a black iron-tannate stain halo 5–10 mm wide. One
+  // of the strongest 'old house, not laminate' cues at 1–2 m (a 4 mm head ≈ 5 px at E4's 50 mm / 1.4 m).
+  let nailHead: N = float(0);
+  if (!isStair) {
+    const J = c.cells(0.406);
+    const jx = fract(c.uv.x.mul(J));
+    const dx = min(jx, float(1).sub(jx)).mul(c.tile / J);
+    const dy = min(abs(b.across.sub(0.24)), abs(b.across.sub(0.76))).mul(b.widthM);
+    const nid = hashf(b.row.mul(97).add(floor(c.uv.x.mul(J).add(0.5))), seed + 60);
+    nailHead = float(1).sub(smoothstep(0.0013, 0.0019, max(dx, dy.mul(0.6)))).mul(smoothstep(0.08, 0.12, nid));
+    const halo = float(1).sub(smoothstep(0.0018, mix(float(0.004), float(0.009), nid), vec2(dx, dy.mul(0.75)).length()));
+    alb = alb.mul(float(1).sub(halo.mul(mix(float(0.25), float(0.6), nid))));
+    alb = mix(alb, c3([0.03, 0.027, 0.025]), nailHead.mul(0.9));
+    rough = mix(rough, float(0.6), nailHead);
+  }
+
   // Height: gaps, slight cupping across each board, softwood-style grain relief where worn.
   const cup = b.across.sub(0.5).mul(b.across.sub(0.5)).mul(0.25);
-  const height = float(1).sub(b.gap).mul(0.85).add(cup).sub(wood.late.mul(wear).mul(0.04)).sub(scratch.mul(0.03));
+  const height = float(1).sub(b.gap).mul(0.85).add(cup).sub(wood.late.mul(wear).mul(0.04)).sub(scratch.mul(0.03)).sub(nailHead.mul(0.12));
   return { albedo: alb, roughness: rough, height, heightDepthM: c.num('gapDepth', 0.004), cavity: 0.55, normalStrength: 1 };
 };
 

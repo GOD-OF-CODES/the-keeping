@@ -692,6 +692,42 @@ measured — wrong accessor in the review scenario). None of these moves the her
 geometry/texels, hair as a black volume, face sculpt, floor material) and two runtime systems (stain lighting without
 shadows; jets as constant tubes).
 
+### Fix-round 3 verdict (2026-10-11, art/horror-director review — STATUS-escape-cine "Review — fix round 3")
+
+Frames: `scratch/escfix3-review/r1max-*` (the delivered tree: exposure stage 1 + lane A s1/s2 + LOOK #125 + PERF #121),
+`r2med-*` (Medium), `ab1/ab2/ab3-*` (same-state A/B of the key position), `b05med-*` (B05 carry judge), `r3max/r4max/r5max`
+(after this review's runtime fixes, contract #127). WebGPU, 1280×800, judged at the fixed film camera (ISO 3200 f/2
+1/48 s; applied exposure read from `look.exposure()`). **Verdict: NO-GO for the live site.** The exposure is now honest
+(low-key, black past ~2 m) and that honesty exposes the real problem: **the one key does not light the subjects.** The
+lamp (4.6, 4.25, 1.35) sits at table height NW of the neck with Harlan 0.34 m off the lamp→neck line, so the stump is in
+his shadow at the strike (L 0.004 vs boards 0.05–0.18), and from E4 the resting head is lit from 130° away in azimuth —
+the camera sees its shadow side. The brightest things in both hero frames are orange floorboards and Harlan's pale
+sleeves. Neither the strike nor the hero still reads as a photograph, neither is horrifying, and the beheading is not
+clearly visible on Medium or Max.
+
+| Frame | Fix-round 3 verdict | Still not real (ranked inside the row) → owner |
+|---|---|---|
+| **C2 10.5 hero (E4)** | FAIL. Low-key and honest, but the head is a black hair mass with one pale yellow-green ear/cut glint; nothing says "her head" | head lit from behind (staging: lamp vs E4, LEAD/CINE); pools = two big flat dark-red lobed shapes (cut-out read: no thickness/edge/reflection cue; shape too smooth) LOOK; floor still laminate (strong flat-sawn figure) A/LOOK |
+| **C2 7.75–8.2 strike** | FAIL. A dim table, a cream gown lump, a dark-red stump in Harlan's shadow, one thin lamp-lit red line (the jet) | stump in Harlan's shadow (staging, LEAD); jets: particles have no shadow term, read as a red laser line LOOK; gauntlets render pale tan (`harlan.py` maps gloves → leather_worn, not rubber_black) A; gown plaster lump A |
+| C2 9.3 (head lands) | FAIL: a black hair ball with one hot glint beside its own long shadow | as 10.5 |
+| C2 13.9 insert (f/1.4) | FAIL: a smooth brown mannequin face lit from below, no readable eye, dithered hair strips, two hot chin dots | face sculpt A; hair alpha-hash stipple (needs MSAA/TAA) LOOK |
+| C2 24.0 rise | PARTIAL: the most photographic frame (a 1 cd candle practical, real falloff) but the subject — the torso's neck end — is a pinkish lump | stump/collar A |
+| C2c 4.1 glance #1 | PARTIAL: the pink worm prints are GONE (#127); a dark figure on the lightning patch, her shoulder line not isolated; baluster rims neon-white | rims A/LOOK; re-block CINE |
+| C2c 7.1 glance #2 | FAIL: flat plaster-white faceted balusters and wall at the torch's 0.4 m spill, a white plaster mannequin arm | baluster geometry/material A; arm skin A |
+| C2c 13.0 empty stair | IMPROVED: the salmon/lilac sticker prints are gone (#127 R3/R4) — unlit by the beam they are dark marks on dark treads, which is honest but the trail barely reads | print visibility is now physical; reading the trail needs the beam on it (CINE staging) |
+| C2c 15.5 handover | close to photographic (dark stairwell, torch pool on worn treads) | — |
+| B05 Ada carrying her head (judged for the first time) | FAIL: the stairwell is good, Ada is a blown-out white gown blob with dithered (alpha-hash) edges, a red disc at the neck, the carried head does not read at 3 m or 2.3 m | gown wet-cotton material/folds + translucency A; dither edges LOOK; head legibility A/CINE |
+| Real time (C2 → C2c, Medium) | pacing as authored (42.9 s wall for 42.9 s of content), 52–59 fps mean; hitch at C2 0.27 = 200–383 ms (reproduces); one 517 ms freeze at C2 18.15 that did not reproduce (0 node builds there) | C2-start hitch PERF; sound not listened to (headless) — someone must listen |
+
+Fixed by this review (runtime, #127, all verified): pools and every board stain now take their diffuse from the boards
+under them (the real lamp/torch/lightning light with its shadows — `viewportOpaqueMipTexture` mip 5); the roaming
+lightning key no longer lights stains/drops through walls (the C2c pink 'worm' and 'sticker' prints); the room-box
+reflection is parlor-only; `JET_EL` 4.8° → 18° (the retracted carotid lumen). Same-state A/B proof for the lead: moving
+the lamp+stool 0.68 m SW along D's sightline to (4.4, 3.6, 1.35) keeps every D/T frame margin (+24.3°) and keys the
+strike past Harlan (`ab2-05`, `ab2-08` vs `ab2-04`); on the sawbuck's south end (5.6, 2.3, 1.72) the strike reads best
+(`ab1-02`) but the table then shadows the floor head (`ab1-05`). No single position fixes the 10.5 head: that needs
+the head turned so the lamp keys the face/ear toward E4, or the face shown (ruling g).
+
 ## Merged and overruled QA points
 - Agreed: QA #1 (dark frames), #3 (outlines/CA, cause now found), #4 (grain), #5 (facade), #7 (C5), #8 (C6),
   #10 (rain glass).

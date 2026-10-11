@@ -6,6 +6,8 @@
 //   window.__game.look.get()                                   → a copy of every value
 //   window.__game.look.meter()                                 → last exposure meter reading
 //   window.__game.look.snap()                                  → adapt exposure to the next reading instantly
+//   window.__game.look.exposure()                              → the exposure APPLIED to the frame (QA; not toneMappingExposure)
+//   await window.__game.look.hdr([{ name, uv|world|plan|obj, r }]) → linear pre-exposure HDR patch averages (QA)
 //   window.__game.look(heading, pitch)                         → still the camera look() of the debug API
 //
 // Every default is a physical value with its source; presets only change the camera-side amounts (see initLook).
@@ -190,7 +192,7 @@ export function initLook(preset: PresetConfig): void {
 }
 
 /** Turns the debug `look(heading, pitch)` function into the tuning API as well (properties on the function). */
-export function attachLookApi(target: any, extra: { meter: () => unknown; snap: () => void }): any {
+export function attachLookApi(target: any, extra: { meter: () => unknown; snap: () => void; exposure?: () => unknown; hdr?: (s: any) => Promise<unknown> }): any {
   const api = target ?? {};
   api.params = LOOK;
   api.get = () => ({ ...LOOK });
@@ -203,5 +205,7 @@ export function attachLookApi(target: any, extra: { meter: () => unknown; snap: 
   };
   api.meter = extra.meter;
   api.snap = extra.snap;
+  api.exposure = extra.exposure; // fix round 3 (ruling m): the LIVE exposure (applied uniform, EV, cue, WB)
+  api.hdr = extra.hdr; // fix round 3: linear pre-exposure HDR patches at screen uv / world / plan / object points
   return api;
 }

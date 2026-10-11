@@ -87,8 +87,10 @@ const CS_CULL = typeof location === 'undefined' || new URLSearchParams(location.
  */
 const CS_CULL_IDS = new Set(['C2', 'C2c']);
 /** PERF review (contract 116): the torch's view-frustum caster cull. Lead ruling 2026-10-11: OFF everywhere until it tests
- *  each caster's shadow volume rather than the caster (it changed the C5 still for an unknown reason); add 'C2c' to re-enable. */
-const TORCH_CULL_IDS = new Set<string>();
+ *  each caster's shadow volume rather than the caster (it changed the C5 still for an unknown reason); add 'C2c' to re-enable.
+ *  PERF fix round 3 (ruling q, contract 121): re-enabled for C2c with the shadow-cone test — same-state per-frame A/B over
+ *  all 834 C2c frames 0 px; the C5 change was playthrough run noise (docs/STATUS-perf-g.md G4–G5). */
+const TORCH_CULL_IDS = new Set<string>(['C2c']);
 
 // ------------------------------------------------------------------ overlay (DOM, system fonts)
 

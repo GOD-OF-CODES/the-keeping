@@ -22,12 +22,16 @@ from mathutils import Matrix, Vector
 from lib.scene import log
 
 HEAD_GROUPS = ('head', 'jaw', 'jaw_hold')
-CUT_FRAC = 0.42          # along neck_01.head (C7) -> head.head (C1): C4-C5
-TILT_DEG = 15.0          # oblique: the plane rises toward the nape (a blow from behind and above)
+# fix round 3 (AD: "the head reads as a bottle" — 0.42 left a 6 cm cylinder under her chin, measured on the GLB:
+# the jaw line starts 60 mm above that plane in front, 95 mm at the sides): the cut sits 0.64 of C7 -> C1, i.e. just
+# under the hyoid/jaw on this model (jaw 25 mm above the plane in front, the mastoid/jaw-angle widening at 25-35 mm),
+# 20 deg oblique. Measured with scratchpad glbneck.mjs on build-6 ada.glb; bind cut centre (0, 0.024, 1.408) plan.
+CUT_FRAC = 0.64          # along neck_01.head (C7) -> head.head (C1)
+TILT_DEG = 20.0          # oblique: the plane rises toward the nape (a blow from behind and above)
 RINGS = 3                # cap rings: ~540 tris per cap with the ~108-vertex rim (doc: 600 Medium/Max)
 HEAD_ROOT = 'head_root'
 STUB = 'neck_stub'
-STUB_REACH = 0.035   # m above the cut plane where the stub weight reaches 0
+STUB_REACH = 0.025   # m above the cut plane where the stub weight reaches 0 (fix round 3: the stub is ~2.5 cm now)
 
 
 def cut_plane(rig):
@@ -35,14 +39,17 @@ def cut_plane(rig):
     return cut_plane_pts(B['neck_01'].head_local, B['head'].head_local)
 
 
-def cut_plane_pts(a, b):
+COLLAR_FRAC, COLLAR_TILT = 0.42, 15.0   # fix round 3: the collar keeps the PRE-round-3 plane (its top 8 mm under it)
+
+
+def cut_plane_pts(a, b, frac=None, tilt=None):
     """a = neck_01 head (C7), b = head head (C1), rest pose -> (c, n, fwd, side) Vectors."""
     a, b = Vector(tuple(a)), Vector(tuple(b))
     axis = (b - a).normalized()
-    c = a.lerp(b, CUT_FRAC)
+    c = a.lerp(b, CUT_FRAC if frac is None else frac)
     fwd = Vector((0.0, -1.0, 0.0))
     fwd = (fwd - axis * fwd.dot(axis)).normalized()
-    t = math.radians(TILT_DEG)
+    t = math.radians(TILT_DEG if tilt is None else tilt)
     n = (axis * math.cos(t) + fwd * math.sin(t)).normalized()
     side = n.cross(fwd).normalized()               # +side = her left? (Ada faces -y: +x is her left)
     fwd = side.cross(n).normalized()
@@ -161,7 +168,7 @@ def _contours(head_side):
     return pts
 
 
-def _cap(bm, loop, c, n, fwd, side, outward, head_side, shape_layers):
+def _cap(bm, loop, c, n, fwd, side, outward, head_side, shape_layers, rag_cen=None):
     """Fill one rim loop with a constrained-Delaunay disc (~3 mm triangles + feature outlines), displaced by the
     anatomy relief at full strength; returns (faces, new verts, centre, rim 2D)."""
     from mathutils.geometry import delaunay_2d_cdt
@@ -214,6 +221,10 @@ def _cap(bm, loop, c, n, fwd, side, outward, head_side, shape_layers):
     O2 = np.array([(p[0], p[1]) for p in overts])
     ins = na.inset_dist(O2, R2)
     H = na.section(O2[:, 0], O2[:, 1], inset=ins, head_side=head_side)['macro']
+    # fix round 3: the shared ledge + torn-margin field along +n (the same one _rag_rim moved the rim by)
+    n_plane = n
+    dcen = (cen - rag_cen) if rag_cen is not None else Vector()
+    D = na.plane_offset(O2[:, 0] + dcen.dot(side), O2[:, 1] + dcen.dot(fwd), inset=ins)
     rim_of = {}
     for i, orig in enumerate(oorig):
         r = [o for o in orig if o < m]
@@ -226,7 +237,7 @@ def _cap(bm, loop, c, n, fwd, side, outward, head_side, shape_layers):
         if i in rim_of:
             bv.append(loop[rim_of[i]])
             continue
-        co = cen + side * float(p[0]) + fwd * float(p[1]) + outward * float(H[i])
+        co = cen + side * float(p[0]) + fwd * float(p[1]) + outward * float(H[i]) + n_plane * float(D[i])
         nv = bm.verts.new(co)
         bv.append(nv)
         new_verts.append((nv, loop[int(nearest[i])]))
@@ -253,6 +264,41 @@ def _cap(bm, loop, c, n, fwd, side, outward, head_side, shape_layers):
     log(f'cap ({"head" if head_side else "body"}): {len(new_verts)} new verts, {len(faces)} tris, relief '
         f'{H.min() * 1000:.1f}..{H.max() * 1000:.1f} mm, {len(feats)} outline pts')
     return faces, [nv for nv, _ in new_verts], cen, R2
+
+
+RAG_REACH = 0.022       # m: the skin within this distance of the plane follows the rim displacement (fading to 0);
+                        # > 1.8x the largest offset (~12 mm) so the skin never folds over
+
+
+def _rag_rim(bm, loop, c, n, fwd, side, shape_layers, cen=None):
+    """Fix round 3: tear the planar bisect rim — every vertex of THIS piece within RAG_REACH of the plane moves along
+    +n by neck_anatomy.plane_offset (second-stroke ledge + torn skin jag), full at the rim, 0 at RAG_REACH. The field is
+    a function of the ORIGINAL position only and both pieces carry the same rim vertices, so the seam stays closed
+    before C2; the caps add the same field (inset-faded) so they meet the rim exactly."""
+    from characters import neck_anatomy as na
+    if cen is None:                                   # the FIRST piece's rim centroid frames both pieces (no crack)
+        rim = [v.co.copy() for v in loop]
+        cen = sum(rim, Vector()) / len(rim)
+        cen = cen - n * (cen - c).dot(n)
+    moved = 0
+    for v in bm.verts:
+        d = v.co - cen
+        s_ = d.dot(n)
+        if abs(s_) >= RAG_REACH:
+            continue
+        u, w = d.dot(side), d.dot(fwd)
+        if (u / 0.075) ** 2 + ((w - 0.01) / 0.08) ** 2 > 1.0:
+            continue
+        off = float(na.plane_offset(u, w)[0]) * (1.0 - abs(s_) / RAG_REACH)
+        if off == 0.0:
+            continue
+        delta = n * off
+        v.co += delta
+        for lay in shape_layers:
+            v[lay] = v[lay] + delta
+        moved += 1
+    log(f'rag rim: moved {moved} verts, frame centre {tuple(round(x, 4) for x in cen)} (ledge {na.LEDGE * 1000:.1f} mm, jag +-{na.JAG * 1000:.1f}, tags {na.TAG * 1000:.1f} mm)')
+    return cen
 
 
 def split_mesh(ob, rig):
@@ -282,6 +328,7 @@ def split_mesh(ob, rig):
 
     out = {}
     rim_normals = {}
+    rag_cen = None
     for piece, keep_head in ((ob, False), (head_ob, True)):
         bm = bmesh.new()
         bm.from_mesh(piece.data)
@@ -334,6 +381,7 @@ def split_mesh(ob, rig):
         near = [e for e in bnd if abs((e.verts[0].co - c).dot(n)) < 0.03 and (e.verts[0].co - c).length < 0.09]
         log(f'  boundary edges {len(bnd)}, near the cut {len(near)}; sample s(mm): {sorted(round((e.verts[0].co - c).dot(n) * 1000, 2) for e in near)[:12]}')
         loop = _join_chains(chains, piece.name)
+        rag_cen = _rag_rim(bm, loop, c, n, fwd, side, shape_layers, rag_cen)
         # orient the loop CCW around the outward normal
         outward = (-n) if keep_head else n
         cen = sum((v.co for v in loop), Vector()) / len(loop)
@@ -345,7 +393,7 @@ def split_mesh(ob, rig):
             key = tuple(round(x, 6) for x in v.co)
             rim_normals.setdefault(key, Vector())
             rim_normals[key] += v.normal
-        faces, cap_verts, cap_cen, rim2d = _cap(bm, loop, c, n, fwd, side, outward, keep_head, shape_layers)
+        faces, cap_verts, cap_cen, rim2d = _cap(bm, loop, c, n, fwd, side, outward, keep_head, shape_layers, rag_cen)
         for e in bm.edges:                                # the rim is a hard edge between skin and cap
             if all(v in loop for v in e.verts) and e.is_manifold:
                 e.smooth = False

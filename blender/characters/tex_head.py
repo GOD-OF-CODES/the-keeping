@@ -196,6 +196,13 @@ def head(P, N, AO, F, base, cap_on=None, seed=313):
     # dirt / silt in the deepest creases and at the hairline
     crev = ss(0.8, 0.45, AO) * skin
     alb = _mix(alb, [0.08, 0.075, 0.06], crev * 0.5)
+    # fix round 3 stage 2 (cine's lamp-pool list, 13.9 insert at f/1.4: a glossy plaster MANNEQUIN): under the lamp from
+    # below + the floor bounce the face is lit flat, so its form must come from what a real face carries in its
+    # colour: occlusion-darkened sockets, lid creases, nasolabial folds, under-nose and lip line (skin is
+    # translucent and its cavities trap light: cavity ~ AO, x0.62-1.0), and a wet sheen that is BROKEN (water
+    # beads / drying patches: roughness 0.36-0.58 in 1-3 cm patches) instead of one even plaster gloss.
+    alb = alb * (1.0 - 0.38 * (1.0 - np.clip(AO, 0, 1)) * face)[:, None]
+    rough = rough + face * skin * (0.07 * noise.fbm(P * 45.0, 3, seed + 41) + 0.04)
     if cap_on is not None and np.any(cap_on):
         alb[cap_on], rough[cap_on], h[cap_on] = alb0[cap_on], rough0[cap_on], h0[cap_on]
     return np.clip(alb, 0, 1), np.clip(rough, 0.05, 1), h

@@ -136,6 +136,12 @@ def rubber_sheet(p, rng):
     sd_seed = rng.randint(0, 99)
     rot = rng.j(0.12)
     top = lambda x, y: 0.003 + 0.0 * x   # noqa: E731  (clears the cupped planks)
+    # escape fix round 3 (lane A): the AD's "stepped contour bands on the gown hanging off the table" at C2 10.5 were
+    # THIS sheet (in-game probes scratch/c2e/fr3/diag1-6: unchanged with the gown's normal map off / the gown hidden;
+    # the covering mesh at those pixels is P_RUBBER_SHEET at 0.8 m). The drape's |sin| fold crests on a 4 cm grid were
+    # split by the default auto-sharp angle -> flat-shaded terraces. Soft shading like the dust sheets (round E):
+    # positions and UV2 unchanged, so the baked lightmap stays valid.
+    part.no_sharp = True
     part.add_grid(48, 36, lambda u, v: drape(u, v, sw, sd, L - 0.02, W, top, -H, off, sd_seed, 1.4, 0.012, rot),
                   p.get('mat', 'rubber_black') + '@2s', uv_size=(sw, sd))
     part.extras['spatter'] = bool(p.get('spatter', False))

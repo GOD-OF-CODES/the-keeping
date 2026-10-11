@@ -279,6 +279,7 @@ export class AudioEngine implements System {
   setLayout(layout: LevelLayout): void {
     this.layout = layout;
     this.links = layout.roomLinks ?? [];
+    if (this.reverbPrewarm) this.prewarmReverbs(); // #128: the layout may arrive after createAudioSystem asked
   }
 
   /** The world/door system tells us door states (open/ajar = true). Occlusion re-evaluates at 10 Hz. */
@@ -295,6 +296,31 @@ export class AudioEngine implements System {
 
   getListenerRoom(): string | null {
     return this.listenerRoom;
+  }
+
+  /**
+   * PERF review fix round 3 (contract #128): build every room's convolution reverb after the load, one room per
+   * timer tick, instead of on the listener's first entry (generateIR + ConvolverNode.buffer = 1–27 ms each, measured;
+   * the parlor's landed inside C2's 150 ms entry frame). A pre-built reverb is in exactly the state a freshly built
+   * one is (output → master at its wet gain, input not yet fed), so useReverb() behaves the same.
+   */
+  private reverbPrewarm = false;
+  prewarmReverbs(stepMs = 40): void {
+    this.reverbPrewarm = true;
+    const rooms = this.layout?.rooms ?? [];
+    if (!rooms.length) return; // no layout yet: setLayout() re-runs this
+    this.reverbPrewarm = false;
+    let i = 0;
+    const next = (): void => {
+      while (i < rooms.length && this.reverbs.has(rooms[i]!.id)) i++;
+      if (i >= rooms.length) return;
+      const def = rooms[i++]!;
+      const r = new RoomReverb(this.ctx, def.reverb);
+      r.output.connect(this.master);
+      this.reverbs.set(def.id, r);
+      setTimeout(next, stepMs);
+    };
+    setTimeout(next, stepMs);
   }
 
   /** Crossfade the global reverb to the listener's room IR (emitters send post-occlusion into it). */
@@ -784,5 +810,6 @@ export async function createAudioSystem(gctx: GameContext, o: { context?: AudioC
   await engine.prerender({ onProgress: o.onProgress, maxVariants: gctx.presetId === 'low' ? 3 : undefined });
   gctx.systems.set(engine.id, engine);
   void engine.warmLazy();
+  engine.prewarmReverbs();
   return engine;
 }

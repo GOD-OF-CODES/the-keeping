@@ -14,6 +14,11 @@ import { C2_ADA_END, C2_END_EYE, C2_END_TARGET } from './c2-room.ts';
 import { GROUND, NODE, STAIR_TOP_EYE, ST_MAIN, add, fwd, headingTo, lens, treadNosing } from './stage.ts';
 import type { CameraShot, Cue, MoveTrack, P3, Timeline, TimelineFactory } from './types.ts';
 
+/** Fix round 3 (ruling m): C2's film camera (ISO 3200, f/2, 1/48 s → e_phys = 0.18/L_mid = 0.24, see C2_CAMERA_E) in
+ *  scene units for the TORCH-lit climb: the 2900 K torch colour is max-normalised (luminance 0.5244 of its nominal
+ *  candela) → 0.24 / 0.5244 = 0.458. (The lamp-lit parlor behind reads 0.36× darker than at C2's 0.625 — the
+ *  convention, not the camera; one exposure per take.) */
+export const C2C_CAMERA_E = 0.458;
 export const C2C_DURATION = 13.9;
 /** A skip inside C2 lands here (the slow turn). */
 export const C2C_SKIP_AT = 10.4;
@@ -158,8 +163,9 @@ export const c2cUp: TimelineFactory = (ctx) => {
     { t: 0, type: 'light', op: 'flashlight', on: true, tremble: 0.6 },
     { t: 0.02, type: 'sfx', id: 'flashlight_click', gain: 0.6 },
     { t: 0, type: 'fx', id: 'shadowLight', params: { at: 'off' } },
-    // gameplay eye adaptation from here (the spot meter and the clamp are C2's)
-    { t: 0, type: 'fx', id: 'exposure', params: { reset: true } },
+    // fix round 3 (ruling m): the same film camera as C2 (ISO 3200, f/2, 1/48 s) for the whole climb — C2C_CAMERA_E;
+    // the eye adapts again only after the handover (release → reset, from this value: no pop)
+    { t: 0, type: 'fx', id: 'exposure', params: { fixed: C2C_CAMERA_E } },
     { t: 0, type: 'fx', id: 'blurAmount', params: { v: blur ? 1 : 0 } },
     { t: whipD, type: 'fx', id: 'blurAmount', params: { v: 0 } },
     { t: 0, type: 'fx', id: 'blood', params: { seq: 'c2c', phase: 'start' } },
@@ -185,8 +191,7 @@ export const c2cUp: TimelineFactory = (ctx) => {
     { t: 3.6, type: 'fx', id: 'torchHold', params: { on: true } },
     // fix round (item 5): glance #1 — the lightning patch on the hall floor is the brightest thing in frame; the eye
     // stops down for it (cap 1.0, was ≈ 2.2) so her front falls to silhouette and the near balusters stop glowing
-    { t: 3.62, type: 'fx', id: 'exposure', params: { max: 1.0, cap: true, hp: true } },
-    { t: 4.47, type: 'fx', id: 'exposure', params: { reset: true } },
+    // (fix round 3: the fixed camera already sits below that cap — 0.458 < 1.0; the stroke over-exposes it briefly)
     { t: 4.6, type: 'fx', id: 'torchHold', params: { on: false } },
     // 3.62 the fanlight stroke behind her — the reason to look back (the roaming shadow light)
     { t: FANLIGHT_STROKE.t, type: 'fx', id: 'shadowLight', params: { at: 'fanlight', pulses: FANLIGHT_STROKE.pulses } },
@@ -204,11 +209,10 @@ export const c2cUp: TimelineFactory = (ctx) => {
     // fix round (item 6): glance #2 — the torch's hot centre on her hand 0.9 m away, its spill on the stair wall 0.4 m
     // away (≈ 15 klx) clipped at the climb's exposure 1.8 → capped at 0.55 for the glance (the pupil constricts), the
     // highlight protect on; the climb's auto exposure comes back after it
-    { t: 6.85, type: 'fx', id: 'exposure', params: { max: 0.55, cap: true, hp: true } },
+    // (fix round 3: the fixed camera 0.458 is below the old 0.55 glance cap — no cue)
     // (s8med at the real 0.25 exposure: the hot spot sat on the wall upper-left, her hand dark) — the torch on her hand
     { t: 6.85, type: 'fx', id: 'beamClamp', params: { on: true, atX: handAt[0], atY: handAt[1], atZ: handAt[2] } },
     { t: 7.66, type: 'fx', id: 'beamClamp', params: { on: true } },
-    { t: 7.66, type: 'fx', id: 'exposure', params: { reset: true } },
     { t: 7.66, type: 'clip', char: 'arms', clip: 'arms_run_torch', loop: true, fade: 0.1, fallback: ['arms_idle'] },
     // the top (9.0): her steps stopped with his; breath held 9.6; one drop below (10.0); heartbeat 120
     { t: 9.0, type: 'loop', key: 'panting', id: null, fade: 0.4 },

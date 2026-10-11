@@ -15,7 +15,7 @@
 // Renderer.setRenderTarget / getRenderTarget / readRenderTargetPixelsAsync, DataUtils.fromHalfFloat, TSL texture()/uv().
 
 import * as THREE from 'three/webgpu';
-import { Fn, float, log2, luminance, max, texture, uv, vec2, vec4 } from 'three/tsl';
+import { Fn, float, log2, luminance, max, texture, uniform, uv, vec2, vec4 } from 'three/tsl';
 import { LOOK } from './look.ts';
 
 const SIZE = 64;
@@ -44,7 +44,13 @@ let snapRequested = false;
 // lamp-lit gown at 0.5–1 m must stay textured cotton, never plaster white); its floor is LOOK.hpFloor, not cue min.
 // `cap` (C2c glance #2): the cue's max clamps the CURRENT exposure at once (a pupil constricting on a torch-lit wall
 // 0.4 m away, ≈ 15 klx — 0.2–0.5 s in life; the meter's readback would arrive after the 600 ms glance is over).
-export const EXPOSURE_CUE: { hold: boolean; min: number | null; max: number | null; spot: { x: number; y: number; r: number; w: number } | null; hp: boolean; cap: boolean } = { hold: false, min: null, max: null, spot: null, hp: false, cap: false };
+// Fix round 3 (ruling m): `fixed` = a CAMERA, not an eye — the linear exposure of a stated film set-up (ISO, f-stop,
+// 180° shutter; derivation in c2-room.ts / docs/STATUS-escape-cine.md "Fix round 3 — exposure"). While set, the meter
+// is bypassed and the exposure IS this value from the cue's first frame (no adaptation, no run-to-run drift — the old
+// min/max cues only clamped NEW readings, so a stale hall reading held C2's strike at 5.6 under a 2.2 cap in QA).
+// Shadows go black; a lightning flash over-exposes it as it would a film camera. When the cue ends the eye adapts
+// from this value (ev is left where the camera was: no pop at the handover).
+export const EXPOSURE_CUE: { hold: boolean; min: number | null; max: number | null; spot: { x: number; y: number; r: number; w: number } | null; hp: boolean; cap: boolean; fixed: number | null } = { hold: false, min: null, max: null, spot: null, hp: false, cap: false, fixed: null };
 export function requestExposureSnap(): void {
   snapRequested = true;
 }
@@ -74,15 +80,21 @@ export class AutoExposure {
   private flashSerial = 0;
   private snapAfter = -1;
   private targetEV = 0;
+  /** The last update ran under a film-camera cue (EXPOSURE_CUE.fixed). */
+  private wasFixed = false;
+  private fixedEnd = -1e9;
   private haveTarget = false;
   private readonly lastCam = new THREE.Vector3(Number.NaN, 0, 0);
 
   /** The pipeline's exposure uniform: written by update(), and at once when a snap reading lands between updates. */
   private readonly out: any;
+  /** The scene pass's HDR output texture (null on the Direct path). */
+  private readonly meterSrc: any;
 
   constructor(renderer: any, meterTexture: any | null, exposureUniform: any) {
     this.renderer = renderer;
     this.out = exposureUniform;
+    this.meterSrc = meterTexture;
     if (meterTexture) {
       this.rt = new THREE.RenderTarget(SIZE, SIZE, { type: THREE.HalfFloatType, depthBuffer: false });
       this.rt.texture.name = 'exposure-meter';
@@ -130,10 +142,30 @@ export class AutoExposure {
    */
   update(dt: number, lightning: number, camPos: any, fallback: number): number {
     this.t += dt;
-    if (!LOOK.autoExposure) {
-      this.ev = Math.log2(Math.max(1e-4, LOOK.manualExposure));
+    if (!LOOK.autoExposure || EXPOSURE_CUE.fixed != null) {
+      // LOOK.autoExposure false (debug / QA A/B: look.set) wins over a cue's camera
+      this.ev = Math.log2(Math.max(1e-4, !LOOK.autoExposure ? LOOK.manualExposure : (EXPOSURE_CUE.fixed ?? LOOK.manualExposure)));
+      this.targetEV = this.ev;
+      this.haveTarget = true;
+      this.lastCam.copy(camPos); // the camera's own moves/cuts are not the eye's (no snap queued behind them)
+      snapRequested = false;
+      this.wasFixed = EXPOSURE_CUE.fixed != null;
       this.out.value = this.exposure;
       return this.exposure;
+    }
+    // Fix round 3: the first eye frame after a film-camera cue (C2c → B05 hand-back) ADAPTS from the camera's value
+    // (τ brighten/darken) — the hand-back's R2-5 snap would step +0.5 EV in one frame on a continuous POV.
+    // (a 0.25 s window: the cue's reset and the bindings' release snap may land on either side of this update)
+    if (this.wasFixed) {
+      this.wasFixed = false;
+      this.fixedEnd = this.t;
+      this.snapAfter = -1;
+      this.lastCam.copy(camPos);
+    }
+    if (this.t - this.fixedEnd < 0.25) {
+      snapRequested = false;
+      this.snapAfter = -1;
+      this.lastCam.copy(camPos);
     }
     // camera cut / teleport → snap to the first clean reading after it
     if (Number.isNaN(this.lastCam.x) || this.lastCam.distanceTo(camPos) > 2.5) this.snap();
@@ -268,8 +300,82 @@ export class AutoExposure {
       });
   }
 
+  // ---- QA read-back (fix round 3, ruling (m)): linear PRE-exposure HDR scene radiance in a screen patch -----------
+  // `window.__game.look.hdr(...)` (atmosphere.ts) — the scene pass's own output texture (the one the meter reads:
+  // after lighting, fog and the in-pass emissives; before bloom, exposure, white balance and AgX), averaged over a
+  // 32×32 grid of bilinear taps inside the rectangle (cx ± rx, cy ± ry) in screen uv, y DOWN from the top
+  // (QuadMesh uv convention in r186: uv.y = 0 on the top row on both backends; three flips WebGL targets for us).
+  // Units: cd/m²-like scene radiance (lamp intensity in cd, lightmaps × π); a white Lambertian at E lx reads E/π.
+  private probeRT: any = null;
+  private probeQuad: any = null;
+  private probeRect: any = null;
+
+  async probe(cx: number, cy: number, rx: number, ry: number): Promise<{ rgb: [number, number, number]; lum: number; min: number; max: number } | null> {
+    if (!this.quad) return null;
+    // 32 texels × 8 B (RGBA half) = 256 B rows: WebGPU pads readback rows to 256 B and three returns the PADDED buffer
+    // (WebGPUTextureUtils.copyTextureToBuffer) — an 8-wide target read 3/4 zeros (first c2-meter run, 'min 0').
+    const P = 32;
+    if (!this.probeRT) {
+      this.probeRT = new THREE.RenderTarget(P, P, { type: THREE.HalfFloatType, depthBuffer: false });
+      this.probeRT.texture.name = 'qa-hdr-probe';
+      this.probeRect = uniform(new THREE.Vector4(0.5, 0.5, 0.01, 0.01));
+      const src = texture(this.meterSrc);
+      const rect = this.probeRect;
+      const mat = new THREE.NodeMaterial();
+      mat.name = 'qa-hdr-probe';
+      mat.fragmentNode = Fn(() => {
+        const p = rect.xy.add(uv().sub(0.5).mul(2).mul(rect.zw));
+        const c = src.sample(p).rgb;
+        return vec4(c, luminance(c));
+      })();
+      this.probeQuad = new THREE.QuadMesh(mat);
+    }
+    this.probeRect.value.set(cx, cy, rx, ry);
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    try {
+      r.setRenderTarget(this.probeRT);
+      this.probeQuad.render(r);
+    } finally {
+      r.setRenderTarget(prev);
+    }
+    const px: ArrayLike<number> = await r.readRenderTargetPixelsAsync(this.probeRT, 0, 0, P, P);
+    const half = px instanceof Uint16Array;
+    const f = (v: number) => (half ? THREE.DataUtils.fromHalfFloat(v) : v);
+    const s = [0, 0, 0, 0];
+    let mn = Infinity;
+    let mx = -Infinity;
+    for (let i = 0; i < P * P; i++) {
+      for (let c = 0; c < 4; c++) s[c] += f(px[i * 4 + c]);
+      const l = f(px[i * 4 + 3]);
+      mn = Math.min(mn, l);
+      mx = Math.max(mx, l);
+    }
+    const n = P * P;
+    return { rgb: [s[0] / n, s[1] / n, s[2] / n], lum: s[3] / n, min: mn, max: mx };
+  }
+
+  /** QA: the whole exposure state of THIS frame (fix round 3 — the old review read renderer.toneMappingExposure,
+   *  which the pipeline never uses: exposure is the `uniforms.exposure` multiply before AgX; toneMappingExposure = 1). */
+  state(): Record<string, unknown> {
+    return {
+      applied: this.out.value,
+      /** the meter's own simulation clock (last.t is on it: age = t − last.t) */
+      t: this.t,
+      ev: this.ev,
+      targetEV: this.targetEV,
+      range: { ...this.range },
+      cue: { ...EXPOSURE_CUE, spot: EXPOSURE_CUE.spot ? { ...EXPOSURE_CUE.spot } : null },
+      last: this.last ? { ...this.last } : null,
+      look: { key: LOOK.key, biasEV: LOOK.biasEV, tauBrighten: LOOK.tauBrighten, tauDarken: LOOK.tauDarken, autoExposure: LOOK.autoExposure, manualExposure: LOOK.manualExposure, hpWhite: LOOK.hpWhite, hpFloor: LOOK.hpFloor },
+      toneMappingExposure: this.renderer.toneMappingExposure,
+    };
+  }
+
   dispose(): void {
     this.rt?.dispose();
     this.quad?.material?.dispose();
+    this.probeRT?.dispose();
+    this.probeQuad?.material?.dispose();
   }
 }

@@ -823,7 +823,9 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   // crown at bind (0, 1.608, −0.02), world-aligned): +Y = crown, +Z = face, +X = her left; the head's centre is
   // (0, −0.12, 0) below the crown, the cut (C4–C5 ring) at (0, −0.26, −0.01), her right eye's cornea (−0.031, −0.07, 0.08).
   const HEAD_CENTER_L = new THREE.Vector3(0, -0.12, 0);
-  const HEAD_CUT_L = new THREE.Vector3(0, -0.26, -0.01);
+  // fix round 3 (#124, lane A build 3 cut +25 mm up the neck): the head piece's cap centroid measured on the GLB in this
+  // frame = (−0.0014, −0.2068, +0.0091) (scripts/qa/c2-look.mjs CAP=1; the old −0.26 sat 2.5 cm below the old cap)
+  const HEAD_CUT_L = new THREE.Vector3(0, -0.207, 0.009);
   const headWorld = (local: any): any | null => {
     const h = (d.characters?.ada as any)?.headNode?.();
     if (!h || !h.visible) return null;
@@ -876,8 +878,13 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   const REST_FACE = 241;
   // (hcu diag: the floorPose roll sign is − = face toward the floor — the comment above it was wrong; measured: roll −55 put
   // the cornea 3.6 cm BELOW the head centre)
-  const REST_ROLL = -60;
-  const REST_TILT = 35;
+  // fix round 3 LOOK (sweeps scratch/fr3-look/l1–l3 at the physical f/2: from E4 the lamp is BEHIND the head (lamp–head–
+  // camera ≈ 85°), so only up-facing surfaces are both lit and seen; face-down (−60) put black wet hair there (L 0.007 →
+  // a black lump). On its left side (roll 0) the right EAR, jaw line and temple take the lamp (ear L 0.09–0.10, max 0.24
+  // vs hair 0.003) and the settled wet hair fans across the boards; tilt 20° lifts the neck end so the cut ring stays in
+  // view, ≈ 60° off the lamp's mirror direction (the bisector is ≈ 63° up toward bearing 146°).
+  const REST_ROLL = 0;
+  const REST_TILT = 20;
   // QA tuning hook (escape fix-round review): ?debug sweeps set globalThis.__c2HeadRest = { face, roll }
   const restFR = (): [number, number] => {
     const o = (globalThis as any).__c2HeadRest;

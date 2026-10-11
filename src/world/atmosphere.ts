@@ -133,6 +133,18 @@ export interface AtmosphereOptions {
   events: { on(type: 'lightning', fn: (p: { strength: number; durationMs: number }) => void): () => void };
 }
 
+/** QA probe spec for `window.__game.look.hdr` (fix round 3). */
+export interface QaProbeSpec {
+  name?: string;
+  uv?: [number, number];
+  world?: [number, number, number];
+  plan?: [number, number, number];
+  obj?: string;
+  /** with obj: a point in the object's local frame (e.g. a bind-space point on the head rig). */
+  local?: [number, number, number];
+  r?: number;
+}
+
 export class Atmosphere {
   private readonly o: AtmosphereOptions;
   private pipeline: Pipeline | null = null;
@@ -191,7 +203,62 @@ export class Atmosphere {
     return attachLookApi(target, {
       meter: () => ({ ...(this.exposure?.last ?? {}), exposure: this.exposure?.exposure ?? null, ev: this.exposure?.ev ?? null, range: this.exposure?.range, mired: this.mired }),
       snap: () => this.exposure?.snap(),
+      exposure: () => this.qaExposure(),
+      hdr: (specs: QaProbeSpec[] | QaProbeSpec) => this.qaHdr(specs),
     });
+  }
+
+  /** QA (fix round 3, ruling m): the exposure ACTUALLY applied to this frame. AgX input = scene radiance × applied ×
+   *  whiteBalance (luminance-normalised for white) × renderer.toneMappingExposure (always 1 — not the exposure). */
+  private qaExposure(): Record<string, unknown> {
+    const un = this.pipeline?.uniforms;
+    const wb = un?.whiteBalance?.value;
+    return {
+      ...(this.exposure?.state() ?? { applied: un?.exposure?.value ?? null }),
+      uniform: un?.exposure?.value ?? null,
+      wb: wb ? [wb.r, wb.g, wb.b] : null,
+      mired: this.mired,
+    };
+  }
+
+  /** QA: linear pre-exposure HDR patches. spec: { name, uv:[x,y] (y down) | world:[x,y,z] | plan:[x,y,z] |
+   *  obj:'ada/head' (an object, or a named descendant of a named root) [+ local:[x,y,z] in its frame], r: half-size in px (default 6) }. */
+  private async qaHdr(specs: QaProbeSpec[] | QaProbeSpec): Promise<unknown[]> {
+    const list = Array.isArray(specs) ? specs : [specs];
+    const out: unknown[] = [];
+    const size = new THREE.Vector2();
+    this.o.renderer.getSize(size);
+    const cam = this.o.camera;
+    cam.updateMatrixWorld();
+    const camPos = cam.getWorldPosition(new THREE.Vector3());
+    for (const s of list) {
+      let u: [number, number] | null = null;
+      let wp: any = null;
+      if (s.uv) u = [s.uv[0], s.uv[1]];
+      else {
+        if (s.world) wp = new THREE.Vector3(...s.world);
+        else if (s.plan) wp = new THREE.Vector3(s.plan[0], s.plan[2], -s.plan[1]);
+        else if (s.obj) {
+          const [a, b] = s.obj.split('/');
+          const root = this.o.scene.getObjectByName(a);
+          const o = b ? root?.getObjectByName(b) : root;
+          if (o) wp = s.local ? (o.updateWorldMatrix(true, false), o.localToWorld(new THREE.Vector3(...s.local))) : o.getWorldPosition(new THREE.Vector3());
+        }
+        if (wp) {
+          const ndc = wp.clone().project(cam);
+          if (ndc.z < 1 && ndc.z > -1) u = [(ndc.x + 1) / 2, (1 - ndc.y) / 2];
+        }
+      }
+      const rpx = s.r ?? 6;
+      const base = { name: s.name, uv: u ? [+u[0].toFixed(4), +u[1].toFixed(4)] : null, dist: wp ? +wp.distanceTo(camPos).toFixed(3) : null };
+      if (!u || u[0] < 0 || u[0] > 1 || u[1] < 0 || u[1] > 1) {
+        out.push({ ...base, off: true });
+        continue;
+      }
+      const p = await this.exposure?.probe(u[0], u[1], rpx / size.x, rpx / size.y);
+      out.push(p ? { ...base, lum: +p.lum.toPrecision(4), rgb: p.rgb.map((v) => +v.toPrecision(4)), min: +p.min.toPrecision(3), max: +p.max.toPrecision(3) } : { ...base, err: 'no scene texture (Direct path)' });
+    }
+    return out;
   }
 
   private strike(): void {

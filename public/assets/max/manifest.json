@@ -1,56 +1,56 @@
 {
   "tier": "max",
-  "generatedAt": "2026-10-10T21:50:48.033Z",
-  "totalBytes": 81041710,
+  "generatedAt": "2026-10-11T04:04:02.269Z",
+  "totalBytes": 80912507,
   "files": [
     {
       "id": "ada_albedo",
       "kind": "texture",
       "path": "assets/max/ada_albedo.webp",
-      "bytes": 1057556,
-      "hash": "c434899badf8c68f"
+      "bytes": 1089256,
+      "hash": "6922aa0ec72ea6ab"
     },
     {
       "id": "ada_hair_albedo",
       "kind": "texture",
       "path": "assets/max/ada_hair_albedo.webp",
-      "bytes": 676684,
-      "hash": "ffb10babc79cc7f1"
+      "bytes": 675988,
+      "hash": "024e36fea7975840"
     },
     {
       "id": "ada_hair_normal.png",
       "kind": "texture",
       "path": "assets/max/ada_hair_normal.png",
-      "bytes": 873522,
-      "hash": "f66566c27712e220"
+      "bytes": 647559,
+      "hash": "3ae24b2e8ab01957"
     },
     {
       "id": "ada_head_albedo",
       "kind": "texture",
       "path": "assets/max/ada_head_albedo.webp",
-      "bytes": 525610,
-      "hash": "8576fe8ba7cd26e9"
+      "bytes": 539508,
+      "hash": "dd4cef696f187e17"
     },
     {
       "id": "ada_head_normal.png",
       "kind": "texture",
       "path": "assets/max/ada_head_normal.png",
-      "bytes": 3198398,
-      "hash": "b4cd9df6cf00bdd6"
+      "bytes": 3234441,
+      "hash": "17eed609d6801cec"
     },
     {
       "id": "ada_normal.png",
       "kind": "texture",
       "path": "assets/max/ada_normal.png",
-      "bytes": 3500899,
-      "hash": "3e4050f871c18b36"
+      "bytes": 3698413,
+      "hash": "f3c1b8f9e86bfefd"
     },
     {
       "id": "ada",
       "kind": "character",
       "path": "assets/max/ada.glb",
-      "bytes": 5477664,
-      "hash": "3f1a3aaa92352c8a"
+      "bytes": 5502268,
+      "hash": "e8c046ae62db7286"
     },
     {
       "id": "arms_albedo",
@@ -154,22 +154,22 @@
       "id": "harlan_albedo",
       "kind": "texture",
       "path": "assets/max/harlan_albedo.webp",
-      "bytes": 1310586,
-      "hash": "a06bdb686e7b3da4"
+      "bytes": 1298522,
+      "hash": "a7822c2e2af6aa16"
     },
     {
       "id": "harlan_normal.png",
       "kind": "texture",
       "path": "assets/max/harlan_normal.png",
-      "bytes": 4518849,
-      "hash": "b0ba79afefe6dec3"
+      "bytes": 4421254,
+      "hash": "75ec60bec86126f7"
     },
     {
       "id": "harlan",
       "kind": "character",
       "path": "assets/max/harlan.glb",
-      "bytes": 2993484,
-      "hash": "dbb0f73e5fea3e9f"
+      "bytes": 2991816,
+      "hash": "3c1088cb6c9702bb"
     },
     {
       "id": "house_exterior",
@@ -350,22 +350,22 @@
       "id": "props_m1",
       "kind": "prop",
       "path": "assets/max/props_m1.glb",
-      "bytes": 6382068,
-      "hash": "6edfe4292a544fde"
+      "bytes": 6378864,
+      "hash": "85733b93965fd7c5"
     },
     {
       "id": "props_m2",
       "kind": "prop",
       "path": "assets/max/props_m2.glb",
-      "bytes": 6114896,
-      "hash": "88329f60375e7a07"
+      "bytes": 6023172,
+      "hash": "c90ed0b32541f352"
     },
     {
       "id": "props_road",
       "kind": "prop",
       "path": "assets/max/props_road.glb",
-      "bytes": 725796,
-      "hash": "ea53825710dc3943"
+      "bytes": 725748,
+      "hash": "6e45411fcfeded20"
     }
   ]
 }

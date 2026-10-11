@@ -97,6 +97,10 @@ export const torchPoolRadiance = Fn(() => {
 
 const RESAMPLE_MOVE2 = 0.25 * 0.25;
 const RESAMPLE_FRAMES = 15; // trace frames (every 2nd frame) ≈ 0.5 s at 60 fps
+/** PERF review fix round 3 (#128): a MOVE-triggered re-sample waits ≥ 3 trace frames (≈ 0.1 s). Each sample's
+ *  Raycaster walk boxes every vertex double (Mesh.getVertexPosition: 112 MB of garbage in 14 s of C2c on Max, the
+ *  source of the major GC at the B05 hand-back); the colour is lerped at k = 12/s (τ ≈ 83 ms) anyway. */
+const RESAMPLE_MIN = 3;
 
 export class FlashlightBounce {
   private readonly fl: Flashlight;
@@ -170,7 +174,7 @@ export class FlashlightBounce {
         this.hit.copy(this.o).addScaledVector(this.d, dist);
         if (!oct?.rayIntersect) this.nTarget.copy(this.d).negate();
         this.sampleAge++;
-        if (this.sampleAge >= RESAMPLE_FRAMES || this.hit.distanceToSquared(this.lastSample) > RESAMPLE_MOVE2) {
+        if (this.sampleAge >= RESAMPLE_FRAMES || (this.sampleAge >= RESAMPLE_MIN && this.hit.distanceToSquared(this.lastSample) > RESAMPLE_MOVE2)) {
           this.sampleAge = 0;
           this.lastSample.copy(this.hit);
           const s = this.sample(dist);

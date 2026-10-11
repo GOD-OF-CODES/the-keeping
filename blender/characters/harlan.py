@@ -27,12 +27,14 @@ def starts(arr, pre):
 
 
 # ------------------------------------------------------------------------------------------------ clothes
-def shell(full, fn, J, mask, name, offset, fold_amp=0.004, fold_freq=(7.0, 7.0, 16.0), seed=1, decimate=0.2):
+def shell(full, fn, J, mask, name, offset, fold_amp=0.004, fold_freq=(7.0, 7.0, 16.0), seed=1, decimate=0.2, fold_scale=None):
     ob = garments.extract(full, mask, name)
     garments.decimate(ob, decimate)
     garments.project_offset(ob, fn, offset)
     Pk, _ = body.mesh_arrays(ob.data)
     amp = fold_amp * noise.fbm(Pk * np.array(fold_freq), 3, seed) + 0.5 * fold_amp * (noise.ridged(Pk * 20.0, 3, seed + 1) - 0.5)
+    if fold_scale is not None:
+        amp = amp * fold_scale(Pk)
     garments.displace_normal(ob, amp)
     return ob
 
@@ -60,11 +62,27 @@ def build_shirt(full, fn, J, Pv, name, t):
             near = d < 0.09
             # rolled cuff: a thick roll over the last 7 cm of the sleeve
             roll = np.exp(-((tt - (SLEEVE_T - 0.09)) / 0.07) ** 2)
-            o = np.where(near & (tt > -0.3), 0.012 + 0.012 * roll, o)
+            ov = 0.012 + 0.012 * roll
+            # fix round 3 (AD: a pink skin band at the cuff): the shell ended OPEN 14 mm off the skin, so at the strike
+            # the camera looked into the tube and saw the forearm skin inside it (t 0.30-0.42 is skinned under the
+            # sleeve). The roll's outer fold now turns in over the last ~1 cm and closes onto the forearm at 3 mm.
+            tuck = noise.smoothstep(SLEEVE_T - 0.045, SLEEVE_T - 0.008, tt)
+            ov = ov * (1 - tuck) + 0.003 * tuck
+            o = np.where(near & (tt > -0.3), ov, o)
         # blouses over the belly a little, tucked at the waist
         o += 0.006 * np.clip((X[:, 2] - WAIST_Z) / 0.1, 0, 1) * np.clip((1.3 - X[:, 2]) / 0.2, 0, 1)
         return o
-    return shell(full, fn, J, mask, 'harlan_shirt', off, fold_amp=0.005, seed=86)
+    def fold_scale(X):
+        # no folds on the tucked cuff edge (a +-4.7 mm fold would push the 3 mm tuck through the skin)
+        k = np.ones(len(X))
+        for side in ('l', 'r'):
+            a, b = J[f'forearm_{side}']
+            ab = b - a
+            tt = ((X - a) @ ab) / ab.dot(ab)
+            near = sdf.norm(X - (a + np.clip(tt, 0, 1)[:, None] * ab)) < 0.09
+            k = np.where(near, np.minimum(k, 1 - noise.smoothstep(SLEEVE_T - 0.07, SLEEVE_T - 0.02, tt)), k)
+        return k
+    return shell(full, fn, J, mask, 'harlan_shirt', off, fold_amp=0.005, seed=86, fold_scale=fold_scale)
 
 
 def build_trousers(full, fn, J, Pv, name, t):
@@ -122,12 +140,14 @@ def build_boots(fn, J):
     return sdf_part(boot, lo, hi, 0.004, 'harlan_boots', 7000)
 
 
-def build_gloves(fn, J, name='harlan_gloves', thick=0.003, cuff_len=0.075, cuff_flare=0.01, h=0.0025, tris=9000):
+def build_gloves(fn, J, name='harlan_gloves', thick=0.003, cuff_len=0.075, cuff_flare=0.01, h=0.0025, tris=9000, cuff_t=None):
     parts = []
     for side in ('l', 'r'):
         wr, a, n, l, L = body.hand_axes(J, side)
         fa0, fa1 = J[f'forearm_{side}']
         ax = (fa1 - fa0) / np.linalg.norm(fa1 - fa0)
+        if cuff_t is not None:          # fix round 3: gauntlet top at this fraction of the forearm (from the elbow)
+            cuff_len = float((wr - fa0) @ ax) - cuff_t * float(np.linalg.norm(fa1 - fa0))
         cut = wr - ax * cuff_len
         pts = np.array([p for nm, (h0, t0) in J.items() if nm.endswith('_' + side)
                         and nm.startswith(('thumb', 'index', 'middle', 'ring', 'pinky', 'hand')) for p in (h0, t0)] + [cut])
@@ -406,7 +426,10 @@ def build(log_=log):
     shirt = build_shirt(full, fn, J, Pv, name, t)
     trousers = build_trousers(full, fn, J, Pv, name, t)
     boots = build_boots(fn, J)
-    gloves = build_gloves(fn, J)
+    # fix round 3 (AD: 'a pink skin band at the forearm' = the bare, lamp-lit forearm between the rolled cuff and a 7.5 cm
+    # glove cuff): black rubber slaughterhouse GAUNTLETS (industrial gauntlets run 30-45 cm) whose flared top ends
+    # 1.7 cm inside the rolled sleeve — no bare skin between the sleeve and the rubber
+    gloves = build_gloves(fn, J, cuff_flare=0.016, cuff_t=SLEEVE_T - 0.06)
     apron = build_apron(fn, J)
     susp = build_suspenders(fn, J)
     collider = full.copy()

@@ -164,6 +164,7 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
     p.userData = m.userData;
     p.colorNode = m.colorNode;
     p.roughnessNode = m.roughnessNode;
+    let ccRough: any = null; // fix round 3 LOOK: the film lobe's roughness on her cut (Max clearcoat)
     if (String(ud.material_id) === 'skin_ada' && m.colorNode && m.roughnessNode) {
       // C2-ESCAPE reviewer fix (cut faces read as flat salmon discs): the cut tissue lane A paints into the atlas
       // (muscle ≈ 0.17/0.07/0.06 linear, r/g ≈ 2.4; her grey-blue skin r/g ≈ 0.95, lividity ≲ 1.3) is fresh meat under
@@ -207,7 +208,14 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
       const capF = smoothstep(0.55, 0.85, normalGeometry.y.abs()).mul(near).mul(float(1).sub(smoothstep(0.0, 0.35, dist)));
       const nvar = fwidth(normalView).length();
       const rAA = p.roughnessNode.mul(p.roughnessNode).add(nvar.mul(nvar).mul(2)).sqrt().min(1);
-      p.roughnessNode = mix(rAA, max(rAA, float(0.2)), capF.mul(uNeckBlood));
+      // fix round 3 LOOK (m6max-03 at the physical stop: the cut = a crumpled gold-foil disc, the brightest thing in frame):
+      // on MAX the clearcoat film lobe (roughness 0.12, its own geometric normal) still mirrored the flame off every mm
+      // facet of the cap — the base roughness above never reached it. A 3 s-old cut face is serum + clotting blood over
+      // torn fibre ends: a SATIN film, not a mirror (the clot's fibrin mesh roughens it within seconds) — film lobe and
+      // base ≥ 0.32 on the face (geometric AA kept): the facets merge into one broad wet sheen with the anatomy as colour.
+      p.roughnessNode = mix(rAA, max(rAA, float(0.32)), capF.mul(uNeckBlood));
+      const ccAA = float(0.12 * 0.12).add(nvar.mul(nvar).mul(2)).sqrt().min(1);
+      ccRough = mix(ccAA, max(ccAA, float(0.32)), capF.mul(uNeckBlood));
       // r3 (the cap still read as a pale cream disc with red specks = pepperoni): the cut face of a neck is ≈ 85 %
       // muscle / vessels / trachea and only a 3–8 mm subcutaneous fat ring; 3 s after the cut, lying in its own pool,
       // the whole face is under a whole-blood film. Painted fat/cream texels on the FACE (not the stub's skin) are
@@ -233,6 +241,7 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
       // the wet film's second lobe: Max only (× ~16 lights per character pixel; Medium keeps the wrap diffuse)
       p.clearcoat = 0.5;
       p.clearcoatRoughness = 0.12;
+      if (ccRough) p.clearcoatRoughnessNode = ccRough;
     }
     p.setupLightingModel = function (this: any) {
       return new (SkinLightingModel as any)(this.useClearcoat === true || this.clearcoat > 0, false, false, false, false, false);

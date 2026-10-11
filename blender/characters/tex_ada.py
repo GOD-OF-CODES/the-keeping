@@ -264,6 +264,12 @@ def gown(P, N, AO, body_fn, J, hem_z, seed=87):
     h = 0.00012 * noise.fbm(P * 220.0, 2, seed + 6) - 0.0005 * holes + 0.00025 * band
     h += 0.0003 * noise.ridged(P * np.array([30.0, 30.0, 12.0]), 3, seed + 7)
     h += 0.0012 * (noise.ridged(P * np.array([62.0, 62.0, 48.0]), 3, seed + 22) - 0.45)   # wet-cotton crinkle
+    # fix round 3 stage 2 (cine's lamp-pool list #8, m6max-01: the gown on the table = a pale plaster lump): soaked
+    # cotton never lies smooth — the water's weight + cling pull it into 1.5-4 cm rucks and cling wrinkles, which is
+    # what reads as CLOTH under a single raking lamp. Ridged wrinkle field (mostly horizontal ridges along the body:
+    # compressed in z), 1.5 mm, stronger where the cloth clings / bunches (cling), weaker on the free skirt.
+    wr = noise.ridged(P * np.array([16.0, 16.0, 38.0]) + 0.6 * noise.fbm(P * 9.0, 2, seed + 30)[:, None], 3, seed + 31)
+    h += 0.0015 * (wr - 0.45) * (0.55 + 0.45 * np.clip(cling, 0, 1))
     h += 0.0010 * hem * ss(hem_z + 0.003, hem_z + 0.008, z)                                 # the hem roll
     plk, stitch, btn, pleat_zone, pleat = G_EXTRA
     h += 0.0006 * plk - 0.0004 * stitch + 0.0011 * btn + 0.0009 * pleat_zone * pleat           # placket, buttons, pleats
@@ -353,6 +359,46 @@ def hair_atlas(w=1024, h=2048, strips=6, veil_u=0.25, seed=103):
     # silt specks
     sp = rng.random((h, w)) < 0.0015
     alb[sp] = alb[sp] * 0.5 + np.array([0.05, 0.05, 0.035]) * 0.5
+    # fix round 3 stage 2 (cine's lamp-pool list #4, m6max-03: the wet hair = an undifferentiated black helmet): wet
+    # hair is not a flat sheet of separate fibres — surface tension pulls it into ROPES (clumps 4-10 mm wide, Bico et
+    # al. 2004 elastocapillary coalescence) with dark creases between them, and each rope is a glossy cylinder that
+    # throws its OWN lamp highlight. Strand-scale normals (1-2 px) average flat in the mips at 1.4 m; a clump-scale
+    # cylinder normal survives, so the R lobe breaks into one highlight per rope. Veil: ropes ~60-110 px (5-9 mm at
+    # its ~12 px/mm mapping) wandering down v, creases at 45 % albedo; cards: the whole strip is one rope, with
+    # 2-3 sub-ropes converging toward the tip.
+    xs = np.arange(w)[None, :].astype(float)
+    vv2 = v[:, None]
+    ncl = np.zeros((h, w))
+    crease = np.zeros((h, w))
+    x0v, x1v = 0.0, veil_u * w
+    edges = [x0v]
+    while edges[-1] < x1v:
+        edges.append(edges[-1] + rng.uniform(60, 110))
+    edges = np.array(edges)
+    for k in range(len(edges) - 1):
+        a, b = edges[k], edges[k + 1]
+        ph = rng.uniform(0, 6.28)
+        wob = 9.0 * np.sin(vv2 * rng.uniform(2.0, 5.0) * 6.28 + ph) + 4.0 * np.sin(vv2 * 23.0 + ph * 3)
+        ca, cb = a + wob, b + wob * 0.8
+        inside = (xs >= ca) & (xs < cb) & (xs < x1v)
+        t = np.clip((xs - 0.5 * (ca + cb)) / np.maximum(0.5 * (cb - ca), 1.0), -1, 1)
+        ncl = np.where(inside, t, ncl)
+        crease = np.where(inside, np.maximum(crease, np.clip((np.abs(t) - 0.78) / 0.22, 0, 1)), crease)
+    for k in range(strips):
+        a, b = (veil_u + k * wstrip) * w, (veil_u + (k + 1) * wstrip) * w
+        cmid = 0.5 * (a + b)
+        half = 0.5 * (b - a)
+        nsub = 2 + (k % 2)
+        conv = 1.0 - 0.45 * vv2
+        for j in range(nsub):
+            sa = cmid + (-1 + 2 * j / nsub) * half * conv
+            sb = cmid + (-1 + 2 * (j + 1) / nsub) * half * conv
+            inside = (xs >= np.minimum(sa, sb)) & (xs < np.maximum(sa, sb))
+            t = np.clip((xs - 0.5 * (sa + sb)) / np.maximum(0.5 * np.abs(sb - sa), 1.0), -1, 1)
+            ncl = np.where(inside, t, ncl)
+            crease = np.where(inside, np.maximum(crease, np.clip((np.abs(t) - 0.8) / 0.2, 0, 1)), crease)
+    alb = alb * (1.0 - 0.55 * crease)[..., None]
+    nx = np.clip(0.45 * nx + 0.75 * np.sin(ncl * 1.2) / np.sin(1.2), -0.95, 0.95)
     nrm = np.zeros((h, w, 3))
     nrm[..., 0] = nx * 0.6
     nrm[..., 2] = np.sqrt(np.clip(1 - nrm[..., 0] ** 2, 0, 1))

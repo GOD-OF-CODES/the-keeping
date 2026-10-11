@@ -373,6 +373,7 @@ export function createOpening(d: OpeningDeps) {
     EXPOSURE_CUE.spot = p.spotW !== undefined ? { x: Number(p.spotX ?? 0.5), y: Number(p.spotY ?? 0.5), r: Number(p.spotR ?? 0.2), w: Number(p.spotW) } : null;
     EXPOSURE_CUE.hp = p.hp === true; // escape fix round (lane CINE): highlight protect under the cue
     EXPOSURE_CUE.cap = p.cap === true; // escape fix round (lane CINE): max clamps the CURRENT exposure at once
+    EXPOSURE_CUE.fixed = p.fixed !== undefined ? Number(p.fixed) : null; // fix round 3 (lane CINE): a film camera's fixed exposure
     if (p.snap === true) requestExposureSnap();
   };
   const resetExposure = () => {
@@ -384,6 +385,7 @@ export function createOpening(d: OpeningDeps) {
     EXPOSURE_CUE.spot = null;
     EXPOSURE_CUE.hp = false;
     EXPOSURE_CUE.cap = false;
+    EXPOSURE_CUE.fixed = null;
   };
 
   // ---- the logging truck (S5): eastbound along the road at constant speed, wheels turning
@@ -559,7 +561,7 @@ export function createOpening(d: OpeningDeps) {
     glints.update(d.camera); // after the truck moved (road-glints.ts)
     if (!d.cameraHeld()) {
       if (truckRun || truckSaved) truckStop();
-      if (lookSaved || EXPOSURE_CUE.hold || EXPOSURE_CUE.min !== null) resetExposure();
+      if (lookSaved || EXPOSURE_CUE.hold || EXPOSURE_CUE.min !== null || EXPOSURE_CUE.fixed !== null) resetExposure();
       if (mounted) mount(false, true);
       if (uHibeam.value) uHibeam.value = 0;
       domeOn = false;

@@ -205,6 +205,34 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
   frames over (worst 447 draws / 1.54 M) are accepted on this build-branch commit only. (r) `neck_stub` (#120) is not
   driven yet — harmless while #117 keeps the head rig on neck_02; whoever retires #117 must drive it.
 
+- **Fix round 3 verdict → fix round 4 rulings (2026-10-11 13:00):** NO-GO again (AD, "Review — fix round 3"). What
+  round 3 fixed: exposure is now a physical film camera (ISO 3200, f/2, 1/48 s → 0.625; the 13.9 insert f/1.4 → 1.27;
+  C2c 0.458) and the unit chain matches L = ρ·E/π within 3–7 %; the cut face is no longer gold foil; pools are analytic
+  with a meniscus edge; jets break into drops; prints and stains no longer glow through walls. The measured cause of
+  the NO-GO is STAGING, not shading: the one key (the lamp at plan (4.6, 4.25, 1.35)) leaves the stump in Harlan's
+  shadow at the strike (0.004 vs boards 0.05–0.18) and E4 sees the head's unlit side (130° from the lamp). Committed to
+  origin/build, not live. (s) Restage the key to the AD's measured candidate: P_STOOL / P_LAMP_PARLOR / L_LAMP_PARLOR /
+  P_WHETSTONE move to plan (4.4, 3.6) (flame z 1.35) through `scripts/layout/build-layout.mjs` → `level-layout.json`
+  (lead-owned; the staging agent edits these four entries only) plus `LAMP_FLAME` (stage.ts), cutscene-fx's 3/4 face
+  aim, the QA scenarios' LAMP constants and `tests/c2-escape-stage.test.ts`. Every consumer is checked before/after:
+  the C2 marks, the B03 threshold view, the C5 shadow-play, the C7 sting, the parlor's fixed views, Ada's rise path and
+  Harlan's blocking (no prop in a walk line), the flame margins. Lane A re-bakes the parlor indirect after the move.
+  (t) Whatever the new key reveals is fixed in the same round: Harlan's gauntlets → `rubber_black` (harlan.py ~529),
+  the flannel's pale grazing strip and pink-reading plaid, the gown as wet cotton (never plaster), the cleaver (patina,
+  blood coat, bevel highlight). No new geometry: Medium C2c has 5.5 k triangles of headroom, Low 40 KB. (u) Ruling (g)
+  is amended for the floor head at 10.5: its rest pose / position turns so lamp → head → E4 is ≈ 60–80°; the lit
+  cheek, ear, jaw and closed eye may show through the wet hair (still partly veiled, never a clean frontal face); the
+  13.9 insert opens the eye (eyelid_l_open 1). (v) The strike spurt must be seen from the strike camera (steepen the jet
+  axis within the measured neck chord, ≤ 30°, or adjust the 7.75–8.4 camera); blood particles get the lamp's shadow
+  term. (w) LOOK: the cut face exactly as lane A specified (drop the double tint on cut texels; satin floor 0.12–0.15;
+  rim film ~0.25 within 6 mm); B05 Ada's blown-out gown under the torch. PERF: the C2-start hitch (200–383 ms → ≤ 150
+  ms) and the Max B05 hand-back GC stutter (~0.6 s). (x) Audio: nobody has heard C2 → C2c. An audio-lane agent records
+  the real in-game mix headlessly to a WAV the user can play (`afplay`), and measures loudness, clipping and sync
+  against the picture. (y) SHIP POLICY: round 4 is the LAST beheading-only round. After it, if the full gate passes
+  and the AD confirms the build is strictly better than live (d70bdf1) with no regression elsewhere (a lower bar than
+  photoreal), the lead pushes main; the remaining photoreal items move into the M-A cutscene round's backlog. The AD
+  still says plainly what doesn't look real.
+
 ## Then — cutscene rounds (docs/CUTSCENES-PLAN.md §8): M-A … M-F, plus CR end credits (§9)
 Each round: builders → adversarial reviewer → QA (playthrough bot, perf, hero shots) → commit → push → verify live.
 

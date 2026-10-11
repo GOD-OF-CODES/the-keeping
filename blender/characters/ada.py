@@ -51,7 +51,10 @@ def build_collar(fn, J, n_ang=84, rows=7):
     3-4 cm ABOVE the cut plane at the back and sides (2 cm over it at the throat), 4 mm off the neck skin, flaring and
     ruffled at the top. After C2 it shields the stump from grazing views (§4.6); before, it is just her collar."""
     from . import sever
-    c, n, fwd, side = (np.array(tuple(v)) for v in sever.cut_plane_pts(J['neck_01'][0], J['head'][0]))
+    # fix round 3: the cut moved 3 cm up the neck (sever.CUT_FRAC 0.64); the collar stays where it was, so 2-3 cm of
+    # torn neck skin stands above the soaked cotton instead of the cut sitting inside a cream tube
+    c, n, fwd, side = (np.array(tuple(v)) for v in sever.cut_plane_pts(J['neck_01'][0], J['head'][0],
+                                                                       sever.COLLAR_FRAC, sever.COLLAR_TILT))
     a0 = np.array(J['neck_01'][0])
     axis = np.array(J['head'][0]) - a0
     axis /= np.linalg.norm(axis)
@@ -410,6 +413,29 @@ def build_hair(fn, J, rng):
             continue
         g = int((((phi % (2 * math.pi)) / (2 * math.pi)) * N_HAIR_GROUPS + 0.5)) % N_HAIR_GROUPS
         add_card(pts, att, nrm, rng.uniform(0.007, 0.018), 0.0035 + 0.001 * (j % 3), g, rng.integers(0, hair.CARD_STRIPS))
+    # fix round 3 stage 2 (cine's lamp-pool list #4: the floor head read as a smooth black helmet): wet hair dragged
+    # over boards does not stay one plastered shell — a few thin locks (2-5 mm, a few dozen fibres each) peel off and
+    # stand 6-12 mm proud, breaking the silhouette into strands the lamp can rim-light. 16 locks, uniform over the
+    # head except the eye slit (no A14 coverage cost: they lie OVER the veil).
+    roots, dirs, lens, phis = [], [], [], []
+    for j in range(16):
+        phi = rng.uniform(-math.pi, math.pi)
+        dirh = np.array([math.sin(phi), -math.cos(phi), 0.0])
+        root = crown + dirh * rng.uniform(0.03, 0.09)
+        root = sdf.project(head, root[None], iters=8)[0]
+        gr = sdf.gradient(head, root[None])[0]
+        gr /= np.linalg.norm(gr)
+        roots.append(root)
+        dirs.append(dirh - gr * dirh.dot(gr) + gr * 0.25)
+        lens.append(rng.uniform(0.18, 0.42))
+        phis.append(phi)
+    res = hair.integrate(roots, dirs, lens, stick, coll, step=0.009, offset=0.010, stick=0.010, grav=0.3,
+                         detach_dot=0.3, rng=rng, wander=0.07)
+    for j, (phi, (pts, att, nrm)) in enumerate(zip(phis, res)):
+        if np.min(np.linalg.norm(pts - sock, axis=1)) < 0.018:
+            continue
+        g = int((((phi % (2 * math.pi)) / (2 * math.pi)) * N_HAIR_GROUPS + 0.5)) % N_HAIR_GROUPS
+        add_card(pts, att, nrm, rng.uniform(0.002, 0.005), 0.006 + 0.002 * (j % 4), g, rng.integers(0, hair.CARD_STRIPS))
     # crown cap: small disc of hair over the whorl
     cap_r = 0.024
     capv, capf = [crown + np.array([0, 0, 0.004])], []

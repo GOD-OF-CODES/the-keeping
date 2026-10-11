@@ -36,6 +36,21 @@ export const C2_PULSES = [
   { t: 23.5, v: 0.2, d: 0.25, ml: 5 },
 ] as const;
 
+/**
+ * Fix round 3 (ruling m): the C2 film camera — ISO 3200, f/2, 1/48 s (180° shutter at 24 fps).
+ *   EV100 = log2(N²/t) − log2(S/100) = log2(4·48) − log2(32) = 7.585 − 5 = 2.585.
+ *   Reflected-meter calibration (K = 12.5 cd/m²): mid grey sits at L_mid = K·N²/(S·t) = 12.5·4·48/3200 = 0.75 cd/m².
+ *   three r186 applies `uniforms.exposure` to the HDR colour before white balance and AgX (toneMappingExposure = 1),
+ *   and AgX maps 0.18 → sRGB 128 (mid grey) → e_phys = 0.18 / L_mid = 0.24.
+ *   Scene units: lights are W/(4π) "cd" with a MAX-normalised colour (lights.ts kelvinToLinearRGB; the bake uses the
+ *   same), so the 1950 K lamp's luminance is 0.3842 × its nominal 12 cd (measured: boards 0.5 m from the lamp foot read
+ *   L 0.185 vs ρ·E/π = 0.179 with that colour — the chain itself is right). A real 12 cd lamp is 1/0.3842 = 2.60×
+ *   brighter in every channel, so the camera's e in scene units = 0.24 / 0.3842 = 0.625.
+ */
+export const C2_CAMERA_E = 0.625;
+/** The S6 100 mm insert (12.9–14.9, a separate set-up): ISO 3200, f/1.4, 1/48 s → 0.49 / 0.3842 = 1.27. */
+export const C2_INSERT_E = 1.27;
+
 /** Fix round 2 (ruling g): the eye over the severed head, 8.6–17.9 (the lurch in; 1.42 m from the head). */
 export const C2_E4: P3 = [4.62, 2.38, 1.92];
 /** Where C2 ends and C2c begins (eye), looking at her just through the parlor door. */
@@ -162,22 +177,17 @@ export const c2Room: TimelineFactory = (ctx) => {
     // rim silhouette (key:fill ≥ 7:1) while the bake still holds its steady light
     { t: 0, type: 'light', op: 'set', id: 'L_CANDLE_TABLE', scale: 0.5 },
     { t: 17.9, type: 'light', op: 'set', id: 'L_CANDLE_TABLE', scale: 1, fadeS: 1.5 },
-    // §2.4: spot-weighted meter on the work area (60 %), clamp [0.7, 8] (replaces the old blanket cap 2.8)
-    // r2 look: spot 0.6 / max 8 metered the BLACK rubber sheet to middle grey and lit the room like day (+4 EV); the
-    // work area now weighs 40 % and the clamp tops at 2.2 (the old cap 2.8 still read as a lit room)
-    { t: 0, type: 'fx', id: 'exposure', params: { min: 0.5, max: 2.2, spotX: 0.5, spotY: 0.42, spotR: 0.16, spotW: 0.4, hp: true } },
-    // review r3: the 100 mm eye insert is a dark face on dark wallpaper keyed by a lamp 1 m below — at the 2.2 cap it
-    // read as a silhouette. An insert is metered on its subject (spot on the face, w 0.7) and may open up to 3.6
-    // (+0.7 EV); highlight protect stays on (the cornea glint never clips). Back to the room cue on the cut out.
-    // (r4: with the eye's 6 s brighten τ the 2 s insert never got there — an insert is a new set-up: the stop is set on the cut, τ 0.3 s)
-    // review fix round 2 (E4 hero hold, 8.7–12.9): the spot meter sat on the black wet hair and drove the stop to the
-    // 2.2 cap → the lamp-lit boards read as pale bleached laminate. Physics: the 12 cd lamp ≈ 1.2 m above the boards
-    // gives E ≈ 8 lx; varnished oak ρ ≈ 0.1 → L ≈ 0.27 cd/m² — a dim mid-dark brown to a dark-adapted eye, not a lit
-    // set. A photographer meters the boards (spot weight 0.15) and stops down (max 1.3 ≈ −0.75 EV): the pool goes
-    // black-red, the cut face is the brightest wet thing in the frame.
-    { t: 8.7, type: 'fx', id: 'exposure', params: { min: 0.5, max: 1.3, spotX: 0.5, spotY: 0.5, spotR: 0.2, spotW: 0.15, hp: true, tauDarken: 0.35 } },
-    { t: 12.9, type: 'fx', id: 'exposure', params: { min: 0.5, max: 3.6, spotX: 0.57, spotY: 0.45, spotR: 0.12, spotW: 0.7, hp: true, tauBrighten: 0.3 } },
-    { t: 14.9, type: 'fx', id: 'exposure', params: { min: 0.5, max: 2.2, spotX: 0.5, spotY: 0.42, spotR: 0.16, spotW: 0.4, hp: true, cap: true } },
+    // Fix round 3 (ruling m) — a FILM CAMERA, not an eye: ISO 3200, f/2, 1/48 s (180° at 24 fps), fixed for the
+    // whole take (C2_CAMERA_E; derivation at the constant). Replaces the spot-metered eye cues (0 / 8.7 / 12.9 / 14.9:
+    // [0.5, 2.2] → [0.5, 1.3] → [0.5, 3.6] → [0.5, 2.2]), which only clamped NEW meter readings: in QA (c2-meter m2med)
+    // the strike 7.75 ran at 5.63 and the E4 hero 10.5 at 1.90 (stale readings), the run-to-run drift of fix round 2.
+    // The lamp pool is the exposure; past 2–3 m the room goes to black; no meter, no adaptation, no drift.
+    { t: 0, type: 'fx', id: 'exposure', params: { fixed: C2_CAMERA_E } },
+    // S6 the 100 mm eye insert is its own set-up (hard cuts in and out): the same stock wide open, f/1.4 (+1 EV,
+    // e = 0.18·3200/48 / (12.5·1.96) / 0.3842 = 1.27) — at f/2 the face under the hair read L 0.01–0.017 (AgX-in ≈ 0.008,
+    // black: m3med 13.9). Back to f/2 on the cut out.
+    { t: 12.9, type: 'fx', id: 'exposure', params: { fixed: C2_INSERT_E } },
+    { t: 14.9, type: 'fx', id: 'exposure', params: { fixed: C2_CAMERA_E } },
     // B8: the motion-blur variant is switched in ONCE here (amount 0); only its uniform moves afterwards
     { t: 0, type: 'fx', id: 'blurAmount', params: { v: 0 } },
     // B4/B5: C2's blood (seeded, deterministic, every landing precomputed at load) runs on this clock
