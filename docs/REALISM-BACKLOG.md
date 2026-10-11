@@ -664,6 +664,34 @@ skinned to head_root — the runtime veil mask (#117) is a stop-gap; (2) the GLB
 eye was open from load); (3) the head piece's neck stub swings on the head joint — put the cut on the bone it pivots
 from; (4) doll-smooth face and plaster gown under the lamp/torch (no pores, wrinkling, cloth folds at 1280 px).
 
+### Fix-round 2 verdict (2026-10-11, art/horror-director review — STATUS-escape-cine "Review — fix round 2")
+
+Frames: `scratch/escfix2-review/r1med-*` (combined tree as delivered: lane A build 6 + CINE E4 + AUDIO), `r2…r6med-*`
+(after this review's runtime fixes, contract #122), `r6max-*` (Max), `b05med-*`, diagnostics `d1`–`d3`. WebGPU,
+1280×800. **Verdict: NO-GO for the live site. The hero beheading still (C2 10.5 at E4, head 1.42 m, ≈ 330 px) is
+closer and better staged than fix round 1, but no horror-film art director would accept it as a photograph, and it
+is not horrifying: it reads as a black ball with a decorated lid lying beside a red paint disc on light laminate.**
+
+| Frame | Fix-round 2 verdict | Still not real (ranked inside the row) |
+|---|---|---|
+| **C2 10.5 hero (E4)** | FAIL as a photograph. Staging right (close, cut toward lens, lamp keys it, hair over the face) | cut face = cream/gold disc with red specks (lane A's cap relief + fat texels; the sheen at E4's near-mirror angle); the head = a black hair ball; pool = flat red disc with a soft dotted rim; boards = pale orange laminate (overexposed, uniform grain, too wide/clean); no Harlan action in frame |
+| C2 7.75 strike / jets | FAIL: two smooth uniform glowing red-pink ropes | jets = constant-radius tubes, too bright (lamp at < 0.5 m, AgX desaturates the clipped red to pink); gown plaster-cream; the body cut a red blob with pink checker squares |
+| C2 9.3 (lurch) | head = dark jar with a red neck and the gold lid | as 10.5 |
+| C2 13.9 eye insert | PARTIAL: a face hangs in the fist, lit from below (fill works), but a dim brown mask; the eye does not read | face sculpt (SDF mannequin), eye a slit |
+| C2 24.0 rise | FAIL: red 'tank-top badge' cap with flesh-pink sides behind the table | stump + torso material |
+| C2c 33.1 glance #1 | FAIL "headless": dark figure on the fanlight patch, shoulder line not isolated; neon baluster rims; pink worm-shaped prints | re-block (CINE handoff (1.29, 3.69)), rim, print shading |
+| C2c 36.1 glance #2 | beat reads (her hand on the rail in the beam) but a grey-white plaster mannequin arm among plaster balusters; 426 draws > 400 | arm skin, balusters, draws (PERF) |
+| C2c 42.0 empty stair | composition right; prints = bright salmon-pink stickers brighter than the treads | stain shader lights prints with an UNSHADOWED analytic torch/key |
+| B05 (Ada carrying her head) | NOT JUDGED: standing at CP2 for 16 s after the handover she stays 7.25 m away out of view (progress-triggered return); the stair frame shows the pink-sticker prints | needs a scripted approach next round |
+
+Fixed by this review (runtime, #122): jets' fake ballistic glow (diffusion transmission) and the flame-line aliasing
+(specular AA) — visible change small; the gold SPARKLES on the cut face (geometric specular AA + cut-face roughness) —
+the disc now reads as a matte/sheened cream disc instead; pool crown spikes, coverage contour, rim alpha and the
+over-tilted meniscus band — the pink 'fur' is thinner but a soft dotted edge remains; an E4 exposure cue (effect not
+measured — wrong accessor in the review scenario). None of these moves the hero still to "photograph": the remaining problems are ASSETS (cap
+geometry/texels, hair as a black volume, face sculpt, floor material) and two runtime systems (stain lighting without
+shadows; jets as constant tubes).
+
 ## Merged and overruled QA points
 - Agreed: QA #1 (dark frames), #3 (outlines/CA, cause now found), #4 (grain), #5 (facade), #7 (C5), #8 (C6),
   #10 (rain glass).

@@ -69,7 +69,10 @@ const step01 = (x: N) => smoothstep(0, 0.002, x);
 /** Mix a wet blood film over a base albedo / roughness. `thick` 0..1: 1 = an opaque film (apron, steel), 0.4 = soaked
  *  into cotton (darker, the weave still shows). `ageMin` = minutes since the strike (uniform node). */
 export function bloodOver(baseColor: N, baseRough: N, mask: N, thick: number, ageMin: N): { color: N; roughness: N } {
-  const film = mix(baseColor.mul(vec3(0.35, 0.05, 0.045)), vec3(...BLOOD_ALBEDO), float(thick));
+  // fix round 2 (look 1: a white gown's soak read as saturated plastic red): blood wicked into cotton is absorbed
+  // through the whole fibre depth — Hb takes G/B almost entirely and most of the red in ≥ 0.3 mm: a soaked weave is
+  // dark maroon-brown (× (0.16, 0.02, 0.018) of the dry cloth), never brighter red than the film itself
+  const film = mix(baseColor.mul(vec3(0.16, 0.02, 0.018)), vec3(...BLOOD_ALBEDO), float(thick));
   const clot = clamp(ageMin.sub(3).div(7), 0, 1);
   const r = float(BLOOD_ROUGH).add(clot.mul(0.2));
   return { color: mix(baseColor, film, mask), roughness: mix(baseRough, min(baseRough, r).max(r.mul(float(thick))), mask) };

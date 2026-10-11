@@ -384,7 +384,8 @@ def build_all(material, bake_atlas):
     importance = {'arms_gloves': 3.6, 'arms_sleeves': 0.8, 'arms_sleeves_upper': 0.15, 'arms_flashlight': 3.8,
                   'arms_flashlight_switch': 3.0, 'arms_glove_snaps': 3.0, 'arms_coat_buttons': 2.0}
     # heights are authored in metres: Bump distance 1.0 turns them into true slopes (0.002 flattened them ~500x)
-    bake_atlas('arms', [R[k] for k in keys] + [upper], importance, shaders, bake_size(), tiers=ARMS_TIERS, distance=1.0)
+    bake_atlas('arms', [R[k] for k in keys] + [upper], importance, shaders, bake_size(), tiers=ARMS_TIERS, distance=1.0,
+               normal_tiers={'low': 4})   # fix round 2: Low budget — the arms' Low normal 1024 -> 512 (albedo stays 1024)
     R['sleeves'] = join([R['sleeves'], upper], 'arms_sleeves')
     spec = {'gloves': 'leather_worn', 'sleeves': 'coat_rain_dark', 'flashlight': 'steel_flashlight',
             'switch': 'rubber_black', 'snaps': 'chrome_pitted', 'buttons': 'wood_furniture_dark'}

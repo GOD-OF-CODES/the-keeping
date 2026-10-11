@@ -26,6 +26,7 @@ const heartbeat: Recipe = {
   bus: 'player',
   variants: 4,
   level: 0.9,
+  playGain: 0.55, // fix round 2: −5 dB — the featured C2 S7 beats measured −13.5 LUFS, 6 dB LOUDER than the beheading
   params: { bpm: { min: 50, max: 170, default: 90 } },
   gen: (sr, rng, p) => [beat(sr, rng, p.bpm)],
 };

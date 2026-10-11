@@ -23,6 +23,7 @@ import * as THREE from 'three/webgpu';
 import { uniform, texture as tslTexture, vec4, vec3, float, vec2, uv, mix, smoothstep, screenUV, viewportSharedTexture, positionLocal, abs, exp } from 'three/tsl';
 import type { Level } from './level.ts';
 import type { CharacterBank } from '../characters/bank.ts';
+import { uFaceFill } from '../characters/skin.ts';
 import { planToWorld } from '../shared/coords.ts';
 import { setCandleShadow, kelvinToLinearRGB, ShadowRoam, parsePulses, tagFigureCasters } from './lights.ts';
 import { LOOK } from '../render/look.ts';
@@ -846,7 +847,7 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
    * (+ = the face toward the ceiling; measured, scratch/cine/fix/hcu). The head's centre sits `lift` m over the floor at plan `c`.
    * Returns the WORLD position of the rig origin (the crown) and its WORLD quaternion.
    */
-  const floorPose = (c: P3, faceDeg: number, rollDeg: number, lift = 0.075) => {
+  const floorPose = (c: P3, faceDeg: number, rollDeg: number, lift = 0.075, tiltDeg = 0) => {
     const f = (faceDeg * Math.PI) / 180;
     const crown = new THREE.Vector3(...planToWorld([Math.cos(f + Math.PI / 2), Math.sin(f + Math.PI / 2), 0])); // world dir
     const face0 = new THREE.Vector3(...planToWorld([Math.cos(f), Math.sin(f), 0]));
@@ -854,6 +855,8 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     const m = new THREE.Matrix4().makeBasis(down, crown, face0); // local X→down, Y→crown, Z→face
     const q = new THREE.Quaternion().setFromRotationMatrix(m);
     q.premultiply(new THREE.Quaternion().setFromAxisAngle(crown, (-rollDeg * Math.PI) / 180));
+    // fix round 2: tilt (+ = the neck end UP, the crown into the boards) about the horizontal axis ⟂ the crown
+    if (tiltDeg) q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3().crossVectors(crown, down).normalize(), (tiltDeg * Math.PI) / 180));
     const centre = new THREE.Vector3(...planToWorld([c[0], c[1], GROUND + lift]));
     const pos = centre.clone().sub(HEAD_CENTER_L.clone().applyQuaternion(q));
     return { pos, q };
@@ -867,20 +870,30 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   // (109°, 31° up) rakes it at ≈ 77° (relief: brow, nose, lips), gravity takes the hair off the face onto the boards;
   // the neck end points NW toward the lamp (its ring lit, seen edge-on, bleeding into the pool). The boot nudge (9.45)
   // is the reveal: it lands face-down in its hair, the toe rolls it face-up.
-  const REST_FACE = 234;
+  // fix round 2 (ruling g, the hero still from E4 (4.62, 2.38, 1.92), sweep scratch/esc2/c2-*): face 241°, rolled 60°
+  // face-DOWN into its wet hair, the neck end tilted 35° up → the cut ring square to the lens (≈ 40° off the view ray)
+  // and keyed by the lamp (≈ 55° incidence); the boot nudge is the reveal (the landing showed it edge-on)
+  const REST_FACE = 241;
   // (hcu diag: the floorPose roll sign is − = face toward the floor — the comment above it was wrong; measured: roll −55 put
   // the cornea 3.6 cm BELOW the head centre)
-  const REST_ROLL = 55;
+  const REST_ROLL = -60;
+  const REST_TILT = 35;
   // QA tuning hook (escape fix-round review): ?debug sweeps set globalThis.__c2HeadRest = { face, roll }
   const restFR = (): [number, number] => {
     const o = (globalThis as any).__c2HeadRest;
     return o ? [Number(o.face ?? REST_FACE), Number(o.roll ?? REST_ROLL)] : [REST_FACE, REST_ROLL];
   };
-  const restPose = () => floorPose(HEAD_REST, restFR()[0], restFR()[1], 0.09); // the occiput's radius ≈ 9 cm
+  const restC = (): P3 => ((globalThis as any).__c2HeadRest?.c as P3 | undefined) ?? HEAD_REST; // QA: { c: plan P3 }
+  const restTilt = (): number => Number((globalThis as any).__c2HeadRest?.tilt ?? REST_TILT);
+  const restPose = () => floorPose(restC(), restFR()[0], restFR()[1], 0.09, restTilt()); // the occiput's radius ≈ 9 cm
   // r2: lands face-down in its hair with the neck end toward 171° — between the lamp (109°) and D (234°), ≈ 62° off
   // each: the cut ring is LIT and SEEN (the only part of a head that can be both from D with the lamp behind it); the
   // 8.6–9.45 frames read "a head face-down, its stump toward you", the nudge then rolls the face up
-  const landPose = () => floorPose(HEAD_LAND, 261, -65, 0.07);
+  // (fix round 2 QA hook: globalThis.__c2HeadLand = { face, roll, tilt })
+  const landPose = () => {
+    const o = (globalThis as any).__c2HeadLand;
+    return floorPose(HEAD_LAND, Number(o?.face ?? 261), Number(o?.roll ?? -65), 0.07, Number(o?.tilt ?? 0));
+  };
   const setWorld = (n: any, pos: any, q: any) => {
     const p = pos.clone();
     const qq = q.clone();
@@ -922,7 +935,22 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
       ada?.eyeOpen?.(true);
     }
   };
+  const faceFill = { k: 0, k1: 0, rate: 5 };
   const updateHead = (dt: number) => {
+    // the bounce fill exists only while HE holds it up (C2 10.6–21.9): a skip past the off cue, or the head back in her
+    // own hand (C2c / B05), must not keep lighting it from below
+    if (faceFill.k1 > 0) {
+      const hc = (d.characters?.ada as any)?.headCarry;
+      if (!hc?.severed || (hc.holder && hc.holder === hc.bones?.propR)) faceFill.k1 = 0;
+    }
+    if (faceFill.k !== faceFill.k1 || faceFill.k > 0) {
+      const st = Math.min(1, dt * faceFill.rate);
+      faceFill.k += (faceFill.k1 - faceFill.k) * (faceFill.k1 > faceFill.k ? st : 1);
+      if (Math.abs(faceFill.k - faceFill.k1) < 1e-4) faceFill.k = faceFill.k1;
+      const L = level.lights.shadow?.light;
+      if (L && faceFill.k > 0) uFaceFill.value.set(L.color.r, L.color.g, L.color.b).multiplyScalar(L.intensity * faceFill.k);
+      else uFaceFill.value.set(0, 0, 0);
+    }
     if (head.mode === 'none') return;
     head.t += dt;
     const n = headNode();
@@ -946,12 +974,16 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
       const L = landPose();
       const R = restPose();
       const rock = head.t > 0.35 ? 7 * Math.exp(-(head.t - 0.35) * 3.2) * Math.cos(((head.t - 0.35) * 2 * Math.PI) / 0.6) : 0;
-      const Rr = rock !== 0 ? floorPose(HEAD_REST, restFR()[0], restFR()[1] + rock, 0.09) : R;
+      const Rr = rock !== 0 ? floorPose(restC(), restFR()[0], restFR()[1] + rock, 0.09, restTilt()) : R;
       setWorld(n, L.pos.clone().lerp(Rr.pos, e), L.q.clone().slerp(Rr.q, e));
       if (head.t > 1.6) {
         setWorld(n, R.pos, R.q);
         head.mode = 'rest';
       }
+    } else if (head.mode === 'rest' && (globalThis as any).__c2HeadQA) {
+      // QA (fix round 2 sweeps): re-pose a resting head every frame from the land / rest hooks
+      const P = (globalThis as any).__c2HeadQA === 'land' ? landPose() : restPose();
+      setWorld(n, P.pos, P.q);
     }
   };
 
@@ -1018,6 +1050,11 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
         return true;
       case 'adaHead':
         adaHead(String(p.mode ?? ''));
+        return true;
+      // fix round 2 (ruling i): the floor bounce under the held head, {k (1/m²), fade (s)} × the key light (see skin.ts)
+      case 'faceFill':
+        faceFill.k1 = Number(p.k ?? 0);
+        faceFill.rate = 1 / Math.max(1e-3, Number(p.fade ?? 0.2));
         return true;
       case 'shadowLight':
         roam.set(String(p.at ?? 'lamp'), parsePulses(p.pulses as string | undefined));

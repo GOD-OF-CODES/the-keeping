@@ -26,6 +26,8 @@ CUT_FRAC = 0.42          # along neck_01.head (C7) -> head.head (C1): C4-C5
 TILT_DEG = 15.0          # oblique: the plane rises toward the nape (a blow from behind and above)
 RINGS = 3                # cap rings: ~540 tris per cap with the ~108-vertex rim (doc: 600 Medium/Max)
 HEAD_ROOT = 'head_root'
+STUB = 'neck_stub'
+STUB_REACH = 0.035   # m above the cut plane where the stub weight reaches 0
 
 
 def cut_plane(rig):
@@ -426,6 +428,8 @@ def build_head_rig(rig):
     for name in ['head'] + hair:
         e = rig.data.edit_bones[name]
         src[name] = (e.head.copy(), e.tail.copy(), e.roll, e.parent.name if e.parent else None, e.use_connect, e.use_deform)
+    n2 = rig.data.edit_bones['neck_02']
+    stub_src = (n2.head.copy(), n2.tail.copy(), n2.roll)
     for name in hair:                                   # the chains leave ada_rig
         rig.data.edit_bones.remove(rig.data.edit_bones[name])
     bpy.ops.object.mode_set(mode='OBJECT')
@@ -442,6 +446,14 @@ def build_head_rig(rig):
         e = eb.new(HEAD_ROOT if name == 'head' else name)
         e.head, e.tail, e.roll = h - crown, t - crown, roll
         e.use_deform = True
+    # fix round 2 (ruling j, retire #117's neck_02 attach): `neck_stub` = a copy of ada_rig.neck_02 at rest, child of
+    # head_root. The head piece's neck stub is skinned to it (1 at the cut -> 0 at 3.5 cm above). Left alone it is rigid
+    # with the head (severed); the runtime copies neck_02's pose onto it while she is whole, so the head nods on its
+    # own `head` joint and the rim still follows the body's neck exactly (no seam opening before the strike)
+    es = eb.new(STUB)
+    es.head, es.tail, es.roll = stub_src[0] - crown, stub_src[1] - crown, stub_src[2]
+    es.use_deform = True
+    es.parent = eb[HEAD_ROOT]
     for name, (h, t, roll, par, conn, dfm) in src.items():
         if name == 'head':
             continue
@@ -485,7 +497,19 @@ def sever(rig, body, hair, eye):
     for g in list(head.vertex_groups):
         head.vertex_groups.remove(g)
     gr = head.vertex_groups.new(name=HEAD_ROOT)
-    gr.add(list(range(len(head.data.vertices))), 1.0, 'REPLACE')
+    gs = head.vertex_groups.new(name=STUB)
+    c0, n0 = np.array(plane[0], float), np.array(plane[1], float)
+    hv = np.empty(len(head.data.vertices) * 3)
+    head.data.vertices.foreach_get('co', hv)
+    sd = (hv.reshape(-1, 3) - c0) @ n0
+    t = np.clip(sd / STUB_REACH, 0.0, 1.0)
+    ws = 1.0 - t * t * (3 - 2 * t)
+    for i, w in enumerate(ws):
+        if w < 0.999:
+            gr.add([i], float(1.0 - w), 'REPLACE')
+        if w > 0.001:
+            gs.add([i], float(w), 'REPLACE')
+    log(f'sever: head neck stub skinned to {STUB}: {int((ws > 0.001).sum())} verts (full {int((ws > 0.999).sum())})')
     _merge_groups(hair, [g for g in ('jaw', 'jaw_hold') if hair.vertex_groups.get(g)], 'head')
     _rename_group(hair, 'head', HEAD_ROOT)
     for g in [g.name for g in hair.vertex_groups if g.name != HEAD_ROOT and not g.name.startswith('hair_')]:

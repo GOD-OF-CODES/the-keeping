@@ -321,6 +321,14 @@
       "outputs": []
     },
     {
+      "id": "head-lab",
+      "group": "review",
+      "manual": true,
+      "description": "Escape fix round 2: Ada's head anatomy lab (SDF head box meshed at 1.5 mm, tex_head albedo as vertex colours, 4 views at 0.8 m under a point key) -> scratch/c2e/fr2/headlab.png",
+      "script": "blender/characters/head_lab.py",
+      "outputs": []
+    },
+    {
       "id": "arms-dim-review",
       "group": "review",
       "manual": true,
@@ -393,7 +401,7 @@
         { "path": ".cache/characters/ada.blend" },
         { "path": ".cache/characters/harlan.blend" },
         { "path": ".cache/characters/arms.blend" },
-        { "path": "public/assets/low/ada_albedo.webp", "kind": "texture" },
+        { "path": "public/assets/low/ada_albedo.webp", "kind": "texture" }, { "path": "public/assets/low/ada_head_albedo.webp", "kind": "texture" }, { "path": "public/assets/low/ada_head_normal.png", "kind": "texture" },
         { "path": "public/assets/low/ada_normal.png", "kind": "texture" },
         { "path": "public/assets/low/harlan_albedo.webp", "kind": "texture" },
         { "path": "public/assets/low/harlan_normal.png", "kind": "texture" },
@@ -401,7 +409,7 @@
         { "path": "public/assets/low/arms_normal.png", "kind": "texture" },
         { "path": "public/assets/low/ada_hair_albedo.webp", "kind": "texture" },
         { "path": "public/assets/low/ada_hair_normal.png", "kind": "texture" },
-        { "path": "public/assets/medium/ada_albedo.webp", "kind": "texture" },
+        { "path": "public/assets/medium/ada_albedo.webp", "kind": "texture" }, { "path": "public/assets/medium/ada_head_albedo.webp", "kind": "texture" }, { "path": "public/assets/medium/ada_head_normal.png", "kind": "texture" },
         { "path": "public/assets/medium/ada_normal.png", "kind": "texture" },
         { "path": "public/assets/medium/harlan_albedo.webp", "kind": "texture" },
         { "path": "public/assets/medium/harlan_normal.png", "kind": "texture" },
@@ -409,7 +417,7 @@
         { "path": "public/assets/medium/arms_normal.png", "kind": "texture" },
         { "path": "public/assets/medium/ada_hair_albedo.webp", "kind": "texture" },
         { "path": "public/assets/medium/ada_hair_normal.png", "kind": "texture" },
-        { "path": "public/assets/max/ada_albedo.webp", "kind": "texture" },
+        { "path": "public/assets/max/ada_albedo.webp", "kind": "texture" }, { "path": "public/assets/max/ada_head_albedo.webp", "kind": "texture" }, { "path": "public/assets/max/ada_head_normal.png", "kind": "texture" },
         { "path": "public/assets/max/ada_normal.png", "kind": "texture" },
         { "path": "public/assets/max/harlan_albedo.webp", "kind": "texture" },
         { "path": "public/assets/max/harlan_normal.png", "kind": "texture" },

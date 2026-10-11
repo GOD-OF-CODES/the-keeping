@@ -14,15 +14,21 @@
 // wider, fainter pelvis term — the ambient occlusion a standing body casts on the floor.
 
 import * as THREE from 'three/webgpu';
-import { Fn, property, dFdx, dFdy, diffuseColor, float, max, mx_noise_float, normalView, positionGeometry, select, pow, positionView, positionViewDirection, positionWorld, sign, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl';
+import { Fn, normalMap, texture, normalGeometry, fwidth, mix, property, dFdx, dFdy, diffuseColor, float, max, mx_noise_float, normalView, positionGeometry, select, pow, positionView, positionViewDirection, positionWorld, normalWorld, sign, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl';
 
 const SKIN_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).get('skin') === '0';
 export const uSkinWrap = uniform(0.3);
-export const uSkinTint = uniform(new THREE.Vector3(0.6, 0.25, 0.2));
+// fix round 2 (ruling j / lane A: the salmon is RUNTIME, the bake is grey-blue): the wrap term is the light that
+// scatters past the terminator. In living skin it is red (perfused dermis); in a drowned body 2 h dead the blood has
+// settled to the dependent side (livor) and the waterlogged epidermis scatters near-neutral → (0.6, 0.25, 0.2) → (0.4, 0.31, 0.29)
+export const uSkinTint = uniform(new THREE.Vector3(0.4, 0.31, 0.29));
 /** 1 = the hair veil in front of the severed head's face is gone (see applySkinOrHair; driven by ada.ts). */
 export const uHairVeilClear = uniform(0);
 /** 1 = severed: blood film on the skin around the cut (head stub + body neck; see applySkinOrHair). */
 export const uNeckBlood = uniform(0);
+/** Fix round 2 (ruling i, the eye insert): the floor's bounce under the severed head held at his face height —
+ *  irradiance (linear, lamp units) arriving from BELOW on the head piece only; set by cutscene-fx 'faceFill'. */
+export const uFaceFill = uniform(new THREE.Vector3(0, 0, 0));
 
 // ---- C2-ESCAPE B13 (#17 runtime side): the wet cotton nightgown. Water fills the air gaps between the fibres, so
 // a soaked cotton sheet scatters far less: it darkens and lets light THROUGH (translucent / see-through where wet).
@@ -166,8 +172,10 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
       // sharp glints of the lamp/torch instead of a matte disc. Bone/cartilage (low r/g) is left as painted.
       const c = m.colorNode;
       const cut = smoothstep(1.55, 2.1, c.r.div(c.g.max(1e-3)));
-      p.colorNode = c.mul(vec3(1).sub(vec3(0.45, 0.78, 0.78).mul(cut)));
-      p.roughnessNode = m.roughnessNode.mul(float(1).sub(cut)).add(cut.mul(0.1));
+      p.colorNode = c.mul(vec3(1).sub(vec3(0.58, 0.86, 0.86).mul(cut)));
+      // fix round 2 (E4 look, 1.4 m: the cut face glinted gold in a cellular pattern = salami): the blood film fills the
+      // tissue's relief, so the lamp's highlight is one broad sheen, not a sparkle per normal-map cell → 0.1 → 0.24
+      p.roughnessNode = m.roughnessNode.mul(float(1).sub(cut)).add(cut.mul(0.24));
       // Escape fix-round review: once severed, the skin AROUND the cut carries blood (the head's neck stub fell into
       // and rolled through its pool; the carotid jets run down the body's neck). Without it the head's 8 cm neck stub
       // was a clean beige cylinder — a doll part. Bind space (Y-up, face +Z): the cut sits at y ≈ 1.35 on the neck
@@ -177,12 +185,45 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
       const pg = positionGeometry;
       const rad = vec2(pg.x, pg.z.add(0.012)).length();
       const near = float(1).sub(smoothstep(0.065, 0.088, rad));
-      const dist = select(pg.y.greaterThan(1.35), pg.y.sub(1.35).div(0.08), float(1.35).sub(pg.y).div(0.035));
+      // (fix round 2: lane A's build 1b cut sits at y ≈ 1.39 (body cap top 1.396) — the film is FULL across 1.33–1.42 so
+      // the cap's fat/tissue specks lie under it, then breaks into runs 8 cm up / 3.5 cm down)
+      const dist = select(pg.y.greaterThan(1.42), pg.y.sub(1.42).div(0.08), select(pg.y.lessThan(1.33), float(1.33).sub(pg.y).div(0.035), float(0)));
       const band = float(1).sub(smoothstep(0.2, 1.0, dist));
       const n = mx_noise_float(vec3(pg.x.mul(55), pg.y.mul(9), pg.z.mul(55)));
       const film = smoothstep(0.35, 0.6, band.add(n.mul(0.4))).mul(near).mul(uNeckBlood);
       p.colorNode = p.colorNode.mul(vec3(1).sub(vec3(0.58, 0.94, 0.95).mul(film)));
       p.roughnessNode = p.roughnessNode.mul(float(1).sub(film)).add(film.mul(0.12));
+      // review fix round 2 (E4 close-up: the head's cut face was a disc of hundreds of gold sparkles = 'salami' / a jar
+      // lid): lane A's physical normal maps (bump distance fix) give the cut tissue mm-scale relief, and at the film's
+      // roughness 0.12 every bump threw its own image of the flame. Liquid fills that relief: a whole-blood film
+      // ≥ 0.2 mm thick (fresh cut, lying in its pool) has a surface set by surface tension, not by the tissue under it
+      // (capillary length of blood ≈ 2 mm ≫ the relief) → the tangent-space detail is flattened × 0.15 where the film /
+      // the cut is full: one broad wet sheen on the cut, the anatomy left as colour.
+      // review d2 (A/B at 0.55 m: roughness 0.9 kills every gold sparkle, the flattened normal map does not): the
+      // sparkles are the GEOMETRIC relief lane A sculpts into the cap (mm bumps, 1–5 px each) under a 0.12 film —
+      // each bump a tiny mirror of the flame. A 3 s-old cut is not a polished film: serum + clotting blood + torn
+      // fibres scatter → roughness ≈ 0.2 on the cut FACE (r4: 0.36 washed the whole disc cream at E4's near-mirror angle) (axial normal, inside the neck radius, in the cut band),
+      // plus geometric specular AA (Kaplanyan–Hoffman: α² += 2·|fwidth n|²) so sub-pixel relief never sparkles.
+      const capF = smoothstep(0.55, 0.85, normalGeometry.y.abs()).mul(near).mul(float(1).sub(smoothstep(0.0, 0.35, dist)));
+      const nvar = fwidth(normalView).length();
+      const rAA = p.roughnessNode.mul(p.roughnessNode).add(nvar.mul(nvar).mul(2)).sqrt().min(1);
+      p.roughnessNode = mix(rAA, max(rAA, float(0.2)), capF.mul(uNeckBlood));
+      // r3 (the cap still read as a pale cream disc with red specks = pepperoni): the cut face of a neck is ≈ 85 %
+      // muscle / vessels / trachea and only a 3–8 mm subcutaneous fat ring; 3 s after the cut, lying in its own pool,
+      // the whole face is under a whole-blood film. Painted fat/cream texels on the FACE (not the stub's skin) are
+      // taken to the filmed-tissue colour: albedo × (0.42, 0.06, 0.05) again (≈ 0.1 mm Hb film on fat ≈ 0.1/0.01/0.01).
+      p.colorNode = p.colorNode.mul(vec3(1).sub(vec3(0.58, 0.94, 0.95).mul(capF.mul(uNeckBlood))));
+      if (m.normalMap) {
+        const flat = max(cut, film);
+        const ns = m.normalScale ?? new THREE.Vector2(1, 1);
+        p.normalNode = normalMap(texture(m.normalMap), vec2(ns.x, ns.y).mul(float(1).sub(flat.mul(0.85))));
+      }
+      // fix round 2 (ruling i): the lamp-lit boards + the pool under the held head bounce light UP into the face (the
+      // head piece only: bind y > 1.40, above the cut). Hemispherical: E(N) = E_up · (1 − N_y) / 2; Lambert → ρ/π.
+      const headOnly = smoothstep(1.4, 1.44, pg.y);
+      const hemi = float(0.5).sub(normalWorld.y.mul(0.5));
+      const fill = p.colorNode.mul(uFaceFill).mul(hemi).mul(headOnly).mul(1 / Math.PI);
+      p.emissiveNode = m.emissiveNode ? m.emissiveNode.add(fill) : fill;
     }
     p.normalMap = m.normalMap;
     p.normalScale = m.normalScale;

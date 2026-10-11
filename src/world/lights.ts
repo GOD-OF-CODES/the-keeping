@@ -100,6 +100,9 @@ export function tagStrokeCasters(root: any, spots: any[], r = 6): number {
       if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
       const bs = o.geometry.boundingSphere;
       const rad = bs.radius * o.matrixWorld.getMaxScaleOnAxis();
+      // fix round 2 (ruling l, B05's stroke frames ≤ 400 draws): a prop smaller than 12 cm (bounding radius) casts a
+      // stroke shadow ≤ 1–2 px from 3–6 m (the window stroke's penumbra alone is wider) — not a caster
+      if (rad < 0.12) return;
       _tv.copy(bs.center).applyMatrix4(o.matrixWorld);
       if (!spots.some((p) => _tv.distanceTo(p) - rad <= r)) return;
     }

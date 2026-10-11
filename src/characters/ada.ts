@@ -429,8 +429,13 @@ export class AdaCharacter {
     // is flicked up and let go of its authored veil pose (stiffness 0.16 → 0.02); the rest of the curtain stays.
     // (only while another hand holds it: once she carries it herself — C2c / B05 — the curtain falls back)
     if (this.partedChain && this.headCarry.holder === this.headCarry.bones.propR) this.partedChain = null;
-    // escape fix-round review: the face veil is off a severed head on the floor / in Harlan's fist, back on in her own hand
-    uHairVeilClear.value = this.headCarry.severed && this.headCarry.holder !== this.headCarry.bones.propR ? 1 : 0;
+    // escape fix-round review: the face veil is off a severed head in Harlan's fist (hair gathered in a fist is pulled
+    // off the face), back on in her own hand. Fix round 2 (ruling g): ON the floor the wet hair stays over most of the
+    // face — the cut, the blood and his action carry the horror, the face is the subject only in the lit eye insert.
+    // (QA A/B: globalThis.__veil = 0 | 1 forces it)
+    const veilQa = (globalThis as { __veil?: number }).__veil;
+    const hc0 = this.headCarry;
+    uHairVeilClear.value = veilQa ?? (hc0.severed && hc0.holder && hc0.holder !== hc0.bones.propR ? 1 : 0);
     uNeckBlood.value = this.headCarry.severed ? 1 : 0;
     for (const hc of this.hairChains) {
       const part = hc === this.partedChain;

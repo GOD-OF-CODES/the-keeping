@@ -74,7 +74,20 @@ def build_trousers(full, fn, J, Pv, name, t):
 
     def off(X):
         return 0.013 + 0.006 * np.clip((0.62 - X[:, 2]) / 0.15, 0, 1)       # bunched over the boot tops
-    return shell(full, fn, J, mask, 'harlan_trousers', off, fold_amp=0.006, fold_freq=(9, 9, 14), seed=31)
+    # escape fix round 2 (ruling j: "Harlan's leg a mannequin"): heavy work trousers fold like cloth — keep 2x the
+    # faces (decimate 0.2 -> 0.4), deeper folds, and ring folds where heavy wool/duck compresses: bunched in 3-4
+    # stacked rolls over the boot tops (z 0.44-0.62) and the hinge folds behind the knee
+    ob = shell(full, fn, J, mask, 'harlan_trousers', off, fold_amp=0.009, fold_freq=(9, 9, 14), seed=31, decimate=0.4)
+    Pk, Nk = body.mesh_arrays(ob.data)
+    z = Pk[:, 2]
+    stack = np.clip((0.64 - z) / 0.05, 0, 1) * np.clip((z - BOOT_TOP + 0.02) / 0.03, 0, 1)
+    rings = np.sin(z * 2 * np.pi / 0.032 + 2.5 * noise.fbm(Pk * 14.0, 2, 41)) * stack
+    knee_z = np.mean([J[f'calf_{s}'][0][2] for s in ('l', 'r')])
+    back = np.clip((Pk[:, 1] - np.array([np.mean([J[f'calf_{s}'][0][1] for s in ('l', 'r')])])) / 0.04 + 0.5, 0, 1)
+    hinge = np.clip(1 - np.abs(z - knee_z) / 0.06, 0, 1) * back
+    hfold = (noise.ridged(Pk * np.array([25.0, 25.0, 60.0]), 2, 42) - 0.5) * hinge
+    garments.displace_normal(ob, 0.006 * rings + 0.006 * hfold)
+    return ob
 
 
 def sdf_part(fn, lo, hi, h, name, target_tris):
@@ -88,7 +101,12 @@ def build_boots(fn, J):
     hi = np.array([0.25, 0.25, BOOT_TOP + 0.02])
 
     def boot(X):
-        d = fn(X) - 0.012
+        # fix round 2: a rubber knee boot's shaft is a loose tube, not a dipped leg — 12 mm over the foot/ankle
+        # widening to 24 mm at the top, with a 4 mm rolled rim
+        flare = 0.012 + 0.012 * np.clip((X[:, 2] - 0.16) / (BOOT_TOP - 0.16), 0, 1)
+        d = fn(X) - flare
+        rim = np.exp(-((X[:, 2] - (BOOT_TOP - 0.012)) / 0.008) ** 2)
+        d = d - 0.004 * rim
         # toe box: fill between the toes, square the front a little
         d = sdf.smax(d, X[:, 2] - BOOT_TOP, 0.004)
         # welted sole slab, 18 mm, slightly wider than the upper

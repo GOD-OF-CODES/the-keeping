@@ -224,6 +224,12 @@ def main():
                   'ik_baked': bool(c.ik), 'note': c.note, 'milestone': c.milestone} for c, _ in baked]
         write_json(OUT / f'{char}_clips.json', table)
         strip_private([rig] + meshes)
+        # fix round 2 (ruling j): the GLB shipped morph weights [1, 1, 1] (eyelid open from load) — glTF mesh.weights are
+        # the key blocks' current values; every key is authored for the runtime to drive, so they all default to 0
+        for ob in meshes:
+            if ob.data.shape_keys:
+                for kb in ob.data.shape_keys.key_blocks[1:]:
+                    kb.value = 0.0
         if not ARGS.get('no_export'):
             path = OUT / f'{char}.glb'
             n = gexport.export_glb(path, [rig] + parts(char) + meshes, 'character', export_tangents=True)

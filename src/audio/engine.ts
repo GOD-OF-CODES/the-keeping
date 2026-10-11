@@ -11,8 +11,8 @@ import type { LevelLayout, RoomLink } from '../shared/layout-types.ts';
 import type { GameContext, System } from '../game/context.ts';
 import { BUS_NAMES, type BusName } from './synth/types.ts';
 import type { Params } from './synth/types.ts';
-import { getRecipe } from './synth/index.ts';
-import { prerenderBanks, renderVariants, type Bank, type PrerenderOptions } from './offline.ts';
+import { RECIPES, getRecipe } from './synth/index.ts';
+import { SynthWorker, prerenderBanks, renderVariants, type Bank, type PrerenderOptions } from './offline.ts';
 import { SpatialEmitter, bestPath, occlusionFor, roomAtWorld, type DoorOpenFn, type PannerOpts } from './spatial.ts';
 import { RoomReverb, type ReverbParams } from './reverb.ts';
 
@@ -102,6 +102,9 @@ export class AudioEngine implements System {
   private activeReverb: RoomReverb | null = null;
   private occlusionClock = 0;
   private pending = new Map<string, Promise<AudioBuffer[]>>();
+  private duck = {} as Record<BusName, GainNode>;
+  /** Fix round 2 (audio): lazy sounds synthesize in this worker, never on the main thread (null under Node). */
+  readonly synthWorker: SynthWorker | null = SynthWorker.available() ? new SynthWorker() : null;
   private userPaused = false;
   private hidden = false;
   readonly layers: LiveLayers;
@@ -121,7 +124,10 @@ export class AudioEngine implements System {
     this.buses = {} as Record<BusName, GainNode>;
     for (const b of BUS_NAMES) {
       const g = c.createGain();
-      g.connect(this.master);
+      // fix round 2: every bus feeds the master through its own HDR duck gain (see Recipe.hdr / duckBed)
+      const d = c.createGain();
+      g.connect(d).connect(this.master);
+      this.duck[b] = d;
       this.buses[b] = g;
     }
     this.reverbIn = c.createGain();
@@ -160,6 +166,7 @@ export class AudioEngine implements System {
   }
 
   dispose(): void {
+    this.synthWorker?.dispose();
     this.offs.forEach((f) => f());
     this.offs = [];
     this.layers.stopAll();
@@ -352,17 +359,41 @@ export class AudioEngine implements System {
     for (const [k, v] of bank) this.bank.set(k, v);
   }
 
+  /**
+   * Fix round 2 (audio): after the load, warm EVERY lazy (preload:false) sound in the synth worker, one after
+   * another, so its first play (spring bell at the door, drowning rush, the C6/C7 score…) finds it rendered and the
+   * main thread never synthesizes during play. ~23 MB of Float32 audio in total at 48 kHz — affordable on 8 GB.
+   * Order = roughly story order so the earliest-needed are ready first.
+   */
+  warmLazy(): Promise<void> {
+    if (!this.synthWorker) return Promise.resolve();
+    const ids = RECIPES.filter((r) => r.preload === false).map((r) => r.id);
+    const t0 = performance.now();
+    const failed: string[] = [];
+    return ids
+      .reduce<Promise<unknown>>((p, id) => p.then(() => this.ensure(id, undefined, { noFallback: true }).catch(() => { failed.push(id); })), Promise.resolve())
+      .then(() => {
+        console.info(`[audio] warmed ${ids.length - failed.length}/${ids.length} lazy sounds in the synth worker in ${(performance.now() - t0).toFixed(0)} ms (wall)${failed.length ? ` — left lazy: ${failed.join(', ')}` : ''}`);
+      });
+  }
+
   /** Make sure a (lazy) sound is rendered; resolves when ready. */
-  ensure(id: string, params?: Params): Promise<AudioBuffer[]> {
+  ensure(id: string, params?: Params, o: { noFallback?: boolean } = {}): Promise<AudioBuffer[]> {
     const have = this.bank.get(id);
     if (have) return Promise.resolve(have);
     let p = this.pending.get(id);
     if (!p) {
-      p = renderVariants(this.ctx, id, { params }).then((b) => {
-        this.bank.set(id, b);
-        this.pending.delete(id);
-        return b;
-      });
+      p = renderVariants(this.ctx, id, { params, worker: this.synthWorker, noFallback: o.noFallback }).then(
+        (b) => {
+          this.bank.set(id, b);
+          this.pending.delete(id);
+          return b;
+        },
+        (e) => {
+          this.pending.delete(id); // a failed render may be retried (first play falls back to the main thread)
+          throw e;
+        },
+      );
       this.pending.set(id, p);
     }
     return p;
@@ -390,8 +421,33 @@ export class AudioEngine implements System {
       void this.ensure(id).catch((e) => console.warn(`[audio] ${id}:`, e));
       return null;
     }
-    return this.playBuffer(b, { ...o, bus: o.bus ?? getRecipe(id).bus, loop: o.loop ?? getRecipe(id).loop });
+    const r = getRecipe(id);
+    if (r.hdr) this.duckBed(r.hdr, o.when ?? this.ctx.currentTime, r.hdrHold ?? 0.35);
+    return this.playBuffer(b, { ...o, gain: (o.gain ?? 1) * (r.playGain ?? 1), bus: o.bus ?? r.bus, loop: o.loop ?? r.loop });
   }
+
+  /**
+   * Dip the BED (ambience + weather) by `db` at `when` (5 ms attack, `hold` s, ≈ 1.2 s release). See Recipe.hdr.
+   * Score and player buses are NOT ducked: the score hit and the player's gasp are placed ON the strike by design.
+   * Monotonic: an overlapping event (head_drop inside the chop's hold) may deepen or extend the dip, never lift it.
+   */
+  duckBed(db: number, when: number, hold = 0.35): void {
+    const t = Math.max(when, this.ctx.currentTime);
+    const depth = Math.abs(db);
+    const holding = t < this.duckUntil;
+    const g = Math.pow(10, -Math.max(depth, holding ? this.duckDb : 0) / 20);
+    const until = Math.max(this.duckUntil, t + 0.005 + hold);
+    for (const b of ['ambience', 'weather'] as const) {
+      const p = this.duck[b].gain;
+      p.cancelScheduledValues(t);
+      if (!holding || depth > this.duckDb) p.setTargetAtTime(g, t, 0.005 / 3);
+      p.setTargetAtTime(1, until, 0.4);
+    }
+    this.duckDb = holding ? Math.max(depth, this.duckDb) : depth;
+    this.duckUntil = until;
+  }
+  private duckDb = 0;
+  private duckUntil = 0;
 
   /**
    * C2-ESCAPE B12: the AudioContext time at which a sound must START to be HEARD `delayS` from now, i.e. on the video
@@ -519,7 +575,11 @@ export class LiveLayers {
       if (this.beatNext < now) this.beatNext = now + 0.02;
       while (this.beatNext < horizon) {
         const b = this.e.pickBuffer('heartbeat');
-        if (b) this.fire(b, this.beatNext, this.e.buses.player, 1, 1);
+        // fix round 2 (mix): measured in the real C2 (scratch/audio-esc/c2mix.json) the 96 bpm layer at gain 1 was the
+        // LOUDEST thing in the scene (player bus ≈ −15 LUFS, pinning the −3 dB limiter, ~10 dB over the beheading's
+        // sfx). A heard heartbeat is a subjective film device, not a diegetic sound: it sits under the room. −12 dB at
+        // rest, rising to −8 dB at 150 bpm (a racing heart is felt harder). Single featured beats (cue sfx) are unchanged.
+        if (b) this.fire(b, this.beatNext, this.e.buses.player, 0.25 + 0.15 * Math.min(1, Math.max(0, (this.bpm - 90) / 60)), 1);
         this.beatNext += 60 / this.bpm;
       }
     }
@@ -723,5 +783,6 @@ export async function createAudioSystem(gctx: GameContext, o: { context?: AudioC
   const engine = new AudioEngine({ context: o.context, settings: gctx.settings, events: gctx.events, layout: gctx.layout?.rooms ? gctx.layout : undefined });
   await engine.prerender({ onProgress: o.onProgress, maxVariants: gctx.presetId === 'low' ? 3 : undefined });
   gctx.systems.set(engine.id, engine);
+  void engine.warmLazy();
   return engine;
 }

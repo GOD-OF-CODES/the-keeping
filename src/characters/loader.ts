@@ -11,6 +11,7 @@
 
 import { ContactShadow, applySkinOrHair } from './skin.ts';
 import { roomEnvironment } from '../render/reflections.ts';
+import { BLOOD_UNIFORMS, bloodMask, bloodOver, type BloodMaskOptions } from '../materials/blood.ts';
 import * as THREE from 'three/webgpu';
 import { float, mx_noise_float, positionGeometry, texture, uniform, vec3 } from 'three/tsl';
 import type { PresetConfig } from '../render/presets.ts';
@@ -79,6 +80,13 @@ function tex(m: AssetManifest | undefined, o: CharacterLoadOptions, base: string
   return p;
 }
 
+/** Fix round 2: where the C2 blood lands on each figure's materials (`<char>:<material_id>`, bind space, m). */
+const BLOOD_ON: Record<string, BloodMaskOptions & { thick: number }> = {
+  'harlan:rubber_black': { source: [0.05, 0.95, 0.3], radius: 0.28, reach: 0.75, cell: 0.014, run: 0.35, seed: 5, thick: 1 },
+  'harlan:trousers_wool': { source: [0.05, 0.6, 0.3], radius: 0.12, reach: 0.6, cell: 0.014, run: 0.25, seed: 7, thick: 0.4 },
+  'ada:nightgown_silt': { source: [0, 1.38, -0.01], radius: 0.2, reach: 0.4, cell: 0.012, run: 0.2, seed: 11, thick: 0.25 },
+};
+
 export async function loadCharacter(id: CharacterId, o: CharacterLoadOptions): Promise<LoadedCharacter> {
   const manifest = o.manifest ?? (await fetchManifest(o.presetId).catch(() => undefined));
   const entry = manifest?.files.find((f) => f.id === id && f.kind === 'character');
@@ -105,6 +113,14 @@ export async function loadCharacter(id: CharacterId, o: CharacterLoadOptions): P
       mesh.frustumCulled = false; // skinned bounds don't follow the pose
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      if (ud.shadow_proxy) {
+        // lane A escape fix round 2: ≤ 5k-tri skinned shadow caster (ada_shadow, ada_head_shadow, harlan_shadow) for
+        // the lamp/stroke caster layers 8/9 — hidden (and casting nothing) until the cine lane wires those layers
+        mesh.visible = false;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        return;
+      }
       if (ud.void) {
         const m = new THREE.MeshBasicNodeMaterial({ color: 0x000000 });
         m.name = src.name;
@@ -171,6 +187,18 @@ export async function loadCharacter(id: CharacterId, o: CharacterLoadOptions): P
       // not emit; at the C2 cut exposure (≈ 10) and the 3300 K indoor white balance (blue gain ≈ 2.5) it turned her
       // unlit face into a saturated blue patch. The probe grids + room env now give her the ambient she needs.
       if (o.lightsNode) m.lightsNode = o.lightsNode;
+      // fix round 2 (ruling h: spatter on the apron, the blade, the gown): src/materials/blood.ts's masks were never
+      // wired. Bind space (Y-up, the figure faces +Z), on the bind positions so the stain rides the cloth. Harlan stands
+      // over the neck at ≈ 0.6 m: the medium-velocity impact spatter + the jets' splash-back hit the apron's lower front
+      // (≈ 0.75–1.1 m up) and his boots; the blade is coated to the heel; her collar and shoulders soak from the cut.
+      const bl = BLOOD_ON[`${id}:${String(ud.material_id)}`];
+      if (bl) {
+        const base = m.colorNode ? (m.colorNode.rgb ?? m.colorNode) : vec3(m.color.r, m.color.g, m.color.b);
+        const mk = bloodMask(positionGeometry, BLOOD_UNIFORMS.amount, bl);
+        const out = bloodOver(base, m.roughnessNode ?? float(m.roughness ?? 0.7), mk, bl.thick, BLOOD_UNIFORMS.ageMin);
+        m.colorNode = out.color;
+        m.roughnessNode = out.roughness;
+      }
       // LIGHTING lane (item 17): wrap-diffuse skin with a wet clearcoat film, dual-lobe strand hair (./skin.ts)
       const fm = applySkinOrHair(m, ud, o.presetId);
       mesh.material = fm;

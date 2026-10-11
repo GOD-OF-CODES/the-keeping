@@ -198,6 +198,9 @@ export interface SeedOptions {
   seep: { p: P3; from: number; to: number };
   tier: BloodTier;
   seed?: number;
+  /** fix round 2: the jets' axis at the cut (PLAN bearing / elevation, radians); default west, −4° (the old horizontal neck) */
+  jetAz?: number;
+  jetEl?: number;
 }
 
 /** Every particle of C2, launched and terminated (deterministic). Sorted by t0; capped to tier.cap (mist first out). */
@@ -222,12 +225,12 @@ export function seedC2(o: SeedOptions): Particle[] {
   o.pulses.forEach((pu, k) => {
     const n = Math.max(3, Math.round(pu.d / o.tier.jetDt));
     const ml = pu.ml / n;
-    const el = -((4 + k * 3.5) * Math.PI) / 180;
+    const el = (o.jetEl ?? (-4 * Math.PI) / 180) - (k * 3.5 * Math.PI) / 180;
     for (let i = 0; i < n; i++) {
       const u = (i + 0.5) * (pu.d / n);
       const env = pulseEnv(u, pu.d);
       if (env <= 0.02) continue;
-      const az = Math.PI + ((4 * Math.PI) / 180) * Math.sin(2 * Math.PI * 9 * u) + (r() - 0.5) * 0.02;
+      const az = (o.jetAz ?? Math.PI) + ((4 * Math.PI) / 180) * Math.sin(2 * Math.PI * 9 * u) + (r() - 0.5) * 0.02;
       const s = pu.v * (0.55 + 0.45 * env);
       // escape fix round (lane CINE): TWO jets, the left and right common carotids (≈ 2.2 cm either side of the
       // midline, on the anterior = lower side as she lies face down), diverging ±6°. Volume check (pulse 1): 25 mL in
@@ -237,7 +240,8 @@ export function seedC2(o: SeedOptions): Particle[] {
       for (const side of [-1, 1]) {
         const azs = az + side * ((6 * Math.PI) / 180);
         const v: P3 = [Math.cos(azs) * Math.cos(el) * s, Math.sin(azs) * Math.cos(el) * s, Math.sin(el) * s];
-        add(0, pu.t + u, [o.neck[0], o.neck[1] + side * 0.022, o.neck[2] - 0.01], v, 0.003, ml / 2);
+        const ja = o.jetAz ?? Math.PI; // the two lumens sit ±2.2 cm across the jet axis
+        add(0, pu.t + u, [o.neck[0] - Math.sin(ja) * side * 0.022, o.neck[1] + Math.cos(ja) * side * 0.022, o.neck[2] - 0.01], v, 0.003, ml / 2);
       }
       if (o.tier.mist > 0 && r() < o.tier.mist) {
         const mr = (0.25 + r() * 0.75) / 1000;

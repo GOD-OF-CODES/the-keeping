@@ -97,7 +97,24 @@ def skin(P, N, AO, J, wound_c, seed=101, cap=None, head_side=False, G=None):
     dirt = np.clip(0.55 * sole + ground * (0.35 + 0.35 * noise.fbm(P * 40, 3, seed + 21)) + crevice * 0.7, 0, 1)
     alb = _mix(alb, [0.055, 0.052, 0.04], dirt * 0.85)
     nail, pad, free_edge, crease = finger_masks(P, J)
-    alb = _mix(alb, [0.2, 0.2, 0.19], nail * 0.9)
+    # fix round 2 (task 9: her arm/hand read grey mannequin at glance #2): drowned HANDS are washerwoman hands —
+    # sodden, bleached white-grey and deeply wrinkled (epidermal maceration after hours in water), blue-black nail beds;
+    # the forearms carry the same venous marbling as the shoulders, plus darker cyanotic mottling toward the wrist
+    hand = np.zeros(n)
+    fore = np.zeros(n)
+    for sd in ('l', 'r'):
+        hh = np.asarray(J[f'hand_{sd}'][0], float)
+        hand = np.maximum(hand, ss(0.12, 0.06, np.linalg.norm(P - hh, axis=1)))
+        a, b = (np.asarray(x, float) for x in J[f'forearm_{sd}'])
+        ab = b - a
+        t = np.clip(((P - a) @ ab) / ab.dot(ab), 0, 1)
+        fore = np.maximum(fore, ss(0.07, 0.04, np.linalg.norm(P - (a + t[:, None] * ab), axis=1)) * (0.4 + 0.6 * t))
+    macer = np.clip(hand * (0.55 + 0.45 * ss(0.2, 0.8, pad + crease)), 0, 1)
+    alb = _mix(alb, [0.40, 0.40, 0.39], macer * 0.7)
+    fm = ss(0.86, 0.97, rm) * fore
+    alb = _mix(alb, [0.13, 0.17, 0.17], fm * 0.5)
+    alb = _mix(alb, [0.22, 0.20, 0.27], fore * ss(0.1, 0.6, noise.fbm(P * 9.0, 3, seed + 44)) * 0.35)
+    alb = _mix(alb, [0.11, 0.11, 0.15], nail * 0.9)     # fix round 2: cyanotic blue-black nail beds
     alb = _mix(alb, [0.04, 0.035, 0.028], free_edge * 0.95)
     alb = _mix(alb, [0.2, 0.19, 0.24], crease * 0.5)
     # the pale line where the locket chain sat
@@ -130,6 +147,8 @@ def skin(P, N, AO, J, wound_c, seed=101, cap=None, head_side=False, G=None):
     h += 0.00035 * vein
     wr = np.sin((P @ np.array([0.3, 0.7, 0.6])) * 2600.0 + 6.0 * noise.fbm(P * 180.0, 2, seed + 33))
     h += 0.00018 * pad * wr
+    wr2 = np.sin((P @ np.array([0.6, 0.2, 0.75])) * 1500.0 + 8.0 * noise.fbm(P * 120.0, 2, seed + 45))
+    h += 0.00035 * macer * ss(-0.2, 0.9, wr2)        # washerwoman wrinkling: deep sodden ridges over hand + fingers
     h += 0.0002 * nail - 0.00025 * crease
     h -= 0.0012 * gash
     if cap is not None:
@@ -149,14 +168,17 @@ def skin(P, N, AO, J, wound_c, seed=101, cap=None, head_side=False, G=None):
             sec = neck_anatomy.section(u, v, inset=ins, head_side=head_side)
             alb[on] = sec['alb']
             rough[on] = sec['rough']
-            h[on] = sec['fine'] * 1.5
+            h[on] = sec['fine'] * 0.6        # fix round 2: x1.5 was tuned against the flat (0.002) bump; physical now
     return np.clip(alb, 0, 1), np.clip(rough, 0.05, 1), h
 
 
 def gown(P, N, AO, body_fn, J, hem_z, seed=87):
     n = len(P)
     z = P[:, 2]
-    base = np.array([0.48, 0.43, 0.32])      # yellowed ivory cotton (soaked: the bake's 'dry' base, darkened below)
+    # fix round 2 (ruling j: plaster-white in-game): soaked cotton reads ~0.30-0.35 linear — water fills the fibre gaps
+    # (n 1.33 vs cellulose 1.53), killing most of the multiple scattering that makes dry cotton ~0.6-0.7. Base 0.42/0.39/0.30
+    # x the sodden factor below (0.66-0.80) -> ~0.28-0.33 linear before silt/blood/AO.
+    base = np.array([0.42, 0.39, 0.30])
     f = noise.fbm(P * 3.5, 4, seed)
     alb = np.tile(base, (n, 1)) * (1.0 + 0.05 * noise.fbm(P * 40, 3, seed + 1))[:, None]
     # wet cotton goes translucent where it clings: grey-blue skin shows through

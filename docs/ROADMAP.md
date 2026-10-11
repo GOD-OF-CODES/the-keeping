@@ -183,6 +183,28 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
   only (WebGL2 Max may drop to Medium's floor); contract 116 is disabled (frustum-testing casters is unsound; the C5
   change is unexplained); lazy sounds that still synthesise on first play are pre-rendered at load.
 
+- **Fix round 2 verdict → fix round 3 rulings (2026-10-11 05:40):** NO-GO again (AD, "Review — fix round 2"): the E4
+  hero still (head 1.42 m, ~330 px, cut toward the lens) is staged right, but reads as a black hair ball with a
+  cream/gold "salami" lid beside a flat red disc on pale orange laminate; the strike frame's jets are neon wires and the
+  body is white plaster. Committed to origin/build, not live. Lead diagnosis: the parlor floor spec is correct
+  (floor_varnished avg albedo 0.145/0.086/0.047) yet renders pale, i.e. the C2 frames are exposed like a lit studio,
+  not a night room under one 12 cd lamp (the cues allow 0.5–3.6) — this flattens everything and exposes every fake
+  surface. (m) Exposure is MEASURED before anything else: a QA read-back of the live exposure and of linear pre-tonemap
+  HDR pixels (the review scenarios' exposure accessor always logged 1); the hero exposure is derived from a stated
+  film camera (ISO, f-stop, 180° shutter at 24 fps) through three's unit chain (lamp candela, lightmap × π) and written
+  down; if the physical exposure still renders pale, the light chain is wrong and is fixed instead. Shadows may go
+  black; the stump, the head and the blood inside the lamp pool must still read clearly (an explicit AD check). (n)
+  Round 3 is sequential and narrow: stage 1 = exposure (+ lane A's objective regressions: bump terracing from the
+  0.002 → 1.0 bump distance on character normal maps, Harlan's pink sleeve band, the head's bottle-like neck stub /
+  disc cut → a short, ragged, two-stroke cut); stage 2 only what the re-shot still shows wrong inside the lamp pool.
+  (o) Contract #119 (C2 POV lurches 1.3 m into the parlor to E4 after the strike) is accepted: it breaks the design's
+  threshold freeze but gives the close hero still, and the gate proves C2c still reaches the stair. (p) Low keeps a
+  reduced head (26.98/27 MB); photorealism is judged on Medium and Max only — no more round effort on Low's budget
+  beyond staying inside it. (q) Contract 116 stays off until it tests the shadow cone (torch → caster bounding sphere,
+  extended to the shadow far plane, both ends with their own radii, against the four side planes); Medium C2c's 50/834
+  frames over (worst 447 draws / 1.54 M) are accepted on this build-branch commit only. (r) `neck_stub` (#120) is not
+  driven yet — harmless while #117 keeps the head rig on neck_02; whoever retires #117 must drive it.
+
 ## Then — cutscene rounds (docs/CUTSCENES-PLAN.md §8): M-A … M-F, plus CR end credits (§9)
 Each round: builders → adversarial reviewer → QA (playthrough bot, perf, hero shots) → commit → push → verify live.
 

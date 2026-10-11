@@ -26,10 +26,10 @@ const SPEC = {
   // C2-ESCAPE A0: the head is its own skinned node ada_head_rig (head_root + hair_*), bone-parented to ada_rig.head
   ada: { bones: [...CORE, 'jaw_hold', 'head_root'], prefixes: ['hair_', 'gown_'], skins: 2, headNode: 'ada_head_rig',
     morphs: { ada_head: ['jaw_open', 'gurgle', 'eyelid_l_open'], ada_hair: ['jaw_open', 'gurgle'] },
-    meshes: ['ada_body', 'ada_head', 'ada_gown', 'ada_hair', 'ada_eye', 'ada_cornea_l'], maxTris: 82000, textures: ['ada_albedo.webp', 'ada_normal.png', 'ada_hair_albedo.webp', 'ada_hair_normal.png'] },
+    meshes: ['ada_body', 'ada_head', 'ada_gown', 'ada_hair', 'ada_eye', 'ada_cornea_l'], maxTris: 95000, textures: ['ada_albedo.webp', 'ada_normal.png', 'ada_head_albedo.webp', 'ada_head_normal.png', 'ada_hair_albedo.webp', 'ada_hair_normal.png'] },
   harlan: { bones: [...CORE, 'cleaver'], prefixes: ['sack_', 'apron_'], morphs: {},
     meshes: ['harlan_body', 'harlan_shirt', 'harlan_trousers', 'harlan_boots', 'harlan_gloves', 'harlan_apron', 'harlan_suspenders',
-      'harlan_sack', 'harlan_twine', 'harlan_void', 'harlan_cleaver', 'harlan_cleaver_handle'], maxTris: 75000, textures: ['harlan_albedo.webp', 'harlan_normal.png'] },
+      'harlan_sack', 'harlan_twine', 'harlan_void', 'harlan_cleaver', 'harlan_cleaver_handle'], maxTris: 85000, textures: ['harlan_albedo.webp', 'harlan_normal.png'] },
   arms: { bones: ARMS, prefixes: [], morphs: {}, meshes: ['arms_gloves', 'arms_sleeves', 'arms_flashlight', 'arms_flashlight_lens', 'arms_flashlight_switch', 'arms_glove_snaps', 'arms_coat_buttons'], maxTris: 48000,
     textures: ['arms_albedo.webp', 'arms_normal.png'] },
 };
@@ -66,7 +66,7 @@ for (const ch of chars) {
     expect(!!hn && hn.parent?.isBone && hn.parent.name === 'head', `${spec.headNode} is a child of bone 'head' (${hn?.parent?.name})`);
     let hb = 0;
     hn?.traverse((o) => o.isBone && hb++);
-    expect(hb === 33, `${spec.headNode} carries 33 bones (${hb})`);
+    expect(hb === 34, `${spec.headNode} carries 34 bones: head_root + neck_stub + 32 hair (${hb})`);
   }
   const missing = spec.bones.filter((b) => !bones.has(b));
   expect(missing.length === 0, `required bones present (${bones.size} in skeleton)${missing.length ? ' missing ' + missing : ''}`);

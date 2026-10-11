@@ -148,15 +148,28 @@ def flannel(P, N, AO, ctx):
 
 
 def trousers(P, N, AO, ctx):
+    # fix round 2 (ruling j): heavy dark wool/duck work trousers — heathered fibres (lighter speckle in a darker weave),
+    # a 2.5 mm twill, outer side seams with their double stitching, knee bagging/shine, a wet dark band above the boot
+    # tops (they stood in the cistern water), old blood spatter on the shins from the work at the table
     n = len(P)
     alb = _tile([0.075, 0.068, 0.055], n) * (1 + 0.15 * noise.fbm(P * 12, 3, 21))[:, None]
+    f1, _ = noise.worley(P * 1400.0, 24)
+    alb *= (1.0 + 0.35 * ss(0.25, 0.05, f1))[:, None]
+    side = ss(0.75, 0.95, np.abs(N[:, 0])) * (P[:, 2] < 1.0)
+    seam = side * ss(0.0016, 0.0006, np.abs(np.sin(P[:, 1] * 2 * math.pi / 0.006)) * 0.002)
+    alb = _mix(alb, [0.035, 0.032, 0.027], side * 0.35)
+    wetb = ss(0.66, 0.5, P[:, 2])
+    alb *= (1.0 - 0.35 * wetb)[:, None]
+    spat = ss(0.74, 0.82, noise.fbm(P * 110, 3, 25)) * ss(0.2, 0.7, noise.fbm(P * 6, 2, 26)) * (N[:, 1] < 0) * ss(0.95, 0.6, P[:, 2])
+    alb = _mix(alb, [0.03, 0.006, 0.005], spat * 0.8)
     mud = ss(0.75, 0.4, P[:, 2]) * ss(0.3, 0.7, noise.fbm(P * 9, 3, 22) + 0.3)
     alb = _mix(alb, [0.09, 0.07, 0.045], mud * 0.7)
     knee = ss(0.05, 0.0, np.abs(P[:, 2] - 0.53)) * (N[:, 1] < -0.3)
     alb = _mix(alb, [0.12, 0.11, 0.095], knee * 0.5)
     tw = np.sin((P[:, 0] + P[:, 2]) * 2 * math.pi / 0.0025)
-    rough = 0.9 - 0.05 * knee
-    h = 0.00012 * tw + 0.0002 * noise.fbm(P * 150, 2, 23)
+    rough = 0.9 - 0.12 * knee - 0.25 * wetb - 0.3 * spat
+    h = 0.00018 * tw + 0.0002 * noise.fbm(P * 150, 2, 23) - 0.0004 * seam + 0.00015 * side
+    h += 0.00005 * ss(0.25, 0.05, f1)
     alb *= (0.6 + 0.4 * AO)[:, None]
     return np.clip(alb, 0, 1), rough, h
 
@@ -169,9 +182,16 @@ def rubber(P, N, AO, ctx, boots=False):
     crack = ss(0.94, 0.99, noise.ridged(P * np.array([60, 60, 25.0]), 3, 33))
     alb = _mix(alb, [0.006, 0.006, 0.006], crack)
     wet = ss(0.35, 0.75, noise.fbm(P * np.array([6, 6, 2.0]), 3, 34))
-    rough = 0.38 - 0.22 * wet + 0.25 * scuff + 0.2 * crack
-    h = -0.0006 * crack + 0.0001 * noise.fbm(P * 200, 2, 35)
+    # fix round 2 (ruling j: cream glare patches on the boots/apron): worn, bloomed black rubber is ~0.45-0.6 rough dry,
+    # ~0.25-0.35 where wet — the old 0.16-0.38 mirrored the lamp and the walls as flat cream sheets
+    rough = 0.52 - 0.2 * wet + 0.2 * scuff + 0.15 * crack
+    h = -0.0006 * crack + 0.0001 * noise.fbm(P * 200, 2, 35) + 0.00004 * noise.fbm(P * 700, 2, 30)
     if boots:
+        # horizontal flex creases at the ankle, the rolled top edge, the back seam
+        ank = ss(0.1, 0.14, P[:, 2]) * ss(0.26, 0.2, P[:, 2])
+        cr = (0.5 + 0.5 * np.sin(P[:, 2] * 2 * math.pi / 0.014 + 3 * noise.fbm(P * 30, 2, 29))) ** 4 * ank
+        h += -0.0007 * cr
+        alb = _mix(alb, [0.035, 0.035, 0.036], cr * 0.5)
         mudh = 0.1 + 0.05 * noise.fbm(P * 10, 3, 36)
         mud = ss(mudh + 0.02, mudh - 0.02, P[:, 2])
         drips = ss(0.55, 0.8, noise.fbm(P * np.array([80, 80, 6.0]), 3, 37)) * ss(0.3, 0.12, P[:, 2])
@@ -183,7 +203,7 @@ def rubber(P, N, AO, ctx, boots=False):
         # the apron: dark blood smears, wet, low on the front
         sm = ss(0.5, 0.8, noise.fbm(P * np.array([10, 10, 3.0]), 4, 39)) * ss(1.3, 0.8, P[:, 2])
         alb = _mix(alb, [0.03, 0.006, 0.005], sm * 0.9)
-        rough = rough * (1 - sm) + 0.12 * sm
+        rough = rough * (1 - sm) + 0.22 * sm
     return np.clip(alb, 0, 1), np.clip(rough, 0.05, 1), h
 
 

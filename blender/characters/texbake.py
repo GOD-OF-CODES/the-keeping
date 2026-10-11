@@ -402,16 +402,20 @@ def save_png(arr, path, alpha=True):
     return path.stat().st_size
 
 
-def save_tiers(name, albedo_rgba, normal_rgb, outdir_fn, ext_color='webp', ext_normal='png', tiers=None):
+def save_tiers(name, albedo_rgba, normal_rgb, outdir_fn, ext_color='webp', ext_normal='png', tiers=None, normal_tiers=None):
     """albedo_rgba: sRGB-encoded rgb + roughness alpha (0..1); normal_rgb: 0..1 tangent normal."""
     sizes = {}
     for tier, f in (tiers or TIERS).items():
         d = outdir_fn(tier)
         a = downsample(albedo_rgba, f)
-        n = downsample(normal_rgb, f)
+        n = downsample(normal_rgb, (normal_tiers or {}).get(tier, f))
         nl = n * 2 - 1
         nl /= np.maximum(np.linalg.norm(nl, axis=-1, keepdims=True), 1e-6)
         n = nl * 0.5 + 0.5
+        if tier == 'low':
+            # escape fix round 2 (Low 27 MB budget): 6-bit normals on Low (1.8 deg steps; at 512^2 the 8-bit LSBs are
+            # pore-scale noise that zlib can't pack) — ~40 % smaller PNGs
+            n = np.round(n * 63.0) / 63.0
         sizes[tier] = (save_png(a, d / f'{name}_albedo.{ext_color}', alpha=True),
                        save_png(n, d / f'{name}_normal.{ext_normal}', alpha=False))
     return sizes

@@ -241,13 +241,14 @@ def anatomy(P, J, style):
     brow_l, brow_r = hs(0.012, 0.03, 0.007), hs(0.012, -0.03, 0.007)
     nose_b = hs(-0.005, 0.0, 0.004)
     nose_t = nose_b + np.array([0, -0.013 if fem else -0.019, -0.036 if fem else -0.046])
-    lips = hs(-0.074 if fem else -0.086, 0.0, 0.005)
-    chin = hs(-0.106 if fem else -0.12, 0.0, 0.009)
+    # fix round 2: Ada's subnasale-stomion was ~2.7 cm (real adult female ~2.0-2.2): lips/chin 6/4 mm higher
+    lips = hs(-0.068 if fem else -0.086, 0.0, 0.005)
+    chin = hs(-0.102 if fem else -0.12, 0.0, 0.009)
     socket = [hs(-0.006, s * 0.031, 0.003) for s in (1, -1)]
     cheek = [hs(-0.03, s * 0.046, 0.011, _n([s * 0.5, -1, 0])) for s in (1, -1)]
     jaw_a = [hc + np.array([s * H['jaw'], 0.012, -Hh * 1.0]) for s in (1, -1)]
 
-    def f_head(X):
+    def f_head_nodetail(X):
         d = head_base(X)
         d = sdf.smin(d, sdf.capsule(X, brow_l, brow_r, 0.0075 if fem else 0.01), 0.012)
         for s, sk, ck, ja in zip((1, -1), socket, cheek, jaw_a):
@@ -255,13 +256,78 @@ def anatomy(P, J, style):
             d = sdf.smin(d, sdf.capsule(X, ja, chin + np.array([s * 0.012, 0.004, 0.004]), 0.011 if fem else 0.015), 0.018)
             d = sdf.smin(d, sdf.ellipsoid(X, hc + np.array([s * B * 0.98, 0.012, -Hh * 0.22]), (0.008, 0.019, 0.03)), 0.006)
             d = sdf.smax(d, -sdf.ellipsoid(X, sk, (0.0165, 0.011, 0.0105)), 0.006)
-            d = sdf.smin(d, sdf.sphere(X, sk + np.array([0, 0.0095, 0]), 0.0115), 0.003)
+            d = sdf.smin(d, sdf.sphere(X, sk + np.array([0, 0.0095, 0]), 0.0115), 0.0045 if fem else 0.003)   # fix round 2: softer lids on Ada
         d = sdf.smin(d, sdf.round_cone(X, nose_b, nose_t, 0.0048, 0.0075 if fem else 0.0098), 0.006)
         for s in (1, -1):
             d = sdf.smin(d, sdf.ellipsoid(X, nose_t + np.array([s * 0.011, 0.009, -0.002]), (0.0075, 0.0068, 0.006)), 0.004)
-        d = sdf.smin(d, sdf.ellipsoid(X, lips, (0.02, 0.0075, 0.0085)), 0.007)
-        d = sdf.smax(d, -sdf.ellipsoid(X, lips + np.array([0, -0.0075, 0.0]), (0.018, 0.006, 0.0008)), 0.0012)
+        if fem:
+            # fix round 2 (lab: one bulge with the mouth line at its bottom read as a muzzle): an upper and a lower
+            # vermilion over a real 2.6 mm oral slit (the upper lip 4.5 mm, the lower 5.2 mm tall, lower lip fuller)
+            d = sdf.smin(d, sdf.ellipsoid(X, lips + np.array([0.0, -0.0005, 0.0040]), (0.0205, 0.0060, 0.0045)), 0.004)
+            d = sdf.smin(d, sdf.ellipsoid(X, lips + np.array([0.0, 0.0003, -0.0050]), (0.0190, 0.0068, 0.0052)), 0.004)
+            d = sdf.smax(d, -sdf.capsule(X, lips + np.array([-0.019, -0.0075, 0.0]), lips + np.array([0.019, -0.0075, 0.0]), 0.0013), 0.0015)
+        else:
+            d = sdf.smin(d, sdf.ellipsoid(X, lips, (0.02, 0.0075, 0.0085)), 0.007)
+            d = sdf.smax(d, -sdf.ellipsoid(X, lips + np.array([0, -0.0075, 0.0]), (0.018, 0.006, 0.0008)), 0.0012)
         d = sdf.smin(d, sdf.ellipsoid(X, chin, (0.018, 0.013, 0.015)), 0.01)
+        return d
+
+    def f_head(X):
+        d = f_head_nodetail(X)
+        if fem:
+            d = face_detail(X, d)
+        return d
+
+    # escape fix round 2 (ruling j: "a smooth grey mannequin"): macro anatomy the 3 mm surface net can carry —
+    # infraorbital + lateral orbital rims, upper-lid fullness, malar fat pads bounded by the nasolabial groove, split
+    # lips with philtrum columns, a sculpted ear (helix rim, antihelix, concha bowl, tragus, lobule). The sub-mm
+    # detail (lid margin, lashes, vermilion border, fissures, pores) lives in the head atlas (tex_head.py).
+    ears_c = [hc + np.array([s * B * 0.98, 0.012, -Hh * 0.22]) for s in (1, -1)]
+    helix = []
+    for s, ec in zip((1, -1), ears_c):
+        pts = []
+        for a in np.linspace(-0.35 * math.pi, 1.25 * math.pi, 11):          # front-top over the back to the lobe
+            pts.append(ec + np.array([s * 0.0105, 0.0175 * math.sin(a) + 0.002, 0.028 * math.cos(a) + 0.002]))
+        helix.append(pts)
+
+    def f_head_core(X):
+        return f_head_nodetail(X)
+
+    # the nasolabial groove anchored ON the surface (from the nose wing to 1 cm outside the mouth corner): a 3 mm
+    # capsule whose axis sits 2.2 mm outside the skin -> a soft 0.8 mm groove
+    nl_caps = []
+    for s in (1, -1):
+        nd = _n([s * 0.35, -1.0, 0.0])
+        a_s = _ray_surface(f_head_core, hc + np.array([s * 0.017, 0.0, -0.034]), nd)
+        b_s = _ray_surface(f_head_core, hc + np.array([s * 0.028, 0.0, -0.082]), nd)
+        nl_caps.append((a_s - nd * 0.0022, b_s - nd * 0.0022))
+
+    buccal = []
+    for s in (1, -1):
+        nd = _n([s * 0.8, -0.6, 0.0])
+        sp = _ray_surface(f_head_core, hc + np.array([s * 0.02, -0.02, -0.058]), nd)
+        buccal.append(sp + nd * (0.012 - 0.0025))
+
+    def face_detail(X, d):
+        for k, s in enumerate((1, -1)):
+            sk = socket[k]
+            # closed upper lid (her LEFT eye only; the right eye has the eye_lid.py shell at 13.96 mm from the globe
+            # centre): ~0.6 mm over the globe's upper half
+            # closed lids: an almond shell around the globe fills the pit between socket and globe (lab2: the globes sat
+            # in deep pits like a statue's goggles); 12.2 mm deep vs the eye_lid.py shell's 13.96 (stays under it)
+            ec_ = sk + np.array([0.0, 0.0095, 0.0])
+            d = sdf.smin(d, sdf.ellipsoid(X, ec_ + np.array([0.0, 0.0, 0.001]), (0.0165, 0.0122, 0.0145)), 0.006)
+            # (the nasolabial groove stays in the height map: the surface-anchored capsule cut one side 5 mm deep)
+            # the ear: a 6 mm plate, the helix rim tube, antihelix ridge, concha bowl, tragus, lobule
+            ec = ears_c[k]
+            d = sdf.smin(d, sdf.ellipsoid(X, ec + np.array([s * 0.006, 0.003, 0.0]), (0.005, 0.018, 0.029)), 0.004)
+            hp = helix[k]
+            for i in range(len(hp) - 1):
+                d = sdf.smin(d, sdf.capsule(X, hp[i], hp[i + 1], 0.0027), 0.0015)
+            d = sdf.smin(d, sdf.capsule(X, ec + np.array([s * 0.0105, 0.006, 0.014]), ec + np.array([s * 0.0105, 0.004, -0.010]), 0.0022), 0.002)
+            d = sdf.smax(d, -sdf.ellipsoid(X, ec + np.array([s * 0.0125, -0.002, -0.004]), (0.0055, 0.0075, 0.0095)), 0.002)
+            d = sdf.smin(d, sdf.ellipsoid(X, ec + np.array([s * 0.0065, -0.0125, -0.006]), (0.004, 0.0035, 0.005)), 0.002)
+            d = sdf.smin(d, sdf.ellipsoid(X, ec + np.array([s * 0.0085, 0.003, -0.031]), (0.004, 0.008, 0.009)), 0.004)
         return d
 
     head_lo = hc - np.array([B + 0.03, Lh + 0.06, Hh * 1.6 + 0.03])
@@ -321,6 +387,10 @@ def anatomy(P, J, style):
     body.torso = torso_full
     body.J = J
     body.socket_r = socket[1]      # the right eye socket centre (Ada's visible eye)
+    # fix round 2: face landmarks for the head atlas (tex_head.py); index 0 = her LEFT (+x), 1 = her right
+    body.face = dict(hc=hc, eye_c=[sk + np.array([0, 0.0095, 0]) for sk in socket], socket=socket, nose_t=nose_t,
+                     nose_b=nose_b, lips=lips, chin=chin, cheek=cheek, brow=[brow_l, brow_r],
+                     ear=[hc + np.array([s * B * 0.98, 0.012, -Hh * 0.22]) for s in (1, -1)])
     return body
 
 

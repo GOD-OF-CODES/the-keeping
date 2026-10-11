@@ -141,7 +141,7 @@ export class VerletChain {
         const d = _v2.subVectors(p, a);
         const l = d.length() || 1e-6;
         p.copy(a).addScaledVector(d, this.len[i - 1] / l);
-        for (const c of this.colliders) pushOutOfCapsule(p, c);
+        for (let ci = 0; ci < this.colliders.length; ci++) pushOutOfCapsule(p, this.colliders[ci]); // no iterator objects per call
       }
     }
     // write back (FK, root → tip): rotate each bone so its segment points at the solved particle

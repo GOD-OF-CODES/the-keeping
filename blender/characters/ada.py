@@ -39,7 +39,7 @@ def with_wound(fn, J):
 
     def f(X):
         return fn(X)
-    for k in ('head', 'head_center', 'torso', 'trunk', 'J', 'socket_r'):
+    for k in ('head', 'head_center', 'torso', 'trunk', 'J', 'socket_r', 'face'):
         setattr(f, k, getattr(fn, k))
     f.cut_plane = (np.array(c), np.array(n), np.array(fwd), np.array(side))
     f.wound_center = np.array(c) - np.array(fwd) * 0.045      # the nape surface on the cut plane
@@ -311,7 +311,10 @@ def build_hair(fn, J, rng):
         seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
         s = np.concatenate([[0], np.cumsum(seg)])
         det = np.argmin(att) if (~att).any() else len(att) - 1
-        Lsheet.append(min(s[det] + rng.uniform(0.02, 0.09), s[-1]))
+        # fix round 2 (A14 min 0.642 at az 180: the face showed past the side gap behind the ears when the head hangs
+        # crown-up): the side/back columns run 4-7 cm further down before they fray into cards
+        side_back = ss_np(1.05, 1.7, abs(((phi + math.pi) % (2 * math.pi)) - math.pi))
+        Lsheet.append(min(s[det] + rng.uniform(0.02, 0.09) + side_back * rng.uniform(0.04, 0.07), s[-1]))
     for (phi, pts, att, nrm), Ls in zip(ring, Lsheet):
         seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
         s = np.concatenate([[0], np.cumsum(seg)])
@@ -431,7 +434,7 @@ def build_hair(fn, J, rng):
     return ob, arc, att, grp, groups_hang
 
 
-def hair_weights(hair_ob, att, grp, rig):
+def hair_weights(hair_ob, att, grp, rig, veil_t=None, head_c=None):
     """Plastered part: 100 % head. Hanging part: its group's chain by arc length past the detach point."""
     me = hair_ob.data
     Pk, _ = body.mesh_arrays(me)
@@ -477,6 +480,26 @@ def hair_weights(hair_ob, att, grp, rig):
                 rowsW[q, idx[bl[i0].name]] += 1 - f
                 rowsW[q, idx[bl[i1].name]] += f
         W[sel] = rowsW
+    # fix round 2 (ruling j, retire the runtime uHairVeilClear): the FRONT veil (sheet verts, grp -1) no longer hangs
+    # 100 % on the head: from the cheekbones down it ramps (0 -> 0.65 at the sheet's frayed end) onto the first bone
+    # of the chain hanging below it, so the runtime hair chains swing/part it; the crown and brow rows stay plastered
+    if veil_t is not None:
+        hc = np.asarray(head_c, float)
+        rel = Pk - hc
+        phi = np.arctan2(rel[:, 0], -rel[:, 1])
+        sel = (grp == -1) & (veil_t > 0.65)
+        for i in np.nonzero(sel)[0]:
+            g = int(round((phi[i] % (2 * math.pi)) / (2 * math.pi) * N_HAIR_GROUPS)) % N_HAIR_GROUPS
+            b0 = f'hair_{g}_01'
+            if b0 not in idx:
+                continue
+            # A14 run (build 4): a 0 -> 0.65 ramp from mid-face let the hanging chains peel the veil off the carried
+            # face (min coverage 0.38 at az 30) -> only the frayed lower third swings, at most 0.4
+            w = 0.4 * float(ss_np(0.7, 1.0, veil_t[i])) * float(ss_np(1.5, 1.0, abs(phi[i])))
+            W[i, :] = 0.0
+            W[i, 0] = 1.0 - w
+            W[i, idx[b0]] = w
+        log(f'hair weights: front veil verts ramped onto hair_*_01: {int(((W[:, 0] < 0.999) & (grp == -1)).sum())}')
     rig_names = names
     rig.data  # keep reference
     set_w = rig_names
@@ -604,14 +627,16 @@ def build(h=0.003, log_=log):
     body_vis.name = 'ada_body'
     body_vis.data.name = 'ada_body'
     garments.delete_verts(body_vis, hidden)
-    garments.decimate(body_vis, 0.27)
+    # fix round 2 (ruling j, the hero close-up): the head (above the cut plane - 1 cm) keeps ~2x the faces it had
+    # (0.27 of the full mesh -> ~0.55) so the new face anatomy (lids, lips, ears) survives decimation
+    decimate_protected(body_vis, 0.27, fn.cut_plane, keep=0.55, log_=log_)
     # gown pieces joined
     collar = build_collar(fn, J)
     gown = join([bodice, skirt, collar], 'ada_gown')
     for ob in (body_vis, gown):
         rig.transfer_weights(proxy, ob, core)
     skirt_chain_weights(gown, rig_ob, J)
-    hair_weights(hair_ob, att, grp, rig_ob)
+    hair_weights(hair_ob, att, grp, rig_ob, veil_t=np.asarray(arc, float) / 0.5, head_c=fn.head_center)
     eye = build_eye(fn)
     set_single(eye, 'head')
     add_shape_keys(body_vis, J, fn.wound_center)
@@ -635,6 +660,44 @@ def build(h=0.003, log_=log):
     return dict(rig=rig_ob, body=SV['body'], head=SV['head'], head_rig=SV['head_rig'], gown=gown, hair=hair_ob, eye=eye,
                 cornea=cornea,
                 fn=fn, J=J, cap=SV['cap'])
+
+
+def decimate_protected(ob, ratio, plane, keep=0.55, log_=log):
+    """Collapse-decimate `ob` to `ratio` everywhere except the head region (above the cut plane - 1 cm), which keeps
+    `keep` of its triangles. Pass A: everything uniformly to `keep`; pass B: the body on to `ratio` with the head
+    protected by a vertex group (weight 0 = protected: Decimate adds edge_length * (2 - w1 - w2) * factor to the
+    collapse cost — confirmed by build 2's log). Ratios are in TRIANGLES (the modifier counts tris, not polygons;
+    the polygon-based build-2 version over-decimated the body to 16k)."""
+    c, n = np.asarray(plane[0], float), np.asarray(plane[1], float)
+
+    def counts():
+        Pk, _ = body.mesh_arrays(ob.data)
+        hv = ((Pk - c) @ n) > -0.01
+        th = tb = 0
+        for p in ob.data.polygons:
+            t = len(p.vertices) - 2
+            if hv[list(p.vertices)].all():
+                th += t
+            else:
+                tb += t
+        return hv, th, tb
+    _, th0, tb0 = counts()
+    garments.decimate(ob, keep)
+    hv, th1, tb1 = counts()
+    g = ob.vertex_groups.new(name='__dec')
+    for i, h in enumerate(hv):
+        g.add([i], 0.0 if h else 1.0, 'REPLACE')
+    want_b = tb0 * ratio
+    m = ob.modifiers.new('Dec', 'DECIMATE')
+    m.decimate_type = 'COLLAPSE'
+    m.ratio = float(min(1.0, (want_b + th1) / max(1, tb1 + th1)))
+    m.use_collapse_triangulate = False
+    m.vertex_group = '__dec'
+    m.vertex_group_factor = 1000.0
+    garments.apply_modifiers(ob)
+    ob.vertex_groups.remove(ob.vertex_groups['__dec'])
+    _, th2, tb2 = counts()
+    log_(f'decimate_protected (tris): head {th0} -> {th1} -> {th2}, body {tb0} -> {tb1} -> {tb2} (want {int(want_b)})')
 
 
 def join(objs, name):

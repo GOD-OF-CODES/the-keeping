@@ -36,6 +36,8 @@ export const C2_PULSES = [
   { t: 23.5, v: 0.2, d: 0.25, ml: 5 },
 ] as const;
 
+/** Fix round 2 (ruling g): the eye over the severed head, 8.6–17.9 (the lurch in; 1.42 m from the head). */
+export const C2_E4: P3 = [4.62, 2.38, 1.92];
 /** Where C2 ends and C2c begins (eye), looking at her just through the parlor door. */
 export const C2_END_EYE: P3 = [2.35, 2.7, 2.25];
 /** Ada's root when C2 hands over to C2c (0.4 m into the hall). */
@@ -87,13 +89,19 @@ export const c2Room: TimelineFactory = (ctx) => {
   // edge. Aimed at her image-left eye, measured in-game at 13.0 s (head node = crown at plan (5.363, 3.598, 2.539),
   // face turned 3/4 toward the lamp by head-carry faceAt, heading ≈ 194°): eye ≈ crown − 0.10 m down, 0.09 m along
   // the face, 0.032 m to her right (image-left).
-  const D_EYE: P3 = [5.268, 3.607, 2.44];
+  // fix round 2: re-measured from E4 at 13.9 (lane A build 1b, faceAt from E4): the left cornea at (5.279, 3.549, 2.485), lid 1
+  const D_EYE: P3 = [5.279, 3.549, 2.485];
   const D_BOTH = aim(C2E_D, D_MAX_YAW, 2.5 * DEG, 2.7); // S7: the sack and the held head side by side
   // S8 the eye retreats 0.25 m toward T (50 → 44 mm drift)
   const toT = [C2E_T[0] - C2E_D[0], C2E_T[1] - C2E_D[1], C2E_T[2] - C2E_D[2]] as P3;
   const kT = 0.25 / Math.hypot(...toT);
   const E8: P3 = add(C2E_D, [toT[0] * kT, toT[1] * kT, toT[2] * kT]);
   const S10_EYE: P3 = [3.62, 1.33, 2.19]; // S10/S11 start: in the doorway reveal, the rope out of frame
+  // fix round 2: the hero-still eye (1.3 m into the parlor, knees giving) and its aims
+  const E4 = C2_E4;
+  const HEAD_T: P3 = [5.08, 3.1, 0.76]; // between the landing (HEAD_LAND) and the rest (HEAD_REST), a head's height up
+  const E_LIFT: P3 = [5.33, 3.62, 2.3]; // the head at his face height (fist z 2.62, crown 2.54 at 13.0)
+  const E_BOTH: P3 = [5.3, 3.72, 2.38]; // his sack (yaw 71°) and the held head (58°) from E4, aim 63.1° (the flame 90.6° is 4.3° out)
 
   const shots: CameraShot[] = [
     // S1 Freeze 0–1.6: the body halts, the head pushes forward; the gameplay FOV eases to 50 mm
@@ -104,18 +112,23 @@ export const c2Room: TimelineFactory = (ctx) => {
     // S3 the strike: the frame settles (the player freezes) 5.4–7.30, then RIGID 7.30–8.60
     { t: 5.4, d: 1.9, path: [C2E_D], target: [D_WORK, D_STRIKE], fov: [L50, L65], ease: 'inOut', handheld: 0.15 },
     { t: 7.3, d: 1.3, path: [C2E_D], target: [D_STRIKE], fov: L65 },
-    // S4 the floor 8.6–10.9: the deliberate tilt down (600 ms), then the head rocking to rest
-    // review r3: the hold is 40 mm (letterboxed ≈ ±12.5° visible) — at 50 mm the stump (top) and the head (bottom) both sat on the bars
-    { t: 8.6, d: 0.6, path: [C2E_D], target: [D_STRIKE, D_FLOOR], fov: [L65, L40], ease: 'inOut', handheld: 0.35 },
-    { t: 9.2, d: 1.7, path: [C2E_D], target: [D_FLOOR], fov: L40, handheld: 0.35 },
+    // fix round 2 (ruling g, the hero still): S4 is no longer watched from the doorway (2.7 m). The strike throws the
+    // head off the edge toward you; you lurch one step in and your knees give (8.6–9.3: 1.3 m in, the eye 2.17 → 1.92,
+    // the 65 mm settle drifting back to the 50 mm prime inside the body motion) and you are standing over it — E4 is
+    // 1.42 m from the head on the boards (≤ 1.5 m): it lies face-down in its wet hair with its cut toward you and the
+    // lamp (landPose), his boot rolls it (9.45) so the cut ring faces you full in the lamp (restPose), the pool spreading
+    // under it, the stream from the table edge falling into frame. From E4 the flame bears 90.6° and every aim below
+    // is ≤ 64° (50 mm 16:9 half-hfov 23.2°) → the flame stays ≥ 3° out of frame; the 100 mm insert is from E4 too.
+    { t: 8.6, d: 0.7, path: [C2E_D, add(C2E_D, [0.55, 0.62, -0.05]), E4], target: [D_STRIKE, HEAD_T], fov: [L65, L50], ease: 'inOut', handheld: 0.9 },
+    { t: 9.3, d: 1.6, path: [E4], target: [HEAD_T], fov: L50, handheld: 0.3 },
     // S5 the lift 10.9–12.9: the tilt follows the head up to his face height
-    { t: 10.9, d: 2.0, path: [C2E_D], target: [D_FLOOR, D_LIFT], fov: [L40, L50], ease: 'inOut', handheld: 0.35 },
-    // S6 the eye 12.9–14.9: a HARD-CUT 100 mm insert from D (no zoom), and a hard cut back
-    { t: 12.9, d: 2.0, path: [C2E_D], target: [D_EYE], fov: L100, handheld: 0.25 },
+    { t: 10.9, d: 2.0, path: [E4], target: [HEAD_T, E_LIFT], fov: L50, ease: 'inOut', handheld: 0.35 },
+    // S6 the eye 12.9–14.9: a HARD-CUT 100 mm insert from E4 (no zoom; 1.3 m — the eye ≈ 2× the D insert), and a hard cut back
+    { t: 12.9, d: 2.0, path: [E4], target: [D_EYE], fov: L100, handheld: 0.25 },
     // S7 both of them look at you 14.9–17.9
-    { t: 14.9, d: 3.0, path: [C2E_D], target: [D_BOTH], fov: L50, handheld: 0.35 },
-    // S8 he comes to the door 17.9–20.0 (the eye retreats; 50 → 44 mm drift inside the retreat)
-    { t: 17.9, d: 2.1, path: [C2E_D, E8], target: [D_BOTH, [4.6, 2.9, 1.7], [4.15, 2.15, 1.75]], fov: [L50, L44], ease: 'inOut', handheld: 0.35 },
+    { t: 14.9, d: 3.0, path: [E4], target: [E_BOTH], fov: L50, handheld: 0.35 },
+    // S8 he comes at you 17.9–20.0: you back out ahead of him, through the doorway to E8 (50 → 44 mm inside the retreat)
+    { t: 17.9, d: 2.1, path: [E4, add(C2E_D, [0.25, 0.2, 0]), E8], target: [E_BOTH, [4.6, 2.9, 1.9], [4.15, 2.15, 1.75]], fov: [L50, L44], ease: 'inOut', handheld: 0.5 },
     // S9 the rope 20.0–21.9 (whip-pan along the cornice to the front door; blur 0.8 where it exists)
     {
       t: C2_ROPE_T,
@@ -157,6 +170,12 @@ export const c2Room: TimelineFactory = (ctx) => {
     // read as a silhouette. An insert is metered on its subject (spot on the face, w 0.7) and may open up to 3.6
     // (+0.7 EV); highlight protect stays on (the cornea glint never clips). Back to the room cue on the cut out.
     // (r4: with the eye's 6 s brighten τ the 2 s insert never got there — an insert is a new set-up: the stop is set on the cut, τ 0.3 s)
+    // review fix round 2 (E4 hero hold, 8.7–12.9): the spot meter sat on the black wet hair and drove the stop to the
+    // 2.2 cap → the lamp-lit boards read as pale bleached laminate. Physics: the 12 cd lamp ≈ 1.2 m above the boards
+    // gives E ≈ 8 lx; varnished oak ρ ≈ 0.1 → L ≈ 0.27 cd/m² — a dim mid-dark brown to a dark-adapted eye, not a lit
+    // set. A photographer meters the boards (spot weight 0.15) and stops down (max 1.3 ≈ −0.75 EV): the pool goes
+    // black-red, the cut face is the brightest wet thing in the frame.
+    { t: 8.7, type: 'fx', id: 'exposure', params: { min: 0.5, max: 1.3, spotX: 0.5, spotY: 0.5, spotR: 0.2, spotW: 0.15, hp: true, tauDarken: 0.35 } },
     { t: 12.9, type: 'fx', id: 'exposure', params: { min: 0.5, max: 3.6, spotX: 0.57, spotY: 0.45, spotR: 0.12, spotW: 0.7, hp: true, tauBrighten: 0.3 } },
     { t: 14.9, type: 'fx', id: 'exposure', params: { min: 0.5, max: 2.2, spotX: 0.5, spotY: 0.42, spotR: 0.16, spotW: 0.4, hp: true, cap: true } },
     // B8: the motion-blur variant is switched in ONCE here (amount 0); only its uniform moves afterwards
@@ -195,7 +214,7 @@ export const c2Room: TimelineFactory = (ctx) => {
     { t: 7.62, type: 'sfx', id: 'gasp', gain: 0.8 },
     { t: 7.62, type: 'subtitle', speaker: '', text: '(a choked cry)', d: 1.2, caption: true },
     { t: C2_HEAD_LANDS, type: 'sfx', id: 'head_drop', pos: HEAD_LAND, room, sched: true },
-    { t: 8.6, type: 'dof', dof: { focusDistance: 2.7, focalLength: 0.8, bokehScale: 2 } },
+    { t: 8.6, type: 'dof', dof: { focusDistance: 1.45, focalLength: 0.5, bokehScale: 2 } },
     // S4: the boot nudge (9.45), the roll to rest by 10.1; thunder through the shutters (9.8)
     { t: 9.45, type: 'fx', id: 'adaHead', params: { mode: 'nudge' } },
     { t: 9.45, type: 'sfx', id: 'head_nudge', pos: HEAD_REST, room },
@@ -204,11 +223,15 @@ export const c2Room: TimelineFactory = (ctx) => {
     // 10.6: the crown grip — the head node goes to his left-hand socket (it hangs as a pendulum below the grip)
     { t: 10.6, type: 'attach', char: 'harlan', prop: 'ada_head', bone: 'prop_l' },
     { t: 10.6, type: 'fx', id: 'adaHead', params: { mode: 'held' } },
+    // fix round 2 (ruling i): the held head is up-lit by the lamp-lit boards and the pool under it — E_up ≈ ρ·E_floor
+    // with the varnished boards ρ ≈ 0.12 and E_floor ≈ I / (1.2 m)² → k ≈ 0.08 /m² of the lamp's intensity (QA ×)
+    { t: 10.6, type: 'fx', id: 'faceFill', params: { k: 0.08, fade: 0.6 } },
+    { t: 21.9, type: 'fx', id: 'faceFill', params: { k: 0 } },
     // S6 the eye insert
-    { t: 12.9, type: 'dof', dof: { focusDistance: 2.79, focalLength: 0.25, bokehScale: 2 } },
+    { t: 12.9, type: 'dof', dof: { focusDistance: 1.48, focalLength: 0.2, bokehScale: 2 } },
     { t: 13.6, type: 'fx', id: 'adaHead', params: { mode: 'eye_open' } },
     { t: 13.6, type: 'score', state: 'drone', stinger: 'score_stinger' },
-    { t: 14.9, type: 'dof', dof: { focusDistance: 2.7, focalLength: 0.9, bokehScale: 2 } },
+    { t: 14.9, type: 'dof', dof: { focusDistance: 1.55, focalLength: 0.6, bokehScale: 2 } },
     // S7: three single heartbeats; the held breath releases on the first; "Go on, then." at 17.3
     { t: 15.0, type: 'heartbeat', bpm: 0 },
     { t: 15.1, type: 'sfx', id: 'heartbeat', gain: 1 },
@@ -257,7 +280,8 @@ export const c2Room: TimelineFactory = (ctx) => {
   // the pulses: spurt (scheduled) and the patter at each landing (§3.3: t + √(2h/g) = t + 0.404 s)
   for (const p of C2_PULSES) {
     cues.push({ t: p.t, type: 'sfx', id: 'arterial_spurt', pos: NECK, room, gain: Math.min(1, p.v / 2.8), sched: true });
-    if (p.v > 0.9) cues.push({ t: Math.round((p.t + 0.404) * 1000) / 1000, type: 'sfx', id: 'blood_patter', pos: [NECK[0] - 0.404 * p.v, NECK[1], 0.6], room, gain: Math.min(1, p.ml / 25) });
+    // fix round 2: the jets leave the cut UP 36° (blood-fx JET_*): landing ≈ 0.40 + 0.083·v s later at x ≈ 5.55 − 0.48·v
+    if (p.v > 0.9) cues.push({ t: Math.round((p.t + 0.4 + 0.083 * p.v) * 1000) / 1000, type: 'sfx', id: 'blood_patter', pos: [5.55 - 0.48 * p.v, 3.37, 0.6], room, gain: Math.min(1, p.ml / 25) });
   }
   // her wet bare feet (heel slap 1.6 Hz) from the walk
   for (let t = 24.6; t < 28.6; t += 1 / 1.6) cues.push({ t: Math.round(t * 1000) / 1000, type: 'sfx', id: 'bare_feet_wet', pos: [3.9, 1.6, 0.6], room: 'G1', gain: 0.8 });

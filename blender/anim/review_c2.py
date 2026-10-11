@@ -45,6 +45,16 @@ HEAD_REST = Vector((5.02, 3.05, 0.70))
 RISEN = Vector((6.10, 3.30, 0.60))      # risen body root (stump at z ~2.05)
 LAMP_W = 12.0 * 4.0 * math.pi           # 12 cd -> 150.8 W
 
+# fix round 2 lab: the free head upright at flame height, 0.97 m from the 12 cd / 1950 K flame (the real lamp, no
+# extra light), its face turned `lab_face` deg (default 35) off the flame direction — the in-game lamp key on a face
+LAB_C = Vector((4.95, 3.00, 1.30))           # 1.2 m from the flame, over the floor-head spot, clear of walls
+
+
+def lab_yaw():
+    tl = FLAME - LAB_C
+    return math.atan2(tl.y, tl.x) + math.radians(float(ARGS.get('lab_face', 35)))
+
+
 # views: name -> (eye, target, lens, state)
 VIEWS = {
     'd24': (D, Vector((5.389, 3.237, 1.75)), 50, 'tableau'),         # C2 2.4: tableau, sack into darkness
@@ -56,6 +66,11 @@ VIEWS = {
     'cap12': (NECK + (D - NECK).normalized() * 1.2, NECK, 50, 'separate_cap'),   # worst case 1.2 m
     'headcap': (HEAD_REST + Vector((-0.55, -0.75, 0.55)), HEAD_REST, 50, 'floor'),  # the head's cut ring, close
     'eye100': (D, None, 100, 'eye'),                                  # S6 insert: 100 mm from D on the eye
+    'hero12': (None, None, 50, 'floor'),        # fix round 2 (ruling g): the floor head at ~1.2 m, cut >= 30 deg to camera
+    'face08': (None, None, 50, 'eye'),          # fix round 2: the hanging head's face at 0.8 m (skin/anatomy judge)
+    'facelab': (None, None, 50, 'lab'),         # fix round 2: the free head upright 1 m from the 12 cd flame, face 20 deg
+    'facelab45': (None, None, 50, 'lab'),       #   ... 45 deg off the face normal (cheek, ear, jaw line)
+    'caplab': (None, None, 50, 'lab'),          #   ... the head's cut face from below, ~45 deg
     'stump05': (None, None, 50, 'separate_cap'),        # the body's cap face-on-ish, 0.5 m along the neck axis
     'body': (T, RISEN + Vector((0, 0, 1.25)), 44, 'risen'),           # the headless body (S10), from T
     'body14': (RISEN + Vector((0, 0, 1.38)) + (T - RISEN - Vector((0, 0, 1.38))).normalized() * 1.4,
@@ -150,7 +165,7 @@ def append_char(name):
             continue
         coll.objects.link(o)
         low = o.name.lower()
-        if 'lod' in low or low.endswith('_low') or '_low.' in low or o.name.startswith('__'):
+        if 'lod' in low or low.endswith('_low') or '_low.' in low or o.name.startswith('__') or low.endswith('_shadow'):
             o.hide_render = True
     rig = next(o for o in objs if o.type == 'ARMATURE' and o.parent is None)
     return rig, [o for o in objs if o.type == 'MESH']
@@ -288,11 +303,11 @@ def clip_or(rig, clip, t, fallback, ft=0.0):
 def stage(state):
     eyelid(0.0)
     head_attached()
-    hair_gravity(state in ('separate', 'separate_cap', 'floor'))
+    hair_gravity(state in ('separate', 'separate_cap', 'floor', 'lab'))
     for o in harlan_meshes:
         o.hide_render = o.get('_hid_cap', False)
-    if state in ('tableau', 'separate', 'separate_cap', 'floor', 'eye'):
-        c2t = {'tableau': 2.4, 'separate': 7.62, 'separate_cap': 8.0, 'floor': 9.9, 'eye': 14.0}[state]
+    if state in ('tableau', 'separate', 'separate_cap', 'floor', 'eye', 'lab'):
+        c2t = {'tableau': 2.4, 'separate': 7.62, 'separate_cap': 8.0, 'floor': 9.9, 'eye': 14.0, 'lab': 9.9}[state]
         if not clip_or(ada, 'ada_c2', c2t - 0.6, 'ada_table'):
             pass
         place(ada, 5.93, 3.3, 0.6, math.pi)
@@ -312,6 +327,8 @@ def stage(state):
             # on its LEFT side, the cut end toward the lamp (crown away from it): her parted RIGHT side (ear, jaw line,
             # cheek; fix round hair part) faces up into the lamp light and toward D
             head_world(HEAD_REST, frame3(-to_lamp, (0, 0, -1)))
+        elif state == 'lab':
+            head_world(LAB_C, Matrix.Rotation(lab_yaw() + math.pi / 2, 3, 'Z'))
         elif state == 'eye':
             head_in_fist(harlan, 'prop_l' if 'prop_l' in harlan.pose.bones else 'hand_l', math.atan2(D.y - 3.6, D.x - 5.0))
             eyelid(1.0)
@@ -524,6 +541,30 @@ for name in want:
         side = ax.cross(Vector((0, 0, 1))).normalized()
         eye = j + ax * 0.45 + side * 0.12 + Vector((0, 0, 0.12))
         tgt = j
+    if name == 'hero12':
+        # between the lamp side and D, 1.0 m out and 0.55 m up: the lamp keys the cut end, the cut face ~40 deg to camera
+        tl = Vector((FLAME.x - HEAD_REST.x, FLAME.y - HEAD_REST.y, 0)).normalized()
+        a = math.radians(float(ARGS.get('hero_az', 50)))
+        dd = Vector((tl.x * math.cos(a) - tl.y * math.sin(a), tl.x * math.sin(a) + tl.y * math.cos(a), 0))
+        eye = HEAD_REST + dd * float(ARGS.get('hero_d', 1.0)) + Vector((0, 0, float(ARGS.get('hero_h', 0.6))))
+        tgt = HEAD_REST + Vector((0, 0, 0.04))
+    if name == 'face08':
+        eo = bpy.data.objects.get('ada_eye')
+        dg = bpy.context.evaluated_depsgraph_get()
+        ev = eo.evaluated_get(dg)
+        tgt = sum((ev.matrix_world @ v.co for v in ev.data.vertices), Vector()) / len(ev.data.vertices)
+        eye = tgt + (D - tgt).normalized() * float(ARGS.get('face_d', 0.8))
+    if state == 'lab':
+        fy = lab_yaw()
+        off = {'facelab': 20.0, 'facelab45': 45.0, 'caplab': 150.0}[name] + float(ARGS.get('lab_az', 0))
+        a = fy + math.radians(off)
+        dist = float(ARGS.get('lab_d', 0.8))
+        R = Matrix.Rotation(fy + math.pi / 2, 3, 'Z')
+        tgt = LAB_C + R @ Vector((0.0, -0.07, -0.035))
+        eye = tgt + Vector((math.cos(a), math.sin(a), 0.0)) * dist + Vector((0, 0, 0.06))
+        if name == 'caplab':
+            tgt = LAB_C + Vector((0, 0, -0.12))
+            eye = tgt + Vector((math.cos(a), math.sin(a), 0.0)) * dist * 0.75 + Vector((0, 0, -0.62 * dist))
     if tgt is None:      # aim at the eye mesh
         eo = bpy.data.objects.get('ada_eye')
         dg = bpy.context.evaluated_depsgraph_get()

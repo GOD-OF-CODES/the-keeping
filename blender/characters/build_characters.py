@@ -83,8 +83,10 @@ def assign(ob, m):
 
 
 # ------------------------------------------------------------------------------------------------ texture assembly
-def bake_atlas(char, objs, importance, shaders, size, normal_strength=1.0, tiers=None, distance=0.002, planar=None):
-    """objs: list of objects; shaders: {obj.name: fn(P, N, AO) -> (albedo, rough, height)}."""
+def bake_atlas(char, objs, importance, shaders, size, normal_strength=1.0, tiers=None, distance=1.0, planar=None, normal_tiers=None):
+    """Fix round 2: distance 1.0 — our heights are in METRES and the Bump node multiplies them by `distance`; the old
+    0.002 default flattened Ada's and Harlan's normal maps to ~1e-7 m relief (mean tilt 0.003 vs the arms' 0.071).
+    objs: list of objects; shaders: {obj.name: fn(P, N, AO) -> (albedo, rough, height)}."""
     t0 = time.time()
     texbake.atlas_uv(objs, importance, planar=planar)
     geo = texbake.bake_geometry(objs, size)
@@ -103,7 +105,7 @@ def bake_atlas(char, objs, importance, shaders, size, normal_strength=1.0, tiers
     rgba = np.concatenate([texbake.linear_to_srgb(alb), rough[..., None]], -1)
     tilt = np.linalg.norm(nrm[..., :2] * 2 - 1, axis=-1)[cov]
     log(f'{char}: normal map mean tilt {tilt.mean():.3f}, >0.1 on {(tilt > 0.1).mean() * 100:.1f} % of covered texels')
-    sizes = texbake.save_tiers(char, rgba, nrm, tier_dir, tiers=tiers)
+    sizes = texbake.save_tiers(char, rgba, nrm, tier_dir, tiers=tiers, normal_tiers=normal_tiers)
     log(f'{char}: atlas {size}^2 in {time.time() - t0:.1f} s, bytes {sizes}')
     return sizes
 
@@ -123,6 +125,8 @@ def hair_textures(char, size_w=1024, size_h=2048):
 
 # ------------------------------------------------------------------------------------------------ characters
 CAP_DENSITY = 6.0
+HEAD_CAP_DENSITY = 1.6      # uv units/m vs the head skin's 1.0 in its own atlas (cap ~1.6x the face's linear density)
+HEAD_TIERS = {'max': 1, 'medium': 2, 'low': 8}   # Low 256^2: the Low budget (27 MB) had 0.06 MB left
 
 
 def build_ada():
@@ -139,11 +143,22 @@ def build_ada():
         'ada_gown': lambda P, N, AO, G=None: tex_ada.gown(P, N, AO, fn.trunk, J, ada.HEM_Z),
         'ada_eye': lambda P, N, AO, G=None: tex_ada.eye(P, N, eye_c),
     }
-    objs = [R['body'], R['head'], R['gown'], R['eye']]
-    importance = {'ada_body': 2.2, 'ada_head': 2.6, 'ada_gown': 0.8, 'ada_eye': 5.0}
+    # fix round 2 (ruling j): the head has its OWN atlas ada_head_* (2048 Max / 1024 Medium / 256 Low) with the face
+    # anatomy of tex_head.py; the main atlas keeps body + gown + eye (the gown gets the freed space: 0.8 -> 1.1)
+    from characters import tex_head
+    head_shader = shaders.pop('ada_head')
+
+    def head_tex(P, N, AO, G=None):
+        base = head_shader(P, N, AO, G)
+        on = np.asarray(G['CAP'], bool) if G is not None and 'CAP' in G else None
+        return tex_head.head(P, N, AO, fn.face, base, cap_on=on)
+    objs = [R['body'], R['gown'], R['eye']]
+    importance = {'ada_body': 2.2, 'ada_gown': 1.1, 'ada_eye': 5.0}
     # the cut faces get their own planar islands at ~2.7x the body's texel density (fix round: 120-150 px at Max
     # was a flat disc; ~1.5 texel/screen px on Medium at 1.2 m)
-    bake_atlas('ada', objs, importance, shaders, TEX, planar={'ada_body': CAP_DENSITY, 'ada_head': CAP_DENSITY})
+    bake_atlas('ada', objs, importance, shaders, TEX, planar={'ada_body': CAP_DENSITY})
+    bake_atlas('ada_head', [R['head']], {'ada_head': 1.0}, {'ada_head': head_tex}, TEX,
+               planar={'ada_head': HEAD_CAP_DENSITY}, tiers=HEAD_TIERS)
     for ob in (R['body'], R['head']):              # build-only data: keep it out of the glTF extras
         for k in ('cap_rim2d', 'cap_side', 'cap_fwd'):
             if k in ob:
@@ -161,13 +176,59 @@ def build_ada():
     }
     for k, m in mats.items():
         assign(R[k], m)
-    assign(R['head'], mats['body'])
+    # the head's own material: same material_id (skin_ada: the runtime cut tint + sss keys on it), its own textures
+    mats['head'] = material('ada_head_skin', 'skin_ada', 'ada_head', extras={'sss': 0.3})
+    assign(R['head'], mats['head'])
     # A3: the clear cornea shell (no texture; the runtime gives it a clear-coat/transmission look, B3)
     mats['cornea'] = material('ada_cornea', 'eye_ada', None,
                               extras={'cornea': 1, 'ior': 1.376, 'f0': 0.025, 'roughness': 0.02, 'clearcoat': 1.0})
     assign(R['cornea'], mats['cornea'])
     R.pop('cap', None)
+    # task 8: shadow proxies (<= 5k tris in all): body + gown on ada_rig, head + hair on ada_head_rig
+    R['shadow'] = shadow_proxy([R['body'], R['gown']], 'ada_shadow', 3600)
+    R['head_shadow'] = shadow_proxy([R['head'], R['hair']], 'ada_head_shadow', 1400)
     return R, mats
+
+
+def shadow_proxy(objs, name, target_tris):
+    """Escape fix round 2 (task 8): a <= target-tri skinned copy of `objs` (same armature, same parent) for the lamp
+    cube / lightning-stroke shadow layers 8/9 only — the lamp's 6-face cube drew every full figure mesh into every
+    face. Material extras {shadow_proxy: 1}: the runtime hides it from the view and (cine) puts it on the caster layers."""
+    from characters import garments
+    from lib.scene import select
+    rig = next(m.object for m in objs[0].modifiers if m.type == 'ARMATURE')
+    copies = []
+    for o in objs:
+        c = o.copy()
+        c.data = o.data.copy()
+        for col in o.users_collection:
+            col.objects.link(c)
+        if c.data.shape_keys:
+            c.shape_key_clear()
+        for m in list(c.modifiers):
+            c.modifiers.remove(m)
+        c.data.materials.clear()
+        copies.append(c)
+    select(copies, copies[0])
+    bpy.ops.object.join()
+    ob = bpy.context.view_layer.objects.active
+    ob.name = name
+    ob.data.name = name
+    for k in list(ob.keys()):
+        del ob[k]
+    tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+    if tris > target_tris:
+        garments.decimate(ob, target_tris / tris * 0.97)
+    mod = ob.modifiers.new('Armature', 'ARMATURE')
+    mod.object = rig
+    from characters import rig as rigmod
+    rigmod.cleanup(ob, rig)
+    m = bpy.data.materials.new(name)
+    m['shadow_proxy'] = 1
+    m['material_id'] = 'shadow_proxy'
+    ob.data.materials.append(m)
+    log(f'shadow proxy {name}: {tris} -> {sum(len(p.vertices) - 2 for p in ob.data.polygons)} tris')
+    return ob
 
 
 def finish(char, R, mats):
@@ -271,6 +332,8 @@ def main():
         elif char == 'harlan':
             from characters import harlan
             R, mats = harlan.build_all(material, bake_atlas)
+            R['shadow'] = shadow_proxy([R[k] for k in ('body', 'shirt', 'trousers', 'boots', 'gloves', 'apron', 'suspenders', 'sack', 'cleaver', 'cleaver_handle')],
+                                       'harlan_shadow', 5000)
             h = 1.88
         elif char == 'arms':
             from characters import arms

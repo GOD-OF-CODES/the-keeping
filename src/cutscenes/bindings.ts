@@ -231,6 +231,9 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
   const deps: CutsceneDeps = {
     camera: {
       apply(p: CameraPose) {
+        // QA hook (fix round 2, hero-still sweeps): globalThis.__csCam = { pos, target, fov } (PLAN) overrides the pose
+        const qo = (globalThis as { __csCam?: { pos: P3; target: P3; fov: number } }).__csCam;
+        if (qo) p = { ...p, pos: qo.pos, target: qo.target, fov: qo.fov, shake: [0, 0, 0], roll: 0 };
         if (!camHeld && g.level?.cullingEnabled && g.level.setCulling) cullWas = true;
         if (cullWas) {
           // room culling follows the camera's room; road shots leave every room rect (and cut across floors) →

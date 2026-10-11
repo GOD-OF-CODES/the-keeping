@@ -203,16 +203,18 @@ def section(u, v, inset=None, head_side=False, seed=211):
 
     # ---- the margin by the real distance to the rim: skin roll (proud, curling out), lobulated fat, then muscle
     skin_w = 1 - _ss(0.0015, 0.0022, inset)
-    fat_w = _ss(0.0015, 0.0022, inset) * (1 - _ss(0.0042, 0.0058 + 0.0015 * noise.fbm(P3 * 90.0, 2, seed + 9), inset))
+    fat_w = _ss(0.0015, 0.0022, inset) * (1 - _ss(0.0045, 0.0075 + 0.0015 * noise.fbm(P3 * 90.0, 2, seed + 9), inset))
     roll = np.exp(-((inset - 0.0009) / 0.0007) ** 2) * (0.75 + 0.5 * _ss(-0.5, 0.5, noise.fbm(P3 * 140.0, 2, seed + 10)))
     lob1, lob2 = noise.worley(P3 * 600.0, seed + 11)
     lob = np.clip(1 - (lob1 / 0.7) ** 2, 0, 1)
     edge = _ss(0.0, 0.0025, inset)                                         # 0 on the rim (meets the skin exactly)
     macro = macro * (1 - skin_w - fat_w) + skin_w * (0.0016 * roll) + fat_w * (-0.0012 + 0.0007 * lob)
     macro = macro * np.where(inset < 0.0025, edge ** 0.5, 1.0)
-    alb = _mixc(alb, np.array([0.40, 0.29, 0.15])[None, :] * (0.8 + 0.3 * lob)[:, None], fat_w)
+    # fix round 2 (ruling j): subcutaneous fat 3-8 mm, NOT a clean cream ring — dull yellow-tan under blood (fresh
+    # subcutis ~0.30/0.20/0.10 linear), and the film below now covers it 75-90 % instead of 65 %
+    alb = _mixc(alb, np.array([0.30, 0.20, 0.10])[None, :] * (0.8 + 0.3 * lob)[:, None], fat_w)
     dermis = _ss(0.0004, 0.0011, inset)
-    alb = _mixc(alb, _mixc(np.tile([0.30, 0.32, 0.36], (n, 1)), [0.44, 0.31, 0.28], dermis), skin_w)
+    alb = _mixc(alb, _mixc(np.tile([0.24, 0.22, 0.26], (n, 1)), [0.30, 0.14, 0.13], dermis), skin_w)   # fix round 2: in-game the margin read as a pale cream ring
     rough = rough * (1 - fat_w - skin_w) + 0.45 * fat_w + 0.42 * skin_w
 
     # ---- blood film: >= 60 %, thicker toward the front (the low side: she lay face-down), pooled in the recesses,
@@ -220,14 +222,14 @@ def section(u, v, inset=None, head_side=False, seed=211):
     fn = noise.fbm(P3 * 70.0, 4, seed + 12)
     recess = np.clip((-macro - 0.003) * 150.0, 0, 1)
     film = np.clip(0.48 + 0.6 * fn + 0.3 * np.clip(v / B_V, -1, 1) + 0.8 * recess, 0, 1)
-    film = film * (1 - 0.6 * np.clip(bone + cart, 0, 1) * _ss(-0.1, 0.4, fn + 0.2)) * (1 - 0.85 * skin_w)
+    film = film * (1 - 0.6 * np.clip(bone + cart, 0, 1) * _ss(-0.1, 0.4, fn + 0.2)) * (1 - 0.35 * skin_w)
     holes = np.clip(lumen * (1 - mucosa) + wcn * (1 - wcd), 0, 1)              # voids read black, not filmed
-    film = film * (1 - 0.35 * fat_w) * (1 - 0.9 * holes)
+    film = film * (1 - 0.12 * fat_w) * (1 - 0.9 * holes)
     alb = _mixc(alb, [0.10, 0.008, 0.007], film * 0.92)
     # a thin smear on bone/cartilage (lighter red than a pooled film): 45-75 %, no clean ivory left
     smear = np.clip(bone + cart, 0, 1) * np.clip(0.6 + 0.35 * noise.fbm(P3 * 260.0, 3, seed + 14), 0, 1) * (1 - film)
     alb = _mixc(alb, [0.24, 0.06, 0.05], smear * 0.75)
-    rough = rough * (1 - film) + 0.06 * film
+    rough = rough * (1 - film) + 0.12 * film
     fine += 0.0003 * film * (1 - _ss(0.2, 0.6, film))                     # meniscus at the film edge
     fine += 0.00015 * noise.fbm(P3 * 500.0, 2, seed + 13) * (1 - bone)       # ragged torn fibre ends
     return dict(h=macro + fine, macro=macro, fine=fine, alb=np.clip(alb, 0, 1), rough=np.clip(rough, 0.04, 1),
