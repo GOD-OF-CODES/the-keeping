@@ -99,6 +99,11 @@ const SKY_FILL_ATLAS = /^lm_(exterior|car)/i;
  * while the guttered candles are out (src/world/cutscene-fx.ts silhouetteOn/Off). Flash light (lmFlash) is unscaled.
  */
 export const uParlorBake = uniform(1);
+/**
+ * M-A `lmScale` cue (CUTSCENES-PLAN §5): every baked atlas × this (1 = as baked; the × π irradiance stays in
+ * lmMultiplier). Written each frame from src/render/grade.ts GRADE.lm by cutscene-fx; the lightning flash map is unscaled.
+ */
+export const uLmScale = uniform(1);
 const PARLOR_ATLAS = /^lm_parlor/i;
 
 export class LightmapLightingModel extends THREE.PhysicalLightingModel {
@@ -158,7 +163,7 @@ export class LightmapMaterial extends THREE.MeshStandardNodeMaterial {
     if (this._lmE && this._lmEKey === key) return this._lmE;
     const u = uv(1);
     const lmUV = this.lmFlipV ? vec2(u.x, u.y.oneMinus()) : u;
-    let e: any = texture(this.lmBase, lmUV).rgb.mul(this.lmMultiplier);
+    let e: any = texture(this.lmBase, lmUV).rgb.mul(this.lmMultiplier).mul(uLmScale);
     if (PARLOR_ATLAS.test(String(this.lmBase.name ?? ''))) e = e.mul(uParlorBake); // AD review: C5 candles out
     if (this.lmFlash) e = e.add(texture(this.lmFlash, lmUV).rgb.mul(this.lmMultiplier).mul(uLightning));
     if (SKY_FILL_ATLAS.test(String(this.lmBase.name ?? ''))) e = e.add(uSkyFill.mul(luminance(e).div(uOpenSkyE).clamp(0, 1)));

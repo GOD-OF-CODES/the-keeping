@@ -155,6 +155,14 @@ L('b09_dress_sob', 'ada', 'B09', 'c4:hand_on_hem',
   '[a near-sob, wet and breaking, almost no voice] ...my ticket... [a shuddering, bubbling breath] hhh...', '…my ticket…', { priority: 9, ms: 'M2' });
 L('b11_recognition', 'ada', 'B11', 'c5:recognition',
   '[a long wet breath, then softly, with terrible certainty] ...Harlan.', '…Harlan.', { priority: 10, ms: 'M2', prev: '...Harlan?' });
+// CUTSCENES-PLAN M-A (ruling ac): C2b 'Her Door' 4.0 s and C6b 'Bait' 9.8 s (subtitle-only until the key exists)
+L('c2b_my_dress', 'ada', 'B05', 'c2b:vigil',
+  '[barely a whisper, forehead against the wood] ...my dress...', '…my dress…', { priority: 9, ms: 'M2' });
+L('c6b_company', 'ada', 'B13', 'c6b:company',
+  '[a wet whisper, patient, imitating an old man\'s slow cadence] ...Company.', '…Company.', { priority: 9, ms: 'M2' });
+// CUTSCENES-PLAN M-A (ruling ac, infra lane): C4c 'She Remembers' 7.2 s (subtitle-only until the key exists)
+L('c4c_there', 'ada', 'B11', 'c4c:there',
+  '[a wet whisper, almost tender, to the photo] ...there you are.', '…there you are.', { priority: 9, ms: 'M2' });
 
 // Ada in 1976 — her unsent letter, read in her living voice (memory chain). <= 60 words, ends mid-word.
 L('doc_letter', 'ada', 'B09', 'doc:letter_read',

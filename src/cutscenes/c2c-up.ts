@@ -13,6 +13,7 @@
 import { C2_ADA_END, C2_END_EYE, C2_END_TARGET } from './c2-room.ts';
 import { GROUND, NODE, STAIR_TOP_EYE, ST_MAIN, add, fwd, headingTo, lens, treadNosing } from './stage.ts';
 import type { CameraShot, Cue, MoveTrack, P3, Timeline, TimelineFactory } from './types.ts';
+import { sweepTargets, turnBetween } from './math.ts';
 
 /** Fix round 3 (ruling m): C2's film camera (ISO 3200, f/2, 1/48 s → e_phys = 0.18/L_mid = 0.24, see C2_CAMERA_E) in
  *  scene units for the TORCH-lit climb: the 2900 K torch colour is max-normalised (luminance 0.5244 of its nominal
@@ -70,7 +71,11 @@ export const c2cUp: TimelineFactory = (ctx) => {
   const e5 = eyeOnTread(5);
   const e12low: P3 = [ST_MAIN.x - 0.05, treadNosing(12)[1] - 0.05, treadNosing(12)[2] + 0.85];
   const topA: P3 = [0.55, 8.1, 4.1 + TOP_EYE];
-  const topB: P3 = [0.75, 8.45, 4.1 + TOP_EYE];
+  // GLITCH-FIX (C2c 9.53 → ≈ 11.6 went BLACK with the torch on and aimed: scratch/glitchfix/d2_strip.jpg): the torch
+  // light rides 0.56 m ahead of the eye (diag2 lpRel), and topB stood 0.55 m from the landing's north wall (WU_U1N face
+  // y = 9.0) — the light entered the wall at 9.53 and lit only its far side until the slow turn swung it out. The
+  // landing is 0.92 m deep: the run now stops 0.8 m from the wall (light 0.24 m off it)
+  const topB: P3 = [0.72, 8.2, 4.1 + TOP_EYE];
   const north = Math.PI / 2;
   // glance #1: her silhouette rounding the newel (her root (0.85, 3.35)), seen from tread 5 back and down
   // escape fix round (lane CINE, item 5): re-blocked so she reads HEADLESS — her torso stands between the tread-5 eye and
@@ -102,17 +107,24 @@ export const c2cUp: TimelineFactory = (ctx) => {
     // 3.84–4.47 GLANCE #1 held 630 ms: the hard back-lit silhouette against the lightning patch on the hall floor
     { t: 3.84, d: 0.63, path: [e5, add(e5, [0, 0.03, 0.01])], target: [g1Target], fov: L28, ease: 'linear', handheld: 0.5 },
     // 4.47–4.69 turn forward
-    { t: 4.47, d: 0.22, path: [add(e5, [0, 0.03, 0.01]), eyeOnTread(5.4)], target: [g1Target, add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3))], fov: [L28, L35], ease: 'inOut', handheld: 0.6 },
+    // GLITCH-FIX (C2c 4.6, detect.py's top LOCAL POP f1006): the two-point target path cut the chord 1.1 m from the eye
+    // — 83° in ONE frame; now a sphere sweep back the way the head went (counter-clockwise), same 220 ms
+    { t: 4.47, d: 0.22, path: [add(e5, [0, 0.03, 0.01]), eyeOnTread(5.4)], target: sweepTargets(e5, g1Target, add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), turnBetween(e5, g1Target, add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), 1), 4), fov: [L28, L35], ease: 'inOut', handheld: 0.6 },
     // risers 6–12, pitch +10°, breath ragged
     { t: 4.69, d: 1.77, path: [eyeOnTread(5.4), eyeOnTread(8.5), eyeOnTread(11.6)], target: [add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), add(eyeOnTread(11.6), fwd(north, 10 * DEG, 3))], fov: L35, ease: 'linear', handheld: 1.0, bob: { amp: 0.035, hz: 3.1, roll: 0.0105 } },
     // 6.46 THE STUMBLE on the creaker 12: pitch −28° in 150 ms, roll −6°, the eye drops to ≈ 0.85 m above tread 12
     { t: 6.46, d: 0.16, path: [eyeOnTread(11.6), e12low], target: [add(eyeOnTread(11.6), fwd(north, 10 * DEG, 3)), add(e12low, fwd(north, -28 * DEG, 1.2))], fov: L35, ease: 'in', handheld: 1.2, roll: [0, -6 * DEG] },
     // gloves slap tread 13 (6.62); the beam swings wild
-    { t: 6.62, d: 0.23, path: [e12low], target: [add(e12low, fwd(north, -28 * DEG, 1.2)), add(e12low, fwd(north + 0.5, -35 * DEG, 1.2)), add(e12low, fwd(north - 2.6, -0.4, 1))], fov: L35, ease: 'inOut', handheld: 1.4, roll: [-6 * DEG, -3 * DEG] },
+    // GLITCH-FIX (C2c 6.73–6.87, f1070–1074): the wild swing's targets sat 1.0–1.2 m off the eye and the path passed
+    // 0.65 m from it — 29° and 74° in single frames, then a 26° jump onto glance #2 at 6.85. Same beat, same 230 ms:
+    // a jerk left with the fall (≈ 28°), then round to the right onto her hand, ending exactly on glance #2's aim.
+    { t: 6.62, d: 0.23, path: [e12low], target: [add(e12low, fwd(north, -28 * DEG, 2)), ...sweepTargets(e12low, add(e12low, fwd(north + 0.5, -35 * DEG, 2)), handAt, turnBetween(e12low, add(e12low, fwd(north + 0.5, -35 * DEG, 2)), handAt, -1), 4)], fov: L35, ease: 'inOut', handheld: 1.4, roll: [-6 * DEG, -3 * DEG] },
     // 6.85–7.45 GLANCE #2 held 600 ms: her hand on the wet handrail, 0.9 m away; her feet a dark shape at tread 9
     { t: 6.85, d: 0.6, path: [e12low], target: [handAt, add(handAt, [0, 0.04, 0.01])], fov: L35, ease: 'linear', handheld: 0.5, roll: -3 * DEG },
     // 7.45–7.66 back round to the flight
-    { t: 7.45, d: 0.21, path: [e12low, add(e12low, [0, 0.12, 0.1])], target: [handAt, add(e12low, fwd(north, 20 * DEG, 2))], fov: L35, ease: 'inOut', handheld: 1.2, roll: [-3 * DEG, 0] },
+    // GLITCH-FIX (C2c 7.53–7.57, f1094): the path from her hand (0.72 m away) to the flight passed 0.47 m from the eye —
+    // 47° and 60° in single frames; now a sphere sweep back (counter-clockwise), same 210 ms
+    { t: 7.45, d: 0.21, path: [e12low, add(e12low, [0, 0.12, 0.1])], target: sweepTargets(e12low, handAt, add(e12low, fwd(north, 20 * DEG, 2)), turnBetween(e12low, handAt, add(e12low, fwd(north, 20 * DEG, 2)), 1), 4), fov: L35, ease: 'inOut', handheld: 1.2, roll: [-3 * DEG, 0] },
     // 7.66–9.0 scramble up 13–16 (4 risers in 1.34 s), pitch +20°
     { t: 7.66, d: 1.34, path: [add(e12low, [0, 0.12, 0.1]), eyeOnTread(14, 1.3), eyeOnTread(16, 1.6, 0.05), topA], target: [add(e12low, fwd(north, 20 * DEG, 2)), add(topA, fwd(north, 0, 3))], fov: L35, ease: 'out', handheld: 1.4, bob: { amp: 0.04, hz: 3.0, roll: 0.012 } },
     // 9.0–10.4 the top: onto the landing; the run stops; breath heaving
@@ -144,7 +156,7 @@ export const c2cUp: TimelineFactory = (ctx) => {
   const moves: MoveTrack[] = [
     // the hall at 0.5 m/s (a walk, never a run): through the lightning patch's sight line during glance #1
     { char: 'ada', t: 0, d: 3.84, path: [C2_ADA_END, [2.3, 2.7, GROUND], G1_FROM], ease: 'linear', heading: 'path' },
-    { char: 'ada', t: 3.84, d: 0.63, path: [G1_FROM, G1_TO], ease: 'linear', heading: 'path' },
+    { char: 'ada', t: 3.84, d: 0.63, path: [G1_FROM, G1_TO], ease: 'linear', heading: 'path', turnIn: 0.25 }, // GLITCH-FIX: was a 12° yaw snap in glance #1
     // rounding the newel unseen (the camera is back on the flight), the right hand on its cap
     { char: 'ada', t: 4.47, d: 0.83, path: [G1_TO, [0.92, 3.45, GROUND], add(newel, [-0.25, 0.25, 0]), t1], ease: 'linear', heading: [headingTo([2.3, 2.7, 0], [0.85, 3.35, 0]), Math.PI / 2] },
     { char: 'ada', t: 5.3, d: 1.16, path: [t1, t4], ease: 'linear', heading: Math.PI / 2 },
@@ -168,6 +180,12 @@ export const c2cUp: TimelineFactory = (ctx) => {
     { t: 0, type: 'fx', id: 'exposure', params: { fixed: C2C_CAMERA_E } },
     { t: 0, type: 'fx', id: 'blurAmount', params: { v: blur ? 1 : 0 } },
     { t: whipD, type: 'fx', id: 'blurAmount', params: { v: 0 } },
+    // GLITCH-FIX: the four authored head whips (≈ 120–150° in 210–230 ms: the look back 3.62, the turn forward 4.47,
+    // the stumble swing 6.62, back round 7.45) get the same 180° shutter smear as the first whip where it exists (Max)
+    ...[[3.62, 3.84], [4.47, 4.69], [6.62, 6.85], [7.45, 7.66]].flatMap(([a, b]): Cue[] => [
+      { t: a, type: 'fx', id: 'blurAmount', params: { v: blur ? 1 : 0 } },
+      { t: b, type: 'fx', id: 'blurAmount', params: { v: 0 } },
+    ]),
     { t: 0, type: 'fx', id: 'blood', params: { seq: 'c2c', phase: 'start' } },
     { t: 0, type: 'heartbeat', bpm: 150 },
     { t: 0, type: 'score', state: 'chase' },

@@ -182,7 +182,18 @@ export async function loadCharacter(id: CharacterId, o: CharacterLoadOptions): P
         const sE = rel.dot(vec3(-0.69, -0.67, 0.27).normalize()).div(0.11).clamp(0, 1); // 0 spine → 1 edge
         const uL = rel.dot(vec3(0.33, 0.04, 0.94).normalize()).div(0.28).clamp(0, 1);
         const bevel = smoothstep(0.885, 0.9, sE); // the last ≈ 1.2 cm
-        const patina = mx_noise_float(pos.mul(22).add(1.3)).mul(0.5).add(0.5).mul(0.6).add(bloom.mul(0.5)).smoothstep(0.25, 0.6).mul(float(1).sub(bevel)).mul(0.85);
+        // GLITCH-FIX (lead item 4, "the cleaver renders as a flat white card with a red edge": C2 7.5–7.9 / 11.8 at
+        // Medium, unchanged with the room cube removed — scratch/glitchfix/dcl.jpg): the flat is ONE plane, so the lamp's
+        // GGX lobe (α ≈ 0.12, ±7°) covered the whole 4° × 10° face at once — a uniformly white card. An old hog cleaver
+        // is mostly dull oxide with bright steel only where it is honed or wiped: the patina now covers ≈ 70 % of the flat
+        // (was ≈ 45 %), and the flat is not optically flat (forge/grind waviness ±0.4 mm over ≈ 3 cm → ±4° normal
+        // slope, a bump through the screen derivatives below), so the flame's mirror image breaks into streaks and patches.
+        // round 2 (c2after f252, the lowering at 8.47: still one flat bright card for a frame as the blade turns 5°/frame
+        // through the lamp's mirror angle): the bare steel is now WIPE STREAKS along the blade (a rag/whetstone drawn
+        // heel → tip: ≈ 4 mm across × ≈ 10 cm long, ≈ 30 % of the flat), the rest dull oxide — the glint reads as
+        // streaks of metal on a dark plate instead of a lit plane
+        const wipe = mx_noise_float(vec3(sE.mul(26), uL.mul(2.5), float(3.1))).mul(0.5).add(0.5).smoothstep(0.52, 0.66);
+        const patina = float(1).sub(wipe).mul(mx_noise_float(pos.mul(22).add(1.3)).mul(0.15).add(0.85)).mul(float(1).sub(bevel)).mul(0.92);
         // blood: the edge half, ragged boundary, thin runs toward the spine (it was raised after the cut)
         const bN = mx_noise_float(pos.mul(vec3(70, 70, 25))).mul(0.12);
         const runs = mx_noise_float(vec3(uL.mul(40), float(0), float(0))).smoothstep(0.35, 0.6);
@@ -201,7 +212,11 @@ export async function loadCharacter(id: CharacterId, o: CharacterLoadOptions): P
         const r2 = cross(n0, dpx);
         const g = r1.mul(dFdx(sE)).add(r2.mul(dFdy(sE))).mul(sign(dot(dpx, r1))); // ∇s on the surface (its direction)
         const gd = g.div(g.length().max(1e-8));
-        m.normalNode = normalize(n0.add(gd.mul(Math.tan((12 * Math.PI) / 180)).mul(bevel)));
+        // GLITCH-FIX: the waviness bump (Mikkelsen surface gradient; height in metres, object space)
+        const wav = mx_noise_float(pos.mul(30).add(7.1)).mul(0.0004).add(mx_noise_float(pos.mul(vec3(14, 14, 55)).add(2.3)).mul(0.00012));
+        const det = dot(dpx, r1);
+        const nW = normalize(n0.mul(det.abs()).sub(r1.mul(dFdx(wav)).add(r2.mul(dFdy(wav))).mul(sign(det))));
+        m.normalNode = normalize(mix(nW, n0, bevel).add(gd.mul(Math.tan((12 * Math.PI) / 180)).mul(bevel)));
         // the parlor's cube (B02 sharpening, C5) — reflections.ts. Not on Max: Harlan's fragments there already use all
         // 16 samplers an M1 allows per stage (more shadowed lights); the cube made it 17 (invalid pipeline).
         if (o.presetId !== 'max') m.setupEnvironment = roomEnvironment('G2');

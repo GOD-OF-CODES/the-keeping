@@ -46,7 +46,7 @@ export const TUNING = {
    *  cutscene ends she perceives nothing (no sight / hearing / beam / contact) for this long. */
   /*  awayS/awayM (round E ruling b, respawn fairness): for awayS after a death every routine leg keeps awayM from the
    *  player (dark sight 4 m + 0.5 m margin), or she holds; an idle player must survive ≥ 60 s at every checkpoint. */
-  grace: { patrolOnlyS: 10, hearingS: 30, hearingMul: 0.7, calmS: 6, awayS: 75, awayM: 4.5 },
+  grace: { patrolOnlyS: 10, hearingS: 30, hearingMul: 0.7, calmS: 6, resumeDeafS: 2, awayS: 75, awayM: 4.5 },
   assist: { speedMul: 0.85, noiseMul: 0.8 },
   hide: { seenWindowS: 2, audibleDist: 2, breathRadius: 1.2 },
   door: { openS: 1.2, openChaseS: 0.5 },

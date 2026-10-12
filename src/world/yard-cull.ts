@@ -12,11 +12,18 @@
 // m4 diag (draws by prop at 54 s): the nine yard wrecks (≈ 110 draws) join the distance rule; the house's INTERIOR
 // props (wardrobe, stove, guest book, …: `interior` ids from the layout) are hidden outright while the camera is far
 // from the house — behind nailed shutters and unlit windows at 70 m+ they cannot contribute a pixel.
+import * as THREE from 'three/webgpu';
+
 const PATTERN = /^(P_TREE_\d+|P_WRECK_\d+|treeline_(shrub|mid)\d+_EXT[12]|groundcover_\w+_EXT2)/;
 /** Camera–house distance below which nothing is culled (the reveal camera stands ≈ 30–40 m from the porch). */
 const NEAR_HOUSE_M = 70;
 /** A node farther than this from the camera is hidden (beam pool ends ≈ 60 m: 15 kcd hot spot → 4 lux at 60 m). */
 const FAR_M = 60;
+/** GLITCH-FIX: County Road 9's surface meshes (details_corridor.glb: rc9_road 5 prims / 13.1 k tris, rc9_paint 1 / 1 k). */
+const SURFACE = /^(rc9_road|rc9_paint)$/;
+/** GLITCH-FIX: a camera jump this large between two frames is a CUT (the car at 19 m/s covers 4.75 m in a 250 ms
+ *  hitch; C1's shot changes jump 20–90 m). */
+const CUT_M = 6;
 
 export function createYardCull(root: any, housePlan: [number, number], interior: ReadonlySet<string> = new Set()) {
   let nodes: Array<{ n: any; c: any; r: number }> | null = null;
@@ -55,6 +62,32 @@ export function createYardCull(root: any, housePlan: [number, number], interior:
   // own room culling keeps writing its value underneath.
   let rc9: any = null;
   let rc9Off = false;
+  // GLITCH-FIX (user 2026-10-11: "the end of the car ride in the first cut scene has the glitch of road disappearing
+  // and re appearing"; scratch/glitchfix/c1before): the mask above hid the WHOLE room_RC9 group — the County Road 9
+  // SURFACE included (rc9_road x 20–1496 m, rc9_paint): mid-shot in S8 (the POV crossed 70 m from the house at C1
+  // ≈ 54.6 s, the road under the moving car vanished), under the car rolling to the gate in S9, and it came back at
+  // 69.0 (car_mount off → the cull released) only to go again at the hand-off (EXT1's PVS has no RC9). Two rules now:
+  //  1. the road surface + paint (6 draws, 14 k tris) leave room_RC9 for their own group, drawn whenever the viewer is
+  //     OUTDOORS (cutscene or gameplay: CP1 looking back down the road no longer ends at the EXT1 strip's x = 20 m
+  //     edge) and never indoors — the rc9 mask and the room PVS no longer touch them;
+  //  2. the mask (the corridor's tree chunks, poles, canopy blanket, road props) only changes on a CUT (the camera
+  //     jumps > CUT_M between two frames), never inside a continuous shot.
+  const surface = new THREE.Group();
+  surface.name = 'rc9_surface';
+  {
+    const room = root?.getObjectByName?.('room_RC9') ?? null;
+    const move: any[] = [];
+    room?.traverse((o: any) => {
+      if (o !== room && SURFACE.test(o.name ?? '')) move.push(o);
+    });
+    if (move.length) {
+      root.add(surface);
+      root.updateMatrixWorld?.(true);
+      for (const o of move) surface.attach(o);
+    }
+  }
+  let latched: boolean | null = null;
+  const lastCam = new THREE.Vector3(Infinity, 0, 0);
   const rc9Mask = (off: boolean) => {
     if (!rc9) {
       rc9 = root?.getObjectByName?.('room_RC9') ?? null;
@@ -75,20 +108,26 @@ export function createYardCull(root: any, housePlan: [number, number], interior:
     for (const n of hidden) n.visible = true;
     hidden.clear();
     rc9Mask(false);
+    latched = null;
+    lastCam.set(Infinity, 0, 0);
   };
   return {
     /** camPos: world position; active: the opening holds the camera on the road. */
     update(camPos: any, active: boolean, opening = true): void {
       const dHouse = Math.hypot(camPos.x - housePlan[0], camPos.z + housePlan[1]); // world z = −PLAN y
       if (!active) {
-        if (hidden.size) restore();
+        if (hidden.size || latched !== null) restore();
         return;
       }
       if (!nodes) collect();
       // runtime lane D (C1 60.5 / 61.8: 713 draws on Medium, ≈ 150 of them interior props): the opening camera never
       // enters the house, so the interior props stay hidden for as long as it holds the camera — also at the gate
       // (windows unlit, shutters nailed: dr.mjs frame shows no interior pixel). Yard dressing keeps the distance rule.
-      const nearHouse = dHouse < NEAR_HOUSE_M;
+      // GLITCH-FIX: the near/far decision is taken on the first held frame and on cuts only (see rule 2 above)
+      const cut = latched === null || camPos.distanceTo(lastCam) > CUT_M;
+      lastCam.copy(camPos);
+      if (cut) latched = dHouse < NEAR_HOUSE_M;
+      const nearHouse = latched as boolean;
       rc9Mask(nearHouse);
       for (const e of nodes!) {
         const far = e.r < 0 ? opening || !nearHouse : !nearHouse && e.c.distanceTo(camPos) - e.r > FAR_M;
@@ -102,6 +141,10 @@ export function createYardCull(root: any, housePlan: [number, number], interior:
       }
     },
     restore,
-    stats: () => ({ nodes: nodes?.length ?? 0, hidden: hidden.size }),
+    /** GLITCH-FIX rule 1: the road surface is drawn whenever the viewer is outdoors (per frame, cutscene or play). */
+    surface(outdoors: boolean): void {
+      if (surface.visible !== outdoors) surface.visible = outdoors;
+    },
+    stats: () => ({ nodes: nodes?.length ?? 0, hidden: hidden.size, near: latched, rc9Off, surface: surface.visible ? surface.children.length : 0 }),
   };
 }

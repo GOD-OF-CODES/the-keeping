@@ -67,6 +67,10 @@ export interface MoveTrack {
   ease?: Ease;
   /** Fixed heading, [from, to], or 'path' (face along the path). */
   heading?: number | [number, number] | 'path';
+  /** GLITCH-FIX (optional; CONTRACT-CHANGES #139): turn into this move's heading from the character's previous heading in
+   *  this timeline (the end of its last earlier move, else its last `place` cue) over `turnIn` s (smoothstep) —
+   *  a body turning as it steps off, instead of snapping its root yaw on the move's first frame. */
+  turnIn?: number;
 }
 
 /** Scalar keys (linear between keys, held outside). fade: 0 = clear, 1 = black. letterbox: 0 = off, 1 = 2.39:1 bars. */
@@ -80,6 +84,15 @@ export interface DofSettings {
   focusDistance: number;
   focalLength: number;
   bokehScale: number;
+}
+
+/** The `grade` cue's look (all optional; omitted = identity). */
+export interface GradeSpec {
+  tint?: [number, number, number];
+  saturation?: number;
+  grain?: number;
+  vignette?: number;
+  fade?: number;
 }
 
 export type DoorAction = 'rope_open' | 'rope_close' | 'slam' | 'open' | 'open_fast' | 'close' | 'lock' | 'unlock';
@@ -102,11 +115,15 @@ export type LightOp =
 
 /** Title cards (DOM, system serif): 'date' = small, centred low (C0 shot 0); 'byline' = the smaller second line
  *  under a 'title' card ("a game by Raj Vardhan Singh"); text null on 'byline' clears only the byline. */
-export type CardStyle = 'title' | 'small' | 'date' | 'byline';
+/** 'roll' (M-A, CR end credits): the text rolls up the screen once over CREDITS_ROLL_S (bindings.ts); lines are
+ *  '\n'-separated, '# ' = the title line, '~ ' = an italic byline, '> ' = a role (small caps), '' = a spacer. */
+export type CardStyle = 'title' | 'small' | 'date' | 'byline' | 'roll';
 
 /** Discrete cues. `t` is the cutscene time the cue fires at (fires once, in authoring order among equal times). */
 export type Cue =
-  | { t: number; type: 'clip'; char: CharId; clip: string; loop?: boolean; fade?: number; speed?: number; fallback?: string[] }
+  /** `at` (M-A, CUTSCENES-PLAN §6 runtime 1): start this far into the clip (s; > duration holds the last frame);
+   *  `speed` 0 holds that frame (a freeze-frame pose). Ada / Harlan honour both; the arms play from 0 at speed 1. */
+  | { t: number; type: 'clip'; char: CharId; clip: string; loop?: boolean; fade?: number; speed?: number; at?: number; fallback?: string[] }
   | { t: number; type: 'place'; char: CharId; pos: P3; heading: number }
   | { t: number; type: 'visible'; char: CharId; visible: boolean }
   /** Hand a character back to gameplay (Ada: the AI's output drives her again). */
@@ -130,7 +147,14 @@ export type Cue =
   | { t: number; type: 'score'; state: 'drone' | 'chase' | 'blue_hour' | 'none'; stinger?: string }
   | { t: number; type: 'weather'; rain: number; wind: number; inside: number; surface?: 'roof' | 'glass' | 'porch' | 'car' | 'gravel' }
   | { t: number; type: 'heartbeat'; bpm: number }
-  | { t: number; type: 'dof'; dof: DofSettings | null }
+  /** `to` + `over` (M-A focus pull): the focus distance eases (inOut) from dof.focusDistance to `to` metres over
+   *  `over` seconds; only the DOF uniforms change (no chain rebuild). A skip lands on `to`. */
+  | { t: number; type: 'dof'; dof: DofSettings | null; to?: number; over?: number }
+  /** M-A (CUTSCENES-PLAN §5 memory look): the pipeline grade, eased over `over` s (default 0 = cut). Multipliers on the
+   *  gameplay look: tint (rgb), saturation, grain, vignette; `fade` 0..1 = extra black over the frame. null = reset. */
+  | { t: number; type: 'grade'; grade: GradeSpec | null; over?: number }
+  /** M-A (§5): every baked lightmap's intensity × scale (1 = as baked, i.e. × π irradiance), eased over `over` s. */
+  | { t: number; type: 'lmScale'; scale: number; over?: number }
   | { t: number; type: 'lock'; mode: LockMode }
   /** Put the player (body + look) where gameplay resumes. pos = EYE (PLAN), heading/pitch radians. */
   | { t: number; type: 'player'; pos: P3; heading: number; pitch?: number }
@@ -148,7 +172,7 @@ export type CueType = Cue['type'];
  */
 export const STATE_CUES: ReadonlySet<CueType> = new Set<CueType>([
   'clip', 'place', 'visible', 'release', 'attach', 'door', 'prop', 'dressing', 'fx', 'score', 'weather',
-  'heartbeat', 'dof', 'lock', 'player',
+  'heartbeat', 'dof', 'lock', 'player', 'grade', 'lmScale',
 ]);
 
 export function isStateCue(c: Cue): boolean {
@@ -164,6 +188,8 @@ export interface Timeline {
   lock: LockMode;
   /** false = never skippable (death). Default true = skippable once this id has been seen. */
   skippable?: boolean;
+  /** M-A (CR end credits): skippable from the first view (the roll after the sting). */
+  skipAnytime?: boolean;
   /** Seed for the handheld noise (default: hash of the id). */
   seed?: number;
   shots?: CameraShot[];
@@ -202,6 +228,8 @@ export interface CutsceneContext {
   chained?: boolean;
   /** C2-ESCAPE B8: the preset has the cutscene motion-blur variant (else: the clip smear and slower whips). */
   motionBlur?: boolean;
+  /** M-A: the graphics preset id ('low' | 'medium' | 'max'): CR keeps Low on black (CUTSCENES-PLAN §9). */
+  tier?: string;
 }
 
 export type TimelineFactory = (c: CutsceneContext) => Timeline;

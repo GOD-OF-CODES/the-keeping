@@ -273,6 +273,11 @@ export class AdaBrain {
   private awayHoldT = -Infinity;
   /** Post-cutscene calm (difficulty 2026-10-08): she perceives nothing until this time. */
   calmUntil = -Infinity;
+  /** CUTSCENES-PLAN §4 `freeze`: a cutscene holds her. update() then returns her last output unchanged and does not
+   *  advance `t`, so every timer (lure window, grace, search, listen, hearing, finale phases) is paused; noises heard
+   *  while frozen are dropped. Never persisted: a save or a death during a frozen cutscene restores her unfrozen. */
+  frozen = false;
+  private lastOut: AdaOutput | null = null;
   /** Continuous time the player has been in her sight while not chasing (the notice dwell). */
   seenAcc = 0;
   lastSeenT = -Infinity;
@@ -315,6 +320,7 @@ export class AdaBrain {
 
   /** Queue a noise (GameEvents['noise']). Evaluated against her position on the next update. */
   noise(n: NoiseInput): void {
+    if (this.frozen) return; // a cutscene's own sounds are never heard (§4 freeze)
     this.noiseQueue.push(n);
   }
 
@@ -487,6 +493,38 @@ export class AdaBrain {
    * hearing, beam or contact — and keeps whatever the cutscene left her doing (no relocation). Nobody may be caught
    * within 6 s of a cutscene ending.
    */
+  /** True when a cutscene may freeze her (§4 safety gate): never from CHASE, LOOK, INVESTIGATE or SEARCH. */
+  get freezable(): boolean {
+    return !this.caught && !this.chase && !this.look && !this.inv && !this.search;
+  }
+
+  /** CUTSCENES-PLAN §4: hold position, state and every timer (see `frozen`). Idempotent. Story cutscenes the Director
+   *  requests unconditionally (C2, C3, C5, death) freeze her from any state; the optional ones pass the gate first. */
+  freeze(): void {
+    this.frozen = true;
+    this.noiseQueue = [];
+  }
+
+  /** Release a freeze with a deaf grace (≥ 2 s, §4; the Director passes the 6 s post-cutscene calm). */
+  resume(deafS: number = TUNING.grace.resumeDeafS): void {
+    if (!this.frozen) return;
+    this.frozen = false;
+    this.calm(Math.max(TUNING.grace.resumeDeafS, deafS));
+  }
+
+  /** C4c (CUTSCENES-PLAN §4): the authored take replaced her 0.8 s gameplay take — continue at `carry` from where the
+   *  cutscene left her (pos/heading, PLAN) so the hand-back does not pop. No-op outside the finale take/look. */
+  finaleSkipTake(pos?: P3, room?: string, heading?: number): void {
+    const F = this.finale;
+    if (!F || (F.phase !== 'take' && F.phase !== 'look')) return;
+    if (F.phase === 'look') this.events.push({ type: 'finale', phase: 'take' });
+    F.phase = 'carry';
+    F.t = 0;
+    this.nav.goalKey = '';
+    if (pos && room) this.nav.placeFree(pos, room);
+    if (heading !== undefined) this.nav.facing = heading;
+  }
+
   calm(seconds: number = TUNING.grace.calmS): void {
     this.calmUntil = Math.max(this.calmUntil, this.t + seconds);
     this.seenAcc = 0;
@@ -587,6 +625,7 @@ export class AdaBrain {
   }
 
   update(dt: number, player: PlayerView): AdaOutput {
+    if (this.frozen && this.lastOut) return { ...this.lastOut, events: [] };
     this.t += dt;
     this.playerPos = player.pos;
     this.tells = { dripRate: 0.8, dripStopped: false, crack: false, gurgle: false, loop: null, lookWindup: this.windup(false) };
@@ -685,7 +724,7 @@ export class AdaBrain {
     const nav = this.nav;
     const events = this.events;
     this.events = [];
-    return {
+    return (this.lastOut = {
       state: this.display,
       phase,
       visible,
@@ -700,7 +739,7 @@ export class AdaBrain {
       onStair: nav.onStair,
       tells: this.tells,
       events,
-    };
+    });
   }
 
   // =================================================================== senses
@@ -1813,6 +1852,8 @@ export class AdaBrain {
 
   restore(s: AdaSnapshot): void {
     const c = <T>(x: T): T => (x === null || x === undefined ? x : JSON.parse(JSON.stringify(x)));
+    this.frozen = false; // §4: a save or death during a frozen cutscene restores her unfrozen
+    this.lastOut = null;
     this.t = s.t;
     this.rng.state = s.rng >>> 0;
     if (s.atNode && this.g.nodes.has(s.atNode) && dist3(this.g.node(s.atNode).pos, s.pos) < 0.05) this.nav.placeAt(s.atNode);

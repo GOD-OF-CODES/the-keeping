@@ -154,8 +154,12 @@ test('host: C6 → C7 → end is re-entrant (C7 starts inside C6 done) and each 
   s.step(6);
   s.player.resolveGate('key');
   s.step(30);
+  assert.equal(s.player.active, 'C6b', 'M-A: C6 chains C6b (POSTROLL) before the Director hears C6 end');
+  s.step(14);
   assert.equal(s.player.active, 'C7');
-  s.step(40);
+  s.step(38);
+  assert.equal(s.player.active, 'CR', 'M-A: C7 chains the end credits');
+  s.step(26);
   assert.equal(s.player.active, null);
   const ends = s.bus.filter((b) => b.startsWith('end:'));
   assert.deepEqual(ends, ['end:C6', 'end:C7']);

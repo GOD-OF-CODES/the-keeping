@@ -1,14 +1,14 @@
 {
   "tier": "medium",
-  "generatedAt": "2026-10-11T13:02:04.263Z",
-  "totalBytes": 56524678,
+  "generatedAt": "2026-10-11T17:04:08.282Z",
+  "totalBytes": 56506466,
   "files": [
     {
       "id": "ada_albedo",
       "kind": "texture",
       "path": "assets/medium/ada_albedo.webp",
-      "bytes": 406220,
-      "hash": "25cdb56a49b4638e"
+      "bytes": 407384,
+      "hash": "a2256da9d499f2bb"
     },
     {
       "id": "ada_hair_albedo",
@@ -28,29 +28,29 @@
       "id": "ada_head_albedo",
       "kind": "texture",
       "path": "assets/medium/ada_head_albedo.webp",
-      "bytes": 207888,
-      "hash": "0fc1dc5668d1216a"
+      "bytes": 205800,
+      "hash": "8630fac35be17d57"
     },
     {
       "id": "ada_head_normal.png",
       "kind": "texture",
       "path": "assets/medium/ada_head_normal.png",
-      "bytes": 954923,
-      "hash": "91e9ee07372d3fce"
+      "bytes": 946693,
+      "hash": "25d2f307f9c1f9e2"
     },
     {
       "id": "ada_normal.png",
       "kind": "texture",
       "path": "assets/medium/ada_normal.png",
-      "bytes": 1133531,
-      "hash": "ced6ff5ddaf390d1"
+      "bytes": 1121622,
+      "hash": "96ec7053834fb18d"
     },
     {
       "id": "ada",
       "kind": "character",
       "path": "assets/medium/ada.glb",
-      "bytes": 5502272,
-      "hash": "f8e8b4f746a11c42"
+      "bytes": 5505132,
+      "hash": "c0435143c599e9ab"
     },
     {
       "id": "arms_albedo",
@@ -63,8 +63,8 @@
       "id": "arms_normal.png",
       "kind": "texture",
       "path": "assets/medium/arms_normal.png",
-      "bytes": 4229384,
-      "hash": "bc2595ec43957866"
+      "bytes": 4229375,
+      "hash": "01c6a239623eceae"
     },
     {
       "id": "arms",
@@ -162,7 +162,7 @@
       "kind": "texture",
       "path": "assets/medium/harlan_normal.png",
       "bytes": 1253975,
-      "hash": "6ea37c9d12431e2f"
+      "hash": "23f282b25714123b"
     },
     {
       "id": "harlan",

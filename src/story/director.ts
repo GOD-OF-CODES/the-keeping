@@ -8,7 +8,8 @@ import type { EventBus, GameEvents } from '../core/events.ts';
 import type { LevelLayout, P3 } from '../shared/layout-types.ts';
 import { AdaBrain, type AdaSnapshot } from '../ai/ada-brain.ts';
 import type { AdaOutput, AiEvent, DoorState, PlayerView } from '../ai/types.ts';
-import { Story, type CutsceneId, type StoryCommand } from './beats.ts';
+import { Story, type CutsceneGate, type CutsceneId, type StoryCommand } from './beats.ts';
+import { c4cCarryEnd } from '../cutscenes/c4c-step.ts';
 import { checkpointSpawn, SAVE_VERSION, type SaveGame } from './checkpoints.ts';
 import { DOCUMENTS, type StoryDocument } from './documents.ts';
 import type { BeatId, EscapeState } from './escape-state.ts';
@@ -61,6 +62,12 @@ export interface DirectorOptions {
   cutsceneFallbackS?: number;
 }
 
+/** CUTSCENES-PLAN §4 gate numbers: ≥ 6 m away, a floor apart (> 2 m of height), one optional cutscene per 45 s. */
+const GATE_DIST_M = 6;
+const GATE_FLOOR_DZ = 2;
+const GATE_PACING_S = 45;
+const OPTIONAL_IDS: ReadonlySet<string> = new Set(['C2b', 'C4a', 'C4c', 'C5b']);
+
 export class Director {
   readonly brain: AdaBrain;
   readonly story: Story;
@@ -74,6 +81,12 @@ export class Director {
   private inCutscene: CutsceneId | null = null;
   private last: AdaOutput | null = null;
   private beat: BeatId | null = null;
+  /** CUTSCENES-PLAN §4: optional cutscenes waiting for their safety gate (FIFO; not persisted — a death or restore
+   *  forgets them, and the story re-requests on its next trigger). */
+  private pending: { id: CutsceneId; gate: CutsceneGate; waitS: number; t: number }[] = [];
+  /** Story time an optional cutscene last ended (pacing: one per 45 s of gameplay in B05–B10). */
+  private lastOptionalEndT = -Infinity;
+  private clock = 0;
 
   constructor(o: DirectorOptions) {
     this.layout = o.layout;
@@ -121,6 +134,8 @@ export class Director {
   }
 
   update(dt: number): AdaOutput | null {
+    this.clock += dt;
+    if (this.pending.length && !this.inCutscene) this.tickPending(dt);
     if (this.fallback) {
       this.fallback.t -= dt;
       if (this.fallback.t <= 0) {
@@ -155,6 +170,47 @@ export class Director {
     return this.inCutscene;
   }
 
+  /** The optional cutscene ids still waiting on their gate (QA / tests). */
+  get pendingCutscenes(): readonly CutsceneId[] {
+    return this.pending.map((p) => p.id);
+  }
+
+  /**
+   * CUTSCENES-PLAN §4 safety gate (pure on the brain + host queries):
+   * - 'none': always; 'vigil': she is in VIGIL (C2b — at her door, perceiving nothing);
+   * - 'safe': she is not in CHASE / LOOK / INVESTIGATE / SEARCH (nor catching), AND she is offstage, or ≥ 6 m away
+   *   (straight line ≤ room-graph distance, so this is conservative), or a floor apart, or in another room with no line
+   *   of sight (a closed door or wall between); and no other optional cutscene ended < 45 s ago in B05–B10.
+   */
+  gateHolds(gate: CutsceneGate): boolean {
+    if (gate === 'none') return true;
+    const b = this.brain;
+    if (gate === 'vigil') return b.state === 'VIGIL' && b.freezable;
+    if (!b.freezable) return false;
+    const st = b.state;
+    if (st === 'CHASE' || st === 'LOOK' || st === 'INVESTIGATE' || st === 'SEARCH' || st === 'CATCH') return false;
+    if (this.clock - this.lastOptionalEndT < GATE_PACING_S) return false;
+    if (b.scripted?.mode === 'hidden' || b.parked) return true;
+    const p = this.host.player();
+    const a = b.pos;
+    if (Math.abs(a[2] - p.pos[2]) > GATE_FLOOR_DZ) return true;
+    if (Math.hypot(a[0] - p.pos[0], a[1] - p.pos[1]) >= GATE_DIST_M) return true;
+    const eye: P3 = [a[0], a[1], a[2] + 1.5];
+    return b.room !== p.room && !this.host.lineOfSight(eye, p.pos);
+  }
+
+  private tickPending(dt: number): void {
+    const q = this.pending[0];
+    q.t += dt;
+    if (this.gateHolds(q.gate)) {
+      this.pending.shift();
+      this.apply(this.story.handle({ type: 'cutscene_go', id: q.id }));
+    } else if (q.t >= q.waitS) {
+      this.pending.shift();
+      this.apply(this.story.handle({ type: 'cutscene_drop', id: q.id }));
+    }
+  }
+
   // ------------------------------------------------------------------ persistence
 
   snapshot(host?: Record<string, unknown>): SaveGame {
@@ -166,6 +222,7 @@ export class Director {
     this.brain.restore(save.ai);
     this.inCutscene = null;
     this.fallback = null;
+    this.pending = [];
     this.apply(this.story.resumeCommands());
   }
 
@@ -197,7 +254,18 @@ export class Director {
     if (this.inCutscene !== id) return;
     this.inCutscene = null;
     if (this.fallback?.id === id) this.fallback = null;
-    // difficulty 2026-10-08: nobody is caught within 6 s of a cutscene ending (C3 → B08 left her 3.3 m away)
+    if (OPTIONAL_IDS.has(id)) this.lastOptionalEndT = this.clock;
+    // C4c (CUTSCENES-PLAN §4): the authored take replaced the gameplay take — she resumes at 'carry' where the
+    // cutscene's step left her (also on skip: the skip applies the same end state)
+    if (id === 'C4c') {
+      const b = this.brain;
+      const end = c4cCarryEnd(b.pos);
+      // the step is blind (no nav query): take it only with a clear line at chest height, else turn in place
+      const clear = this.host.lineOfSight([b.pos[0], b.pos[1], b.pos[2] + 1.2], [end.pos[0], end.pos[1], end.pos[2] + 1.2]);
+      b.finaleSkipTake(clear ? end.pos : undefined, clear ? b.room : undefined, end.heading);
+    }
+    // §4 resume with the deaf grace; difficulty 2026-10-08: nobody is caught within 6 s of a cutscene ending
+    this.brain.resume();
     this.brain.calm();
     this.apply(this.story.handle({ type: 'cutscene_end', id, skipped }));
   }
@@ -224,8 +292,16 @@ export class Director {
         case 'checkpoint':
           this.events.emit('checkpoint', { id: c.id });
           break;
+        case 'cutscene_req':
+          if (!this.pending.some((q) => q.id === c.id)) this.pending.push({ id: c.id, gate: c.gate, waitS: c.waitS, t: 0 });
+          break;
+        case 'death':
+          this.pending = []; // a catch forgets waiting optional cutscenes (never played over a death)
+          this.events.emit('player:death', { cause: c.cause });
+          break;
         case 'cutscene': {
           this.inCutscene = c.id;
+          this.brain.freeze(); // §4: held for the whole cutscene (the Director also skips her update)
           this.events.emit('cutscene:start', { id: c.id });
           const handled = h.playCutscene?.(c.id, (skipped) => {
             this.events.emit('cutscene:end', { id: c.id, skipped });
@@ -257,9 +333,6 @@ export class Director {
           break;
         case 'sfx':
           h.sfx?.(c.id, c.pos, c.room);
-          break;
-        case 'death':
-          this.events.emit('player:death', { cause: c.cause });
           break;
         case 'respawn': {
           const sp = checkpointSpawn(this.layout, c.checkpoint);

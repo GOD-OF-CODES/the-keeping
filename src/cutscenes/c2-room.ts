@@ -14,6 +14,7 @@
 
 import { C2E_D, C2E_T, DOOR, GROUND, HARLAN_C2, HEAD_LAND, HEAD_REST, LAMP_FLAME, NECK, PROP, ADA_TABLE, add, fwd, headingTo, lens, dist } from './stage.ts';
 import type { CameraShot, Cue, P3, Timeline, TimelineFactory } from './types.ts';
+import { sweepTargets, turnBetween } from './math.ts';
 import { SEVER_CONTACT_S } from '../audio/synth/escape.ts';
 
 /** Clip start (s). */
@@ -24,6 +25,8 @@ export const C2_CONTACT = 7.56;
 /** The head separates / is out of the bottom of the frame / lands off-screen. */
 export const C2_SEVER = 7.6;
 export const C2_HEAD_LANDS = 7.9;
+/** GLITCH-FIX: Harlan's fist closes on the hair (was 10.6, in frame) — the bottom of his squat, off the frame. */
+export const C2_GRIP = 10.75;
 /** The rope comes off the cleat. */
 export const C2_ROPE_T = 20.0;
 /** Arterial pulses (§3.3): onset (s), exit speed (m/s), duration (s), volume (mL). Pulses 5–6 when the body rises. */
@@ -112,11 +115,20 @@ export const c2Room: TimelineFactory = (ctx) => {
   const kT = 0.25 / Math.hypot(...toT);
   const E8: P3 = add(C2E_D, [toT[0] * kT, toT[1] * kT, toT[2] * kT]);
   const S10_EYE: P3 = [3.62, 1.33, 2.19]; // S10/S11 start: in the doorway reveal, the rope out of frame
+  const S8_END: P3 = [4.15, 2.15, 1.75]; // S8's last look (him at the doorway) = S9's first
+  const S9_PULLEY: P3 = add(PROP.P_PULLEY_3, [-0.3, -0.4, 0]); // GLITCH-FIX: pulley 3 seen obliquely (not the zenith)
+  // GLITCH-FIX S10 sweep endpoints: the front door (S9's last look) → her rise (the old S10's last look)
+  const S10_FROM: P3 = add(E8, [-0.1, 0.05, -0.02]);
+  const S10_DOOR: P3 = add(DOOR.front, [0, 0, 1.4]);
+  const S10_RISE: P3 = add(ADA_RISE, [-0.1, 0, 1.3]);
   // fix round 2: the hero-still eye (1.3 m into the parlor, knees giving) and its aims
   const E4 = C2_E4;
   const HEAD_T: P3 = [5.08, 3.1, 0.76]; // between the landing (HEAD_LAND) and the rest (HEAD_REST), a head's height up
   const E_LIFT: P3 = [5.33, 3.62, 2.3]; // the head at his face height (fist z 2.62, crown 2.54 at 13.0)
   const E_BOTH: P3 = [5.3, 3.72, 2.38]; // his sack (yaw 71°) and the held head (58°) from E4, aim 63.1° (the flame 104.7° since fix round 4 is 18° out)
+  // GLITCH-FIX: his sack while he squats for the head (harlan_c2 head bone at plan (5.22, 3.75, 1.58), 10.7–10.95): from
+  // E4 heading 66.4°, pitch −12.9° — the flame (104.7°) stays 15° outside a 16:9 50 mm frame
+  const SACK_LOW: P3 = [5.22, 3.75, 1.6];
 
   const shots: CameraShot[] = [
     // S1 Freeze 0–1.6: the body halts, the head pushes forward; the gameplay FOV eases to 50 mm
@@ -135,21 +147,33 @@ export const c2Room: TimelineFactory = (ctx) => {
     // under it, the stream from the table edge falling into frame. From E4 the flame bears 104.7° (fix round 4) and every aim below
     // is ≤ 64° (50 mm 16:9 half-hfov 23.2°) → the flame stays ≥ 3° out of frame; the 100 mm insert is from E4 too.
     { t: 8.6, d: 0.7, path: [C2E_D, add(C2E_D, [0.55, 0.62, -0.05]), E4], target: [D_STRIKE, HEAD_T], fov: [L65, L50], ease: 'inOut', handheld: 0.9 },
-    { t: 9.3, d: 1.6, path: [E4], target: [HEAD_T], fov: L50, handheld: 0.3 },
-    // S5 the lift 10.9–12.9: the tilt follows the head up to his face height
-    { t: 10.9, d: 2.0, path: [E4], target: [HEAD_T, E_LIFT], fov: L50, ease: 'inOut', handheld: 0.35 },
+    // GLITCH-FIX (the user's "the beheading still has glitches": the head on the boards jumped into his fist above
+    // the frame in two frames at 10.6 — scratch/glitchfix/b_pick.jpg). harlan_c2's grab never reaches it: his left
+    // fist bottoms out at plan (5.46, 3.62), 0.41 m above the boards, 10.7–10.95 (scratch/glitchfix/bonetraj.mjs), while
+    // the head lies 0.72 m away at HEAD_REST. The transfer now happens OFF the frame with no cut: the hold on the head
+    // ends at 10.25, the eye lifts to his sack as he squats toward it (10.25–10.75, the head leaves the bottom of the
+    // frame), the grip lands at 10.75 (hair_wring, attach) with the fist and the floor both ≥ 4° under the frame,
+    // and the lift then brings the head up into the frame by its hair at ≈ 11.25 and the tilt follows it to his face.
+    { t: 9.3, d: 0.95, path: [E4], target: [HEAD_T], fov: L50, handheld: 0.3 },
+    { t: 10.25, d: 0.5, path: [E4], target: [HEAD_T, SACK_LOW], fov: L50, ease: 'inOut', handheld: 0.35 },
+    // S5 the lift 10.75–12.9: the tilt follows the head up to his face height
+    { t: 10.75, d: 2.15, path: [E4], target: [SACK_LOW, E_LIFT], fov: L50, ease: 'inOut', handheld: 0.35 },
     // S6 the eye 12.9–14.9: a HARD-CUT 100 mm insert from E4 (no zoom; 1.3 m — the eye ≈ 2× the D insert), and a hard cut back
     { t: 12.9, d: 2.0, path: [E4], target: [D_EYE], fov: L100, handheld: 0.25 },
     // S7 both of them look at you 14.9–17.9
     { t: 14.9, d: 3.0, path: [E4], target: [E_BOTH], fov: L50, handheld: 0.35 },
     // S8 he comes at you 17.9–20.0: you back out ahead of him, through the doorway to E8 (50 → 44 mm inside the retreat)
-    { t: 17.9, d: 2.1, path: [E4, add(C2E_D, [0.25, 0.2, 0]), E8], target: [E_BOTH, [4.6, 2.9, 1.9], [4.15, 2.15, 1.75]], fov: [L50, L44], ease: 'inOut', handheld: 0.5 },
+    { t: 17.9, d: 2.1, path: [E4, add(C2E_D, [0.25, 0.2, 0]), E8], target: [E_BOTH, [4.6, 2.9, 1.9], S8_END], fov: [L50, L44], ease: 'inOut', handheld: 0.5 },
     // S9 the rope 20.0–21.9 (whip-pan along the cornice to the front door; blur 0.8 where it exists)
     {
       t: C2_ROPE_T,
       d: 1.9,
       path: [E8, add(E8, [-0.1, 0.05, -0.02])],
-      target: [PROP.P_CLEAT, PROP.P_PULLEY_3, PROP.P_PULLEY_1, add(DOOR.front, [0, 0, 1.4])],
+      // GLITCH-FIX: starts from S8's last look (was a 27° one-frame jump onto the cleat at 20.0); the eye stands 9 cm
+      // from straight under pulley 3, so the look went through the ZENITH (88° pitch: lookAt's up-vector degenerates,
+      // the heading flipped 236° in one frame at 20.25 and the frame spun about the view axis) — now the rope is
+      // followed up and round (CCW) on a sphere to a point 0.45 m off the pulley's foot (pitch ≤ 74°)
+      target: [S8_END, ...sweepTargets(E8, PROP.P_CLEAT, S9_PULLEY, turnBetween(E8, PROP.P_CLEAT, S9_PULLEY, 1), 3), PROP.P_PULLEY_1, add(DOOR.front, [0, 0, 1.4])],
       fov: L44,
       ease: 'out',
       handheld: 1.1,
@@ -157,7 +181,16 @@ export const c2Room: TimelineFactory = (ctx) => {
     },
     // S10 she gets up 21.9–25.7 (back through the doorway from T, 44 mm)
     // (r8: from T itself the door rope stood as a pillar in the frame — the eye stays in the reveal, 8 cm from D)
-    { t: 21.9, d: 3.8, path: [add(E8, [-0.1, 0.05, -0.02]), S10_EYE], target: [add(DOOR.front, [0, 0, 1.4]), aim(S10_EYE, 30 * DEG, -10 * DEG, 2.9), add(ADA_RISE, [-0.1, 0, 1.3])], fov: L44, ease: 'out', handheld: 0.9 },
+    // GLITCH-FIX ("the slammed front door judders", C2 22.27–22.8, f670–677): the old single S10 ran a Catmull-Rom from
+    // the door target to the parlor targets that cut the chord 0.55 m from the eye — the look whipped 10°/frame and
+    // dipped 44° to the floor boards (camsweep.ts). Now the turn back (165°, through south, over his dark corner) is
+    // a sphere sweep in 1.4 s that lands on her as her knees hit the boards (22.95) and holds the rise; then the eye follows
+    // her off on the walk (24.6–25.7) so S11 starts on her — was a 23° one-frame jump at 25.7 (f768→769).
+    // (round 2: 1.0 → 1.4 s — c2after f667–675 still read the near parlor door panels sliding past at 15°/frame; now
+    // ≤ 12°/frame at 30 fps, 90 % of the turn done by 22.92, on her as her knees hit the boards at 22.95)
+    { t: 21.9, d: 1.4, path: [S10_FROM, S10_EYE], target: sweepTargets(S10_EYE, S10_DOOR, S10_RISE, turnBetween(S10_EYE, S10_DOOR, S10_RISE, 1), 5), fov: L44, ease: 'inOut', handheld: 0.9 },
+    { t: 23.3, d: 1.3, path: [S10_EYE], target: [S10_RISE], fov: L44, handheld: 0.9 },
+    { t: 24.6, d: 1.1, path: [S10_EYE], target: [S10_RISE, add(ADA_WALK[2], [0, 0, 1.3])], fov: L44, ease: 'inOut', handheld: 0.9 },
     // S11 she comes 25.7–29.0: the eye backs out to C2_END_EYE (44 → 40 mm), she is through at 27.4, the door shuts
     { t: 25.7, d: 3.3, path: [S10_EYE, [2.9, 2.15, 2.24], C2_END_EYE], target: [add(ADA_WALK[2], [0, 0, 1.3]), add(ADA_WALK[4], [0, 0, 1.4]), C2_END_TARGET], fov: [L44, L40], ease: 'inOut', handheld: 1.2 },
   ];
@@ -173,6 +206,14 @@ export const c2Room: TimelineFactory = (ctx) => {
     // K3: the lamp is the key and the one shadow light (map every frame in C2)
     { t: 0, type: 'fx', id: 'shadowLight', params: { at: 'lamp' } },
     { t: 0, type: 'light', op: 'cast_shadow', id: 'L_LAMP_PARLOR', on: true },
+    // M-A C2 upgrades (ruling z5 item 2): the lamp's flag on Harlan's side (cutscene-fx lamp_flag, a camera-invisible
+    // occluder in the lamp's cube) keeps the 12 cd flame off his arms/chest through the strike; off on the whip to E4
+    // (8.6) before he lifts the head into the lamp. On/off pair: a skip applies both (state cues) → off.
+    { t: 0, type: 'fx', id: 'lampFlag', params: { on: true } },
+    // GLITCH-FIX: off at 8.9, not 8.6 — the lurch eases in from 8.6, so at 8.6 the frame was still on him and the lamp
+    // popped onto his shirt and arm in one frame (c2after/c2r2 f257 → f258); by 8.9 his torso has left the top of the
+    // frame (f265) and only his legs (below the flag's shadow) remain
+    { t: 8.9, type: 'fx', id: 'lampFlag', params: { on: false } },
     // lane A review (A9): the table candle front-fills Harlan from D; its runtime flicker share at half keeps him a
     // rim silhouette (key:fill ≥ 7:1) while the bake still holds its steady light
     { t: 0, type: 'light', op: 'set', id: 'L_CANDLE_TABLE', scale: 0.5 },
@@ -229,13 +270,14 @@ export const c2Room: TimelineFactory = (ctx) => {
     { t: 9.45, type: 'fx', id: 'adaHead', params: { mode: 'nudge' } },
     { t: 9.45, type: 'sfx', id: 'head_nudge', pos: HEAD_REST, room },
     { t: 9.8, type: 'sfx', id: 'thunder_distant', gain: 0.6 },
-    { t: 10.6, type: 'sfx', id: 'hair_wring', pos: HEAD_REST, room },
-    // 10.6: the crown grip — the head node goes to his left-hand socket (it hangs as a pendulum below the grip)
-    { t: 10.6, type: 'attach', char: 'harlan', prop: 'ada_head', bone: 'prop_l' },
-    { t: 10.6, type: 'fx', id: 'adaHead', params: { mode: 'held' } },
+    // GLITCH-FIX: the grip at the bottom of his squat (fist 0.41 m over the boards 10.7–10.95), out of the frame
+    { t: C2_GRIP - 0.03, type: 'sfx', id: 'hair_wring', pos: HEAD_REST, room },
+    // 10.75: the crown grip — the head node goes to his left-hand socket (it hangs as a pendulum below the grip)
+    { t: C2_GRIP, type: 'attach', char: 'harlan', prop: 'ada_head', bone: 'prop_l' },
+    { t: C2_GRIP, type: 'fx', id: 'adaHead', params: { mode: 'held' } },
     // fix round 2 (ruling i): the held head is up-lit by the lamp-lit boards and the pool under it — E_up ≈ ρ·E_floor
     // with the varnished boards ρ ≈ 0.12 and E_floor ≈ I / (1.2 m)² → k ≈ 0.08 /m² of the lamp's intensity (QA ×)
-    { t: 10.6, type: 'fx', id: 'faceFill', params: { k: 0.08, fade: 0.6 } },
+    { t: C2_GRIP, type: 'fx', id: 'faceFill', params: { k: 0.08, fade: 0.6 } },
     { t: 21.9, type: 'fx', id: 'faceFill', params: { k: 0 } },
     // S6 the eye insert
     { t: 12.9, type: 'dof', dof: { focusDistance: 1.48, focalLength: 0.2, bokehScale: 2 } },
@@ -314,11 +356,14 @@ export const c2Room: TimelineFactory = (ctx) => {
     moves: [
       // the rise: the root slides back off the east side and stands (21.9–24.5)
       { char: 'ada', t: 21.9, d: 2.6, path: [ADA_TABLE.pos, ADA_RISE], ease: 'inOut', heading: [Math.PI, headingTo(ADA_RISE, DOOR.parlor)] },
-      { char: 'ada', t: 24.5, d: 2.9, path: ADA_WALK, ease: 'linear', heading: 'path' },
-      { char: 'ada', t: 28.4, d: 0.5, path: [C2_ADA_END, add(C2_ADA_END, [-0.11, 0.1, 0])], ease: 'out', heading: headingTo(C2_ADA_END, C2_END_EYE) },
+      // GLITCH-FIX (turnIn, CONTRACT-CHANGES #139): each move turns the body from its last heading as it steps off —
+      // the root yaw used to SNAP on the first frame: Harlan −46° at 17.9 (in frame: the held head and her hair
+      // whipped, f536–538) and +31° at 20.2, Ada +52° at 24.5 (in frame) and −16° at 28.4 (scratch/glitchfix/movecheck.ts)
+      { char: 'ada', t: 24.5, d: 2.9, path: ADA_WALK, ease: 'linear', heading: 'path', turnIn: 0.6 },
+      { char: 'ada', t: 28.4, d: 0.5, path: [C2_ADA_END, add(C2_ADA_END, [-0.11, 0.1, 0])], ease: 'out', heading: headingTo(C2_ADA_END, C2_END_EYE), turnIn: 0.35 },
       // he walks to the cleat (17.9–20.0), then into the dark south-west corner (20.0–21.9)
-      { char: 'harlan', t: 17.9, d: 2.1, path: [HARLAN_C2.pos, [4.6, 2.9, GROUND], [4.15, 2.1, GROUND]], ease: 'inOut', heading: 'path' },
-      { char: 'harlan', t: 20.2, d: 1.6, path: [[4.15, 2.1, GROUND], HARLAN_CORNER], ease: 'inOut', heading: 'path' },
+      { char: 'harlan', t: 17.9, d: 2.1, path: [HARLAN_C2.pos, [4.6, 2.9, GROUND], [4.15, 2.1, GROUND]], ease: 'inOut', heading: 'path', turnIn: 0.7 },
+      { char: 'harlan', t: 20.2, d: 1.6, path: [[4.15, 2.1, GROUND], HARLAN_CORNER], ease: 'inOut', heading: 'path', turnIn: 0.5 },
     ],
     kicks: [
       // S2: a 0.04° jolt on each heartbeat (96 bpm)

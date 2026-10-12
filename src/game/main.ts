@@ -19,6 +19,9 @@ import { PRESETS, dynResFor, type PresetConfig } from '../render/presets.ts';
 import { createRenderer, effectivePixelRatio } from '../render/renderer.ts';
 import { createPipeline, type Pipeline } from '../render/pipeline.ts';
 import { DynamicResolution } from '../render/dynres.ts';
+import { CutsceneProfile, CUTSCENE_SCALE_RAISED } from '../render/cutscene-profile.ts'; // M-A (CUTSCENES-PLAN §5): cutscene scale hold + guard
+import { CUTSCENE_SCREEN } from '../cutscenes/host.ts';
+import { CS_PREWARM } from '../render/cs-prewarm.ts'; // M-A: cutscene-only meshes compiled at load
 import { createFlashlight } from '../render/flashlight.ts';
 import { syncSurfaceLook } from '../render/surfaces.ts'; // LIGHTING lane (builder 2)
 import { LightmapMaterial, uLightning } from '../render/lightmap-material.ts';
@@ -125,6 +128,14 @@ export async function startGame(h: BootHandoff): Promise<void> {
   const dr = dynResFor(preset, window.devicePixelRatio || 1);
   const dynres = new DynamicResolution(dr, dr.initial);
   if (Math.abs(dynres.scale - preset.sceneScale) > 1e-4) pipeline.setScale(dynres.scale);
+  // M-A cutscene render profile (§5): while a cutscene owns the screen the scale is held (no dynamic resolution) at
+  // the preset's cutscene scale; > 40 ms average over 1 s steps back to the gameplay scale (and the Max beam off).
+  // ?csguard=<ms> adds ms to every measured cutscene frame (QA: proves the guard fires).
+  const csProfile = new CutsceneProfile(preset.id);
+  csProfile.debugAddMs = Number(params.get('csguard') ?? 0) || 0;
+  if (params.get('csscale') === '0') csProfile.hold = null; // A/B: hold the gameplay scale (no raise)
+  else if (params.get('csscale') === '1') csProfile.hold = CUTSCENE_SCALE_RAISED[preset.id as 'low' | 'medium' | 'max'] ?? null; // A/B: the raise
+  let csBeamOff = false;
   camera.updateMatrixWorld(true);
   const tc = performance.now();
   perfMark('warmup');
@@ -160,6 +171,16 @@ export async function startGame(h: BootHandoff): Promise<void> {
     frame();
     pipeline.setCutscene(null);
     frame();
+  }
+  // PERF M-A review: drain the GPU process behind the loading screen. Warm-up frames create render pipelines
+  // synchronously (three r186 WebGPUPipelineUtils: device.createRenderPipeline when no compile promises), so on a cold
+  // Metal shader cache their compiles are still queued in Chrome's GPU process at "ready" — measured: the first game
+  // frame after load froze 33 s (Medium, new dist; the staged "C5b first-frame freeze" of M-A infra was this). Bounded.
+  const gpuQ = renderer.backend?.device?.queue;
+  if (gpuQ?.onSubmittedWorkDone) {
+    const tq = performance.now();
+    await Promise.race([gpuQ.onSubmittedWorkDone(), new Promise((r) => setTimeout(r, 90000))]);
+    console.info(`[game] gpu drain ${(performance.now() - tq).toFixed(0)} ms`);
   }
   console.info(`[game] shader compile + warm-up ${(performance.now() - tc).toFixed(0)} ms`);
   perfMark('setup');
@@ -207,8 +228,31 @@ export async function startGame(h: BootHandoff): Promise<void> {
         if (lastRenderT >= 0 && !paused) {
           const capFps = loop.cap.effectiveCap(settings.fpsCap, settings.fpsCapDivisorMode);
           const target = Math.min(preset.targetFps, capFps > 0 ? capFps : Infinity);
-          const s = dynres.update(t - lastRenderT, 1000 / target);
-          if (s !== null) pipeline.setScale(s);
+          const held = CUTSCENE_SCREEN.held;
+          if (held !== csProfile.active) {
+            const s = held ? csProfile.begin(dynres.scale) : csProfile.end();
+            if (s !== null) pipeline.setScale(s);
+            if (!held && csBeamOff) {
+              csBeamOff = false;
+              const fr = rt.expose.rig as { on: boolean; flashlight: { beam: any } } | undefined;
+              if (fr?.flashlight.beam) fr.flashlight.beam.visible = fr.on;
+            }
+          }
+          if (csProfile.active) {
+            const back = csProfile.frame(t - lastRenderT);
+            if (back !== null) {
+              pipeline.setScale(back);
+              const beam = (rt.expose.rig as { flashlight: { beam: any } } | undefined)?.flashlight.beam;
+              if (beam?.visible) {
+                beam.visible = false;
+                csBeamOff = true;
+              }
+              console.info(`[game] cutscene frame-time guard: > 40 ms avg over 1 s — scale ${back.toFixed(2)}, beam off`);
+            }
+          } else {
+            const s = dynres.update(t - lastRenderT, 1000 / target);
+            if (s !== null) pipeline.setScale(s);
+          }
         }
         lastRenderT = t;
       },
@@ -323,6 +367,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
     loop,
     overlay,
     dynres,
+    csProfile, // M-A cutscene profile (QA: active / tripped / trips / scale)
     lightning,
     input,
     backendReason,
@@ -592,6 +637,11 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
       refl = new RoomReflections({ renderer, scene, camera, layout: ctx.layout, roomGroups: level.roomGroups, doors: level.doors.doors.values(), darken: [rig.flashlight.light], keep: [level.root], extra: (c, m) => (m.isLightmapMaterial ? level.lightmapped : level.probeLit).push(c) });
       await refl.capture(); // first: the cube context renders the materials as they are (no reflection code built there)
       refl.attach();
+      // PERF M-A review: the dawn / night re-capture's hooked-material builds happen here, not in C5 / C6 / B12
+      const tp = performance.now();
+      const bp = perfBuilds();
+      await refl.prewarmRecapture();
+      console.info(`[reflections] re-capture prewarm ${(performance.now() - tp).toFixed(0)} ms builds=${perfBuilds() - bp}`);
       console.info(`[reflections] ${JSON.stringify(refl.stats)}`);
     } catch (e) {
       console.warn('[reflections] disabled:', e);
@@ -948,6 +998,27 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
           camera.near = near0;
           camera.far = far0;
           camera.updateProjectionMatrix();
+        }
+        // M-A (CUTSCENES-PLAN §5 prewarm): cutscene-only meshes (hidden until their cue) are hung 1.5 m in front of
+        // the camera, visible, for one compile + render here, then put back — their first cutscene frame compiles nothing
+        if (CS_PREWARM.length) {
+          const back = CS_PREWARM.map((o: any) => ({ o, parent: o.parent, pos: o.position.clone(), quat: o.quaternion.clone(), vis: o.visible, fc: o.frustumCulled }));
+          CS_PREWARM.forEach((o: any, i: number) => {
+            camera.add(o);
+            o.position.set(((i % 5) - 2) * 0.25, Math.floor(i / 5) * 0.2 - 0.2, -1.5);
+            o.quaternion.identity();
+            o.visible = true;
+            o.frustumCulled = false;
+          });
+          await step('cs-prewarm', () => {}, [0]);
+          for (const b of back) {
+            if (b.parent) b.parent.add(b.o);
+            else camera.remove(b.o);
+            b.o.position.copy(b.pos);
+            b.o.quaternion.copy(b.quat);
+            b.o.visible = b.vis;
+            b.o.frustumCulled = b.fc;
+          }
         }
         camera.fov = fov;
         camera.updateProjectionMatrix();

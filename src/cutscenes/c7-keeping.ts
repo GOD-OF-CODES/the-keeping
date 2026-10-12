@@ -7,10 +7,16 @@
 // THE KEEPING. (The story ends the game on cutscene end.)
 
 import { c1Empty, C1_SHOTS } from './c1-empty.ts';
-import { CAM, CAR_SET, DOOR, DRIVER_EYE, PROP, ROCKER_HEADING, add, every, focusAt, inCar } from './stage.ts';
+import { CAM, CAR_SET, CLEAT_ADA, CLEAT_EYE, CLEAT_FINGERS, DOOR, DRIVER_EYE, PROP, ROCKER_HEADING, add, every, focusAt, inCar } from './stage.ts';
 import type { CameraShot, Cue, TimelineFactory } from './types.ts';
 
-export const C7_DURATION = 34;
+export const C7_DURATION = 35;
+/** M-A (CUTSCENES-PLAN §3 C7 +1 s): when the rope runs, a 1.0 s cut to the parlor cleat — grey fingers let the rope
+ *  run (ada_finale from its 8.9 s finger-hook frame, slowed) — then back to the hall shot. Everything after the insert
+ *  start is 1.0 s later than in the 34 s cut. */
+export const C7_CLEAT_T = 15.8;
+export const C7_CLEAT_D = 1.0;
+
 export const TITLE = 'THE KEEPING';
 
 const shift = (s: CameraShot, t: number, d?: number): CameraShot => ({ ...s, t, d: d ?? s.d });
@@ -94,6 +100,25 @@ export const c7Keeping: TimelineFactory = (ctx) => {
     { t: 29.8, type: 'card', text: TITLE, style: 'title' },
   ];
 
+  // the cleat insert: everything after its start moves 1.0 s later (the rope sound itself plays under the insert)
+  const late = (t: number) => (t > C7_CLEAT_T + 1e-6 ? t + C7_CLEAT_D : t);
+  for (const c of cues) c.t = Math.round(late(c.t) * 1000) / 1000;
+  const cleatEnd = C7_CLEAT_T + C7_CLEAT_D;
+  cues.push(
+    // AD review M-A: on the real route she carries her severed head in her right hand — the head-carry IK pins that hand at
+    // her hip and overrode the measured hook pose (no fingers on the rope); free the head for the insert, give it back after
+    { t: C7_CLEAT_T, type: 'attach', char: 'ada', prop: 'ada_head', bone: null },
+    { t: C7_CLEAT_T, type: 'place', char: 'ada', pos: CLEAT_ADA.pos, heading: CLEAT_ADA.heading },
+    { t: C7_CLEAT_T, type: 'visible', char: 'ada', visible: true },
+    { t: C7_CLEAT_T, type: 'clip', char: 'ada', clip: 'ada_finale', at: 8.9, speed: 0.35, fade: 0, fallback: ['ada_vigil'] },
+    { t: C7_CLEAT_T, type: 'light', op: 'set', id: 'L_CANDLE_TABLE', scale: 1 },
+    { t: C7_CLEAT_T, type: 'dof', dof: focusAt(CLEAT_EYE, CLEAT_FINGERS, 0.25, 3) },
+    { t: cleatEnd, type: 'visible', char: 'ada', visible: false },
+    { t: cleatEnd, type: 'attach', char: 'ada', prop: 'ada_head', bone: 'prop_r' },
+    { t: cleatEnd, type: 'dof', dof: null },
+  );
+  cues.sort((a, b) => a.t - b.t);
+
   return {
     id: 'C7',
     duration: C7_DURATION,
@@ -105,8 +130,8 @@ export const c7Keeping: TimelineFactory = (ctx) => {
       { t: 10.3, v: 1 },
       { t: 10.8, v: 1 },
       { t: 11.6, v: 0 },
-      { t: 27.9, v: 0 },
-      { t: 28.0, v: 1 },
+      { t: 28.9, v: 0 },
+      { t: 29.0, v: 1 },
     ],
     letterbox: [{ t: 0, v: 1 }],
     vehicle: c1.vehicle!.map((v) => ({ ...v, t: v.t - (signPov.t - 3.5) })).filter((v) => v.t + v.d > 0),
@@ -114,10 +139,12 @@ export const c7Keeping: TimelineFactory = (ctx) => {
       shift(interior, 0, 3.5),
       shift(signPov, 3.5, 6.8),
       // the drive to the porch (the opening's approach)
-      { t: 10.8, d: 6.8, path: [CAM.porch_approach.pos, [2.0, -5, 1.62], [1.85, -1.8, 1.65]], target: [CAM.porch_approach.target, add(DOOR.front, [0, -0.4, 1.4]), add(DOOR.front, [0, 1.5, 1.2])], fov: CAM.porch_approach.fov, ease: 'inOut', handheld: 0.7 },
-      { t: 17.6, d: 4.0, path: [gb.pos, add(gb.pos, [0.05, 0, -0.03])], target: [gb.target], fov: [gb.fov, 33], ease: 'linear', handheld: 0.3 },
+      { t: 10.8, d: 6.8 + C7_CLEAT_D, path: [CAM.porch_approach.pos, [2.0, -5, 1.62], [1.85, -1.8, 1.65]], target: [CAM.porch_approach.target, add(DOOR.front, [0, -0.4, 1.4]), add(DOOR.front, [0, 1.5, 1.2])], fov: CAM.porch_approach.fov, ease: 'inOut', handheld: 0.7 },
+      { t: 17.6 + C7_CLEAT_D, d: 4.0, path: [gb.pos, add(gb.pos, [0.05, 0, -0.03])], target: [gb.target], fov: [gb.fov, 33], ease: 'linear', handheld: 0.3 },
       // the opening's exact threshold and lens
-      { t: 21.6, d: C7_DURATION - 21.6, path: [th.pos], target: [th.target, [6.9, 4.5, 1.5]], fov: [th.fov, 47], ease: 'linear', handheld: 0.35 },
+      { t: 21.6 + C7_CLEAT_D, d: C7_DURATION - 21.6 - C7_CLEAT_D, path: [th.pos], target: [th.target, [6.9, 4.5, 1.5]], fov: [th.fov, 47], ease: 'linear', handheld: 0.35 },
+      // the cleat insert (60 mm; later in the list, so it wins over the approach shot it interrupts)
+      { t: C7_CLEAT_T, d: C7_CLEAT_D, path: [CLEAT_EYE, add(CLEAT_EYE, [-0.01, -0.01, 0])], target: [CLEAT_FINGERS], fov: 22.6, ease: 'linear', handheld: 0.25 },
     ],
     cues,
   };

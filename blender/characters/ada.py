@@ -379,9 +379,15 @@ def build_hair(fn, J, rng):
         hb.add_strip(Lp, Rp, u0, u1, list(s / 0.9), list(att), group, layer=1)
         ncard += 1
 
+    # M-A (floor head): a strand's chain starts where it crosses 1 cm below the cleaver's plane (or at its detach point
+    # if that comes first): the hair plastered on her neck/back below the cut is no longer rigid on the severed head.
+    pc, pn = hair_cut_plane(J)
     for i, (phi, pts, att, nrm) in enumerate(ring):
         g = int(((phi / (2 * math.pi)) * N_HAIR_GROUPS + 0.5)) % N_HAIR_GROUPS
         det = np.argmin(att) if (~att).any() else len(att)
+        below = np.nonzero((pts - pc) @ pn < -HAIR_CUT_BELOW)[0]
+        if len(below):
+            det = min(det, int(below[0]))
         if det < len(att) - 2:
             groups_hang[g].append(pts[det:])
         # every strand continues as a rope; alternate widths so ropes separate
@@ -460,10 +466,35 @@ def build_hair(fn, J, rng):
     return ob, arc, att, grp, groups_hang
 
 
-def hair_weights(hair_ob, att, grp, rig, veil_t=None, head_c=None):
-    """Plastered part: 100 % head. Hanging part: its group's chain by arc length past the detach point."""
+HAIR_CUT_BELOW = 0.01   # M-A: chains take over 1 cm below the cleaver's plane
+
+
+def hair_cut_plane(J):
+    """The sever plane (sever.cut_plane_pts on the rest joints) as numpy (c, n); n points to the head side."""
+    from . import sever
+    c, n, _, _ = sever.cut_plane_pts(J['neck_01'][0], J['head'][0])
+    return np.array(c, float), np.array(n, float)
+
+
+def hair_weights(hair_ob, att, grp, rig, veil_t=None, head_c=None, plane=None):
+    """Plastered part: 100 % head. Hanging part: its group's chain by arc length past the detach point.
+    M-A (floor head): with `plane`, hair plastered BELOW the cleaver's plane (neck, back, shoulders, chest — veil sheet
+    included) is weighted to its group's chain like hanging hair: a severed head no longer carries a rigid slab shaped
+    like her back; on the floor (ada.ts floorY) the strands fall to the boards, in a fist or a hand they hang."""
     me = hair_ob.data
     Pk, _ = body.mesh_arrays(me)
+    grp = np.asarray(grp).copy()
+    below = np.zeros(len(Pk), bool)
+    if plane is not None:
+        below = (Pk - plane[0]) @ plane[1] < 0.0
+        rel0 = Pk - np.asarray(head_c, float)
+        phi0 = np.arctan2(rel0[:, 0], -rel0[:, 1])
+        gv = np.round((phi0 % (2 * math.pi)) / (2 * math.pi) * N_HAIR_GROUPS).astype(int) % N_HAIR_GROUPS
+        veil_below = below & (grp == -1)
+        grp[veil_below] = gv[veil_below]
+        log(f'hair weights (M-A): {int(below.sum())} of {len(Pk)} hair verts below the cut plane go to the chains '
+            f'({int(veil_below.sum())} of them veil sheet)')
+    att = np.asarray(att, bool) & ~below
     names = ['head'] + [b.name for b in rig.data.bones if b.name.startswith('hair_')]
     idx = {n: i for i, n in enumerate(names)}
     W = np.zeros((len(Pk), len(names)))
@@ -513,7 +544,7 @@ def hair_weights(hair_ob, att, grp, rig, veil_t=None, head_c=None):
         hc = np.asarray(head_c, float)
         rel = Pk - hc
         phi = np.arctan2(rel[:, 0], -rel[:, 1])
-        sel = (grp == -1) & (veil_t > 0.65)
+        sel = (grp == -1) & (veil_t > 0.65) & ~below
         for i in np.nonzero(sel)[0]:
             g = int(round((phi[i] % (2 * math.pi)) / (2 * math.pi) * N_HAIR_GROUPS)) % N_HAIR_GROUPS
             b0 = f'hair_{g}_01'
@@ -662,7 +693,8 @@ def build(h=0.003, log_=log):
     for ob in (body_vis, gown):
         rig.transfer_weights(proxy, ob, core)
     skirt_chain_weights(gown, rig_ob, J)
-    hair_weights(hair_ob, att, grp, rig_ob, veil_t=np.asarray(arc, float) / 0.5, head_c=fn.head_center)
+    hair_weights(hair_ob, att, grp, rig_ob, veil_t=np.asarray(arc, float) / 0.5, head_c=fn.head_center,
+                 plane=hair_cut_plane(J))
     eye = build_eye(fn)
     set_single(eye, 'head')
     add_shape_keys(body_vis, J, fn.wound_center)
@@ -682,9 +714,10 @@ def build(h=0.003, log_=log):
     from . import eye_lid
     eye_c = fn.socket_r + np.array([0, 0.0095, 0])
     eye_lid.add_lid(SV['head'], eye_c)
-    cornea = eye_lid.add_cornea(eye, eye_c, SV['head_rig'])
+    # M-A: the cornea shell ada_cornea_l is gone — the runtime never gave it its clear-coat look (loader.ts built a
+    # default opaque white rough material from it, laid over the painted iris). The globe itself carries the corneal
+    # bulge (build_eye) and the runtime's wet eye roughness (loader.ts ud.eye), so the flame glints on the eye directly.
     return dict(rig=rig_ob, body=SV['body'], head=SV['head'], head_rig=SV['head_rig'], gown=gown, hair=hair_ob, eye=eye,
-                cornea=cornea,
                 fn=fn, J=J, cap=SV['cap'])
 
 

@@ -112,6 +112,9 @@ export class Level {
    * player's while a cutscene camera inside the house keeps culling on (src/cutscenes/bindings.ts); null = player's.
    */
   viewerFeetZ: number | null = null;
+  /** AD review M-A: rooms a cutscene camera must see beyond its room's PVS (C5b's 135 mm shot of the parlor shutter
+   *  from the porch steps: EXT2's PVS has no G2, so the sill candle's light and flame were culled). null = none. */
+  extraVisible: readonly string[] | null = null;
   private dirtyVis = true;
   private visScratch: Set<string> = new Set();
   private readonly scene: any;
@@ -178,6 +181,7 @@ export class Level {
     if (r !== null) this.room = r;
     // double-buffered: the candidate set is filled in place and swapped in only when it differs (no per-frame Set)
     const vis = this.index.visibleFrom(this.room, px, py, feetZ, undefined, this.visScratch);
+    if (this.extraVisible) for (const id of this.extraVisible) vis.add(id);
     let same = !this.dirtyVis && vis.size === this.visible.size;
     if (same) for (const r of vis) if (!this.visible.has(r)) same = false;
     if (!same) {

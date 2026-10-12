@@ -20,6 +20,7 @@
 import * as THREE from 'three/webgpu';
 import { Fn, If, atan, fog as fogNodeFn, normalWorld, positionView, reflectVector, roughness, clamp, dot, exp, float, floor, fract, length, max, mix, mx_fractal_noise_float, mx_noise_float, normalWorldGeometry, sin, smoothstep, time, uniform, vec2, vec3 } from 'three/tsl';
 import { LOOK, attachLookApi, initLook } from '../render/look.ts';
+import { GRADE } from '../render/grade.ts'; // M-A cutscene grade (pure)
 import type { PresetConfig } from '../render/presets.ts';
 import { AutoExposure } from '../render/exposure.ts';
 
@@ -361,11 +362,11 @@ export class Atmosphere {
     const p = this.pipeline;
     if (!p) return;
     const un = p.uniforms;
-    un.grain.value = LOOK.grain;
+    un.grain.value = LOOK.grain * GRADE.grain; // × the M-A cutscene grade (identity outside a `grade` cue)
     un.grainPerEV.value = LOOK.grainPerEV;
     un.chromaticAberration.value = LOOK.caPx;
     un.sharpness.value = LOOK.sharpen;
-    un.vignette.value = LOOK.vignette;
+    un.vignette.value = LOOK.vignette * GRADE.vignette;
     un.bloomStrength.value = LOOK.bloom;
     if (un.bloomThreshold) un.bloomThreshold.value = LOOK.bloomThreshold;
     GLARE_BASE.value = LOOK.glareBase;

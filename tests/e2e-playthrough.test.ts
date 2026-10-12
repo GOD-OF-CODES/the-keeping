@@ -16,6 +16,7 @@ import * as THREE from 'three/webgpu';
 import { Sim, layout } from './story-sim.ts';
 import { createCutsceneSystem, type CutsceneSystem } from '../src/cutscenes/bindings.ts';
 import { memorySeenStore } from '../src/cutscenes/host.ts';
+import { CUTSCENES } from '../src/cutscenes/index.ts';
 import { createBodyControl, FadeState, type BodyControl } from '../src/game/body-control.ts';
 import { planToWorld, worldToPlan } from '../src/shared/coords.ts';
 import { checkpointSpawn, parseSave, serializeSave, type SaveGame } from '../src/story/checkpoints.ts';
@@ -23,7 +24,8 @@ import { BEATS, CHECKPOINTS, type BeatId, type CheckpointId } from '../src/story
 import type { P3 } from '../src/shared/layout-types.ts';
 
 const DIRECTOR_CUTSCENES = ['C1', 'C2', 'C3', 'C5', 'C6', 'C7'] as const;
-const ALL_SEEN = [...DIRECTOR_CUTSCENES, 'death'];
+const OPTIONAL_CUTSCENES: ReadonlySet<string> = new Set(['C2b', 'C4a', 'C4c', 'C5b']);
+const ALL_SEEN = [...DIRECTOR_CUTSCENES, 'death', ...OPTIONAL_CUTSCENES, 'C6b', 'CR'];
 const EYE = 1.65;
 
 interface GameOpts {
@@ -380,9 +382,12 @@ function assertSettled(g: Game, label: string): void {
 }
 
 function assertCutscenes(g: Game, label: string, opts: { c4?: boolean; skipped?: boolean } = {}): void {
-  const once = g.started.filter((id) => id !== 'death' && id !== 'C2_replay');
+  // M-A (CUTSCENES-PLAN §2): the optional mid-game cutscenes play at most once each, never in place of a story one
+  const once = g.started.filter((id) => id !== 'death' && id !== 'C2_replay' && !OPTIONAL_CUTSCENES.has(id));
   assert.deepEqual(once, [...DIRECTOR_CUTSCENES], `${label}: C1, C2, C3, C5, C6, C7 once each, in order`);
+  for (const id of OPTIONAL_CUTSCENES) assert.ok(g.started.filter((x) => x === id).length <= 1, `${label}: ${id} at most once`);
   for (const e of g.ended) {
+    if (OPTIONAL_CUTSCENES.has(e.id) && !(e.id in CUTSCENES)) continue; // not registered yet: the Director's fallback timer
     if (e.id === 'death') assert.equal(e.skipped, false, `${label}: the death cutaway is never skipped`);
     else assert.equal(e.skipped, !!opts.skipped, `${label}: ${e.id} skipped=${e.skipped}`);
   }

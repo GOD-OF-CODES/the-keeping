@@ -134,6 +134,12 @@ export async function createStoryRuntime(d: StoryDeps) {
   });
   /** Cutscene fx (docs/CUTSCENES.md fx table): src/world/cutscene-fx.ts; unknown ones are logged once. */
   const cutsceneFx = (id: string, p: Record<string, number | string | boolean>) => {
+    if (id === 'locket_in_hand') {
+      // M-A C4c (CUTSCENES-PLAN §3): the lit locket stays raised in the glove for the authored take whatever the mouse
+      // does; on:false = her fist closed over it (the item leaves the hand; the story removes it at C4c's end)
+      locketCs = !!p.on;
+      return;
+    }
     if (id === 'can_in_hand') {
       if (!p.on) {
         m2?.canAtFiller(false);
@@ -151,7 +157,9 @@ export async function createStoryRuntime(d: StoryDeps) {
 
   // ---------------------------------------------------------------- M2 world (props from flags, hem, bell pull, wardrobe back, locket)
   let locketForced = false;
-  const locketUp = () => inventory.has('locket') && (input.isDown('Mouse2') || locketForced);
+  /** M-A C4c: fx `locket_in_hand` holds the locket up for the cutscene (cleared by its on:false cue). */
+  let locketCs = false;
+  const locketUp = () => inventory.has('locket') && (input.isDown('Mouse2') || locketForced || locketCs);
   const m2 = createM2World({ ctx, input, level, player, hides, rig, inventory, audio, arms, locketRaised: locketUp });
   /** A prop in the first-person right hand (arms `prop_r` socket): the hammer while prying, the shears, the can. */
   const heldProps = new Map<string, any>();
@@ -255,7 +263,7 @@ export async function createStoryRuntime(d: StoryDeps) {
       hiddenIn: hides.active?.id ?? null,
       holdingBreath: player.holdingBreath,
       beam: beamView(),
-      locketRaised: hasLocket && (rmb || locketForced),
+      locketRaised: hasLocket && (rmb || locketForced || locketCs),
     };
   };
 
@@ -706,9 +714,11 @@ export async function createStoryRuntime(d: StoryDeps) {
       harlan.play({ clip: 'harlan_opening', pos: tableau.harlan.pos, yaw: tableau.harlan.yaw, time: 14.9, timeScale: 0 });
     }
     const cdt = paused ? 0 : dt;
+    // GLITCH-FIX: Harlan first — Ada's severed head hangs from HIS prop_l in C2 (head-carry reads the socket's world
+    // matrix), so with Ada first the head lagged his fist by one frame (≈ 3–15 cm at his 1–4.6 m/s hand speeds)
+    harlan?.update(cdt);
     ada?.update(cdt);
     if (ada && tableauOn && ada.overridden) ada.group.visible = !level.cullingEnabled || level.visible.has('G2');
-    harlan?.update(cdt);
     characters.update();
     setArmsCar(!!fxw.mounted?.());
     // runtime review: in the driver's POV the gloves ride the car (stay on the wheel while the head turns) — FpArms.anchorTo

@@ -856,6 +856,11 @@ export default async function (qa) {
   const csIds = new Set(sum.cutscenes.map((c) => c.id));
   qa.assert(inOrder, `beats B01…B13 in order (got ${order.join(' ')})`);
   for (const c of ['C1', 'C2', 'C3', 'C5', 'C6', 'C7']) qa.assert(csIds.has(c), `cutscene ${c} played`);
+  // M-A (CUTSCENES-PLAN §2): C4c (the finale take), C6b (chained after C6) and CR (the end credits, after C7) always
+  // play; C2b / C4a / C5b are optional — gated (§4) and dropped, never forced — so they are reported with their beat
+  for (const c of ['C4c', 'C6b', 'CR']) qa.assert(csIds.has(c), `cutscene ${c} played`);
+  const beatAt = (t) => [...sum.beats].reverse().find((b) => b.game <= t)?.beat ?? '?';
+  qa.log('M-A optional: ' + ['C2b', 'C4a', 'C5b'].map((c) => { const e = sum.cutscenes.find((x) => x.id === c); return `${c} ${e ? `played in ${beatAt(e.game)} at ${e.game}s` : 'dropped / not triggered'}`; }).join(' · '));
   // C2-ESCAPE gate: no input through C2 + C2c, control at the stair top (CP2), her return ≥ 10 s after control, no
   // death from B03 to the end of B05 (C2/C2c cannot catch; the first hide cannot be failed)
   const E = sum.escape ?? {};

@@ -13,7 +13,14 @@ import { beatIndex, boardsPried, cloneState, newEscapeState, type BeatId, type C
 
 // C2-ESCAPE K8: + C2c (chained by the host after C2 — the Director requests only 'C2'; its end = C2c's end),
 // − C2_replay (B04 is the C2c cutscene only: no chase, no death, nothing to replay)
-export type CutsceneId = 'C1' | 'C2' | 'C2c' | 'C3' | 'C5' | 'C6' | 'C7' | 'death';
+// CUTSCENES-PLAN M-A: + C2b, C4a, C4c, C5b (optional mid-game, `cutscene_req`, once per save via `cs_<id>_done`),
+// + C6b, CR (chained by the host after C6 / C7 — POSTROLL; the Director requests only C6 / C7)
+export type CutsceneId = 'C1' | 'C2' | 'C2c' | 'C2b' | 'C3' | 'C4a' | 'C4c' | 'C5' | 'C5b' | 'C6' | 'C6b' | 'C7' | 'CR' | 'death';
+
+/** CUTSCENES-PLAN §4 safety gate kinds: 'safe' = Ada not in CHASE/LOOK/INVESTIGATE/SEARCH and ≥ 6 m away (or behind a
+ *  closed door / a floor); 'vigil' = she is in VIGIL (C2b: she stands at her own door, frozen, perceiving nothing);
+ *  'none' = always (she is offstage / the finale). */
+export type CutsceneGate = 'safe' | 'vigil' | 'none';
 
 export type AiCommand =
   | { op: 'scripted'; mode: ScriptedMode; node?: string; hideId?: string; force?: boolean }
@@ -31,6 +38,9 @@ export type StoryCommand =
   | { type: 'flag'; name: string; value: boolean }
   | { type: 'checkpoint'; id: CheckpointId }
   | { type: 'cutscene'; id: CutsceneId }
+  /** CUTSCENES-PLAN §2/§4: an optional mid-game cutscene. The Director plays it (via `cutscene_go`) once the gate holds,
+   *  or drops it (`cutscene_drop`) after `waitS`; a death / restore while it waits forgets the request. */
+  | { type: 'cutscene_req'; id: CutsceneId; gate: CutsceneGate; waitS: number }
   | { type: 'voice'; trigger: string }
   | { type: 'ai'; cmd: AiCommand }
   /** rope_open / rope_close: the front door on the rope; lock / unlock: key or bolt state. */
@@ -60,6 +70,9 @@ export type StoryInput =
   | { type: 'interact'; id: string; action: string }
   | { type: 'flag'; name: string; value: boolean }
   | { type: 'cutscene_end'; id: string; skipped?: boolean }
+  /** The Director's answer to a `cutscene_req`: the gate held (play it now) or it timed out (drop it). */
+  | { type: 'cutscene_go'; id: string }
+  | { type: 'cutscene_drop'; id: string }
   | { type: 'hide'; hideId: string; inside: boolean }
   | { type: 'ai'; event: AiEvent }
   /** The brain's answer to a bell pull (the Director sends it only when the pull lured her now or queued a lure). */
@@ -77,6 +90,8 @@ export interface StoryView {
 }
 
 export const HINT_AFTER_S = 90;
+/** CUTSCENES-PLAN §4: an optional cutscene whose gate fails waits up to 20 s, then is dropped. */
+export const OPTIONAL_WAIT_S = 20;
 /** C2-ESCAPE §4.5: the lightning flash through the U1 window that shows the armoire ajar, after control at the stair top. */
 export const B05_ARMOIRE_FLASH_S = 2.5;
 export const B05_ARMOIRE_FLASH2_S = 30;
@@ -141,6 +156,12 @@ export class Story {
         break;
       case 'cutscene_end':
         this.onCutsceneEnd(input.id);
+        break;
+      case 'cutscene_go':
+        this.onOptionalGo(input.id as CutsceneId);
+        break;
+      case 'cutscene_drop':
+        this.onOptionalDrop(input.id as CutsceneId);
         break;
       case 'hide':
         this.onHide(input.hideId, input.inside);
@@ -284,6 +305,9 @@ export class Story {
     if (from === to || beatIndex(to) < beatIndex(from)) return;
     this.s.beat = to;
     this.progress();
+    // C4a (M-A): the player walked into U3 before the gate let the full version play — whatever is still queued (or
+    // re-requested at the doorway) plays the doorway variant, never the door-opening one behind their back
+    if (to === 'B09' && !this.f('cs_C4a_done') && this.f('ada_boards_pried')) this.setFlag('c4a_deferred');
     this.emit({ type: 'beat', from, to });
     // leaving through the wardrobe's back ends any (replayed) dress visit
     if (to === 'B10') this.ai({ op: 'clear_scripted' });
@@ -317,6 +341,31 @@ export class Story {
     this.s.cutscene = id;
     if (!this.s.cutscenesSeen.includes(id)) this.s.cutscenesSeen.push(id);
     this.emit({ type: 'cutscene', id });
+  }
+
+  // ------------------------------------------------------------------ optional cutscenes (CUTSCENES-PLAN §2, §4)
+
+  /** Ask the Director for an optional cutscene: once per save (`cs_<id>_done`, persisted), never forced. */
+  private requestOptional(id: CutsceneId, gate: CutsceneGate, waitS = OPTIONAL_WAIT_S): void {
+    if (this.f(`cs_${id}_done`) || this.s.dead) return;
+    this.emit({ type: 'cutscene_req', id, gate, waitS });
+  }
+
+  private onOptionalGo(id: CutsceneId): void {
+    const s = this.s;
+    if (s.cutscene || s.dead || this.f(`cs_${id}_done`)) return;
+    this.setFlag(`cs_${id}_done`); // set at start: a death inside it (never) or a save mid-way never replays it
+    this.cutscene(id);
+  }
+
+  /** The gate never held: dropped (C4a defers once to the U3 doorway, CUTSCENES-PLAN §3). The VO / docs play as today. */
+  private onOptionalDrop(id: CutsceneId): void {
+    if (this.f(`cs_${id}_done`)) return;
+    if (id === 'C4a' && !this.f('c4a_deferred') && this.s.beat === 'B08') {
+      this.setFlag('c4a_deferred');
+      return;
+    }
+    this.setFlag(`cs_${id}_done`);
   }
 
   private doc(id: DocId): void {
@@ -421,6 +470,8 @@ export class Story {
         return;
       // ---- B09: letter, shears, hem, locket
       case 'b09:enter_u3':
+        // C4a deferred (gate failed at the door): shots 3–4 from the doorway, once
+        if (this.f('c4a_deferred') && !s.cutscene) this.requestOptional('C4a', 'safe');
         if (b === 'B08' && this.f('ada_boards_pried')) this.goBeat('B09');
         return;
       case 'take_shears':
@@ -458,6 +509,10 @@ export class Story {
         if (b === 'B11') this.once('cp:CP8', () => this.checkpoint('CP8'));
         return;
       // ---- B12
+      case 'b02:at_door':
+        // C5b (CUTSCENES-PLAN §3): the first porch arrival after Harlan is taken (Ada is hidden by the story)
+        if (b === 'B12' && this.f('harlan_taken') && !s.cutscene) this.requestOptional('C5b', 'none', 1);
+        break;
       case 'car':
       case 'b12:at_car':
         if (b !== 'B12' || s.cutscene) return;
@@ -576,6 +631,8 @@ export class Story {
   /** Side effects of a flag becoming true (whoever set it). */
   private afterFlag(name: string, value: boolean): void {
     if (!value) return;
+    // C4a (CUTSCENES-PLAN §3): the third board drops → the door gives (gated; dropped → deferred to the doorway)
+    if (name === 'ada_boards_pried' && this.s.beat === 'B08') this.requestOptional('C4a', 'safe');
     if (name === 'ada_boards_pried' || name === 'dress_visit_done') {
       this.ai({ op: 'escalation', level: this.escalation() });
       if (name === 'dress_visit_done' && !this.f('bell_nonstop')) this.ai({ op: 'routine', kind: 'upper_dress' });
@@ -588,6 +645,11 @@ export class Story {
     // b05_return turns into the unfailable slat demo at that hide
     if (inside && s.beat === 'B05' && !this.f('first_hide_done')) this.once('voice:hide_enter', () => this.emit({ type: 'voice', trigger: 'b05:hide_enter' }));
     if (!inside && s.beat === 'B05' && this.f('first_hide_done')) this.once('cp:CP3', () => this.checkpoint('CP3'));
+    // C2b (CUTSCENES-PLAN §3): the first hide exit after the demo, with her in VIGIL at her door — else dropped
+    if (!inside && s.beat === 'B05' && this.f('first_hide_done') && !s.cutscene) {
+      if (this.view.aiState === 'VIGIL') this.requestOptional('C2b', 'vigil', 0.5);
+      else if (!this.f('cs_C2b_done')) this.setFlag('cs_C2b_done');
+    }
     void hideId;
   }
 
@@ -621,10 +683,15 @@ export class Story {
           this.setFlag('finale_started');
           if (this.f('has_locket') && !this.f('dress_visit_done')) this.setFlag('dress_visit_done');
         } else if (e.phase === 'take') {
-          this.setFlag('locket_given');
-          this.setFlag('has_locket', false);
-          this.emit({ type: 'item', id: 'locket', action: 'remove' });
-          if (this.f('bell_nonstop')) this.setFlag('bell_nonstop', false);
+          // C4c (CUTSCENES-PLAN §3): the authored take — no gate (it is the finale); the brain stays frozen at 'take'
+          // and the Director resumes her at 'carry' (finaleSkipTake). Once per save; a retry after a death plays the
+          // gameplay take.
+          // The hand-off itself (locket_given → her prop_l, the item gone, the bell stops) then lands at C4c's END: the
+          // locket stays lit in the player's hand for the cutscene's first 4 s (its own cues move it at 4.3 s).
+          if (!this.f('cs_C4c_done') && !s.cutscene) {
+            this.setFlag('cs_C4c_done');
+            this.cutscene('C4c');
+          } else this.giveLocket();
         } else if (e.phase === 'at_door') this.setFlag('ada_at_parlor');
         else if (e.phase === 'lost') this.setFlag('finale_started', false);
         return;
@@ -640,6 +707,15 @@ export class Story {
       default:
         return;
     }
+  }
+
+  /** FINALE take: the locket is hers (C5 waits on locket_given), the item leaves the inventory, the nonstop bell stops. */
+  private giveLocket(): void {
+    if (this.f('locket_given')) return;
+    this.setFlag('locket_given');
+    this.setFlag('has_locket', false);
+    this.emit({ type: 'item', id: 'locket', action: 'remove' });
+    if (this.f('bell_nonstop')) this.setFlag('bell_nonstop', false);
   }
 
   private onCatch(cause: string): void {
@@ -685,10 +761,21 @@ export class Story {
         this.goBeat('B12');
         return;
       case 'C6':
+        this.setFlag('cs_C6b_done'); // the host chains C6 → C6b and reports 'C6' once, after C6b (M-A)
         this.goBeat('B13');
         this.cutscene('C7');
         return;
+      case 'C4c':
+        this.giveLocket();
+        this.setFlag('cs_C4c_done');
+        return;
+      case 'C2b':
+      case 'C4a':
+      case 'C5b':
+        this.setFlag(`cs_${id}_done`);
+        return;
       case 'C7':
+        this.setFlag('cs_CR_done'); // the host chains C7 → CR (the end credits) and reports 'C7' once, after CR
         this.setFlag('game_over');
         this.emit({ type: 'end' });
         return;

@@ -180,9 +180,10 @@ def build_ada():
     mats['head'] = material('ada_head_skin', 'skin_ada', 'ada_head', extras={'sss': 0.3})
     assign(R['head'], mats['head'])
     # A3: the clear cornea shell (no texture; the runtime gives it a clear-coat/transmission look, B3)
-    mats['cornea'] = material('ada_cornea', 'eye_ada', None,
-                              extras={'cornea': 1, 'ior': 1.376, 'f0': 0.025, 'roughness': 0.02, 'clearcoat': 1.0})
-    assign(R['cornea'], mats['cornea'])
+    if 'cornea' in R:   # M-A: no cornea shell any more (ada.py)
+        mats['cornea'] = material('ada_cornea', 'eye_ada', None,
+                                  extras={'cornea': 1, 'ior': 1.376, 'f0': 0.025, 'roughness': 0.02, 'clearcoat': 1.0})
+        assign(R['cornea'], mats['cornea'])
     R.pop('cap', None)
     # task 8: shadow proxies (<= 5k tris in all): body + gown on ada_rig, head + hair on ada_head_rig
     R['shadow'] = shadow_proxy([R['body'], R['gown']], 'ada_shadow', 3600)

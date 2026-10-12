@@ -442,6 +442,7 @@ try {
       },
       advance: (frames, keys = []) => evaluate(`window.__game.advance(${frames}, 1/60, ${JSON.stringify(keys)})`),
       log: (m) => { report.notes.push(String(m)); console.log('[scenario]', m); },
+      cdp: (method, params = {}) => cdp.send(method, params, sessionId), // raw DevTools call (PERF: heap/CPU profiles)
       assert: (cond, msg) => { report.assertions.push({ ok: !!cond, msg }); if (!cond) { exitCode = 1; console.error('[assert] FAIL', msg); } },
     };
     await mod.default(qa);

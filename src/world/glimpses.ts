@@ -70,6 +70,8 @@ export function createGlimpses(d: GlimpseDeps) {
   const indoor = new Set(d.level.layout.props.filter((p: any) => !/^(EXT|RC9|CAR)/.test(p.room)).map((p: any) => p.id as string));
   const yard = createYardCull(d.level.root, HOUSE_PLAN, indoor); // AD review: S8 budget (yard dressing beyond 60 m, interiors)
   let c0 = false;
+  /** GLITCH-FIX: this held stretch began on the road (C0 look / the car mounted) — the yard cull runs until release. */
+  let roadHeld = false;
   let saved: { near: number; far: number } | null = null;
   let lookSaved: Record<string, number> | null = null;
   let flutter = 0;
@@ -252,6 +254,8 @@ export function createGlimpses(d: GlimpseDeps) {
 
   const update = (dt: number) => {
     const held = d.cameraHeld();
+    // GLITCH-FIX (C1 end, yard-cull.ts rule 1): County Road 9's surface is drawn whenever the viewer is outdoors
+    yard.surface(level.isOutside());
     updateRetroLamps([lampL, lampR]);
     if (seek) {
       seek.t += dt;
@@ -282,6 +286,7 @@ export function createGlimpses(d: GlimpseDeps) {
       (LOOK as unknown as Record<string, number>).groundL = C0_LOOK.groundL * (1 + 3.5 * k);
     }
     if (!held) {
+      roadHeld = false;
       eyesOn.clear();
       restoreRange();
       yard.restore();
@@ -318,9 +323,16 @@ export function createGlimpses(d: GlimpseDeps) {
         cam.updateProjectionMatrix();
       }
       yard.update(cw, true, d.night?.() ?? true);
+      roadHeld = true;
     } else {
       restoreRange();
-      yard.update(cam.position, false);
+      // GLITCH-FIX (C1 S11 69–75, the step-out): car_mount goes off at 69.0 and the cull used to release with it —
+      // room_RC9 (culling is off in C1) came back for 6 s, then went again at the hand-off. It now holds until the
+      // opening lets go of the camera.
+      // AD review M-A: …but not once the held camera is INSIDE the house — a chained C6 (car mounted) → C6b kept the
+      // road cull through C6b's parlor shot and hid every indoor prop (the door rope and the cleat: an empty wall)
+      if (!level.isOutside()) roadHeld = false;
+      yard.update(cam.position, roadHeld, d.night?.() ?? true);
     }
   };
 

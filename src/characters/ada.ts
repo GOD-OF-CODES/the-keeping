@@ -9,7 +9,7 @@
 //   • `override()` lets the cutscene lane (and the pre-C2 tableau) play any clip at a world pose; `release()` hands
 //     her back to the AI.
 
-import { ContactShadow, uHairVeilClear, uNeckBlood } from './skin.ts';
+import { ContactShadow, uHairVeilClear, uHeadSmear, uNeckBlood } from './skin.ts';
 import * as THREE from 'three/webgpu';
 import type { AdaAnim, AdaOutput } from '../ai/types.ts';
 import { planToWorld } from '../shared/coords.ts';
@@ -84,6 +84,8 @@ export class AdaCharacter {
   private readonly cache: PoseCache;
   private readonly chains: VerletChain[] = [];
   private readonly hairChains: VerletChain[] = [];
+  /** M-A: the severed head has lain loose in its pool (the face smear stays while severed). */
+  private smeared = false;
   /** The hair chain parted off the open eye (S6), or null. */
   private partedChain: VerletChain | null = null;
   private readonly legCaps: Capsule3[] = [];
@@ -435,11 +437,20 @@ export class AdaCharacter {
     // (QA A/B: globalThis.__veil = 0 | 1 forces it)
     const veilQa = (globalThis as { __veil?: number }).__veil;
     const hc0 = this.headCarry;
-    uHairVeilClear.value = veilQa ?? (hc0.severed && hc0.holder && hc0.holder !== hc0.bones.propR ? 1 : 0);
+    // M-A C2 upgrades (ruling z5 item 1, sweep scratch/mac2/s1): ON THE FLOOR too — a face-up head's wet hair falls off
+    // the face to the boards (gravity; the rigid shell cannot), and the veil cards' own cube shadow (skin.ts
+    // maskShadowNode) were what kept the lamp-lit face black at 10.5 (face L 0.006 → 0.057 with the veil off in both
+    // passes). Still ON in her own hand (C2c / B05).
+    uHairVeilClear.value = veilQa ?? (hc0.severed && hc0.holder !== hc0.bones.propR ? 1 : 0);
     uNeckBlood.value = this.headCarry.severed ? 1 : 0;
     // fix round 4 (ruling u): a severed head nobody holds lies on the floor her root stands on — its wet hair lies on the
     // boards (≈ 3 mm of hair thickness above them) and goes slack (wet hair has no spring of its own)
     const loose = hc0.severed && !hc0.holder;
+    // M-A: the face's pool smear (skin.ts uHeadSmear) — latched once the severed head has lain loose in its pool
+    // (QA: globalThis.__headSmear = 0 | 1 forces it)
+    if (!hc0.severed) this.smeared = false;
+    else if (loose) this.smeared = true;
+    uHeadSmear.value = (globalThis as { __headSmear?: number }).__headSmear ?? (this.smeared ? 1 : 0);
     for (const hc of this.hairChains) {
       const part = hc === this.partedChain;
       hc.gravity = part ? -40 : 9.81;

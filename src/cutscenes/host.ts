@@ -13,6 +13,7 @@
 //    and its done(true) fires before the new one begins. Overlays (C4, no done) are cancelled instead.
 
 import { Sequencer } from './sequencer.ts';
+import { GRADE, gradeTo, lmScaleTo, resetGrade, tickGrade } from '../render/grade.ts'; // M-A grade / lmScale (pure)
 import { isStateCue, type CameraPose, type CardStyle, type CharId, type Cue, type CutsceneContext, type DofSettings, type DoorAction, type LockMode, type P3, type Timeline, type TimelineFactory, type VehiclePose } from './types.ts';
 
 // ------------------------------------------------------------------ injected interfaces
@@ -160,7 +161,14 @@ const PREROLL: Record<string, string> = { C1: 'C0' };
 /** Postroll (C2-ESCAPE §1 handover chain): a Director request for the key plays it, then `next` chained on the same
  *  camera; the Director's done() fires once, after `next`. A skip inside the key lands in `next` at `skipAt`
  *  (C2 → C2c 10.4, the slow turn: a skipping player still sees the empty stair). */
-export const POSTROLL: Record<string, { next: string; skipAt: number }> = { C2: { next: 'C2c', skipAt: 10.4 } };
+// M-A (CUTSCENES-PLAN §2/§9, SCENES lane): C6 → C6b → C7 (the story starts C7 on C6's done, i.e. after C6b) and
+// C7 → CR (the end credits; the story ends the game on C7's done, i.e. after CR). A chain only runs once `next` is
+// registered in the library (index.ts), so these are inert until then.
+export const POSTROLL: Record<string, { next: string; skipAt: number }> = {
+  C2: { next: 'C2c', skipAt: 10.4 },
+  C6: { next: 'C6b', skipAt: 0 },
+  C7: { next: 'CR', skipAt: 0 },
+};
 
 /** B12: scheduled sfx (`sched: true`) are handed to the audio clock this far ahead of their cue time (s). */
 export const SCHED_LOOKAHEAD_S = 0.15;
@@ -186,6 +194,12 @@ interface Running {
   acquired: Set<CharId>;
   loops: Set<string>;
   dofOn: boolean;
+  /** M-A focus pull in progress (`dof` cue with `to`/`over`): only the focus distance eases. */
+  dofPull: { dof: DofSettings; from: number; to: number; t: number; over: number } | null;
+  /** A grade / lmScale cue ran: the teardown restores identity. */
+  graded: boolean;
+  /** The timeline's own fade / letterbox (the sequencer emits them on change) and the grade fade last composited. */
+  ov: { fade: number; box: number; gradeFade: number };
   blurOn: boolean;
   cameraHeld: boolean;
   stormOff: boolean;
@@ -269,6 +283,9 @@ export class CutscenePlayer {
       acquired: new Set(),
       loops: new Set(),
       dofOn: false,
+      dofPull: null,
+      graded: false,
+      ov: { fade: 0, box: 0, gradeFade: 0 },
       blurOn: false,
       cameraHeld: false,
       stormOff: false,
@@ -287,7 +304,12 @@ export class CutscenePlayer {
           this.deps.characters!.place(ch, pos, heading);
         }
       },
-      overlay: (fade, box) => this.deps.ui?.overlay?.(fade, box),
+      overlay: (fade, box) => {
+        run.ov.fade = fade;
+        run.ov.box = box;
+        run.ov.gradeFade = GRADE.fade;
+        this.deps.ui?.overlay?.(Math.max(fade, GRADE.fade), box);
+      },
       gate: (gid, prompt) => this.deps.ui?.prompt?.(gid ? (prompt ?? null) : null),
       end: (skipped) => this.finish(run, skipped),
     });
@@ -308,7 +330,15 @@ export class CutscenePlayer {
   update(dt: number): void {
     const run = this.cur;
     if (!run) return;
+    if (dt > 0) {
+      if (run.graded) tickGrade(dt);
+      this.tickDofPull(run, dt);
+    }
     run.seq.update(dt);
+    if (this.cur === run && run.graded && GRADE.fade !== run.ov.gradeFade) {
+      run.ov.gradeFade = GRADE.fade; // the grade's fade eases between the sequencer's own (on-change) overlay calls
+      this.deps.ui?.overlay?.(Math.max(run.ov.fade, GRADE.fade), run.ov.box);
+    }
     if (this.cur === run && dt > 0) this.scheduleAhead(run);
   }
 
@@ -329,6 +359,7 @@ export class CutscenePlayer {
     const c = this.cur;
     if (!c || c.overlay) return false;
     if (c.seq.timeline.skippable === false) return false;
+    if (c.seq.timeline.skipAnytime) return true; // M-A: CR, the end credits
     return this.wasSeen(c.id);
   }
 
@@ -408,7 +439,9 @@ export class CutscenePlayer {
       case 'clip': {
         if (!this.charOk(c.char)) return;
         this.acquire(run, c.char);
-        const o = { loop: !!c.loop, fade: skipped ? 0 : (c.fade ?? 0.25), speed: c.speed ?? 1, at: late };
+        // M-A: `at` = start offset into the clip; speed 0 holds that frame (late time never advances a hold)
+        const speed = c.speed ?? 1;
+        const o = { loop: !!c.loop, fade: skipped ? 0 : (c.fade ?? 0.25), speed, at: (c.at ?? 0) + late * speed };
         if (!chars!.play(c.char, c.clip, o)) for (const f of c.fallback ?? []) if (chars!.play(c.char, f, o)) break;
         return;
       }
@@ -510,7 +543,21 @@ export class CutscenePlayer {
         return;
       case 'dof':
         run.dofOn = !!c.dof;
-        d.render?.dof(c.dof);
+        run.dofPull = null;
+        if (c.dof && c.to !== undefined && (c.over ?? 0) > 0 && !skipped) {
+          run.dofPull = { dof: { ...c.dof }, from: c.dof.focusDistance, to: c.to, t: 0, over: c.over! };
+          this.tickDofPull(run, late); // a late cue starts part-way through the pull
+          return;
+        }
+        d.render?.dof(c.dof && c.to !== undefined ? { ...c.dof, focusDistance: c.to } : c.dof);
+        return;
+      case 'grade':
+        run.graded = true;
+        gradeTo(c.grade, skipped ? 0 : Math.max(0, (c.over ?? 0) - late));
+        return;
+      case 'lmScale':
+        run.graded = true;
+        lmScaleTo(c.scale, skipped ? 0 : Math.max(0, (c.over ?? 0) - late));
         return;
       case 'lock':
         run.lock = c.mode;
@@ -527,8 +574,22 @@ export class CutscenePlayer {
     }
   }
 
+  /** Ease the focus distance of a running pull (smoothstep) and push it to the DOF uniforms. */
+  private tickDofPull(run: Running, dt: number): void {
+    const p = run.dofPull;
+    if (!p) return;
+    p.t = Math.min(p.over, p.t + dt);
+    const x = p.t / p.over;
+    const k = x * x * (3 - 2 * x);
+    p.dof.focusDistance = p.from + (p.to - p.from) * k;
+    this.deps.render?.dof({ ...p.dof });
+    if (p.t >= p.over) run.dofPull = null;
+  }
+
   private teardown(run: Running): void {
     const d = this.deps;
+    run.dofPull = null;
+    if (run.graded) resetGrade();
     if (run.cameraHeld) {
       run.cameraHeld = false;
       d.camera.release();

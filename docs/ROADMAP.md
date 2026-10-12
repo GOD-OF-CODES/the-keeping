@@ -248,6 +248,34 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
   empty-stair torch-arm silhouette, the B05 gown and carried head. (z6) Hard stops for every lane: Low ≈ 10 KB of
   download left, Medium C2c 3.6 k triangles. Duplicate contract #132 (PERF) renumbered #134.
 
+- **M-A + glitch-fix verdict → ship (2026-10-12 08:30):** the M-A AD says SHIP under (aa): the new scenes read on the
+  real route and the one regression it found (#139's road cull through C6 → C6b) is fixed (#141). Photoreal is still
+  NO for every new scene (waxy hands, plaster faces). The glitch lane (#139, user report 2026-10-11 21:15) fixed the C1
+  road blink, the C2 head teleport, root-yaw snaps, camera whips, the C2c 2 s black and the cleaver card, all checked
+  frame by frame and in real time. The M-A brief's rulings, recorded here: (aa) M-A ships on the full gate + the
+  AD's "new scenes read, nothing regressed"; (ab) the infra agent alone registers cutscenes; (ac) exactly three new
+  voice lines (subtitle-only); (ad) the cutscene resolution raise ships only if EVERY cutscene holds ≥ 45 fps. It
+  doesn't (C5 36–43 fps, C4c 46 on Max), so it stays off (`CUTSCENE_SCALE_RAISED`). (ae) Low's DOM letterbox motion
+  is fine. (af) The hard stops of (z6) hold. (ag) The lane A checklist (z4) holds. (ah) Every new cutscene is
+  skippable after first view, and a skip leaves the world exactly as a full play.
+  New rulings:
+  (ai) M-A and the glitch fixes ship together on the lead's five-preset gate (Low/Medium/Max/careless/torch, strict).
+  (aj) C2b ships registered but unverified in play. It is optional, safety-gated and skippable, and no bot triggers
+  it (VIGIL at the first hide exit). The smoothness round verifies it with a patient-bot variant, or cuts it.
+  (ak) Smooth motion is part of the photoreal bar (user, 2026-10-11): no stop-motion in cutscenes. Every round runs
+  the 30 fps stepped capture + one-frame pop/flicker detection (scripts/qa or scratch/glitch pattern) on every
+  cutscene it touches, plus real-time frame-time runs. Culling may never make visible geometry blink.
+  (al) Byte-noise rebuilds (arms_normal, harlan_normal) are committed with their manifests, which hash them.
+  (am) NEXT ROUND = SMOOTHNESS, before M-B:
+  1. Stepped capture + detect on every cutscene not yet frame-checked: C0, C3, C4, C4a, C4c, C5, C5b, C6, C6b, C7,
+     CR.
+  2. The real-time stalls: C7 2.2 s (≈ 2.9 s on Max), C6 18.8 (≈ 1 s), C5 0.03 / 12.9, C4c 5.53. Warm up each
+     cutscene's camera poses at load.
+  3. GPU headroom in the C2 parlor close-ups: ≈ 16–17 ms now, target ≤ 14 ms. Today 112–181 frames per C2 run
+     miss vsync.
+  4. Budgets: C5 into CS_CULL_IDS after a same-state A/B; C2c ≥ 1.5 M at 3.75 s; C4c 188 frames over 1.5 M; C6/C7
+     draws; B05 491–496 draws; C1 60.6 at 402.
+
 ## Then — cutscene rounds (docs/CUTSCENES-PLAN.md §8): M-A … M-F, plus CR end credits (§9)
 Each round: builders → adversarial reviewer → QA (playthrough bot, perf, hero shots) → commit → push → verify live.
 

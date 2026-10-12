@@ -584,7 +584,12 @@ export const ROAM_SPOTS = {
   fanlight: [1.6, -1.5, 4.4],
   /** outside the U1 south window */
   u1_window: [2.1, -1.4, 5.6],
+  /** M-A C4a (infra lane, surgical): outside the U3 east window O_U3_E (wall x 8.9, centre y 7.2, z 5.7) — the stroke
+   *  that backlights the dress on its form ("a slight woman at the window") */
+  u3_window: [9.75, 7.2, 5.95],
 } as const;
+/** Cube faces a spot can shadow indoors (default: the south facade's −z north / −y down; the east window looks west). */
+const ROAM_DIRS: Partial<Record<keyof typeof ROAM_SPOTS, string[]>> = { u3_window: ['-x', '-y'] };
 export const STROKE_CD = 1100;
 export const STROKE_K = 8000;
 
@@ -684,7 +689,7 @@ export class ShadowRoam {
     // the spots are OUTSIDE the south facade: only the faces looking into the house (north = world −z) and down onto
     // the hall floor / treads (−y) can shadow anything indoors; the other four are cleared (d5med: the stroke cube was
     // 418 draws / 1.15 M with every figure in all six faces)
-    L.userData.cubeDirs = ['-y', '-z'];
+    L.userData.cubeDirs = ROAM_DIRS[at as keyof typeof ROAM_SPOTS] ?? ['-y', '-z'];
     L.userData.cubeClearAll = true;
     if (at === 'off' || !(at in ROAM_SPOTS)) {
       this.at = 'off';

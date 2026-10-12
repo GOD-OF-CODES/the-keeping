@@ -177,6 +177,8 @@ export class RoomReflections {
   private dawn = false;
   /** PERF G (ruling f): the exterior cube's last capture cameras (kept so the dawn re-capture reuses their states). */
   private extCams: any[] = [];
+  /** PERF M-A review: the re-capture in progress (one cube face per frame). */
+  private pending: { p: ReflectionProbe; cc: any; face: number } | null = null;
 
   constructor(o: ReflectionsOptions) {
     this.o = o;
@@ -287,16 +289,118 @@ export class RoomReflections {
     const p = this.probes.get(id);
     if (!p) return;
     p.alt ??= new THREE.CubeRenderTarget(CUBE_SIZE, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
-    const target = p.alt;
+    // PERF M-A review: one cube face per frame (the 6 faces in one frame measured 1895 draws / 7.55 M tris, an 83 ms
+    // frame inside C5 / C6); the materials keep sampling the old cube until the 6th face (+ mips) is in, then swap.
+    const cc = new THREE.CubeCamera(p.near, p.far, p.alt);
+    for (const c of cc.children) c.layers.enable(6); // RUNTIME F2: the yard meshes the window cull parked on layer 6
+    cc.position.copy(p.center);
+    cc.updateMatrixWorld(true);
+    const job = { p, cc, face: -1 };
+    this.pending = job;
+    void this.precompileJob(job);
+  }
+
+  /**
+   * PERF M-A review: before the faces render, compile what the dawn / night state draws in the cube context with
+   * renderer.compileAsync (r186: the scene is projected synchronously under the capture state, then node builds yield
+   * and pipelines compile async off the frame). Measured without it on the real route: objects first drawn in the dawn
+   * state (26 node builds at C5 28.9) stalled the next frames 0.9 s (Medium) / 2.4 s (Max).
+   */
+  private async precompileJob(job: { p: ReflectionProbe; cc: any; face: number }): Promise<void> {
+    const { renderer, scene, roomGroups } = this.o;
+    const { cc } = job;
+    try {
+      if (typeof renderer.compileAsync === 'function') {
+        if (cc.coordinateSystem !== renderer.coordinateSystem) {
+          cc.coordinateSystem = renderer.coordinateSystem;
+          cc.updateCoordinateSystem();
+        }
+        for (let f = 0; f < 6; f++) {
+          const groupVis = [...roomGroups.values()].map((g) => [g, g.visible] as const);
+          const others = scene.children.filter((c: any) => !this.o.keep.includes(c)).map((c: any) => [c, c.visible] as const);
+          const prev = renderer.getRenderTarget();
+          const prevFace = renderer.getActiveCubeFace();
+          const prevMip = renderer.getActiveMipmapLevel();
+          let pr: Promise<void> | null = null;
+          try {
+            for (const [g] of groupVis) g.visible = true;
+            for (const [c] of others) c.visible = false;
+            renderer.setRenderTarget(cc.renderTarget, f);
+            pr = renderer.compileAsync(scene, cc.children[f]); // its synchronous part projects the scene now
+          } finally {
+            renderer.setRenderTarget(prev, prevFace, prevMip);
+            for (const [g, v] of groupVis) g.visible = v;
+            for (const [c, v] of others) c.visible = v;
+          }
+          await pr;
+        }
+      }
+    } catch (e) {
+      console.warn('[reflections] re-capture precompile failed (continuing):', e);
+    }
+    if (this.pending === job) job.face = 0;
+  }
+
+  /** One face of the pending re-capture (same scene state as capture()); the 6th swaps the cube in. */
+  private stepRecapture(): void {
+    const job = this.pending;
+    if (!job || job.face < 0) return; // still compiling (precompileJob)
+    const { renderer, scene, roomGroups } = this.o;
+    const { p, cc } = job;
+    const f = job.face;
+    const rt = cc.renderTarget;
+    if (cc.coordinateSystem !== renderer.coordinateSystem) {
+      cc.coordinateSystem = renderer.coordinateSystem;
+      cc.updateCoordinateSystem();
+    }
+    const groupVis = [...roomGroups.values()].map((g) => [g, g.visible] as const);
+    const dark = (this.o.darken ?? []).map((l) => [l, l.intensity] as const);
+    const others = scene.children.filter((c: any) => !this.o.keep.includes(c)).map((c: any) => [c, c.visible] as const);
+    const prev = renderer.getRenderTarget();
+    const prevFace = renderer.getActiveCubeFace();
+    const prevMip = renderer.getActiveMipmapLevel();
+    const gm = rt.texture.generateMipmaps;
+    try {
+      for (const [g] of groupVis) g.visible = true;
+      for (const [l] of dark) l.intensity = 0;
+      for (const [c] of others) c.visible = false;
+      rt.texture.generateMipmaps = f === 5 ? gm : false; // as CubeCamera.update: mips on the last face only
+      renderer.setRenderTarget(rt, f);
+      renderer.render(scene, cc.children[f]);
+    } finally {
+      rt.texture.generateMipmaps = gm;
+      renderer.setRenderTarget(prev, prevFace, prevMip);
+      for (const [g, v] of groupVis) g.visible = v;
+      for (const [l, i] of dark) l.intensity = i;
+      for (const [c, v] of others) c.visible = v;
+    }
+    if (++job.face < 6) return;
+    this.pending = null;
     p.alt = p.cube;
-    void this.capture([p], target);
-    p.cube = target;
-    for (const t of p.texNodes) t.value = target.texture;
-    console.info(`[reflections] re-captured ${id} (${this.dawn ? 'dawn' : 'night'} sky)`);
+    p.cube = rt;
+    for (const t of p.texNodes) t.value = rt.texture;
+    // ruling f: free what only the previous exterior cameras still own; this camera set stays for the next re-capture
+    const drop = this.extCams.flatMap((c) => c.children);
+    this.extCams = [cc];
+    const freed = noRoGc() ? 0 : disposeRenderObjectsFor(renderer, drop);
+    console.info(`[reflections] re-captured ${p.id} (${this.dawn ? 'dawn' : 'night'} sky, 6 frames; freed ${freed})`);
+  }
+
+  /**
+   * PERF M-A review: at load, behind the loading screen, render the exterior once more into its spare cube AFTER
+   * attach() — the hooked (reflection) material variants then have their cube-context render objects + pipelines,
+   * which the kept exterior capture cameras hold (ruling f). Measured without it: the in-game dawn re-capture (C5 26.6,
+   * C6, any B12 load, and back to night) built 120 nodes and froze 40 s on a cold Metal cache (≈ 0.6 s warm), Medium.
+   */
+  async prewarmRecapture(): Promise<void> {
+    const p = this.exterior;
+    if (!p) return;
+    p.alt ??= new THREE.CubeRenderTarget(CUBE_SIZE, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
+    await this.capture([p], p.alt, true);
   }
 
   /** Renders every cube from the lightmapped scene (load time, once; the mip chain is generated per face). */
-  async capture(only?: ReflectionProbe[], into?: any): Promise<void> {
+  async capture(only?: ReflectionProbe[], into?: any, precompile = !only): Promise<void> {
     const { renderer, scene, roomGroups } = this.o;
     const t0 = performance.now();
     const groupVis = [...roomGroups.values()].map((g) => [g, g.visible] as const);
@@ -309,11 +413,11 @@ export class RoomReflections {
       for (const [c] of others) c.visible = false;
       // runtime lane E (item 1): precompile the cube context's pipelines in parallel (render/parallel-compile.ts)
       // before the synchronous captures — cold, the 13 cubes' serial first-render compiles took 67 s on Max.
-      if (!only && typeof renderer.compileAsync === 'function') {
+      if (precompile && typeof renderer.compileAsync === 'function') {
         const prev = renderer.getRenderTarget();
         try {
           await deferCompileWaits(async () => {
-          for (const p of this.probes.values()) {
+          for (const p of only ?? this.probes.values()) {
             const cc = new THREE.CubeCamera(p.near, p.far, p.cube);
             oneShot.push(cc);
             cc.coordinateSystem = renderer.coordinateSystem;
@@ -360,7 +464,8 @@ export class RoomReflections {
   update(lightning: number, camera: any, skyTint = 0): void {
     if (this.exterior) this.exterior.uIntensity.value = 1 + 4 * lightning;
     // dawn (C6 / B12): the yard cube is re-captured once the twilight sky is up, and again back at night
-    if (this.exterior && skyTint > 0.6 !== this.dawn && (skyTint > 0.6 || skyTint < 0.2)) {
+    if (this.pending) this.stepRecapture();
+    else if (this.exterior && skyTint > 0.6 !== this.dawn && (skyTint > 0.6 || skyTint < 0.2)) {
       this.dawn = skyTint > 0.6;
       this.recapture(this.exterior.id);
     }

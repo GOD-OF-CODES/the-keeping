@@ -12,10 +12,14 @@
 // The unmasking is shadow-play: DESIGN asks for a pre-rendered silhouette (fx 'silhouette' hooks for the world lane —
 // a gobo/decal on the tally wall) with the real characters staged behind as the fallback.
 
-import { CAM, DOOR, NODE, PROP, add, focusAt, fwd, headingTo } from './stage.ts';
+import { CAM, CLEAT_ADA, CLEAT_EYE, CLEAT_FINGERS, DOOR, NODE, PROP, add, focusAt, fwd, headingTo, lens } from './stage.ts';
 import type { Cue, P3, TimelineFactory } from './types.ts';
 
-export const C5_DURATION = 33;
+export const C5_DURATION = 33.8;
+/** M-A (CUTSCENES-PLAN §3 C5 +0.8 s): when the rope zips, a 0.8 s insert at P_CLEAT — grey fingers letting the rope
+ *  run (ada_finale from its 8.9 s finger-hook frame, feet out of frame); everything after it is 0.8 s later. */
+export const C5_CLEAT_T = 25.6;
+export const C5_CLEAT_D = 0.8;
 const FLASH1 = 17.5;
 const FLASH2 = 20.5;
 
@@ -91,7 +95,8 @@ export const c5Face: TimelineFactory = (ctx) => {
     { t: 21.6, type: 'visible', char: 'ada', visible: false },
     { t: 22.6, type: 'sfx', id: 'wet_chop', pos: [5.6, 3.3, 1.2], room: 'G2' },
     { t: 22.7, type: 'heartbeat', bpm: 0 },
-    { t: 24.0, type: 'sfx', id: 'spring_bell', pos: PROP.P_SPRING_BELL, room: 'G2' },
+    // M-A: his bell rung for the last time, in the clean 1976 timbre
+    { t: 24.0, type: 'sfx', id: 'spring_bell', pos: PROP.P_SPRING_BELL, room: 'G2', rate: 1.1 },
     // the rope zips; the bolt lifts; the front door swings open onto grey mist
     { t: 25.6, type: 'sfx', id: 'rope_pulleys', pos: PROP.P_PULLEY_3, room: 'G1' },
     { t: 25.6, type: 'fx', id: 'rope_run', params: { dir: 'open' } },
@@ -99,6 +104,9 @@ export const c5Face: TimelineFactory = (ctx) => {
     { t: 26.4, type: 'weather', rain: 0.1, wind: 0.3, inside: 1, surface: 'roof' },
     { t: 26.6, type: 'door', id: 'D_FRONT', action: 'rope_open' },
     { t: 26.6, type: 'fx', id: 'blue_hour', params: { mist: 1, rain: 0 } },
+    // M-A: the mist rolls in over the threshold at floor height (off again with the release)
+    { t: 26.6, type: 'fx', id: 'mist_roll', params: { on: true, door: 'D_FRONT' } },
+    { t: C5_DURATION - 0.8, type: 'fx', id: 'mist_roll', params: { on: false } },
     // the parlor door closes behind you
     { t: 28.8, type: 'door', id: 'D_PARLOR', action: 'close' },
     { t: 29.3, type: 'sfx', id: 'latch', pos: DOOR.parlor, room: 'G1' },
@@ -107,6 +115,27 @@ export const c5Face: TimelineFactory = (ctx) => {
     { t: C5_DURATION, type: 'player', pos: C5_END_EYE, heading: endHeading, pitch: 0 },
     { t: C5_DURATION, type: 'release', char: 'ada' },
   ];
+
+  // the cleat insert: everything after the zip moves 0.8 s later (the zip itself plays under the insert)
+  const late = (t: number) => (t > C5_CLEAT_T + 1e-6 && t < C5_DURATION - 0.81 ? t + C5_CLEAT_D : t);
+  for (const c of cues) c.t = Math.round(late(c.t) * 1000) / 1000;
+  const cleatEnd = C5_CLEAT_T + C5_CLEAT_D;
+  cues.push(
+    // AD review M-A: on the real route she carries her severed head in her right hand — the head-carry IK pins that hand at
+    // her hip and overrode the measured hook pose (no fingers on the rope); free the head for the insert, give it back after
+    { t: C5_CLEAT_T, type: 'attach', char: 'ada', prop: 'ada_head', bone: null },
+    { t: C5_CLEAT_T, type: 'place', char: 'ada', pos: CLEAT_ADA.pos, heading: CLEAT_ADA.heading },
+    { t: C5_CLEAT_T, type: 'light', op: 'flashlight', on: false },
+    { t: C5_CLEAT_T + C5_CLEAT_D, type: 'light', op: 'flashlight', on: true },
+    { t: C5_CLEAT_T, type: 'visible', char: 'ada', visible: true },
+    { t: C5_CLEAT_T, type: 'clip', char: 'ada', clip: 'ada_finale', at: 8.9, speed: 0.4, fade: 0, fallback: ['ada_vigil'] },
+    { t: C5_CLEAT_T, type: 'light', op: 'set', id: 'L_CANDLE_TABLE', scale: 1 },
+    { t: C5_CLEAT_T, type: 'dof', dof: focusAt(CLEAT_EYE, CLEAT_FINGERS, 0.25, 3) },
+    { t: cleatEnd, type: 'visible', char: 'ada', visible: false },
+    { t: cleatEnd, type: 'attach', char: 'ada', prop: 'ada_head', bone: 'prop_r' },
+    { t: cleatEnd, type: 'dof', dof: null },
+  );
+  cues.sort((a, b) => a.t - b.t);
 
   return {
     id: 'C5',
@@ -123,14 +152,18 @@ export const c5Face: TimelineFactory = (ctx) => {
       { t: FLASH2 + 0.05, v: 0.05 },
       { t: FLASH2 + 0.8, v: 0.95 },
       { t: 21.3, v: 1 },
-      { t: 25.2, v: 1 },
-      { t: 27.0, v: 0 },
+      { t: C5_CLEAT_T - 0.02, v: 1 },
+      { t: C5_CLEAT_T + 0.04, v: 0 },
+      { t: C5_CLEAT_T + C5_CLEAT_D - 0.04, v: 0 },
+      { t: C5_CLEAT_T + C5_CLEAT_D + 0.02, v: 1 },
+      { t: 26.0 + C5_CLEAT_D, v: 1 },
+      { t: 27.0 + C5_CLEAT_D, v: 0 },
     ],
     letterbox: [
       { t: 0, v: 0 },
       { t: 1.5, v: 1 },
-      { t: 31.0, v: 1 },
-      { t: 32.8, v: 0 },
+      { t: 31.0 + C5_CLEAT_D, v: 1 },
+      { t: 32.8 + C5_CLEAT_D, v: 0 },
     ],
     moves: [
       { char: 'ada', t: 8.6, d: 1.4, path: [adaAtDoor, [3.6, 1.55, 0.6]], ease: 'inOut', heading: 0 },
@@ -151,6 +184,8 @@ export const c5Face: TimelineFactory = (ctx) => {
       { t: FLASH1 - 0.8, d: 21.3 - (FLASH1 - 0.8), path: [[6.95, 4.05, 2.25]], target: [[5.8, 6.0, 2.6]], fov: 52, handheld: 0.3 },
       // black … then behind you the front door swings open onto grey mist
       { t: 21.3, d: C5_DURATION - 21.3, path: [th.pos, add(th.pos, [-0.2, 0.1, 0]), C5_END_EYE], target: [[2.4, 0.4, 2.4], [1.9, -0.4, 2.0], add(C5_END_EYE, fwd(endHeading, 0, 3))], fov: [55, ctx.player.fov ?? 60], ease: 'inOut', handheld: 0.6 },
+      // M-A: the cleat insert (60 mm), later in the list so it wins over the black move it interrupts
+      { t: C5_CLEAT_T, d: C5_CLEAT_D, path: [CLEAT_EYE, add(CLEAT_EYE, [-0.01, -0.01, 0])], target: [CLEAT_FINGERS], fov: lens(60), ease: 'linear', handheld: 0.25 },
     ],
     cues,
   };

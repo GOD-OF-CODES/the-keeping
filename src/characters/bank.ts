@@ -53,7 +53,7 @@ export class CharacterBank {
       if (!this.ada.c.clips.has(clip)) return false;
       const g = this.ada.group;
       const time = keep(this.ada.overrideClip) ? undefined : o.at;
-      this.ada.override({ clip, pos: [g.position.x, g.position.y, g.position.z], yaw: g.rotation.y, loop: o.loop, timeScale: o.speed, time, fade: o.fade, stopMotion: !CUTSCENE_SMOOTH.has(clip) });
+      this.ada.override({ clip, pos: [g.position.x, g.position.y, g.position.z], yaw: g.rotation.y, loop: o.loop, timeScale: o.speed, time, fade: o.fade, stopMotion: false });
       return true;
     }
     if (id === 'harlan' && this.harlan) {
@@ -178,8 +178,9 @@ export class CharacterBank {
   }
 }
 
-/** Cutscene clips Ada plays smoothly (the stop-motion stutter is for her hunting body). */
-const CUTSCENE_SMOOTH = new Set<string>(['ada_finale_shadow']);
+// Lead ruling 2026-10-11 (the user, after playing the live C2: "jerky movement … isn't smooth enough"): Ada plays
+// SMOOTHLY in every cutscene — the 8–12 fps stop-motion sampling read as a glitch in the beheading close-ups. Her
+// gameplay body keeps it (AdaRig's own default).
 const _p = new THREE.Vector3();
 const _x = new THREE.Vector3();
 const _o = new THREE.Vector3();

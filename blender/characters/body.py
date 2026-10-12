@@ -24,6 +24,29 @@ def joints(bones):
     return {b.name: (np.array(b.head, float), np.array(b.tail, float)) for b in bones}
 
 
+
+def eye_window_edges(u):
+    """M-A: the palpebral fissure of Ada's visible (right) eye in angle space around the globe centre (deg; forward
+    -y): u = az / 50 (canthi at +-50 deg ~ +-10 mm on the 11.8 mm globe -> a 27-28 mm fissure... real ~28-30 mm).
+    Lower margin at -27 deg in the middle (covers ~1 mm of the iris bottom), upper edge hidden under eye_lid.py's open
+    shell (margin 15 deg); both converge at the canthi (lateral 2 deg higher)."""
+    lo = -27.0 * (1 - u * u) + 2.0 * u
+    hi = 21.0 * (1 - u * u) + 2.0 * u
+    return lo, hi
+
+
+def eye_window(X, ec):
+    """SDF of the solid carved out of the head skin in front of the globe (the almond 'closed lid' shell of the head
+    SDF otherwise covers the globe 0.4 mm proud everywhere, so the eye_lid.py lid opened onto painted skin)."""
+    v = X - ec
+    r = np.linalg.norm(v, axis=1)
+    az = np.degrees(np.arctan2(v[:, 0], -v[:, 1]))
+    el = np.degrees(np.arcsin(np.clip(v[:, 2] / np.maximum(r, 1e-9), -1, 1)))
+    u = az / 50.0
+    lo, hi = eye_window_edges(np.clip(u, -1, 1))
+    a = np.maximum.reduce([np.abs(u) - 1.0, (el - hi) / 50.0, (lo - el) / 50.0]) * math.radians(50.0) * 0.0125
+    return np.maximum(a, r - 0.0168)
+
 def _n(v):
     v = np.asarray(v, float)
     return v / np.linalg.norm(v)
@@ -317,6 +340,8 @@ def anatomy(P, J, style):
             # in deep pits like a statue's goggles); 12.2 mm deep vs the eye_lid.py shell's 13.96 (stays under it)
             ec_ = sk + np.array([0.0, 0.0095, 0.0])
             d = sdf.smin(d, sdf.ellipsoid(X, ec_ + np.array([0.0, 0.0, 0.001]), (0.0165, 0.0122, 0.0145)), 0.006)
+            if k == 1:                                   # M-A: her visible right eye opens onto the globe
+                d = sdf.smax(d, -eye_window(X, ec_), 0.0008)
             # (the nasolabial groove stays in the height map: the surface-anchored capsule cut one side 5 mm deep)
             # the ear: a 6 mm plate, the helix rim tube, antihelix ridge, concha bowl, tragus, lobule
             ec = ears_c[k]

@@ -25,13 +25,15 @@ import type { Level } from './level.ts';
 import type { CharacterBank } from '../characters/bank.ts';
 import { uFaceFill } from '../characters/skin.ts';
 import { planToWorld } from '../shared/coords.ts';
-import { setCandleShadow, kelvinToLinearRGB, ShadowRoam, parsePulses, tagFigureCasters } from './lights.ts';
+import { setCandleShadow, kelvinToLinearRGB, ShadowRoam, parsePulses, tagFigureCasters, LAMP_CASTER_LAYER } from './lights.ts';
 import { LOOK } from '../render/look.ts';
-import { uParlorBake } from '../render/lightmap-material.ts'; // AD review: C5 ghost-bake dimming
+import { uLmScale, uParlorBake } from '../render/lightmap-material.ts'; // AD review: C5 ghost-bake dimming; M-A lmScale
+import { GRADE } from '../render/grade.ts'; // M-A cutscene grade (pure)
 import { requestExposureSnap } from '../render/exposure.ts'; // AD review: C5 cut
 import { hashRng, PENS, drawText } from '../render/handwriting.ts';
 import { createOpening } from './opening.ts';
 import { createBloodFx } from './blood-fx.ts';
+import { createMaFx } from './ma-fx.ts'; // M-A SCENES: drops, mist_roll, match_flare, dash_ticket
 import { HEAD_LAND, HEAD_REST, NECK, GROUND, LAMP_FLAME } from '../cutscenes/stage.ts';
 import { C2_SEVER, C2_HEAD_LANDS } from '../cutscenes/c2-room.ts';
 import type { P3 } from '../cutscenes/types.ts';
@@ -399,7 +401,7 @@ function findPart(root: any, suffix: string): any[] {
 /** v2 cluster dial layout (uv centre + radius in v units) from the gauges decal extras; null = the old CAR set. */
 let clusterLayout: Record<string, { uv: [number, number]; r_uv: number }> | null = null;
 
-function drawCluster(g: CanvasRenderingContext2D, w: number, h: number, st: { on: boolean; fuel: number; lamp: boolean; speed: number }): void {
+function drawCluster(g: CanvasRenderingContext2D, w: number, h: number, st: { on: boolean; fuel: number; lamp: boolean; speed: number; clock?: string }): void {
   const L = clusterLayout;
   g.fillStyle = '#050605';
   g.fillRect(0, 0, w, h);
@@ -448,6 +450,25 @@ function drawCluster(g: CanvasRenderingContext2D, w: number, h: number, st: { on
   const fuel = Math.max(-0.06, Math.min(1, st.fuel));
   dial(fu.x, fu.y, fu.r, Math.PI * 1.25, Math.PI * 1.75, 4, [[0, 'E'], [1, 'F']], fuel);
   if (L?.temp) dial(w * L.temp.uv[0], h * L.temp.uv[1], h * L.temp.r_uv * 0.92, Math.PI * 1.25, Math.PI * 1.75, 2, [[0, 'C'], [1, 'H']], 0.45);
+  // M-A (C6 insert): the quartz clock's blue-green VFD readout between the dials (kept on the battery: dimmer with the
+  // ignition off)
+  if (st.clock) {
+    const cx = (sp.x + fu.x) / 2;
+    const cy = Math.max(sp.y, fu.y) - h * 0.02;
+    g.fillStyle = '#020403';
+    g.fillRect(cx - 34, cy - 15, 68, 28);
+    g.font = '600 22px ui-monospace, Menlo, Consolas, monospace';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const k = st.on ? 1 : 0.55;
+    g.shadowColor = `rgba(90,255,210,${0.8 * k})`;
+    g.shadowBlur = 5;
+    g.fillStyle = `rgba(120,255,215,${k})`;
+    g.fillText(st.clock, cx, cy);
+    g.shadowBlur = 0;
+    g.textAlign = 'start';
+    g.textBaseline = 'alphabetic';
+  }
   // low-fuel lamp (amber pump pictogram)
   const lx = fu.x;
   const ly = L ? Math.min(h - 14, fu.y + fu.r * 0.55) : h * 0.86;
@@ -476,7 +497,7 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   let wiperPeriod = 1.25;
   let wiperT = 0;
   let wiperParkT = 0;
-  const dash = { on: false, fuel: 0.05, lamp: false as boolean | 'blink', speed: 0.35, dirty: true, blinkOn: true, blinkT: 0 };
+  const dash = { on: false, fuel: 0.05, lamp: false as boolean | 'blink', speed: 0.35, dirty: true, blinkOn: true, blinkT: 0, clock: '' };
   let clusterCanvas: HTMLCanvasElement | null = null;
   let clusterTex: any = null;
   const clusterGain = uniform(0.1);
@@ -623,7 +644,7 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   const redrawCluster = () => {
     if (!clusterCanvas) return;
     const lamp = dash.lamp === 'blink' ? dash.blinkOn : !!dash.lamp;
-    drawCluster(clusterCanvas.getContext('2d')!, clusterCanvas.width, clusterCanvas.height, { on: dash.on, fuel: dash.fuel, lamp: dash.on && lamp, speed: dash.speed });
+    drawCluster(clusterCanvas.getContext('2d')!, clusterCanvas.width, clusterCanvas.height, { on: dash.on, fuel: dash.fuel, lamp: dash.on && lamp, speed: dash.speed, clock: dash.clock });
     clusterTex.needsUpdate = true;
     clusterGain.value = dash.on ? 1.4 : 0.25;
     opening.setGauges({ mph: dash.speed * 120, fuel: dash.fuel, on: dash.on });
@@ -671,6 +692,59 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   // C2-ESCAPE K3: the one shadow light is now the parlor lamp (RuntimeLights.shadow); the shadow-play moves it as before
   const shadowLight = level.lights.shadow ?? level.lights.flickers.find((f) => f.def.id === 'L_CANDLE_TABLE') ?? null;
   const roam = new ShadowRoam(level.lights, level.root);
+  // M-A C2 upgrades (ruling z5 item 2): the lamp's FLAG on Harlan's side for the strike. At the strike his right
+  // forearm is ≈ 0.73 m from the 12 cd flame (E ≈ 22 lx vs a few lux on the stump) and the plaid / gauntlets read
+  // salmon / pale grey. A film crew cuts a practical off a near actor with a flag (a black card off-frame, here at
+  // 0.55 m from the flame): one 2-triangle card on the lamp's CASTER layer only — the view camera (layer 0) never
+  // draws it, the lamp's cube renders it as an occluder. Plan placement in LAMP_FLAG (QA: globalThis.__c2Flag =
+  // { c, w, h, yaw, pitch } plan metres / degrees). On/off pair in C2 (`fx lampFlag {on}`; a skip ends it off).
+  let lampFlag: any = null;
+  // geometry (sweep scratch/mac2/s1, strike 7.75–8.4, from the flame): Harlan's forearm_r az −2…+18° el 22–23°,
+  // upperarm/chest/head el 28–40°; the stump (ada neck_01) az −13° el 7°, his cleaver hand el 1–5° → a card 0.25 m out
+  // at bearing 5° cutting el 15°–60° over az −25…+35° shades his arms, chest and face and leaves the stump, the cleaver
+  // and her body (el ≤ 8°) in the flame. The card sits 0.55 m out (bearing 5°): the cube's near plane is 0.5 m
+  // (lights.ts) — a card nearer the flame is clipped out of the map (ab1: a 0.25 m card had no effect). At 0.55 m the
+  // same solid angle is 0.64 × 0.80 m, its plane still short of his forearm (0.66 m along that bearing at 8.4).
+  const LAMP_FLAG = { c: [4.842, 3.712, 1.9] as P3, w: 0.64, h: 0.8, yaw: 5, pitch: 0 };
+  const placeLampFlag = () => {
+    if (!lampFlag) return;
+    const o = { ...LAMP_FLAG, ...((globalThis as any).__c2Flag ?? {}) };
+    lampFlag.position.set(...planToWorld(o.c as P3));
+    lampFlag.scale.set(Number(o.w), Number(o.h), 1);
+    // the card's normal faces PLAN bearing `yaw` (deg, CCW from +x); PlaneGeometry's normal is +Z (WORLD) = PLAN −y
+    lampFlag.rotation.set(0, 0, 0);
+    lampFlag.rotation.order = 'YXZ';
+    lampFlag.rotation.y = ((Number(o.yaw) + 90) * Math.PI) / 180;
+    lampFlag.rotation.x = (Number(o.pitch) * Math.PI) / 180;
+    lampFlag.updateMatrixWorld(true);
+  };
+  {
+    // created at load like every fx mesh (nothing compiles mid-cutscene); hidden until the cue
+    const m = new THREE.MeshBasicNodeMaterial();
+    m.name = 'lamp-flag';
+    m.side = THREE.DoubleSide;
+    m.shadowSide = THREE.DoubleSide;
+    lampFlag = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), m);
+    lampFlag.name = 'lamp_flag';
+    lampFlag.castShadow = true;
+    lampFlag.receiveShadow = false;
+    lampFlag.visible = false;
+    lampFlag.layers.set(LAMP_CASTER_LAYER); // never layer 0: invisible to the view, the torch and the stroke cubes
+    level.root?.add?.(lampFlag);
+  }
+  const setLampFlag = (on: boolean) => {
+    if (!lampFlag) return;
+    lampFlag.visible = on;
+    placeLampFlag();
+    // ON (C2 t = 0, the cut into the cutscene): all six faces now so the flag never appears a third at a time. OFF
+    // (8.6, the handheld whip to E4): no forced 6-face redraw (≈ 0.9 M tris on one frame, ruling (b)) — the 20 Hz
+    // thirds scheduler retires the flag's shadow within ≈ 3 updates during the whip
+    const L = level.lights.shadow?.light;
+    if (L && on) {
+      L.userData.cubeFaces = null;
+      L.shadow.needsUpdate = true;
+    }
+  };
   let shadow: { id: string; t: number; saved: { pos: any; color: any; distance: number; cast: boolean } } | null = null;
   const SHADOW_LIGHT_POS = planToWorld([5.0, 3.85, 2.05]);
   const SHADOW_CANDLE_CD = 0.95;
@@ -832,6 +906,7 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     h.updateWorldMatrix(true, false);
     return h.localToWorld(local.clone());
   };
+  const ma = createMaFx(d.level); // M-A SCENES (src/world/ma-fx.ts)
   const blood = createBloodFx({
     scene: level.root.parent ?? level.root,
     keyLight: () => level.lights.shadow?.light ?? null,
@@ -840,6 +915,9 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     headPos: () => headWorld(HEAD_CUT_L),
     headCenter: () => headWorld(HEAD_CENTER_L),
   });
+  const G_ACC = 9.81; // GLITCH-FIX: the head's fall (m/s²)
+  const _hv = new THREE.Vector3();
+  const _hi = new THREE.Vector3();
   /** The severed head in world space while nobody holds it (needs B-STORY's ada.headNode(); a no-op until then). */
   const head = { mode: 'none' as 'none' | 'fall' | 'nudge' | 'rest', t: 0, from: new THREE.Vector3(), q0: new THREE.Quaternion() };
   const headNode = (): any | null => (d.characters?.ada as any)?.headNode?.() ?? null;
@@ -951,6 +1029,12 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   };
   const faceFill = { k: 0, k1: 0, rate: 5 };
   const updateHead = (dt: number) => {
+    // QA (M-A flag sweeps): a live __c2Flag override re-places the card every frame; __c2Flag.on forces it on/off
+    const qf = (globalThis as any).__c2Flag;
+    if (qf && lampFlag) {
+      if (qf.on !== undefined && lampFlag.visible !== !!qf.on) setLampFlag(!!qf.on);
+      else if (lampFlag.visible) placeLampFlag();
+    }
     // the bounce fill exists only while HE holds it up (C2 10.6–21.9): a skip past the off cue, or the head back in her
     // own hand (C2c / B05), must not keep lighting it from below
     if (faceFill.k1 > 0) {
@@ -970,16 +1054,46 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     const n = headNode();
     if (!n) return;
     if (head.mode === 'fall') {
-      // dragged off the edge by its weight and the hair: free fall 0.8 m ≈ 0.40 s (√(2h/g)); it leaves with the body's
-      // slump and tumbles ≈ 3/4 turn; lands 7.90 (the cue), then lies where it landed until the nudge
+      // dragged off the edge by its weight and the hair; it leaves with the body's slump and tumbles ≈ 3/4 turn; lands
+      // 7.90 (the cue), then lies where it landed until the nudge.
+      // GLITCH-FIX (physical timing): the drop was y ∝ u² over 0.30 s — a = 2h/T² ≈ 17 m/s² (1.7 g) from rest. Now real
+      // gravity from the blade's downward push: h = v0·T + g·T²/2 → v0 = (h − g·T²/2)/T ≈ 1.0 m/s for the ≈ 0.75 m
+      // drop in T = 0.30 s (a cleaver at ≈ 10 m/s hands the separating head ≈ 1 m/s), constant horizontal speed; then
+      // a damped bounce on the boards (restitution e = 0.2 for a head on pine: v_imp ≈ 4 m/s → 0.8 m/s, ≈ 3 cm,
+      // 0.16 s) and a skid that rolling friction (μ_r·g ≈ 3 m/s²) stops within ≈ 3 cm, onto the landing pose.
       const T = C2_HEAD_LANDS - C2_SEVER;
-      const u = Math.min(1, head.t / T);
       const L = landPose();
-      const p = head.from.clone().lerp(L.pos, u);
-      p.y = head.from.y + (L.pos.y - head.from.y) * u * u; // gravity: slow off the edge, fast at the floor
-      const q = head.q0.clone().slerp(L.q, Math.min(1, u * 1.15));
-      setWorld(n, p, q);
-      if (u >= 1) head.mode = 'rest';
+      const SKID = 0.03;
+      const dir = _hv.set(L.pos.x - head.from.x, 0, L.pos.z - head.from.z);
+      const run = dir.length();
+      if (run > 1e-4) dir.divideScalar(run);
+      const impact = _hi.copy(L.pos).addScaledVector(dir, -Math.min(SKID, run * 0.5));
+      if (head.t < T) {
+        const u = head.t / T;
+        const h = head.from.y - L.pos.y;
+        const v0 = Math.max(0, (h - 0.5 * G_ACC * T * T) / T);
+        const p = head.from.clone().lerp(impact, u);
+        p.y = head.from.y - v0 * head.t - 0.5 * G_ACC * head.t * head.t;
+        setWorld(n, p, head.q0.clone().slerp(L.q, Math.min(1, u * 1.15)));
+      } else {
+        const tb = head.t - T;
+        const h = head.from.y - L.pos.y;
+        const vImp = Math.max(0, (h - 0.5 * G_ACC * T * T) / T) + G_ACC * T;
+        const vb = 0.2 * vImp;
+        const air = (2 * vb) / G_ACC;
+        const p = impact.clone();
+        p.y = L.pos.y + (tb < air ? vb * tb - 0.5 * G_ACC * tb * tb : 0);
+        const k = Math.min(1, tb / 0.3);
+        p.lerp(_hv.set(L.pos.x, p.y, L.pos.z), 1 - (1 - k) * (1 - k)); // the skid decelerates to rest
+        // the landing rocks it ≈ 5° about the crown axis, gone in ≈ 0.3 s
+        const rock = 5 * Math.exp(-tb * 9) * Math.sin((tb * 2 * Math.PI) / 0.22);
+        const R = Math.abs(rock) > 0.05 ? floorPose(HEAD_LAND, Number((globalThis as any).__c2HeadLand?.face ?? 261), Number((globalThis as any).__c2HeadLand?.roll ?? -65) + rock, 0.07, Number((globalThis as any).__c2HeadLand?.tilt ?? 0)).q : L.q;
+        setWorld(n, p, R);
+        if (tb >= 0.45) {
+          setWorld(n, L.pos, L.q);
+          head.mode = 'rest';
+        }
+      }
     } else if (head.mode === 'nudge') {
       // the boot toe rolls it over onto its side (0.35 s), the cut ring into the lamp; a damped rock (0.6 s period,
       // 7° → 0) about the crown axis to rest by ≈ 10.4 (§2.1 S4 / §3.5 9.6–10.7)
@@ -1037,6 +1151,7 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
         dash.on = !!p.on;
         if (p.fuelNeedle !== undefined) dash.fuel = Number(p.fuelNeedle);
         dash.lamp = p.fuelLamp === 'blink' ? 'blink' : !!p.fuelLamp;
+        if (p.clock !== undefined) dash.clock = String(p.clock); // M-A C6 insert: the 6:10 readout ('' = blank)
         dash.dirty = true;
         return true;
       case 'fuel':
@@ -1072,6 +1187,9 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
         faceFill.k1 = Number(p.k ?? 0);
         faceFill.rate = 1 / Math.max(1e-3, Number(p.fade ?? 0.2));
         return true;
+      case 'lampFlag':
+        setLampFlag(!!p.on);
+        return true;
       case 'shadowLight':
         roam.set(String(p.at ?? 'lamp'), parsePulses(p.pulses as string | undefined));
         return true;
@@ -1079,7 +1197,7 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
         giveBack(Number(p.amount ?? 0.02));
         return true;
       default:
-        return opening.fx(id, p);
+        return ma.fx(id, p) || opening.fx(id, p);
     }
   };
 
@@ -1090,6 +1208,7 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   // ≈ 1 s (attachments change: the head moves to his fist, the cleaver to a hand) — a traverse of ≈ 100 nodes
   let tagT = 0;
   const update = (dt: number) => {
+    ma.update(dt, d.camera); // M-A SCENES
     lastDt += dt;
     tagT -= dt;
     if (tagT <= 0) {
@@ -1189,9 +1308,12 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     blueHour += (blueTarget - blueHour) * Math.min(1, dt * 0.6);
     const pl = d.pipeline();
     if (pl?.uniforms?.tint) {
-      pl.uniforms.tint.value.setRGB(1 - blueHour * 0.1, 1 - blueHour * 0.02, 1 + blueHour * 0.1);
-      pl.uniforms.saturation.value = 1 - blueHour * 0.3;
+      // × the M-A cutscene grade (src/render/grade.ts; identity outside a `grade` cue)
+      const gt = GRADE.tint;
+      pl.uniforms.tint.value.setRGB((1 - blueHour * 0.1) * gt[0], (1 - blueHour * 0.02) * gt[1], (1 + blueHour * 0.1) * gt[2]);
+      pl.uniforms.saturation.value = (1 - blueHour * 0.3) * GRADE.saturation;
     }
+    uLmScale.value = GRADE.lm; // M-A `lmScale` cue (1 = as baked)
   };
 
   /** After the level's light update (the flicker loop would overwrite the shadow light). */

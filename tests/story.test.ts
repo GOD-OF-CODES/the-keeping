@@ -223,7 +223,10 @@ test('finale: take → locket removed; C5 only when she is at the door AND you a
   const s = new Story(Story.debugStateAt('B11'));
   s.handle({ type: 'ai', event: { type: 'finale', phase: 'start' } });
   const t = s.handle({ type: 'ai', event: { type: 'finale', phase: 'take' } });
-  assert.ok(has(t, (c) => c.type === 'item' && c.id === 'locket'));
+  assert.ok(has(t, (c) => c.type === 'cutscene' && c.id === 'C4c'), 'M-A: the authored take (C4c)');
+  assert.ok(!has(t, (c) => c.type === 'item'), 'the locket stays in hand while C4c plays');
+  const t2 = s.handle({ type: 'cutscene_end', id: 'C4c' });
+  assert.ok(has(t2, (c) => c.type === 'item' && c.id === 'locket'), 'handed over at C4c end');
   assert.ok(s.s.flags.locket_given && !s.s.flags.has_locket);
   s.handle({ type: 'ai', event: { type: 'finale', phase: 'at_door' } });
   assert.ok(!has(s.update(0.1, view({ playerRoom: 'G3P' })), (c) => c.type === 'cutscene'));

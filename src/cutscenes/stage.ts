@@ -140,3 +140,23 @@ export const STAIR_TOP_EYE = { pos: [0.55, 8.25, 5.75] as P3, heading: -1.571, p
 /** ST_MAIN: 16 risers × 0.219 m, treads 0.28 m, from (0.55, 3.60) running north; tread k's nosing. */
 export const ST_MAIN = { x: 0.55, y0: 3.6, risers: 16, rise: 0.219, run: 0.28, width: 1.1, creaky: [5, 12] } as const;
 export const treadNosing = (k: number): P3 => [ST_MAIN.x, ST_MAIN.y0 + ST_MAIN.run * k, GROUND + ST_MAIN.rise * k];
+
+// ---- M-A (SCENES): Ada's hands on held clip frames — root-relative bone positions MEASURED in the game
+// (scratch/ma-scenes/probe.mjs, heading 0: x = forward, y = left, z = up from the root): index_02 (the middle of the
+// index finger) is the point a hand-only insert aims at.
+/** ada_finale at 8.9 s (the finger-hook frame), right index. */
+export const ADA_FINALE_HOOK_R: P3 = [0.615, -0.104, 1.451];
+/** ada_finale_take at 0.45 s, left index. */
+export const ADA_TAKE_045_L: P3 = [0.487, -0.044, 1.476];
+/** The root (and heading) that puts a root-relative point `off` at `target` with her body near `bodyNear`. */
+export function rootForReach(target: P3, bodyNear: P3, off: P3): { pos: P3; heading: number } {
+  const heading = Math.atan2(target[1] - bodyNear[1], target[0] - bodyNear[0]);
+  const c = Math.cos(heading);
+  const s = Math.sin(heading);
+  return { pos: [target[0] - (c * off[0] - s * off[1]), target[1] - (s * off[0] + c * off[1]), target[2] - off[2]], heading };
+}
+/** The parlor cleat inserts (C5, C6b, C7): 60 mm from the north-east, her body south-east of the cleat (out of frame,
+ *  32° off axis), the right index on the rope at the cleat. */
+export const CLEAT_EYE: P3 = [4.45, 2.45, 2.4];
+export const CLEAT_FINGERS: P3 = [3.84, 1.9, 2.22];
+export const CLEAT_ADA = rootForReach(CLEAT_FINGERS, [4.12, 1.6, 0.6], ADA_FINALE_HOOK_R);

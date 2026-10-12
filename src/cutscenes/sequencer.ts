@@ -47,6 +47,8 @@ interface MoveRt {
   m: MoveTrack;
   path: ArcPath;
   finished: boolean;
+  /** GLITCH-FIX (MoveTrack.turnIn): the heading the character had before this move (null = no blend). */
+  from: number | null;
 }
 
 interface VehRt {
@@ -80,7 +82,20 @@ export class Sequencer {
     // stable sort by time (authoring order among equals)
     this.cues = tl.cues.map((c, i) => ({ c, i })).sort((a, b) => a.c.t - b.c.t || a.i - b.i).map((x) => x.c);
     this.shots = (tl.shots ?? []).map((s) => ({ s, eye: new ArcPath(s.path), at: new ArcPath(s.target) }));
-    this.moves = (tl.moves ?? []).map((m) => ({ m, path: new ArcPath(m.path), finished: false }));
+    this.moves = (tl.moves ?? []).map((m) => ({ m, path: new ArcPath(m.path), finished: false, from: null as number | null }));
+    // GLITCH-FIX (MoveTrack.turnIn, CONTRACT-CHANGES #139): the heading each turning move starts from — the end of the
+    // character's last earlier move in this timeline, else its last `place` cue at or before the move's start
+    for (const rt of this.moves) {
+      if (!(rt.m.turnIn && rt.m.turnIn > 0)) continue;
+      let prev: MoveRt | null = null;
+      for (const o of this.moves) if (o !== rt && o.m.char === rt.m.char && o.m.t + o.m.d <= rt.m.t + 1e-6 && (!prev || o.m.t + o.m.d > prev.m.t + prev.m.d)) prev = o;
+      if (prev) rt.from = this.moveAt(prev, prev.m.t + prev.m.d).heading;
+      else {
+        let place: { t: number; heading: number } | null = null;
+        for (const c of this.cues) if (c.type === 'place' && c.char === rt.m.char && c.t <= rt.m.t + 1e-6 && (!place || c.t >= place.t)) place = c;
+        rt.from = place ? place.heading : null;
+      }
+    }
     this.veh = (tl.vehicle ?? []).map((v) => ({ v, path: new ArcPath(v.path) })).sort((a, b) => a.v.t - b.v.t);
     this.seed = tl.seed ?? hashString(tl.id);
   }
@@ -275,6 +290,10 @@ export class Sequencer {
     if (m.heading === undefined || m.heading === 'path') heading = rt.path.points.length > 1 ? headingOf(rt.path.tangent(e)) : 0;
     else if (typeof m.heading === 'number') heading = m.heading;
     else heading = lerpAngle(m.heading[0], m.heading[1], e);
+    if (rt.from !== null && m.turnIn) {
+      const w = Math.min(1, Math.max(0, (t - m.t) / m.turnIn));
+      if (w < 1) heading = lerpAngle(rt.from, heading, w * w * (3 - 2 * w));
+    }
     return { pos, heading };
   }
 

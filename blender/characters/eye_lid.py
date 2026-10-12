@@ -25,7 +25,8 @@ LID_R = R_EYE + BULGE + 0.0009
 AZ = (-58.0, 58.0)        # lid width (deg, around the eye's vertical axis)
 EL_TOP = 52.0             # tucked under the brow skin
 EL_CLOSED = -30.0         # margin, closed
-EL_OPEN = 8.0             # margin, open (influence 1)
+EL_OPEN = 15.0            # margin, open (influence 1). M-A: 8 -> 15 deg: the upper lid covers ~1.5 mm of the
+                          # iris top (a normal open eye) instead of a heavy-lidded slit, so the 13.9 insert shows the clouded iris
 NA, NE = 14, 7
 
 

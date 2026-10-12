@@ -200,3 +200,41 @@ export function sampleKeys(keys: readonly { t: number; v: number }[] | undefined
   }
   return keys[keys.length - 1].v;
 }
+
+/**
+ * GLITCH-FIX (C2 S10, C2c 4.47 / 6.62 / 7.45): look-at waypoints that turn the view from `from` to `to` (PLAN points)
+ * around `eye` along a sphere (radius = the endpoints' distances, interpolated), so the camera's angular speed follows
+ * the shot's ease. A Catmull-Rom between two far-apart targets cuts the chord past the eye: at 0.5–1.1 m from it the
+ * look whipped 30–83° in ONE frame (and dipped 44° to the floor). `turn` = the signed heading change (rad, + = CCW,
+ * − = clockwise); `n` interior points. The endpoints are returned exactly (adjacent shots stay continuous).
+ */
+export function sweepTargets(eye: P3, from: P3, to: P3, turn: number, n = 4): P3[] {
+  const rel = (p: P3) => [p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]];
+  const a = rel(from);
+  const b = rel(to);
+  const ra = Math.hypot(a[0], a[1], a[2]);
+  const rb = Math.hypot(b[0], b[1], b[2]);
+  const ha = Math.atan2(a[1], a[0]);
+  const pa = Math.asin(a[2] / ra);
+  const pb = Math.asin(b[2] / rb);
+  const out: P3[] = [from];
+  for (let i = 1; i <= n; i++) {
+    const u = i / (n + 1);
+    const h = ha + turn * u;
+    const p = lerp(pa, pb, u);
+    const r = lerp(ra, rb, u);
+    out.push([eye[0] + Math.cos(h) * Math.cos(p) * r, eye[1] + Math.sin(h) * Math.cos(p) * r, eye[2] + Math.sin(p) * r]);
+  }
+  out.push(to);
+  return out;
+}
+
+/** Signed heading change (rad) from `from` to `to` around `eye`, the short way unless `dir` forces ±1 (CCW / CW). */
+export function turnBetween(eye: P3, from: P3, to: P3, dir: 1 | -1 | 0 = 0): number {
+  const ha = Math.atan2(from[1] - eye[1], from[0] - eye[0]);
+  const hb = Math.atan2(to[1] - eye[1], to[0] - eye[0]);
+  let d = (((hb - ha) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI; // (−π, π]
+  if (dir === 1 && d < 0) d += 2 * Math.PI;
+  if (dir === -1 && d > 0) d -= 2 * Math.PI;
+  return d;
+}

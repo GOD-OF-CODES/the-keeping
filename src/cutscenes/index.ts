@@ -6,11 +6,17 @@ import { c0Road } from './c0-road.ts';
 import { c1Empty } from './c1-empty.ts';
 import { c2Room } from './c2-room.ts';
 import { c2cUp } from './c2c-up.ts';
+import { c2bDoor } from './c2b-door.ts';
 import { c3LooksUp } from './c3-looks-up.ts';
 import { c4Hem } from './c4-hem.ts';
+import { c4aDoorGives } from './c4a-door-gives.ts';
+import { c4cRemembers } from './c4c-remembers.ts';
 import { c5Face } from './c5-face.ts';
+import { c5bRocking } from './c5b-rocking.ts';
 import { c6BlueHour } from './c6-blue-hour.ts';
+import { c6bBait } from './c6b-bait.ts';
 import { c7Keeping } from './c7-keeping.ts';
+import { crCredits } from './cr-credits.ts';
 import { deathCutaway } from './death.ts';
 import type { TimelineFactory } from './types.ts';
 
@@ -19,16 +25,22 @@ export const CUTSCENES: Record<string, TimelineFactory> = {
   C1: c1Empty,
   C2: c2Room,
   C2c: c2cUp, // chained after C2 by host.ts POSTROLL (the Director requests only C2)
+  C2b: c2bDoor, // M-A: optional, B05 first hide exit with her in VIGIL (story cutscene_req)
   C3: c3LooksUp,
   C4: c4Hem,
+  C4a: c4aDoorGives, // M-A: optional, B08 → B09 (story cutscene_req, safety gate)
+  C4c: c4cRemembers, // M-A: the FINALE take (B11)
   C5: c5Face,
+  C5b: c5bRocking, // M-A: optional, B12 first porch arrival after harlan_taken
   C6: c6BlueHour,
+  C6b: c6bBait, // M-A: chained after C6 by host.ts POSTROLL (the Director requests only C6)
   C7: c7Keeping,
+  CR: crCredits, // M-A (CUTSCENES-PLAN §9): the end credits, chained after C7 by host.ts POSTROLL
   death: deathCutaway,
 };
 
 /** The ids the story Director requests (src/story/beats.ts CutsceneId). */
-export const DIRECTOR_CUTSCENES = ['C1', 'C2', 'C2c', 'C3', 'C5', 'C6', 'C7', 'death'] as const;
+export const DIRECTOR_CUTSCENES = ['C1', 'C2', 'C2c', 'C2b', 'C3', 'C4a', 'C4c', 'C5', 'C5b', 'C6', 'C7', 'death'] as const;
 
 /** Clip names that exist in public/assets/<tier>/{ada,harlan,arms}.glb (docs/CHARACTERS.md). */
 export const KNOWN_CLIPS: Record<'ada' | 'harlan' | 'arms', readonly string[]> = {
@@ -54,6 +66,8 @@ export const PENDING_CLIPS: readonly string[] = [
 export const PENDING_SFX: readonly string[] = [
   'cleaver_sever', 'score_hit', 'head_drop', 'head_nudge', 'hair_wring', 'blood_drip', 'arterial_spurt', 'blood_patter', 'stump_breath', 'bare_feet_wet',
   'handrail_squeak', 'newel_knock', 'torch_knock', 'body_fall_stairs',
+  // M-A (SCENES lane; bindings SFX_STANDIN until lane C synthesises them)
+  'match', 'sizzle', 'rope_creak',
 ];
 
 export { CutscenePlayer, localSeenStore, memorySeenStore } from './host.ts';

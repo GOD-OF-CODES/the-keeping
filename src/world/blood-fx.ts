@@ -123,6 +123,7 @@ export function createBloodFx(d: BloodDeps) {
   // escape fix round (lane CINE): the severed head occludes the lamp on its own pool (a sphere, r 0.09 m; y −100 = none)
   const uReflK = uniform(1); // debug A/B (__bloodFx.uReflK)
   const uStainDbg = uniform(0); // debug A/B (__bloodFx.uStainDbg)
+  const uPoolV2 = uniform(1); // M-A C2 upgrades (pools: seams, satellites, thickness tone); debug A/B (__bloodFx.uPoolV2 = 0 → fix round 4)
   const uHeadOcc = uniform(new THREE.Vector4(0, -100, 0, 0.09));
   /** Soft sphere shadow of the head on the key light at P (1 = lit). */
   const headShadow = (P: any) => {
@@ -529,8 +530,59 @@ export function createBloodFx(d: BloodDeps) {
     const outW = vec3(rl.x.mul(cy).add(rl.y.mul(sy)), 0, rl.x.mul(sy).negate().add(rl.y.mul(cy)));
     const Npool = normalize(vec3(0, 1, 0).add(outW.mul(slope)));
     const wP = max(fwidth(dP), float(1e-4));
-    const coverP = smoothstep(wP.negate(), wP, dP);
-    const N = normalize(mix(Na, Npool, isPool));
+    const coverP0 = smoothstep(wP.negate(), wP, dP);
+    // M-A C2 upgrades (ruling z5 item 3, the AD's 'flat matte red felt lobes'): a fresh pool on varnished boards
+    // (a) RUNS ALONG THE BOARD SEAMS — the 2.8 mm gaps (floor_varnished, boards() gapM) wick the blood ahead of the front
+    // by capillarity. The seams are read from the boards themselves: the opaque frame under the pool at full resolution
+    // vs its 8 px average (mip 3) — a seam is ≥ 35 % darker than its neighbourhood — so the runs follow the real seams,
+    // their real direction, with no knowledge of the floor's UVs. A run reaches ≤ 0.55 R past the mean front (hashed by
+    // bearing: some seams take a long tongue, most a short one) and is a THIN film (tone below).
+    const lum = (c: any) => dot(c, vec3(0.2126, 0.7152, 0.0722));
+    const b0 = lum(viewportOpaqueMipTexture(screenUV).level(float(0)).rgb);
+    const b3 = lum(viewportOpaqueMipTexture(screenUV).level(float(3)).rgb);
+    // (ab3 seam map: the hair on the boards, Harlan's shadow and the defocused dark areas also passed the test →)
+    // only on LIT BOARDS: the 8 px mean must be ≥ ~40 % of the unshadowed lamp-lit floor exitance (ρ_floor/π·E)
+    const lkS = uKeyPos.sub(vSP);
+    const d2S = dot(lkS, lkS).max(1e-4);
+    const expS = dot(vec3(uKeyCol), vec3(0.2126, 0.7152, 0.0722)).mul(uKeyI).div(d2S).mul(max(lkS.y.div(sqrt(d2S)), 0)).mul(FLOOR_RHO_LUM / Math.PI);
+    const litBoards = smoothstep(0.25, 0.5, b3.div(expS.max(1e-6)));
+    const seam = smoothstep(0.8, 0.6, b0.div(b3.max(1e-6))).mul(step(1e-5, b3)).mul(litBoards);
+    const Rm = SB.y.mul(0.9 / 3.8);
+    const bearingH = th.mul(5).floor().add(SC.z.mul(17)).sin().mul(43758.5453).fract(); // 5 bearing sectors per radian
+    const runLen = Rm.mul(mix(float(0.2), float(0.8), bearingH.mul(bearingH)));
+    const dOut = dP.negate();
+    const run = smoothstep(0.25, 0.6, seam).mul(float(1).sub(smoothstep(runLen.mul(0.6), runLen, dOut))).mul(step(0, dOut));
+    // (b) SATELLITE DROPS: the jet / the head's landing threw 2–7 mm drops ahead of the front (1.1–1.6 R; 7 per pool)
+    let sat: any = float(0);
+    for (let k = 0; k < 7; k++) {
+      const hk = SC.z.mul(91.7 + k * 13.1).add(k * 0.613).sin().mul(43758.5453).fract();
+      const hk2 = SC.z.mul(57.3 + k * 7.7).add(k * 1.37).sin().mul(24634.6345).fract();
+      const ang = hk.mul(6.283);
+      const ck = vec2(cos(ang), sin(ang)).mul(Rm.mul(float(1.1).add(hk2.mul(0.5))));
+      const rk = float(0.002).add(hk2.mul(hk).mul(0.005));
+      const dk = rk.sub(length(pl.sub(ck)));
+      sat = max(sat, smoothstep(wP.negate(), wP, dk));
+    }
+    // fine wetting-line irregularity (k 11–23): the front pins on the varnish's grain, it is never a smooth lobe
+    const fineE = cos(th.mul(13).add(SC.z.mul(40))).mul(0.5).add(cos(th.mul(23).add(SC.z.mul(71))).mul(0.3)).mul(0.0018);
+    const coverV2 = max(max(smoothstep(wP.negate(), wP, dP.add(fineE)), run.mul(0.92)), sat);
+    const coverP = mix(coverP0, coverV2, uPoolV2);
+    // M-A (d) FROTH: arterial blood that fell as a jet traps air — a fresh pool carries small bubbles (≈ 0.5–1.5 mm)
+    // whose spherical caps mirror the flame from ANY view, the sparse bright specks that read 'liquid' at once (the
+    // flat film can only mirror the flame at its one mirror point). Hashed 4 mm cells, ≈ 7 % hold a bubble, none in
+    // the outer 1 cm (the front is thin); the cap normal feeds the flame image below (energy kept by its fwidth AA).
+    const bc = pl.div(0.004);
+    const bid = bc.floor();
+    const bf = bc.sub(bid).sub(0.5);
+    const bh = dot(bid.add(SC.z.mul(31)), vec2(12.9898, 78.233)).sin().mul(43758.5453).fract();
+    const bh2 = bh.mul(7.31).fract();
+    const br = mix(float(0.12), float(0.38), bh2);
+    const bq = dot(bf, bf);
+    const inB = step(bq, br.mul(br)).mul(step(0.93, bh)).mul(step(0.01, dP)).mul(uPoolV2);
+    const bz = sqrt(br.mul(br).sub(bq).max(1e-6));
+    const Nb = normalize(vec3(bf.x.mul(cy).add(bf.y.mul(sy)), bz, bf.x.mul(sy).negate().add(bf.y.mul(cy))));
+    const NpoolB = normalize(mix(Npool, Nb, inB));
+    const N = normalize(mix(Na, NpoolB, isPool));
     const mg = mix(m.g, hP, isPool);
     const ageMin = uGameAge.add(uT.sub(SC.x).max(0).div(60));
     const edge = float(1).sub(mg);
@@ -548,7 +600,17 @@ export function createBloodFx(d: BloodDeps) {
     // (wood ≈ (0.10, 0.06, 0.04) × T(0.2 mm) ≈ (0.07, 0.008, 0.006)); plasma-wet roughness 0.15
     // fix round 2: a thick pool is darkest at its core (the light path through ≥ 2 mm of whole blood is absorbed even
     // in the red) and redder at the thin meniscus where the boards show through: × 0.5 at full height → × 1.5 at the rim
-    const thickK = mix(float(1.15), float(0.5), mg); // (review r5: the × 1.5 rim + the tilt = the pink band)
+    const thickK0 = mix(float(1.15), float(0.5), mg); // (review r5: the × 1.5 rim + the tilt = the pink band)
+    // M-A (c) THICKNESS TONE (Beer–Lambert, MUA_POOL ≈ 3 /mm red): the boards show through a thin film as deep red
+    // (T² = e^(−2·3·0.1) ≈ 0.55 at 0.1 mm) and not at all through the ≈ 2.75 mm core (e^(−16) → only the film's own
+    // ≈ 4 % back-scatter, near-black maroon). The film thins over the outer ≈ 1 cm (the front is still creeping); the
+    // seam runs and the satellites are thin (≈ 0.1–0.3 mm).
+    const hT = tanh(clamp(dP.div(0.005), 0, 6)); // (j2: a 1.5 cm thin band read as a blurred edge — a fresh front is sharp)
+    const thin = max(max(run, sat).mul(float(1).sub(coverP0)), float(1).sub(hT));
+    // inside the pool the gaps under it hold ≈ 3 mm MORE blood (the seam's depth): the seams show through the film
+    // as darker lines (× 0.6) — the board pattern continuing under the liquid, not a painted lid over it
+    const thickK1 = mix(float(0.3), float(1.25), thin.mul(isPool)).mul(mix(float(1), float(0.6), seam.mul(hT).mul(isPool)));
+    const thickK = mix(thickK0, mix(thickK0, thickK1, isPool), uPoolV2);
     const albedo = mix(mix(vec3(...ALB_POOL).mul(thickK), vec3(0.06, 0.016, 0.012), dry), vec3(0.07, 0.008, 0.006), isPrint);
     const rough = mix(roughB, float(0.15), isPrint);
     const Nn = mix(N, Np, isPrint);
@@ -639,7 +701,9 @@ export function createBloodFx(d: BloodDeps) {
     const col = min(cStain.mul(float(1).sub(ring)).add(refl), vec3(6));
     // belt and braces: where nothing is drawn the colour is exactly 0 (a select never blends the other branch)
     const colS = select(a.greaterThan(1e-4), col, vec3(0));
-    return vec4(select(uStainDbg.equal(2), vec3(4, 0, 4), colS), select(uStainDbg.equal(1), float(0), a));
+    // 3 = M-A seam map on the pool quads (green = seam, red = run cover, blue = satellites) at alpha 0.9
+    const dbg3 = uStainDbg.equal(3).and(isPool.greaterThan(0.5));
+    return vec4(select(dbg3, vec3(run, seam, sat), select(uStainDbg.equal(2), vec3(4, 0, 4), colS)), select(dbg3, float(0.9), select(uStainDbg.equal(1), float(0), a)));
   })();
   const quad = new THREE.PlaneGeometry(1, 1);
   const stainMesh = new THREE.InstancedMesh(quad, stainMat, SMAX);
@@ -935,6 +999,7 @@ export function createBloodFx(d: BloodDeps) {
     (globalThis as any).__bloodFx = {
       uReflK,
       uStainDbg,
+      uPoolV2,
       atlas,
       stainArrays: () => ({ s1: Array.from(s1), s2: Array.from(s2), s3: Array.from(s3) }),
       keys: () => ({ keyI: uKeyI.value, keyPos: uKeyPos.value.toArray?.(), keyCol: uKeyCol.value.toArray?.(), torchI: uTorchI.value, amb: uAmbient.value }),

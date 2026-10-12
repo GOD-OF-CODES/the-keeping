@@ -301,23 +301,60 @@ def gown(P, N, AO, body_fn, J, hem_z, seed=87):
 
 
 def eye(P, N, center, seed=7):
+    """M-A (13.9 insert: 'an open, clouded, wet eye that reads as an eye', ~40 px wide on screen -> bold, few features).
+    Anatomy (real numbers): globe r 11.8 mm; iris diameter 11.8 mm (limbus at 30 deg off the axis, fwd 0.866) with a
+    dark limbal ring ~0.6 mm; post-mortem pupil mid-dilated 4.5 mm (fwd > 0.981); corneal clouding = a patchy milky
+    veil (0.55/0.57/0.58) OVER a still-visible grey iris + pupil (never an opaque white disc or a contact lens); the
+    open upper lid (eye_lid.py: margin at 15 deg + 5.4 (az/58)^2 on r 14.5 mm -> ~18.5 deg on the globe) throws its
+    lash fringe (dense wet lashes 1-1.3 mm apart) and a soft shadow on the top of the visible globe; dull, slightly
+    yellowed, congested sclera with the drying band of an eye left open (tache noire, faint) at the aperture."""
     v = P - center
     v /= np.maximum(np.linalg.norm(v, axis=1), 1e-9)[:, None]
     fwd = -v[:, 1]
+    az = np.degrees(np.arctan2(v[:, 0], -v[:, 1]))
+    el = np.degrees(np.arcsin(np.clip(v[:, 2], -1, 1)))
     cornea = ss(0.72, 0.8, fwd)
     haze = noise.fbm(P * 900.0, 3, seed)
-    radial = noise.fbm(np.stack([np.arctan2(v[:, 0], v[:, 2]) * 3.0, fwd * 2, np.zeros(len(P))], 1) * 4.0, 3, seed + 1)
-    # C2-ESCAPE A3: post-mortem clouding — opaque grey-white (0.55, 0.57, 0.58) with a faint darker GHOST of the
-    # iris ring (0.45) and pupil, so it never reads as a Halloween contact lens
-    milky = np.array([0.55, 0.57, 0.58]) * (1 + 0.06 * haze + 0.05 * radial)[:, None]
-    iris = ss(0.905, 0.925, fwd) * ss(0.985, 0.97, fwd) * (0.75 + 0.25 * radial)
-    milky = _mix(milky, [0.45, 0.46, 0.47], iris * 0.7)
-    milky = _mix(milky, [0.47, 0.48, 0.49], ss(0.985, 0.997, fwd) * 0.4)   # the ghost of a pupil
-    sclera = np.array([0.55, 0.51, 0.44]) * (1 + 0.05 * haze)[:, None]
+    patch = noise.fbm(P * 260.0, 2, seed + 3)                     # 1-3 mm opacity patches in the clouded cornea
+    ang = np.arctan2(v[:, 0], v[:, 2])
+    radial = noise.fbm(np.stack([ang * 3.0, fwd * 2, np.zeros(len(P))], 1) * 4.0, 3, seed + 1)
+    fib = noise.fbm(np.stack([ang * 22.0, fwd * 6.0, np.zeros(len(P))], 1), 2, seed + 4)   # radial stroma fibres
+    # the iris under the clouding: muted grey-green, darker crypt fibres, a collarette ring, dark limbus, pupil
+    iris = np.array([0.10, 0.11, 0.10]) * (1 + 0.4 * fib + 0.12 * radial)[:, None]
+    coll = np.exp(-((fwd - 0.958) / 0.006) ** 2)
+    iris = _mix(iris, [0.22, 0.23, 0.20], coll * 0.6)
+    iris = _mix(iris, [0.05, 0.05, 0.055], ss(0.89, 0.872, fwd))    # limbal ring (0.6 mm)
+    iris = _mix(iris, [0.03, 0.03, 0.035], ss(0.978, 0.983, fwd))   # pupil 4.5 mm
+    on_iris = ss(0.855, 0.866, fwd)
+    sclera = np.array([0.44, 0.40, 0.33]) * (1 + 0.05 * haze)[:, None]   # M-A l3: dry dead sclera (0.6 = 10x the skin)
     veins = ss(0.9, 0.98, noise.ridged(P * 700.0, 3, seed + 2)) * ss(0.7, 0.2, fwd)
     sclera = _mix(sclera, [0.35, 0.1, 0.08], veins * 0.6)
     sclera *= ss(-0.6, 0.3, fwd)[:, None] * 0.8 + 0.2
-    alb = _mix(sclera, milky, cornea)
+    # the dry band of the open aperture (lateral + medial sclera, the cornea's level): faint brown
+    tache = ss(0.0, 6.0, np.abs(az) - 24) * ss(14.0, 4.0, np.abs(el + 6.0)) * (0.6 + 0.4 * patch)
+    sclera = _mix(sclera, [0.30, 0.22, 0.16], tache * 0.45)
+    alb = _mix(sclera, iris, on_iris)
+    # clouding: a patchy milky veil over the cornea (60-80 %), denser toward the centre, so iris + pupil ghost through
+    # M-A l1 (in-game at 13.9 the iris and sclera merged at ~40 px): a thinner 40-60 % veil over a darker iris
+    cloud = ss(0.845, 0.872, fwd) * np.clip(0.28 + 0.14 * patch + 0.04 * haze + 0.05 * ss(0.9, 1.0, fwd), 0, 0.55)
+    milky = np.array([0.46, 0.47, 0.48]) * (1 + 0.05 * haze)[:, None]
+    alb = alb * (1 - cloud[:, None]) + milky * cloud[:, None]
+    # upper lid: the lash fringe hanging over the globe below the open margin + the lid's soft shadow
+    el_m = 18.5 + 6.6 * (az / 58.0) ** 2                         # eye_lid EL_OPEN 15 deg on r 14.5 mm -> globe
+    du = el_m - el                                               # deg below the margin (+ down)
+    # wet lashes clump into tapered spikes (3-5 lashes, ~1.6-2.4 mm apart, irregular), fine single lashes between
+    amm = np.radians(az) * 11.8 + 0.9 * noise.fbm(P * 160, 1, seed + 5)          # mm along the margin, warped
+    cell = np.floor(amm / 2.0)
+    rnd = lambda k: (np.sin(cell * 12.9898 + k * 78.233) * 43758.5453) % 1.0
+    off = (amm / 2.0 - cell) - (0.3 + 0.4 * rnd(1))                               # -0.7..0.7 across the cell
+    llen = 3.0 + 6.0 * rnd(2) ** 0.7                                              # deg of the globe (0.6-1.8 mm)
+    tw = 0.10 + 0.12 * rnd(3)                                                     # half-width at the root (cells)
+    taper = np.clip(1.0 - du / llen, 0, 1)
+    clump = ss(tw * taper + 0.02, tw * taper * 0.4, np.abs(off + 0.04 * du)) * ss(-0.5, 0.3, du) * (du < llen)
+    fine = ss(0.75, 0.95, 0.5 + 0.5 * np.cos(amm / 0.45 * 2 * math.pi)) * ss(3.0, 0.0, du) * ss(-0.5, 0.3, du) * 0.6
+    lash = np.maximum(clump, fine) * ss(60.0, 40.0, np.abs(az))
+    alb = alb * (1 - 0.45 * ss(16.0, 0.0, du)[:, None] * ss(-2.0, 1.0, du)[:, None])         # lid shadow
+    alb = _mix(alb, [0.02, 0.018, 0.018], np.clip(lash, 0, 1) * 0.9)
     rough = 0.2 - 0.14 * cornea
     return np.clip(alb, 0, 1), rough, np.zeros(len(P))
 

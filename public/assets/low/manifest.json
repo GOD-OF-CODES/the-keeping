@@ -1,14 +1,14 @@
 {
   "tier": "low",
-  "generatedAt": "2026-10-11T13:02:04.208Z",
-  "totalBytes": 28305365,
+  "generatedAt": "2026-10-11T17:04:08.220Z",
+  "totalBytes": 28296794,
   "files": [
     {
       "id": "ada_albedo",
       "kind": "texture",
       "path": "assets/low/ada_albedo.webp",
-      "bytes": 152906,
-      "hash": "7381cdd91791d89a"
+      "bytes": 154352,
+      "hash": "40894d21ce71d754"
     },
     {
       "id": "ada_hair_albedo",
@@ -28,29 +28,29 @@
       "id": "ada_head_albedo",
       "kind": "texture",
       "path": "assets/low/ada_head_albedo.webp",
-      "bytes": 28908,
-      "hash": "d0d73bc1904eaf24"
+      "bytes": 28450,
+      "hash": "77320c989dd9a7a5"
     },
     {
       "id": "ada_head_normal.png",
       "kind": "texture",
       "path": "assets/low/ada_head_normal.png",
-      "bytes": 40951,
-      "hash": "0b4d738b8b454b74"
+      "bytes": 39842,
+      "hash": "0c5b5b7f00f6f5b5"
     },
     {
       "id": "ada_normal.png",
       "kind": "texture",
       "path": "assets/low/ada_normal.png",
-      "bytes": 222623,
-      "hash": "d7d68bb7daee5dfd"
+      "bytes": 216765,
+      "hash": "7e820928a2c93fef"
     },
     {
       "id": "ada",
       "kind": "character",
       "path": "assets/low/ada.glb",
-      "bytes": 4730992,
-      "hash": "bc5352a8eec60bd9"
+      "bytes": 4728400,
+      "hash": "bab2599ba6533047"
     },
     {
       "id": "arms_albedo",

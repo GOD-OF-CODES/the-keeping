@@ -568,6 +568,45 @@
    "milestone": "M2"
   },
   {
+   "id": "c2b_my_dress",
+   "speaker": "ada",
+   "text": "[barely a whisper, forehead against the wood] ...my dress...",
+   "subtitle": "…my dress…",
+   "beat": "B05",
+   "trigger": "c2b:vigil",
+   "chain": "revenant",
+   "kind": "line",
+   "variants": 1,
+   "priority": 9,
+   "milestone": "M2"
+  },
+  {
+   "id": "c6b_company",
+   "speaker": "ada",
+   "text": "[a wet whisper, patient, imitating an old man's slow cadence] ...Company.",
+   "subtitle": "…Company.",
+   "beat": "B13",
+   "trigger": "c6b:company",
+   "chain": "revenant",
+   "kind": "line",
+   "variants": 1,
+   "priority": 9,
+   "milestone": "M2"
+  },
+  {
+   "id": "c4c_there",
+   "speaker": "ada",
+   "text": "[a wet whisper, almost tender, to the photo] ...there you are.",
+   "subtitle": "…there you are.",
+   "beat": "B11",
+   "trigger": "c4c:there",
+   "chain": "revenant",
+   "kind": "line",
+   "variants": 1,
+   "priority": 9,
+   "milestone": "M2"
+  },
+  {
    "id": "doc_letter",
    "speaker": "ada",
    "text": "[warm, tired, determined, reading her own letter aloud] Ruthie. Tuesday, the six-ten to Carvel. He found the tin, so the ticket's sewn in the hem of my wedding dress, with the locket. [pause] I can't wear his face anymore, but I won't leave it for him. [quieter] He says he'll put me down the well first. [a small, defiant breath] Let him try. I'll be at the depot if I have to wa—",

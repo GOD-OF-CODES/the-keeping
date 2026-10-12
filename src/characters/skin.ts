@@ -24,6 +24,8 @@ export const uSkinWrap = uniform(0.3);
 export const uSkinTint = uniform(new THREE.Vector3(0.4, 0.31, 0.29));
 /** 1 = the hair veil in front of the severed head's face is gone (see applySkinOrHair; driven by ada.ts). */
 export const uHairVeilClear = uniform(0);
+/** M-A: 1 = the severed head has lain in its pool — the smeared blood film on the down side of the face (skin.ts). */
+export const uHeadSmear = uniform(0);
 /** 1 = severed: blood film on the skin around the cut (head stub + body neck; see applySkinOrHair). */
 export const uNeckBlood = uniform(0);
 /** Fix round 2 (ruling i, the eye insert): the floor's bounce under the severed head held at his face height —
@@ -252,6 +254,24 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
       // colour (whole blood 0.11/0.009/0.008, BLOOD_ALBEDO), 35 % keeps the filmed tissue's variation.
       const filmed = p.colorNode.mul(vec3(0.42, 0.06, 0.05));
       p.colorNode = mix(p.colorNode, mix(filmed, vec3(0.11, 0.009, 0.008), 0.65), capK.mul(uNeckBlood));
+      // M-A C2 upgrades (ruling z5 item 1; ab1 10.5: the lit face-up face read as a clean pale MANNEQUIN): the head
+      // landed face-down on its LEFT cheek in the landing splash (cutscene-fx landPose roll −65°, 15 mL at HEAD_LAND)
+      // and the boot rolled it face-up through its pool — the down side of the face (left cheek, temple, the left of
+      // the nose/lips/chin) carries a smeared whole-blood film, broken by the skin's relief and streaked along the
+      // roll. Bind space (Y up, face +Z, her left +X); contact normal ≈ (0.72, −0.12, 0.68). Film = albedo × (0.42,
+      // 0.06, 0.05) (Hb absorbs G/B within 0.1 mm), plasma-wet roughness 0.15. Driven by ada.ts (latched once the
+      // severed head has lain loose; cleared when she is whole).
+      const nB = normalGeometry;
+      const contact = nB.x.mul(0.72).sub(nB.y.mul(0.12)).add(nB.z.mul(0.68));
+      // (ab3: a clean half-face of uniform maroon read as a split mask) → the roll drags the film ACROSS the face
+      // (streaks ⟂ the crown axis: noise stretched in x/z, fine in y), it is broken by the relief, and its thickness
+      // varies (thin smears are translucent red over the skin, thick ones opaque maroon)
+      const nS = mx_noise_float(vec3(pg.x.mul(22), pg.y.mul(95), pg.z.mul(22))).mul(0.55).add(mx_noise_float(vec3(pg.x.mul(150), pg.y.mul(150), pg.z.mul(150))).mul(0.2));
+      const nT = mx_noise_float(vec3(pg.x.mul(60).add(3.1), pg.y.mul(60), pg.z.mul(60))).mul(0.5).add(0.5);
+      const smear = smoothstep(0.3, 0.52, contact.add(nS.mul(0.6))).mul(smoothstep(1.4, 1.43, pg.y)).mul(float(1).sub(smoothstep(0.1, 0.13, pg.x.abs()))).mul(float(1).sub(capK)).mul(uHeadSmear); // the head only (not her bind-pose arms)
+      const smearK = smear.mul(mix(float(0.45), float(1), nT));
+      p.colorNode = p.colorNode.mul(vec3(1).sub(vec3(0.58, 0.94, 0.95).mul(smearK)));
+      p.roughnessNode = mix(p.roughnessNode, float(0.15), smear);
       if (m.normalMap) {
         // the face: lane A moved its ±3 mm relief INTO the normal map — a 0.2 mm film rounds that relief (capillary length
         // 2.4 mm), it does not erase it: flatten the face only × 0.4 (its specular variation is what reads as tissue)
@@ -332,7 +352,15 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
     const front = smoothstep(0.012, 0.035, pg.z);
     const below = float(1).sub(smoothstep(1.585, 1.61, pg.y)).mul(smoothstep(1.34, 1.37, pg.y));
     const across = float(1).sub(smoothstep(0.06, 0.085, pg.x.abs()));
-    m.opacityNode = m.opacityNode.mul(float(1).sub(uHairVeilClear.mul(front).mul(below).mul(across)));
+    // (M-A rounds 3–4 tried keeping 30 % / 12 % of the veil as hashed strand bands across the face: bands of a card
+    // sheet read as a vertical comb, not hair — dropped; the face smear (uHeadSmear) carries the 'wet, rolled' read)
+    const veil = uHairVeilClear.mul(front).mul(below).mul(across);
+    m.opacityNode = m.opacityNode.mul(float(1).sub(veil));
+    // M-A C2 upgrades (ruling z5 item 1): the cleared cards must leave the lamp's cube too — the shadow pass ignores
+    // opacityNode (Renderer._getShadowNodes reads map.a / colorNode.a / maskShadowNode only), so a veil hidden in the
+    // view still shadowed the face-up face (10.5: face L 0.006; hair out of the cube 0.057). r186 maskShadowNode:
+    // discarded where false.
+    m.maskShadowNode = veil.lessThan(0.5);
   }
   if (String(ud.material_id) === 'hair_wet_black' && presetId !== 'low') {
     if (!m.roughnessNode) m.roughness = 0.3; // indirect (probe/env) specular of wet hair (the direct lobes: HAIR)

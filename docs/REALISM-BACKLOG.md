@@ -751,6 +751,37 @@ round's backlog** (this was the last beheading-only round).
 | Real time + sound | 59.1 fps, 0 frames > 50 ms (round 3: 200–383 ms entry); strike loudest (−13.8 vs −14.7 LUFS), sync −1…+25 ms | nobody has listened on speakers; cleaver_sever variants ±0.4 LU C |
 | Gameplay regression check | the U1 runner was BLACK after lane A's props rebuild (stale non-parlor lightmaps) → FIXED by #133 (re-bake ground/kitchen/upper_hall/upper_rooms/exterior/car); facade warm patches = torch beam (urpatch A/B identical) | rule: after any props/house rebuild re-run every stale bake-house-* A |
 
+### M-A verdict (2026-10-12, art/horror-director review — STATUS-escape-cine "Review — M-A")
+Judged on the REAL playthrough route (scratch/ma-review/pt-shots.mjs: every M-A mark shot when the Director plays it,
+Ada frozen) on Medium and Max at 1280 px; staged library plays misled twice (C6 clock, cleat fingers) and are not
+evidence. Ship ruling (aa): the new scenes read after the fixes below, nothing regressed vs live e65bfa5 → SHIP.
+Photographic: no new scene is photographic yet; CR is the closest.
+- **CR (credits)** — reads; the best new frame. Locked 50 mm on the house and relit sign, serif roll, every role →
+  Raj Vardhan Singh, "Made from scratch." last. Not real yet: the house is near-black at 55 % (SCENES).
+- **C4a (door gives)** — reads: the stroke through the U3 window, hard shutter shadows, the dress on its form, then
+  the silhouette. Not real: the first flash reads as a dress form, never "a slight woman" (the misread does not land);
+  the gown front is amber, not ivory (CINE/INFRA: warm fill + albedo); no volumetric beam (deferred).
+- **C4c (she remembers)** — reads as horror (a headless body draws something to her chest); exposure 0.3 → 0.2 fixed
+  the flat-white gown clip. Not real: plaster-mannequin torso and sleeves, the locket never reads as a locket (a white
+  glint), the held head at her hip is a dark lump (lane A sculpt/material; SCENES: a locket insert).
+- **C5b (rocking)** — porch-into-mist and the crane read; the 135 mm shutter shot now shows the sill candle catching
+  (fixed: G2 added to that shot's PVS) but faintly. Not real: the gutter macro (5.2) is an abstract black triangle,
+  white specks and a blue disc — replace or reframe (SCENES); the mist roll is not visible.
+- **C6 insert** — reads on the real route: the lit cluster with 6:10 between the dials; the ticket now lies flat (fixed;
+  it stood ≈ 45° up). Not real: the cluster is clean vector UI; the flat ticket is a small dark card (SCENES).
+- **C6b (bait)** — reads after two real-route fixes (the road cull hid the rope and cleat; the head-carry IK hid her
+  fingers). Not real: the hand is waxy clay-yellow (lane A skin), the match lights nothing (no L_CS_KEY), no
+  footprints (footprints_path unbuilt), sfx stand-ins (lane C).
+- **C5 / C7 cleat inserts** — read after the head-free fix (grey fingers letting the rope run). Same waxy hand.
+- **C2b (her door)** — never fired in any bot run this round (≈ 8 runs, five lanes: the VIGIL gate wants her in VIGIL
+  within 0.5 s of the first hide exit); NOT verifiable on the real route. Judged from SCENES' B05-staged stills (t5:
+  the door in the cold flash, hands on the nail, feet on the runner — clay-like, comparable to the other inserts); my
+  B08 staging rendered it black but staging proved unrepresentative twice this round. A patient player can trigger
+  it (SCENES + DESIGN: a patient-bot check, or widen the gate with a player-position check, or cut it).
+- **C2 upgrades** — the floor head (now ~9.3 after #139's retime) reads as a severed head in profile, cut toward the
+  lens, one eye catching the flame, hair spread on the boards; the 13.9 eye is open and wet. Not real: smooth plaster
+  mask, ribbon/comb hair strips, pools still smooth red shapes (lane A face/hair; CINE pools).
+
 ## Merged and overruled QA points
 - Agreed: QA #1 (dark frames), #3 (outlines/CA, cause now found), #4 (grain), #5 (facade), #7 (C5), #8 (C6),
   #10 (rain glass).
@@ -773,3 +804,8 @@ round's backlog** (this was the last beheading-only round).
   "fake": land them first.
 - Items 9, 10, 12 and 20 need the Blender lane (one re-encode, two re-bakes). Queue them serially with
   `scripts/assets.mjs`.
+
+- LEAD NOTE (2026-10-11 19:30, for the M-A review): the facade gate view (playthrough gate-02) gained warm torch-lit
+  grass patches between round 3 and round 4 (side by side: scratch/lead-fix4/cmp/a.jpg row 2). The round-4 AD
+  attributed them to the torch beam (the uniform-ranges A/B is identical). Confirm it is physical (a 2900 K beam on dry
+  grass at 3–8 m) and explain why the gravel between the tufts takes so much less of it; fix it if it is not.

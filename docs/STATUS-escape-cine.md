@@ -871,3 +871,153 @@ in every chase (AUDIO #132) — nobody has listened.
 7. Reusable QA: scratch/escfix4-review/judge.mjs (C2/C2c marks + parlor views + C5/C7 on ANY build incl. live; DIAG2 grey-skin swap, DIAG3 hair-hide + near-camera mesh list; NOPROBE for live) and facade.mjs (?urpatch A/B) — candidates for scripts/qa/.
 READY: review — fix round 4 complete: photoreal NO-GO; better than live YES with #133 (lightmap re-bake fixing the black U1 runner).
 - #133 re-check (3rd look, post-bake stills already shot): C1 car (lm_car) and Harlan's bedroom (lm_upper_rooms) match pre-bake (cmp-bake2.jpg), C2c glance #1 / empty stair (lm_ground, lm_upper_hall + flash) match (cmp-bake3.jpg) — no new black or shifted bake anywhere looked at; the runner is fixed (cmp-bake.jpg). C7 live vs ours (cmp-live-c7.jpg, forced play out of story context): live stages C7 in the hall, ours in the parlor (changed by earlier rounds, not this one; ours matches the restage agent's pre-stills); ours 22.0 is very dark — noted for M-A, not a fix-round-4 regression.
+
+## Review — M-A (AD + horror director, 2026-10-12)
+- Setup: tree quiet since 00:41 (all M-A lanes READY). dist (current tree) `scratch/dist-ma-review`; live e65bfa5 built
+  from a detached worktree into `scratch/dist-prev` (worktree removed). Scenario `scratch/ma-review/look.mjs`
+  (in-game safety gate with Ada forced 1.5 m away, every M-A scene at its marks with draws/tris, CR DOM text, skip-vs-full
+  world-state diff). Mains power; no Blender running.
+- SAFETY GATE in the real game (Max, scratch/ma-review/x1.log): Ada relocated to U_RUNNER_S and frozen in PATROL, the
+  player held 1.5 m from her in U1, the three boards pried → `pend=C4a gate=false` for 0–18 s, dropped at 21 s
+  (`c4a_deferred=true`, `cs_C4a_done` unset), no cutscene ever started. PASS. (A first attempt on Medium was invalid:
+  at --beat B08 her brain was offstage, so the gate correctly held and C4a played.) First view: `canSkip false` for
+  C4a/C4c (CR is skipAnytime by design).
+- Medium look round 1 (scratch/ma-review/sheet-m-[a-e].jpg, staged from --beat B08): CR reads (title + roll over the
+  dark house and relit sign — the best new frame). C5b porch-mist shot reads; the gutter macro (5.2) is an abstract
+  black triangle with white specks + a blue disc; the 135 mm shutter candle is faint. C6 insert: 9.2 is unreadable
+  grey bands, 11.6 the ticket stands UPRIGHT on the dash like a sign, no 6:10 clock in frame. C4c: headless gown torso
+  blown white by the torch, the locket never reads. C2b staged in B08 = black at 1.15/4.6 (scenes' own B05 stills:
+  clay-like waxy hands/legs). The cleat inserts (C5 25.9, C6b 9.6, C7 16.3) show the rope and cleat with NO fingers in
+  this staging — checking whether that is staging or real.
+- Max look (scratch/ma-review/x1.log): console 0/0. SKIP (Max, settled 2 s): skip-mid-scene vs full play = IDENTICAL world
+  state for C2b, C4a, C5b, C6b; 2nd view canSkip=true, 1st view false. Before-vs-after differences are all intended
+  (C4a: door open → U4T room shown, player in the doorway; C5b: player on the porch steps; C6b: torch off by design,
+  sting dressing on/off pair; the rest is candle fade by room culling). CR DOM: THE KEEPING / a game by Raj Vardhan
+  Singh / Written and directed by → Raj Vardhan Singh / the 9 roles → Raj Vardhan Singh / © Raj Vardhan Singh. All
+  rights reserved. / "Made from scratch." last (separate card at 20.6). No AI/tool credit (repo grep of src/, README,
+  package.json, docs/CREDITS.md: clean; ElevenLabs named only as the voice tool in CREDITS, allowed by CLAUDE.md).
+- Real-route stills: scratch/ma-review/pt-shots.mjs wraps the real playthrough and shoots every M-A mark when the
+  Director plays it (Ada frozen, real story state) — Medium run started (ptc).
+- C6 insert diagnosis (scratch/ma-review/d6*.log): (a) the dash ticket clone stood ≈ 45° up (car-local extents
+  7.0 × 3.2 × 3.6 cm) — FIXED in src/world/ma-fx.ts (SCENES file, surgical, logged): PCA plane normal → interior up,
+  lowest point on the dash at L (now 0.985–0.994 z). BUT the upright card in the 11.6 frame is NOT the ticket (still
+  there with the ticket flat) — identifying it. (b) the 6:10 clock never shows: from the authored eye the cluster
+  hood and wheel hide the cluster face (4 eye candidates via the __csCam hook all show hood/wheel); trying lower eyes.
+- Real-route playthrough #1 (ptc, Medium): ended=true, deaths 0, console 0; C4a B08 258 s, C5b B12 428 s, C2b dropped.
+  My wrapper took no stills (bot.run(30) = 30 s of game, not frames) — fixed (pt-shots.mjs), re-run later.
+- REGRESSION SWEEP (gate views, Medium, real playthroughs: live e65bfa5 = scratch/ma-review/ptp, current = ptc; SSIM):
+  c1-car 0.92 (rain/wiper phase only), facade-flash 0.74 (bot pose + strike pulse differ; a pale patch at the porch's
+  left post in current → same-state facade-ab.mjs A/B queued on both builds), c2-parlor 0.95, armoire 0.99, upper-hall
+  0.94 (Ada's AI position), harlan-bedroom 0.93, c5-shadowplay 0.99, c6-dawn-drive 0.85 (EXPECTED: the +4 s C6 insert
+  shifts the csT>20 still to the next shot), final 1.00.
+- BUG FOUND + FIXED (src/cutscenes/bindings.ts setCard, surgical): a card's fade-in waits one rAF; a clear before that
+  frame (skip / teardown) lost to the late rAF → "Three weeks later" stuck on screen over the following scenes after a
+  skipped C6 → C6b chain (seen in m2 over C5b; also visible in SCENES' t3a stills). Fix: a sequence token, the late
+  rAF only shows the card if no clear came after it.
+- C4c exposure A/B (same frame, m2): 0.3 (shipped) clips the beam-lit gown/torso to flat white; 0.18/0.12 keep tones.
+  Set C4C_CAMERA_E 0.3 → 0.2 (src/cutscenes/c4c-remembers.ts, INFRA file, surgical). Still a pink-grey mannequin torso
+  (material/sculpt — not fixable here).
+- C6 insert: at 9.2 the auto exposure sits at 0.03 (adapted to the dawn glass), so the lit cluster is black from ANY
+  eye; plus the authored eye sees only the hood. Testing a driver-eye telephoto on the dials + a fixed insert exposure.
+- C6 "upright card" = the car interior's own receipt_0 prop (0.07 × 0.14 m, tucked at the windshield, in live too) —
+  not a bug.
+- REGRESSION SWEEP (judge views, Medium, same scenario on both builds; jp = live, jc = current; SSIM): C2 7.75–9.3
+  0.92–0.95, 13.9 0.92, C2c 4.1/7.1/13.0/15.5 0.96–0.99, parlor views thr/wide 0.94/0.96, lean 0.83 (the parlor door
+  leaf's swing angle differs — door physics state, not a material/light change), stool 0.88, C5 17.6 0.74 (a near-black
+  frame: noise) / 20.6 0.98, C7 sting (live 22.0/24.6 vs current 23.0/25.6 = the +1 s cleat insert) 0.998/0.991.
+  EXPLAINED differences: C2 10.5 (0.62) and 22.95/24.0 (0.70/0.73) are the GLITCH-FIX lane's retime (#139: S4 9.3–10.25,
+  a new 10.25–10.75 tilt to Harlan, S10 split) — the floor-head hero now sits at 9.3, not 10.5.
+- C2 upgrades, plainly (9.3 / 13.9, Medium, cmp-j-b.jpg): the floor head now reads as a severed head in profile —
+  the cut toward the lens, one eye catching the flame, the hair spread over the boards (lane A re-weight) instead of a
+  bunch; but the hair is dark ribbon/comb strips and the face is a smooth mask. 13.9: live was a black mask with no
+  eye; now a face lit from below with an open, wet eye — clearly better, still a wax mannequin. Not photographic.
+- Facade same-state A/B (facade-ab.mjs, Medium, live fp vs current fc): dark frame SSIM 0.95; flash 0.74 — the pale
+  porch-left patch is in the LIVE frame this time and not in ours: it is the strike's random pulse/direction, not a
+  build difference. No facade regression. jcx (judge, Max, current): console 0/0.
+- C6 clock, rounds 3–4 (m3/m4, __csCam + fixed-exposure A/B): from the driver's eye (and 5 other eyes) the frame is
+  the windshield base / dash top / hood; looking straight at the measured cluster mesh it is a black recess with a
+  faint warm glow; fixed exposures 0.25 / 0.5 / 0.6 change nothing visible (the insert's exposure fx does not seem to
+  bite in C6) → NOT fixed by me: SCENES must debug the cluster canvas in C6 (is the 6:10 drawn on the mesh the C6
+  camera sees; why the exposure cue has no effect) and re-aim. The ticket is now flat (fix above) but dark and small.
+- Lead note (facade warm grass): torch A/B at the gate (gr/, same state, exposure held 5.20): the warm patches are the
+  torch — they vanish with it off. Physical: the beam (2–3 kcd peak, 2900 K) meets the vertical grass blades near
+  normal incidence but the horizontal drive at ≈ 74° (cos ≈ 0.27 from a 1.4 m hand at 5 m), and dry straw albedo
+  (0.3–0.4, yellow) is 3–4× wet gravel (0.08–0.12) → ≈ 6–10× brighter and orange-tinted; inside the hot spot the
+  gravel is lit too (gr/torch-on). In the gate frame the lightning's sky light (7000–9000 K) dominates the gravel and
+  greys it. Not a fault.
+- Card fix verified (m3): after a forced-skip C6 → C6b chain, the next scene (C5b) has no stuck card.
+- FINAL chain started on the current tree (dist rebuilt after the last src edit): real-route stills Medium (rtm), the
+  plain gate playthrough Medium (gate), real-route stills + console on Max (rtx); typecheck / npm test / assets.
+- GATE (current tree, dist scratch/dist-ma-review, plain command): playthrough.mjs Medium QA_STRICT → 18/18, ended=true
+  B01→B13 at game 535.5 s, deaths 0, console 0/0; cutscenes C0 C1 C2 C2c C3 C4a(B08) C4… C4c C5 C5b(B12) C6 C6b C7 CR →
+  title; C2b dropped (VIGIL gate). typecheck 0; npm test 277/0; npm run build + verify-boot OK; assets --check ok (Low
+  26.99/27). Real-route stills (rtm, Medium): Ada frozen in every M-A scene (Director path).
+- REAL ROUTE ≠ STAGED: the C6 insert READS on the real route — the lit cluster with "6:10" between the speedo and the
+  fuel/temp dials (rtm/…-rt-C6-9.2.jpg); my staged B08/B12 sessions never mounted the car the real way. So the C6
+  "clock" item above is retracted; the dial art is clean vector UI, legible, not photographic.
+- REAL ROUTE: the cleat inserts show NO fingers — C7 16.3 the rope on the cleat alone; C6b 9.6 a doorway and wall, no
+  cleat/rope in frame. Diagnosing (rtd: Ada root/visibility/hand bones at the insert marks).
+- CLEAT INSERTS DIAGNOSED (real route, rtd + staged dc/dc2): (a) on the real route Ada carries her severed head in
+  her right hand, and the head-carry IK pins that hand at her hip (hand_r measured at (4.32, 1.63, 1.54), 0.8 m from
+  CLEAT_FINGERS (3.84, 1.9, 2.22)) — the measured hook pose never shows. Staged from a load (no head in hand) the same
+  cue puts index_01_r at (3.85, 1.91, 2.20) and the fingers read. FIX (surgical, SCENES files c5-face.ts, c6b-bait.ts,
+  c7-keeping.ts): an on/off pair `attach ada_head → null` at the insert start (the head stays where it was, out of
+  frame) and `→ prop_r` at the insert end (state cues: a skip applies both). (b) C6b's cleat shot keeps room culling
+  (CS_CULL_IDS) from a G2 camera, but the door rope is a G1 prop (pulleys → through the wall → the G2 cleat) — the real
+  route showed an empty wall. FIX (src/world/level.ts, PERF file, one line): P_DOOR_ROPE goes in the always group.
+  Max real route (rtx, pre-fix dist): ended, deaths 0, console 0/0. Verifying on the real route (rti).
+- Insert fix VERIFIED on the real route (rti, Medium): index_01_r now at (3.86, 1.91, 2.21) in C5 25.9, C6b 9.6, C7
+  16.3 — the grey fingers on the rope read in C5 and C7 (sheet-rti.jpg); C7 sting at 23.0 unchanged (SSIM 0.9994 vs
+  pre-fix). C6b 9.6: the hand is there but the rope, cleat and parlor door leaf are still missing (culling under
+  investigation, rtj). Real route also: C5b 11.9's sill candle NEVER shows behind the shutter (EXT2's PVS has no G2 —
+  the candle's light and flame are culled) → FIX: Level.extraVisible + bindings: G2 added only for C5b's narrow
+  exterior lens (fov < 20°, the 135 mm shutter shot); cleared on release. Verifying (rtj).
+- ROOT CAUSE C6b cleat (rtj diag): room G2, PVS G2,G1,U2 — yet P_DOOR_ROPE and P_CLEAT had visible=false on their
+  own roots: the GLITCH-FIX lane's #139 `roadHeld` (glimpses.ts) keeps the road/yard cull (it hides every indoor prop)
+  for the WHOLE held stretch once the car was mounted — C6 (car) → C6b chains without a release, so C6b's parlor shot
+  lost every indoor prop. A regression vs live (live released it). FIX (src/world/glimpses.ts, one line, surgical):
+  roadHeld ends once the held camera is inside the house (`!level.isOutside()`); #139's C1 step-out case (camera
+  outdoors) is unchanged. The level.ts rope-group edit was reverted (not the cause). VERIFIED (rtk): C6b 9.6 — her
+  fingers make the rope fast on the cleat (cmp-c6b-cleat.jpg); C5b 11.9 — the sill candle now catches behind the
+  slats (warm glints + the flame point, cmp-c5b-candle.jpg; 144 draws). Console 0/0.
+- FINAL GATE (tree after every fix above; dist rebuilt by the plain command): playthrough.mjs Medium QA_STRICT → 18/18,
+  ended=true, deaths 0, unsticks 0, console 0/0, cutscenes C0 C1 C2 C2c C3 C4a C4×4 C4c C5 C5b C6 C6b C7 CR → title
+  (C2b dropped by its VIGIL gate); tsc 0; npm test 277/0; npm run build + verify-boot OK; assets --check ok (Low
+  26.99/27, Medium 53.89/60, Max 77.20/120). Max real route + Medium real route + judge re-run queued (rtx2/rtm2/jc2).
+- Final checks on the final tree: Max real route (rtx2) ended, deaths 0, console 0/0, every M-A mark ≤ 345 draws /
+  1.60 M (budget 500 / 2 M); Medium real route (rtm2) ended, deaths 0, console 0/0; judge re-run (jc2) vs pre-fix jc:
+  C2/C2c/parlor/C5/C7 SSIM 0.966–0.999 (my fixes touch none of them), vs live 0.87–0.999 with the differences already
+  explained above. scratch/dist-prev and scratch/dist-ma-review deleted (disk 18 GB free).
+
+### Verdict (M-A)
+**SHIP = YES under ruling (aa)**: the full gate passed on the current tree; every new scene reads on the real route
+after this review's fixes (C2b excepted: optional and unreachable, see below); no regression vs live e65bfa5 remains
+(the one found — #139's road cull hiding indoor props in a chained C6 → C6b — is fixed). **Photoreal: NO** — not one
+new scene is photographic; CR comes closest. Per-scene verdict and owners: docs/REALISM-BACKLOG.md "M-A verdict".
+My fixes (contract #141): C6 ticket flat (ma-fx.ts); stuck card after a skipped chain (bindings.ts); C4c exposure
+0.3 → 0.2; cleat-insert head-free pairs (c5-face, c6b-bait, c7-keeping); #139 road cull ends inside the house
+(glimpses.ts); C5b shutter shot sees G2 (level.ts extraVisible + bindings.ts). Look rounds: Medium m1–m4 + real
+route rtm/rti/rtj/rtk/rtm2; Max x1 + rtx/rtx2.
+
+### Requests for the lead (review — M-A)
+1. Commit with #141 (no AI credit / co-author lines): src/world/ma-fx.ts, src/cutscenes/bindings.ts,
+   src/cutscenes/c4c-remembers.ts, src/cutscenes/c5-face.ts, src/cutscenes/c6b-bait.ts, src/cutscenes/c7-keeping.ts,
+   src/world/glimpses.ts, src/world/level.ts, docs/CONTRACT-CHANGES.md, docs/REALISM-BACKLOG.md, this file.
+2. C2b (DESIGN): it is dropped in every bot run (VIGIL within 0.5 s of the first hide exit), so it is NOT verified on
+   the real route — my ship = true judges it from SCENES' B05-staged stills (they read, clay-like); my B08 staging
+   (black) was not representative. If C2b must be verified on the real route before the ship: add a patient-bot
+   variant (wait in the hide until VIGIL), widen the wait with a player-position check (shots 1 and 4 assume the
+   armoire mouth), or cut it.
+6. Housekeeping: a stray `vite preview --outDir scratch/dist-perfg3-gate` (PID 65497, PERF lane, up ~15 h) — stop it.
+3. SCENES next: C5b gutter macro (abstract frame — reframe or cut); C4c locket insert (the locket never reads); C6b
+   footprints_path + L_CS_KEY for the match; mist_roll invisible; C4a first flash should read as a woman (and the
+   gown front is amber, not ivory). QA: playthrough/judge stills should come from the REAL route (pt-shots.mjs) —
+   staged library plays showed false failures (C6 clock) and false passes (cleat fingers).
+4. Lane A / LOOK: Ada's skin/hands read waxy clay-yellow in every insert; C4c sleeves still clip white on Max at 0.2
+   (torch-centre exposure / gown albedo); face is a plaster mask; floor-head hair = ribbon strips.
+5. PERF (unchanged by me, still open): C5 / C6 / C7 / C4c / C2c budget breaches and the C7 2.2 s Max stall from the
+   PERF review; my glimpses fix restores live's indoor props in chained in-house shots (C6b parlor 52 → 61 draws).
+- Closures: C5 28.6 (after the insert's head re-attach) final vs pre-fix SSIM 0.991 — C5's later state unchanged. The
+  Max skip-vs-full IDENTICAL test (x1) predates the head-free pairs and extraVisible: by construction both attach cues
+  are state cues (a skip applies null → prop_r in time order, same end state as a full play) and extraVisible is
+  cleared on camera release in both paths; C4c's skip (locket reparent) was not re-tested by me.

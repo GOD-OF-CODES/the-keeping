@@ -110,6 +110,28 @@ def head(P, N, AO, F, base, cap_on=None, seed=313):
         alb = _mix(alb, [0.012, 0.011, 0.011], lash * 0.95)
         rough = rough * (1 - lash) + lash * 0.22
         lid_h += 0.00012 * lash
+        if k == 1:
+            # M-A (13.9 insert): the tear meniscus — a 0.3-0.5 mm wet strip along the lid margins of the eye that
+            # opens (lower margin + the upper lid shell's margin row share this band in the closed Basis): a near-
+            # mirror film (roughness 0.06) so the flame lays one thin bright line along the aperture
+            men = np.exp(-((dm + 0.0003) / 0.00045) ** 2) * on_eye
+            rough = rough * (1 - men) + men * 0.06
+            # the lower lid margin at the window body.eye_window carves (el = lo(az) on the globe centre): a wet
+            # grey-pink margin strip (~0.7 mm), the meniscus on its inner edge, the lash line on its outer edge
+            from .body import eye_window_edges
+            vv = np.stack([x - E[0], y - E[1], z - E[2]], 1)
+            rr = np.maximum(np.linalg.norm(vv, axis=1), 1e-9)
+            u_ = np.degrees(np.arctan2(vv[:, 0], -vv[:, 1])) / 50.0
+            el_ = np.degrees(np.arcsin(np.clip(vv[:, 2] / rr, -1, 1)))
+            lo_, _ = eye_window_edges(np.clip(u_, -1, 1))
+            de = el_ - lo_                                  # deg above the lower margin edge (+ = into the window)
+            fis = ss(1.0, 0.85, np.abs(u_)) * (rr < 0.0175) * (vv[:, 1] < 0)
+            strip = ss(-4.0, -2.5, de) * ss(0.8, -0.2, de) * fis
+            alb = _mix(alb, [0.30, 0.17, 0.16], strip * 0.55)
+            men2 = ss(-1.6, -0.6, de) * ss(0.8, 0.0, de) * fis
+            rough = rough * (1 - men2) + men2 * 0.06
+            lline = np.exp(-((de + 3.6) / 0.7) ** 2) * fis
+            alb = _mix(alb, [0.03, 0.025, 0.025], lline * 0.8)
         # periorbital: sunken, darker violet-grey on the lids and below (venous congestion), the crease and trough
         orb = ss(0.022, 0.009, np.sqrt((ex / 1.2) ** 2 + (ez / 0.9) ** 2)) * (y < E[1] + 0.002)
         alb = _mix(alb, [0.13, 0.11, 0.16], orb * 0.8)

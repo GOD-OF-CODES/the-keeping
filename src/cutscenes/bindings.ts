@@ -22,10 +22,15 @@ const SFX_STANDIN: Record<string, string> = {
   stump_breath: 'ada_gurgle',
   body_fall_stairs: 'board_drop',
   newel_knock: 'knock',
+  // M-A (SCENES): CUTSCENES-PLAN §6 audio-voice new sfx, stand-ins until lane C synthesises them
+  match: 'knob_click',
+  sizzle: 'gutter',
+  rope_creak: 'apron_creak',
 };
 import { requestExposureSnap } from '../render/exposure.ts';
 import { BEAM_CLAMP } from '../characters/arms.ts';
 import { CUTSCENES } from './index.ts';
+import { CREDITS_ROLL_S } from './cr-credits.ts'; // M-A: the end-credits roll speed
 import { VIEW_CULL_SCOPE } from '../render/view-caster-cull.ts'; // PERF review (contract 116)
 import { TitleCards } from '../ui/title-card.ts'; // C0 date card + byline (opening lane)
 import type { CameraPose, DofSettings, DoorAction, LockMode, P3, TimelineFactory, VehiclePose } from './types.ts';
@@ -46,7 +51,7 @@ export interface CutsceneHooks {
 }
 
 export interface CutsceneGame {
-  ctx: { settings: { fovDeg: number; reducedFlash?: boolean }; flags: Map<string, boolean>; events: { emit(type: string, payload: unknown): void } };
+  ctx: { settings: { fovDeg: number; reducedFlash?: boolean }; flags: Map<string, boolean>; events: { emit(type: string, payload: unknown): void }; presetId?: string };
   camera: any;
   /** Lazy: the pipeline is created after the level in main.ts. */
   pipeline?: () => { setCutscene(fx: { dof?: DofSettings; motionBlur?: number } | null): void; setBlurAmount?(v: number): void; blurAvailable?: boolean } | null;
@@ -85,12 +90,19 @@ const CS_CULL = typeof location === 'undefined' || new URLSearchParams(location.
  * room changes which flicker lamps its `seen` set lights (C5 shadowplay rendered brighter, R34) — opt others in only
  * after an A/B of their stills.
  */
-const CS_CULL_IDS = new Set(['C2', 'C2c']);
+// M-A (infra, surgical): + C4a, C4c, C2b — interior cameras; without it they rendered the whole house (C4a POV at the
+// door 562–661 draws / 1.82–1.94 M on Medium, over 400 / 1.5 M)
+const CS_CULL_IDS = new Set(['C2', 'C2c', 'C4a', 'C4c', 'C2b', 'C5b', 'C6b', 'CR']);
+/** M-A (SCENES, surgical): yard / gate cameras that keep the GAMEPLAY exterior culling (the player's own PVS from an
+ *  exterior room) instead of render-all — CR at the gate drew 627 / 1.49 M, C5b's crane 1045 / 2.24 M on Medium. */
+const CS_CULL_EXT_IDS = new Set(['C5b', 'C6b', 'CR']);
+/** AD review M-A: the parlor, for C5b's 135 mm shutter shot (see camera.apply). */
+const C5B_SHUTTER_ROOMS: readonly string[] = ['G2'];
 /** PERF review (contract 116): the torch's view-frustum caster cull. Lead ruling 2026-10-11: OFF everywhere until it tests
  *  each caster's shadow volume rather than the caster (it changed the C5 still for an unknown reason); add 'C2c' to re-enable.
  *  PERF fix round 3 (ruling q, contract 121): re-enabled for C2c with the shadow-cone test — same-state per-frame A/B over
  *  all 834 C2c frames 0 px; the C5 change was playthrough run noise (docs/STATUS-perf-g.md G4–G5). */
-const TORCH_CULL_IDS = new Set<string>(['C2c']);
+const TORCH_CULL_IDS = new Set<string>(['C2c', 'C4a', 'C4c']); // M-A: + C4a, C4c (torch-lit POV shots)
 
 // ------------------------------------------------------------------ overlay (DOM, system fonts)
 
@@ -105,6 +117,8 @@ export class CutsceneOverlay {
   private readonly skipBar: HTMLElement;
   private readonly lens: HTMLElement;
   private readonly cards: TitleCards;
+  /** M-A CR: the end-credits roll (system serif, centred, one slow pass upward). */
+  private readonly roll: HTMLElement;
 
   constructor(parent: HTMLElement = document.body) {
     const div = (css: Partial<CSSStyleDeclaration>, p: HTMLElement) => {
@@ -128,6 +142,7 @@ export class CutsceneOverlay {
     this.skip = div({ position: 'absolute', right: '16px', bottom: '16px', color: '#a99f8e', font: '500 12px/1.3 system-ui, -apple-system, sans-serif', letterSpacing: '.1em', textTransform: 'uppercase', opacity: '0', transition: 'opacity .4s' }, this.root);
     this.skip.textContent = 'Hold Space to skip';
     this.cards = new TitleCards(this.root);
+    this.roll = div({ position: 'absolute', left: '0', right: '0', top: '0', display: 'flex', flexDirection: 'column', alignItems: 'center', color: '#d9d2c3', font: '400 clamp(15px,1.7vw,22px)/1.5 ui-serif, Georgia, "Times New Roman", serif', letterSpacing: '.08em', textAlign: 'center', textShadow: '0 1px 4px rgba(0,0,0,.7)', opacity: '0', willChange: 'transform', padding: '0 16px', zIndex: '1' }, this.root);
     const track = div({ height: '2px', marginTop: '6px', background: 'rgba(255,255,255,.15)' }, this.skip);
     this.skipBar = div({ height: '100%', width: '0', background: '#d9d2c3' }, track);
   }
@@ -139,13 +154,59 @@ export class CutsceneOverlay {
     this.bottom.style.height = h;
   }
   setCard(text: string | null, style: string): void {
+    if (style === 'roll' || !text) this.setRoll(style === 'roll' ? text : null);
+    if (style === 'roll') return;
     if (this.cards.set(text, style)) return;
     if (text) {
       this.card.textContent = text;
       this.card.style.fontSize = style === 'small' ? 'clamp(16px,2vw,24px)' : '';
       this.card.style.zIndex = '2';
-      requestAnimationFrame(() => (this.card.style.opacity = '1'));
-    } else this.card.style.opacity = '0';
+      // AD review M-A: the fade-in waits a frame; a clear (cue or skip/teardown) before that frame must win — a
+      // skipped C6 → C6b chain left "Three weeks later" on screen over the next scene (the late rAF re-showed it)
+      const token = ++this.cardSeq;
+      requestAnimationFrame(() => {
+        if (this.cardSeq === token) this.card.style.opacity = '1';
+      });
+    } else {
+      this.cardSeq++;
+      this.card.style.opacity = '0';
+    }
+  }
+  private cardSeq = 0;
+  /** CR: lay the credits out and roll them from below the frame to above it, linear, over CREDITS_ROLL_S. */
+  private setRoll(text: string | null): void {
+    const r = this.roll;
+    r.style.transition = 'none';
+    if (!text) {
+      r.style.opacity = '0';
+      r.replaceChildren();
+      this.rollT = -1;
+      return;
+    }
+    r.replaceChildren();
+    for (const raw of text.split('\n')) {
+      const line = document.createElement('div');
+      if (raw.startsWith('# ')) Object.assign(line.style, { font: '400 clamp(26px,3.6vw,48px)/1.2 ui-serif, Georgia, "Times New Roman", serif', letterSpacing: '.32em', marginBottom: '.2em' });
+      else if (raw.startsWith('~ ')) Object.assign(line.style, { fontStyle: 'italic', letterSpacing: '.16em', opacity: '.85' });
+      else if (raw.startsWith('> ')) Object.assign(line.style, { fontVariant: 'small-caps', fontSize: '.82em', letterSpacing: '.2em', color: '#a99f8e', marginTop: '.25em' });
+      line.textContent = raw.replace(/^(# |~ |> )/, '') || '\u00a0';
+      if (!raw) line.style.height = '2.2em';
+      r.appendChild(line);
+    }
+    r.style.opacity = '1';
+    this.rollT = 0;
+    this.tickRoll(0);
+  }
+  /** The roll runs on the game clock (pause / headless stepping keep it in sync with the cues). */
+  private rollT = -1;
+  tickRoll(dt: number): void {
+    if (this.rollT < 0) return;
+    this.rollT += dt;
+    const k = Math.min(1, this.rollT / CREDITS_ROLL_S);
+    const vh = (typeof window !== 'undefined' ? window.innerHeight : 1080) || 1080;
+    const y = vh - k * (vh + this.roll.offsetHeight);
+    this.roll.style.transform = `translateY(${y.toFixed(1)}px)`;
+    if (k >= 1) this.rollT = -1;
   }
   prompt(text: string | null): void {
     if (text) this.promptEl.textContent = text;
@@ -248,8 +309,12 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
           VIEW_CULL_SCOPE.on = TORCH_CULL_IDS.has(player.active ?? '');
           const feet = p.pos[2] - 0.5;
           const r = CS_CULL && CS_CULL_IDS.has(player.active ?? '') ? lv.index?.roomAt?.(p.pos[0], p.pos[1], feet) : undefined;
-          const inside = r === null ? lv.viewerFeetZ !== null : r !== undefined && lv.index.rooms.get(r)?.kind === 'interior';
+          const ext = CS_CULL_EXT_IDS.has(player.active ?? '');
+          const inside = r === null ? lv.viewerFeetZ !== null : r !== undefined && (ext || lv.index.rooms.get(r)?.kind === 'interior');
           lv.viewerFeetZ = inside ? feet : null;
+          // AD review M-A: C5b's telephoto on the parlor shutter (135 mm) from the porch needs G2 (the sill candle catching
+          // behind the slats is the shot); EXT2's PVS has only G1 — added for that narrow exterior lens only
+          lv.extraVisible = player.active === 'C5b' && ext && p.fov < 20 ? C5B_SHUTTER_ROOMS : null;
           if (lv.cullingEnabled !== inside) lv.setCulling(inside);
         }
         const w = planToWorld(p.pos);
@@ -280,7 +345,10 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         BEAM_CLAMP.at = null;
         if (cullWas) {
           cullWas = false;
-          if (g.level) g.level.viewerFeetZ = null;
+          if (g.level) {
+            g.level.viewerFeetZ = null;
+            g.level.extraVisible = null;
+          }
           VIEW_CULL_SCOPE.on = false;
           g.level?.setCulling?.(true);
         }
@@ -473,7 +541,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
       const p = g.player;
       const heading = p ? p.yaw + Math.PI / 2 : 0;
       const pitch = p ? p.pitch : 0;
-      return { player: { eye, heading, pitch, fov: g.ctx.settings.fovDeg }, ada: g.characters?.pose?.('ada') ?? null, flags: g.ctx.flags, motionBlur: !!g.pipeline?.()?.blurAvailable };
+      return { player: { eye, heading, pitch, fov: g.ctx.settings.fovDeg }, ada: g.characters?.pose?.('ada') ?? null, flags: g.ctx.flags, motionBlur: !!g.pipeline?.()?.blurAvailable, tier: g.ctx.presetId };
     },
   };
 
@@ -493,6 +561,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
       return camHeld;
     },
     update(dt, input = {}) {
+      overlay?.tickRoll(dt); // M-A CR roll
       // interactive gates
       const gate = player.waitingGate;
       if (gate === 'pour') {

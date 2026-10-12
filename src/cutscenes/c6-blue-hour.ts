@@ -9,7 +9,13 @@
 import { CAR_ROW, DRIVER_EYE, PROP, inCar } from './stage.ts';
 import type { Cue, P3, TimelineFactory } from './types.ts';
 
-export const C6_DURATION = 28.5;
+export const C6_DURATION = 32.5;
+/** M-A (CUTSCENES-PLAN §3 C6 +4 s): before the key gate, a 4 s insert — the dash clock reads 6:10 and your glove lays
+ *  the water-stained bus ticket on the dashboard. You leave at ten past six on 12 October: the bus she never caught.
+ *  No line. Everything from the key gate on is 4 s later than in the 28.5 s cut. */
+export const C6_INSERT_T = 8.4;
+export const C6_INSERT_D = 4;
+export const C6_CLOCK = '6:10';
 export const POUR_PROMPT = 'Hold E to pour the can';
 export const KEY_PROMPT = 'Press E to turn the key';
 
@@ -63,10 +69,27 @@ export const c6BlueHour: TimelineFactory = (ctx) => {
     { t: 23.8, type: 'fx', id: 'mirror_view', params: { on: true } },
     { t: 23.8, type: 'visible', char: 'arms', visible: false },
     { t: 24.0, type: 'fx', id: 'blue_hour', params: { mist: 1.5, rain: 0 } },
+    // M-A: the sill candle behind the parlor shutter stays lit in the mirror (C5b continuity)
+    { t: 0, type: 'light', op: 'set', id: 'L_CANDLE_SILL', scale: 1 },
     { t: C6_DURATION, type: 'fx', id: 'mirror_view', params: { on: false } },
     { t: C6_DURATION, type: 'fx', id: 'car_mount', params: { on: false } },
-    { t: C6_DURATION, type: 'fx', id: 'dash', params: { on: false, fuelNeedle: 0.25, fuelLamp: false } },
+    { t: C6_DURATION, type: 'fx', id: 'dash', params: { on: false, fuelNeedle: 0.25, fuelLamp: false, clock: '' } },
+    { t: C6_DURATION, type: 'fx', id: 'dash_ticket', params: { on: false } },
   ];
+  // the insert: everything from the key gate on moves 4 s later
+  const late = (t: number) => (t >= C6_INSERT_T + 0.5 - 1e-6 && t < C6_DURATION - 1e-6 ? t + C6_INSERT_D : t);
+  for (const c of cues) c.t = Math.round(late(c.t) * 1000) / 1000;
+  const T = C6_INSERT_T;
+  cues.push(
+    // the key to ACC: the panel lights and the quartz clock reads 6:10; then the ticket on the dash (crank at the gate)
+    { t: T - 0.3, type: 'sfx', id: 'knob_click', gain: 0.5 },
+    { t: T, type: 'fx', id: 'dash', params: { on: true, fuelNeedle: 0.25, fuelLamp: false, clock: C6_CLOCK } },
+    { t: T + 1.9, type: 'clip', char: 'arms', clip: 'arms_pickup_read', fallback: ['arms_idle'] },
+    { t: T + 2.0, type: 'sfx', id: 'paper', gain: 0.35 },
+    { t: T + 2.7, type: 'fx', id: 'dash_ticket', params: { on: true } },
+    { t: T + 3.6, type: 'clip', char: 'arms', clip: 'arms_wheel', loop: true, fallback: ['arms_idle'] },
+  );
+  cues.sort((a, b) => a.t - b.t);
 
   return {
     id: 'C6',
@@ -74,29 +97,32 @@ export const c6BlueHour: TimelineFactory = (ctx) => {
     lock: 'full',
     fade: [
       { t: 0, v: 0 },
-      { t: 26.4, v: 0 },
-      { t: 28.4, v: 1 },
+      { t: 26.4 + C6_INSERT_D, v: 0 },
+      { t: 28.4 + C6_INSERT_D, v: 1 },
     ],
     letterbox: [
       { t: 0, v: 0 },
       { t: 1.5, v: 1 },
     ],
     vehicle: [
-      { t: 0, d: 15.5, path: [CAR_ROW.pos], heading: CAR_ROW.heading },
-      { t: 15.5, d: 11.5, path: drive, ease: 'linear', heading: 'path' },
+      { t: 0, d: 15.5 + C6_INSERT_D, path: [CAR_ROW.pos], heading: CAR_ROW.heading },
+      { t: 15.5 + C6_INSERT_D, d: 11.5, path: drive, ease: 'linear', heading: 'path' },
     ],
     shots: [
       // to the filler
       { t: 0, d: 1.6, path: [eye0, pourEye], target: [filler], fov: [ctx.player.fov ?? 60, 48], ease: 'out', handheld: 0.5 },
       { t: 1.6, d: 5.9, path: [pourEye, [pourEye[0] + 0.05, pourEye[1] + 0.02, pourEye[2] - 0.03]], target: [filler], fov: 44, ease: 'linear', handheld: 0.45 },
       // the key, two coughs, the radio mid-song
-      { t: 7.5, d: 8.0, space: 'car', path: [DRIVER_EYE], target: [[-0.25, 6, 0.95], [-0.3, 0.55, 0.8], [-0.2, 8, 0.95]], fov: 55, ease: 'inOut', handheld: 0.5 },
+      { t: 7.5, d: 8.0 + C6_INSERT_D, space: 'car', path: [DRIVER_EYE], target: [[-0.25, 6, 0.95], [-0.3, 0.55, 0.8], [-0.2, 8, 0.95]], fov: 55, ease: 'inOut', handheld: 0.5 },
       // past the dead pump
-      { t: 15.5, d: 4.0, path: [[6.6, -16.4, 1.15], [6.5, -16.6, 1.2]], target: [[9.8, -7.4, 0.8], [4.4, -14.2, 0.8], [3.3, -17.5, 0.9]], fov: 42, ease: 'linear', handheld: 0.3 },
+      { t: 15.5 + C6_INSERT_D, d: 4.0, path: [[6.6, -16.4, 1.15], [6.5, -16.6, 1.2]], target: [[9.8, -7.4, 0.8], [4.4, -14.2, 0.8], [3.3, -17.5, 0.9]], fov: 42, ease: 'linear', handheld: 0.3 },
       // down the drive toward the lantern
-      { t: 19.5, d: 4.3, space: 'car', path: [DRIVER_EYE], target: [[0.2, 14, 1.1], [1.6, 9, 1.8]], fov: 52, ease: 'inOut', handheld: 0.5 },
+      { t: 19.5 + C6_INSERT_D, d: 4.3, space: 'car', path: [DRIVER_EYE], target: [[0.2, 14, 1.1], [1.6, 9, 1.8]], fov: 52, ease: 'inOut', handheld: 0.5 },
       // the mirror: the house sinks into the mist
-      { t: 23.8, d: C6_DURATION - 23.8, space: 'car', path: [[0.05, 0.35, 1.22]], target: [[0.4, -20, 2.2]], fov: 30, handheld: 0.3 },
+      { t: 23.8 + C6_INSERT_D, d: C6_DURATION - 23.8 - C6_INSERT_D, space: 'car', path: [[0.05, 0.35, 1.22]], target: [[0.4, -20, 2.2]], fov: 30, handheld: 0.3 },
+      // M-A insert: the clock (6:10), then the ticket laid on the dash with the house in the mist beyond the glass
+      { t: C6_INSERT_T, d: 2.0, space: 'car', path: [[-0.35, 0.12, 1.13], [-0.35, 0.14, 1.125]], target: [[-0.35, 0.6, 0.9]], fov: 26, ease: 'linear', handheld: 0.3 },
+      { t: C6_INSERT_T + 2.0, d: 2.0, space: 'car', path: [[-0.2, 0.05, 1.16], [-0.18, 0.08, 1.15]], target: [[0.1, 0.65, 0.96], [0.1, 0.7, 0.98]], fov: 40, ease: 'linear', handheld: 0.35 },
     ],
     cues,
   };
