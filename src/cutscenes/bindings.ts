@@ -9,7 +9,8 @@
 import * as THREE from 'three/webgpu';
 import { planToWorld, worldToPlan } from '../shared/coords.ts';
 import { CutscenePlayer, localSeenStore, type CharacterDirector, type CutsceneDeps, type SeenStore } from './host.ts';
-import { HemOverlay } from './c4-hem.ts';
+import { C4_HIDE_LM_TAU_IN, C4_HIDE_LM_TAU_OUT, HemOverlay } from './c4-hem.ts';
+import { GRADE } from '../render/grade.ts'; // SMOOTH-FIX (#145b): the C4 hide view's night-light lift (tickHideLm)
 import { setCandleShadow } from '../world/lights.ts';
 import { hasRecipe } from '../audio/synth/index.ts';
 
@@ -28,7 +29,9 @@ const SFX_STANDIN: Record<string, string> = {
   rope_creak: 'apron_creak',
 };
 import { requestExposureSnap } from '../render/exposure.ts';
+import { LOOK } from '../render/look.ts'; // SMOOTH-FIX (#145): the torch fade scales the beam bounce with the beam
 import { BEAM_CLAMP } from '../characters/arms.ts';
+import { TORCH_WORLD } from '../render/flashlight-bounce.ts'; // SMOOTH-FIX (#145b): the beam's gaze aim (static sight ray)
 import { CUTSCENES } from './index.ts';
 import { CREDITS_ROLL_S } from './cr-credits.ts'; // M-A: the end-credits roll speed
 import { VIEW_CULL_SCOPE } from '../render/view-caster-cull.ts'; // PERF review (contract 116)
@@ -51,10 +54,10 @@ export interface CutsceneHooks {
 }
 
 export interface CutsceneGame {
-  ctx: { settings: { fovDeg: number; reducedFlash?: boolean }; flags: Map<string, boolean>; events: { emit(type: string, payload: unknown): void }; presetId?: string };
+  ctx: { settings: { fovDeg: number; reducedFlash?: boolean }; flags: Map<string, boolean>; events: { emit(type: string, payload: unknown): void }; presetId?: string; time?: { now: number } };
   camera: any;
   /** Lazy: the pipeline is created after the level in main.ts. */
-  pipeline?: () => { setCutscene(fx: { dof?: DofSettings; motionBlur?: number } | null): void; setBlurAmount?(v: number): void; blurAvailable?: boolean } | null;
+  pipeline?: () => { setCutscene(fx: { dof?: DofSettings; motionBlur?: number } | null): void; setBlurAmount?(v: number): void; blurAvailable?: boolean; uniforms?: { exposure?: { value: number } } } | null;
   level?: any;
   player?: any;
   rig?: any;
@@ -92,10 +95,10 @@ const CS_CULL = typeof location === 'undefined' || new URLSearchParams(location.
  */
 // M-A (infra, surgical): + C4a, C4c, C2b — interior cameras; without it they rendered the whole house (C4a POV at the
 // door 562–661 draws / 1.82–1.94 M on Medium, over 400 / 1.5 M)
-const CS_CULL_IDS = new Set(['C2', 'C2c', 'C4a', 'C4c', 'C2b', 'C5b', 'C6b', 'CR']);
+export const CS_CULL_IDS = new Set(['C2', 'C2c', 'C4a', 'C4c', 'C2b', 'C5b', 'C6b', 'CR']);
 /** M-A (SCENES, surgical): yard / gate cameras that keep the GAMEPLAY exterior culling (the player's own PVS from an
  *  exterior room) instead of render-all — CR at the gate drew 627 / 1.49 M, C5b's crane 1045 / 2.24 M on Medium. */
-const CS_CULL_EXT_IDS = new Set(['C5b', 'C6b', 'CR']);
+export const CS_CULL_EXT_IDS = new Set(['C5b', 'C6b', 'CR']);
 /** AD review M-A: the parlor, for C5b's 135 mm shutter shot (see camera.apply). */
 const C5B_SHUTTER_ROOMS: readonly string[] = ['G2'];
 /** PERF review (contract 116): the torch's view-frustum caster cull. Lead ruling 2026-10-11: OFF everywhere until it tests
@@ -249,10 +252,115 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
   const lastCamPos = new THREE.Vector3();
   const lastCamDir = new THREE.Vector3(0, 0, -1);
   let camHeld = false;
+  /** SMOOTH-FRAMES (#142): the camera pose the last frame rendered (end of update()) — a cutscene's first held frame is
+   *  a cut only if it jumps from THIS pose; and a pending release-snap decision (see camera.release). */
+  const renderedPos = new THREE.Vector3(NaN, NaN, NaN);
+  const renderedDir = new THREE.Vector3(0, 0, -1);
+  let releaseCheck = false;
   let cullWas = false;
   let lockMode: LockMode = 'none';
   let saved: { enabled: boolean; look: boolean } | null = null;
   const gutters: { f: any; base: number; t: number; d: number }[] = [];
+  // SMOOTH-FIX (#145, hunt F1): `fx torchFade {d, e1}` — the torch goes down as a film camera takes over from the eye.
+  // C2 switched the torch off on its first frame while its film camera (0.625) replaced the torch-adapted eye (0.066):
+  // the TAAU history still held the torch-lit haze, so the first C2 frame was ×16 brighter than the B03 frame before it
+  // and decayed over 10 frames. Now the cutscene's exposure cue eases e0 → e1 over `d` s (opening.ts `ramp`) and the
+  // beam fades with it so that the torch pool's brightness ON SCREEN falls linearly to 0: beam × (1 − s) · e0/e(t),
+  // e(t) = e0·(e1/e0)^s, s = smoothstep(t/d) — the same clock and curve as the exposure ramp. Then it is switched off.
+  // `lowerX/Y/Z` (PLAN, optional): the beam is LOWERED onto that point over the fade (BEAM_CLAMP.at moves from where the
+  // beam points now) — after1 C2: with the beam left on the doorway the eye's last 0.4 m toward the jamb brightened its
+  // pool ×2.6 (1/d²) while it faded, then the pool slid off the jamb (×0.06 in 4 frames). `de`: the exposure ramp's
+  // length when it differs from the fade.
+  type Fade = { t: number; d: number; de: number; e0: number; e1: number; base: number; bounce: number; aim0: any; aim1: any; clampOn: boolean; clampAt: [number, number, number] | null };
+  let torchFade: Fade | null = null;
+  const smooth01 = (x: number) => {
+    const u = Math.min(1, Math.max(0, x));
+    return u * u * (3 - 2 * u);
+  };
+  const endTorchFade = (off: boolean) => {
+    if (!torchFade) return;
+    const f = torchFade;
+    torchFade = null;
+    const fl = g.rig?.flashlight;
+    if (fl) fl.intensity = f.base;
+    LOOK.bounce = f.bounce;
+    if (f.aim1) {
+      BEAM_CLAMP.on = f.clampOn;
+      BEAM_CLAMP.at = f.clampAt;
+    }
+    if (off) g.rig?.setOn?.(false);
+  };
+  const tickTorchFade = (dt: number) => {
+    const f = torchFade;
+    if (!f) return;
+    f.t += dt;
+    const sf = smooth01(f.t / f.d);
+    const se = smooth01(f.t / f.de);
+    const k = Math.max(0, Math.min(1, (1 - sf) * Math.pow(f.e0 / f.e1, se)));
+    const fl = g.rig?.flashlight;
+    if (fl) fl.intensity = f.base * k;
+    LOOK.bounce = f.bounce * k;
+    if (f.aim1) {
+      const p = f.aim0.clone().lerp(f.aim1, sf);
+      BEAM_CLAMP.on = true;
+      BEAM_CLAMP.at = [p.x, p.y, p.z];
+    }
+    if (f.t >= f.d) endTorchFade(true);
+  };
+  // SMOOTH-FIX (#145b, re-verify F7 + N1): `fx beamClamp {on, gaze: 1, d?}` — the torch lights what the eye looks at.
+  // The plain clamp holds the beam within 12° of the GAZE DIRECTION, but the torch hangs 0.25–0.7 m under the eye in the
+  // run / stumble / breath clips (scratch/reverify rows `tl`): parallel to the gaze, its pool lands that far BELOW the
+  // gaze point — 18–30° at 1–1.5 m, under the bottom of C2c's 38° frame — and the frame went black: C2c 6.63–6.8 (the
+  // stumble whip, 6 frames), 8.53–8.93 / 10.73–11.03 (the landing wall 0.9 m away). A hand points a torch AT what the
+  // eyes are on: each held frame the beam is aimed (BEAM_CLAMP.at) at the gaze ray's hit on the house (the static
+  // sight ray, flashlight-bounce TORCH_WORLD.sight, ≤ GAZE_FAR m) — or, with `d`, at the point d m along the gaze
+  // (glance #2: her hand, which the static ray goes past). The aim distance eases in log space (GAZE_TAU) so a ray
+  // grazing a newel or a door edge (1 m ↔ 5 m) swings the beam over a few frames instead of one. From the shot's own
+  // un-shaken gaze (the handheld shake moves the frame round the pool, as a hand-held camera does); while `torchHold`
+  // keeps the torch arm forward (glance #1), from the held rig's forward instead. Off with any other beamClamp cue and
+  // on release.
+  const GAZE_FAR = 8;
+  const GAZE_NEAR = 0.25;
+  const GAZE_TAU = 0.08;
+  let beamGaze: { d: number; fixed: number | null; primed: boolean } | null = null;
+  const poseW = new THREE.Vector3(NaN, NaN, NaN);
+  const poseT = new THREE.Vector3();
+  const gazeO = new THREE.Vector3();
+  const gazeD = new THREE.Vector3();
+  const gazeAt: [number, number, number] = [0, 0, 0];
+  const tickBeamGaze = (dt: number) => {
+    const bg = beamGaze;
+    if (!bg || !camHeld || Number.isNaN(poseW.x)) return;
+    const rr = g.rig?.rig;
+    if (g.rig?.hold && rr) {
+      rr.updateWorldMatrix(true, false);
+      gazeO.setFromMatrixPosition(rr.matrixWorld);
+      gazeD.set(0, 0, -1).transformDirection(rr.matrixWorld);
+    } else {
+      gazeO.copy(poseW);
+      gazeD.copy(poseT).sub(poseW);
+      if (gazeD.lengthSq() < 1e-8) return;
+      gazeD.normalize();
+    }
+    let want = bg.fixed;
+    if (want == null) {
+      const hit = TORCH_WORLD.sight ? TORCH_WORLD.sight(gazeO, gazeD, GAZE_FAR) : Infinity;
+      want = Number.isFinite(hit) ? hit : GAZE_FAR;
+    }
+    want = Math.max(GAZE_NEAR, want);
+    if (!bg.primed) {
+      // continue from where the beam points now (an explicit aim point) — no jump when the mode takes over
+      const at = BEAM_CLAMP.on ? BEAM_CLAMP.at : null;
+      bg.d = at ? Math.max(GAZE_NEAR, (at[0] - gazeO.x) * gazeD.x + (at[1] - gazeO.y) * gazeD.y + (at[2] - gazeO.z) * gazeD.z) : want;
+      bg.primed = true;
+    }
+    if (dt > 0) bg.d = Math.exp(Math.log(bg.d) + (Math.log(want) - Math.log(bg.d)) * (1 - Math.exp(-dt / GAZE_TAU)));
+    gazeAt[0] = gazeO.x + gazeD.x * bg.d;
+    gazeAt[1] = gazeO.y + gazeD.y * bg.d;
+    gazeAt[2] = gazeO.z + gazeD.z * bg.d;
+    BEAM_CLAMP.on = true;
+    BEAM_CLAMP.at = gazeAt;
+  };
   const baseOf = new Map<any, number>();
   let vehicleSaved: { obj: any; pos: any; rotY: number; visible: boolean } | null = null;
   let warned = new Set<string>();
@@ -319,10 +427,20 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         }
         const w = planToWorld(p.pos);
         const t = planToWorld(p.target);
-        // R2-5 (round 3): a CUT (first held frame, or the pose jumps > 1.2 m (a 15 m/s car moves 0.75 m a frame at 20 fps) or turns > 20° between two frames) adapts the
+        // R2-5 (round 3): a CUT (the pose jumps > 1.2 m (a 15 m/s car moves 0.75 m a frame at 20 fps) or turns > 20° between two frames) adapts the
         // exposure with it — the auto snap only fires on > 2.5 m moves, so same-room cuts eased in over τ 6 s
+        // SMOOTH-FRAMES (#142): the FIRST held frame is compared like any other — with the frame rendered before it (the
+        // gameplay camera, or the pose a chained cutscene ended on this same frame). It always snapped: a cutscene that
+        // starts on the player's own eye (C3, C4a, C4c, C5, C6) stepped the exposure ×3 in one frame 0.3 s in
+        // (scripts/qa/cs-frames.mjs C3 0.333).
         const dir = tmpD.set(t[0] - w[0], t[1] - w[1], t[2] - w[2]).normalize();
-        if (!camHeld || lastCamPos.distanceToSquared(tmpT.set(w[0], w[1], w[2])) > 1.44 || dir.dot(lastCamDir) < 0.94) requestExposureSnap();
+        poseW.set(w[0], w[1], w[2]); // SMOOTH-FIX (#145b): the un-shaken gaze for the beam's gaze aim
+        poseT.set(t[0], t[1], t[2]);
+        if (!camHeld) {
+          lastCamPos.copy(renderedPos);
+          lastCamDir.copy(renderedDir);
+        }
+        if (Number.isNaN(lastCamPos.x) || lastCamPos.distanceToSquared(tmpT.set(w[0], w[1], w[2])) > 1.44 || dir.dot(lastCamDir) < 0.94) requestExposureSnap();
         lastCamPos.set(w[0], w[1], w[2]);
         lastCamDir.copy(dir);
         camHeld = true;
@@ -338,9 +456,20 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         }
         cam.updateMatrixWorld(true);
         g.rig?.snap?.();
+        // SMOOTH-FIX (#145, hunt F2b): pose the torch rig on THIS camera now. The arms (story-runtime, after this update)
+        // aim the beam — BEAM_CLAMP / its `at` point — in the rig's frame, but the rig only followed the camera later in
+        // the frame (world → rig.update): on every cut the beam was aimed for the previous shot's pose, so C4c's 0.4 s
+        // memory flash-frames opened on a black frame (the torch lit nothing in view) and fast whips lagged a frame.
+        // The second snap leaves the frame's own rig.update exactly as before.
+        if (g.rig?.update) {
+          g.rig.update(0, g.ctx?.time?.now ?? 0);
+          g.rig.snap?.();
+        }
       },
       release() {
         camHeld = false;
+        beamGaze = null;
+        poseW.set(NaN, NaN, NaN);
         BEAM_CLAMP.on = false;
         BEAM_CLAMP.at = null;
         if (cullWas) {
@@ -356,7 +485,11 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         cam.updateProjectionMatrix();
         applyPlayerCamera();
         g.rig?.snap?.();
-        requestExposureSnap(); // R2-5: back on the player's eye = a cut
+        // R2-5: back on the player's eye = a cut — SMOOTH-FRAMES (#142): only when it IS one (the hand-backs that end on
+        // the player's own camera — C2c, C4a, C4c, C5, C5b — snapped the exposure 0.3 s into gameplay). Decided at the end
+        // of this frame's update(): a cutscene chained on the same frame takes the camera first (its own first frame
+        // then compares with the pose rendered before it).
+        releaseCheck = true;
       },
     },
     characters: g.characters ?? undefined,
@@ -414,6 +547,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
       },
       flashlight: (on, tremble) => {
         if (!g.rig) return;
+        endTorchFade(false); // a later torch cue (C2c's run, a skip) ends a fade where it is
         g.rig.setOn?.(on);
         g.rig.tremble = tremble;
       },
@@ -446,6 +580,13 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         if (id === 'mirror_view' && g.canvas) g.canvas.style.transform = params.on ? 'scaleX(-1)' : '';
         if (id === 'lens_wet_hand') overlay?.lensHand(!!params.on);
         if (id === 'beamClamp') {
+          // SMOOTH-FIX (#145b): `gaze` — aim at what the eye looks at, every held frame (tickBeamGaze); `d` = a fixed
+          // distance along the gaze. The aim point it starts from is the current one (no jump when it takes over).
+          if (params.on && params.gaze) {
+            beamGaze = { d: beamGaze?.d ?? 1, fixed: params.d !== undefined ? Number(params.d) : null, primed: !!beamGaze };
+            return;
+          }
+          beamGaze = null;
           BEAM_CLAMP.on = !!params.on; // C2-ESCAPE review: the climb's torch stays within 12° of the gaze (arms.ts)
           // fix round: optional aim point (PLAN) — glance #2 points the torch at her hand on the rail
           BEAM_CLAMP.at = params.atX !== undefined ? (planToWorld([Number(params.atX), Number(params.atY), Number(params.atZ)]) as [number, number, number]) : null;
@@ -453,6 +594,28 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
         }
         if (id === 'torchHold' && g.rig) {
           g.rig.hold = !!params.on; // C2-ESCAPE: the torch arm stays forward while the head turns back
+          return;
+        }
+        if (id === 'torchFade') {
+          endTorchFade(false);
+          const fl = g.rig?.flashlight;
+          if (!g.rig?.on || !fl) {
+            g.rig?.setOn?.(false);
+            return;
+          }
+          const now = g.pipeline?.()?.uniforms?.exposure?.value;
+          const e1 = Math.max(1e-4, Number(params.e1 ?? now ?? 1));
+          const e0 = Math.max(1e-4, typeof now === 'number' && Number.isFinite(now) && now > 0 ? now : e1);
+          const d = Math.max(0.05, Number(params.d ?? 1));
+          let aim0: any = null;
+          let aim1: any = null;
+          if (params.lowerX !== undefined && fl.light?.target) {
+            fl.light.target.updateWorldMatrix?.(true, false);
+            aim0 = fl.light.target.getWorldPosition(new THREE.Vector3());
+            const w = planToWorld([Number(params.lowerX), Number(params.lowerY), Number(params.lowerZ)]);
+            aim1 = new THREE.Vector3(w[0], w[1], w[2]);
+          }
+          torchFade = { t: 0, d, de: Math.max(0.05, Number(params.de ?? d)), e0, e1, base: fl.intensity, bounce: LOOK.bounce, aim0, aim1, clampOn: BEAM_CLAMP.on, clampAt: BEAM_CLAMP.at };
           return;
         }
         hooks.fx?.(id, params);
@@ -541,13 +704,38 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
       const p = g.player;
       const heading = p ? p.yaw + Math.PI / 2 : 0;
       const pitch = p ? p.pitch : 0;
-      return { player: { eye, heading, pitch, fov: g.ctx.settings.fovDeg }, ada: g.characters?.pose?.('ada') ?? null, flags: g.ctx.flags, motionBlur: !!g.pipeline?.()?.blurAvailable, tier: g.ctx.presetId };
+      return { player: { eye, heading, pitch, fov: g.ctx.settings.fovDeg, torch: !!g.rig?.on }, ada: g.characters?.pose?.('ada') ?? null, flags: g.ctx.flags, motionBlur: !!g.pipeline?.()?.blurAvailable, tier: g.ctx.presetId };
     },
   };
 
   const player = new CutscenePlayer({ deps, library: g.library ?? CUTSCENES, seen: g.seen ?? localSeenStore() });
   const hem = new HemOverlay(player);
   let pourHeld = 0;
+  // SMOOTH-FIX (#145b, re-verify F9 second half): inside Ada's wardrobe the U3 night bake is lifted × C4_HIDE_LM
+  // (c4-hem.ts: the room's 0.0005 lux to the real 0.003–0.03 lux range). Eased in log space (in τ C4_HIDE_LM_TAU_IN as the
+  // player settles into the hide, out τ C4_HIDE_LM_TAU_OUT after they leave it) on GRADE.lm itself, so an ease cut short
+  // by a Director cutscene (death, C5 …: they own the grade, their teardown resets it) resumes from what it left. The
+  // hem segments carry no grade cues. Outside cutscenes nothing else writes GRADE.lm (host.ts lmScale / resetGrade only).
+  let hideLmPrev = 1;
+  const tickHideLm = (dt: number) => {
+    const act = player.active;
+    if (act && !act.startsWith('C4_')) return;
+    const want = hem.lmWanted;
+    // LEAD (re-verify r2, R2-1): leaving the hide is a camera cut (out through its back into U4T, or out of the doors) —
+    // the lift ends ON that cut. Eased out over τ 1.2 s, the first exit frames showed U4T ×10 over-exposed.
+    const left = hideLmPrev > 1 && want === 1;
+    hideLmPrev = want;
+    if (left) {
+      GRADE.lm = 1;
+      return;
+    }
+    const cur = Math.max(1e-3, GRADE.lm);
+    if (cur === want || !(dt > 0)) return;
+    const tau = want > cur ? C4_HIDE_LM_TAU_IN : C4_HIDE_LM_TAU_OUT;
+    let next = Math.exp(Math.log(cur) + (Math.log(want) - Math.log(cur)) * (1 - Math.exp(-dt / tau)));
+    if (Math.abs(Math.log(next / want)) < 0.004) next = want;
+    GRADE.lm = next;
+  };
 
   return {
     player,
@@ -574,6 +762,9 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
       else if (gate === 'c4_breath' && input.breathHeld) hem.breathHeld();
       player.holdSkip(!!input.skipHeld, dt);
       player.update(dt);
+      tickTorchFade(dt);
+      tickBeamGaze(dt);
+      tickHideLm(dt);
       // 'look' lock without a cutscene camera: the player looks around from where they stand
       if (player.active && lockMode === 'look' && !camHeld) applyPlayerCamera();
       // candle gutters: flicker hard, then out
@@ -588,8 +779,18 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
           gutters.splice(i, 1);
         }
       }
+      // SMOOTH-FRAMES (#142): a release this frame that no chained cutscene took over: snap only if the player's eye is a
+      // cut from the cutscene's last pose; then remember the pose this frame renders
+      cam.updateMatrixWorld(true);
+      if (releaseCheck) {
+        releaseCheck = false;
+        if (!camHeld && (lastCamPos.distanceToSquared(cam.position) > 1.44 || cam.getWorldDirection(tmpT).dot(lastCamDir) < 0.94)) requestExposureSnap();
+      }
+      renderedPos.copy(cam.position);
+      cam.getWorldDirection(renderedDir);
     },
     dispose() {
+      endTorchFade(false);
       player.cancel();
       overlay?.dispose();
       warned = new Set();

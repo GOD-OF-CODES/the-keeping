@@ -109,7 +109,8 @@ export interface Collider {
 export const C2_FLOOR_Z = 0.6;
 export const C2_COLLIDERS: Collider[] = [
   { rec: 'table', min: [5.3, 2.2, 0.6], max: [5.9, 4.4, 1.4], from: -1, to: 1e9 },
-  { rec: 'ada', min: [5.33, 2.95, 1.4], max: [6.0, 3.55, 1.66], from: -1, to: 21.9 },
+  // #142c: her body lies 0.20 m further west and 3 cm higher on the top (ada-table-pose.ts TABLE_ROOT)
+  { rec: 'ada', min: [5.36, 2.95, 1.43], max: [5.8, 3.55, 1.69], from: -1, to: 21.9 }, // her back (clavicles 5.36 → hips): cast-off landings; the neck / stump stay out
   { rec: 'harlan', min: [4.95, 3.76, 0.6], max: [5.36, 4.16, 2.15], from: -1, to: 17.9 },
 ];
 

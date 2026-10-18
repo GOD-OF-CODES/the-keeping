@@ -15,10 +15,204 @@ from lib import noise
 from lib.scene import log, select
 from . import body, garments, mesher, rig, sdf, skeleton
 
-P = skeleton.ARMS
 # sharp_fingers / knuckle_k: close-up readability at 35 mm from 0.4 m (round C: the lead's "hands are blobs")
 STYLE = dict(finger_r=0.0098, fem=False, sharp_fingers=True, knuckle_k=1.18)
 FL_LEN = 0.250
+
+# ------------------------------------------------------------------------------------------------ the torch grip
+# FLASH lane #146b (the user: "the hand holding the flashlight looks very weird"). skeleton.ARMS + arms_bones held the
+# LEFT hand palm-DOWN on top of the barrel with its knuckle axis pointing RIGHT, across the torch (a = (0.98, -0.03,
+# 0.18): a crosswise hammer grip), while the forearm came forward-up from the elbow at the left side: the wrist was bent
+# 72 deg (~55 deg of radial deviation; the joint stops at ~20) and in-game the glove read as a claw draped over a ball,
+# the barrel hidden under it (scratch/flash-hand/before/crop-bright.jpg). Geometry (scratch search over every roll of
+# the hand about the barrel, obliquity, grip depth and elbow pole): a beam held FORWARD with the fist up in view at chest
+# height is only reachable with the forearm supinated -- the 'pointing a remote' wrist: palm turned up and inward, the
+# barrel lying obliquely across the palm at the distal crease, the four fingers wrapped over it (index open, pinky tight),
+# the thumb wrapped over the top. Least wrist strain (each angle as a fraction of its range -- ulnar 35, radial 20,
+# extension 70, supination 85 deg): ulnar 30, extension 35, supination 84 = 0.9 of range, the elbow out and a little
+# down (upper arm 8 deg under horizontal, off screen). Old pose: radial 55 = 2.75x its range.
+# This file now owns the arms' left chain and the torch hold: skeleton.ARMS flash_center / flash_dir are superseded.
+GRIP = dict(
+    # barrel axis at the grip, camera space (m; +Y view, +Z up): the fist's top ~29 deg under the gaze = the lower ~12 %
+    # of the 70 deg frame, left of centre (was (-0.135, 0.44, -0.235): the fist at x 0.37 of the frame)
+    center=(-0.15, 0.36, -0.26),
+    # barrel = beam direction, re-pitched with the lower lens so the far pool lands where #146 / B05 had it (the beam
+    # hits a wall 2.3 m ahead 0.34 m under the eye and 0.06 m right of the old lens line; was (0.04, 1.0, -0.05))
+    dir=(0.0429, 0.9982, -0.0417),
+    roll=120.0,         # hand roll about the barrel (deg from 'knuckle axis straight up')
+    oblique=26.0,       # the barrel crosses the palm this many deg off the knuckle line (a power grip: 10-30)
+    depth=0.44,         # ... this far from the wrist (x hand length): the distal palmar crease
+    pole=(-1.0, -0.25, -0.25),   # elbow out to the left and a little down
+)
+P = dict(skeleton.ARMS, flash_center=GRIP['center'], flash_dir=GRIP['dir'])
+# skeleton.hand_bones' finger table (knuckle along, lateral, length, splay deg, phalanx ratios) + body.hand_sdf's finger
+# radius scale: the left fingers are rebuilt here with a curl solved per finger around the barrel
+FINGER_TABLE = {
+    'index': (0.545, 0.36, 0.395, 5.0, (0.46, 0.30, 0.24), 1.0),
+    'middle': (0.565, 0.12, 0.43, 0.0, (0.45, 0.31, 0.24), 1.04),
+    'ring': (0.55, -0.12, 0.405, -5.0, (0.45, 0.31, 0.24), 0.96),
+    'pinky': (0.505, -0.35, 0.32, -11.0, (0.44, 0.31, 0.25), 0.83),
+}
+BARREL_R = 0.0193       # knurl band radius (FL_PROFILE)
+GLOVE_T = 0.0012        # glove_sdf leather
+_GRIP_CACHE = {}
+
+
+def _unit(v):
+    return v / np.maximum(np.linalg.norm(v, axis=-1, keepdims=True), 1e-12)
+
+
+def _flex_axis(d, n, l):
+    """Unit d x n (a finger flexes toward the palm normal n); where d is parallel to n, d x l."""
+    k = np.cross(d, n)
+    bad = np.linalg.norm(k, axis=1) < 1e-6
+    if bad.any():
+        k[bad] = np.cross(d[bad], l)
+    return _unit(k)
+
+
+def _rot_np(v, k, ang):
+    """Rodrigues: rows of v (N,3) about unit rows of k by ang (N,) radians."""
+    c, s = np.cos(ang)[:, None], np.sin(ang)[:, None]
+    return v * c + np.cross(k, v) * s + k * np.sum(k * v, axis=1, keepdims=True) * (1 - c)
+
+
+def _dline(p, C, F):
+    q = p - C
+    return np.linalg.norm(q - np.outer(q @ F, F), axis=1)
+
+
+def _fit_cost(pts, rads, C, F, w):
+    """Sum of weighted squared (distance from the barrel axis - contact radius); a penetration deeper than 1.5 mm (the
+    glove and pad compress that much) costs 60x."""
+    c = 0.0
+    for p, r, wt in zip(pts, rads, w):
+        e = _dline(p, C, F) - (BARREL_R + r + GLOVE_T)
+        c = c + wt * e * e + 60.0 * np.minimum(e + 0.0015, 0.0) ** 2
+    return c
+
+
+def grip_frame():
+    """(a along the hand, l thumb side, n out of the palm) of the left hand on the barrel (numpy, camera space)."""
+    F = np.array(GRIP['dir'], float)
+    F /= np.linalg.norm(F)
+    ref = np.array([0, 0, 1.0]) - F * F[2]
+    ref /= np.linalg.norm(ref)
+    ref2 = np.cross(F, ref)
+    ps, ph = math.radians(GRIP['roll']), math.radians(GRIP['oblique'])
+    u = ref * math.cos(ps) + ref2 * math.sin(ps)
+    a = F * math.sin(ph) + u * math.cos(ph)
+    a /= np.linalg.norm(a)
+    l = F * math.cos(ph) - u * math.sin(ph)
+    n = np.cross(a, l)
+    n /= np.linalg.norm(n)
+    l = np.cross(n, a)
+    return F, a, l, n
+
+
+def left_grip_bones(P):
+    """Left upper arm / forearm / hand / fingers holding the torch (GRIP): the wrist from the barrel, the elbow by
+    two-bone IK from the shoulder (pole GRIP['pole']), each finger's MCP/PIP/DIP solved so its phalanges wrap the
+    barrel, the thumb wrapped over the top. Bone conventions as skeleton.arms_bones (flex = palm normal)."""
+    from mathutils import Matrix, Vector
+    if 'bones' in _GRIP_CACHE:
+        return _GRIP_CACHE['bones']
+    L, W = P['hand'], P['palm_w']
+    C = np.array(GRIP['center'], float)
+    F, a, l, n = grip_frame()
+    wr = C - a * (GRIP['depth'] * L) - n * 0.031
+    sh = Vector(P['shoulder'])
+    sh.x *= -1.0
+    el = skeleton._two_bone(sh, Vector(wr), P['upperarm'], P['forearm'], Vector(GRIP['pole']))
+    bs = [skeleton.B('upperarm_l', sh, el, 'root', flex=(0, 0.5, 1)),
+          skeleton.B('forearm_l', el, Vector(wr), 'upperarm_l', connect=True, flex=(0, 0, 1)),
+          skeleton.B('hand_l', Vector(wr), Vector(wr + a * (0.5 * L)), 'forearm_l', connect=True, flex=Vector(n))]
+    # wrist angles (log): the forearm direction in the hand frame
+    d = np.array(Vector(wr) - el)
+    d /= np.linalg.norm(d)
+    uln = math.degrees(math.atan2(d @ l, d @ a))
+    ext = math.degrees(math.atan2(d @ n, d @ a))
+    info = {'wrist_ulnar_deg': round(uln, 1), 'wrist_ext_deg': round(ext, 1), 'elbow': [round(x, 3) for x in el]}
+    # fingers: grid over MCP (0..95), PIP (0..115) and the DIP/PIP ratio, phalanx mid/end points at the contact radius
+    # (part 2 restart) the DIP is not free: the oblique retinacular ligament couples it to the PIP in an active grip
+    # (DIP ~ 2/3 PIP; range 0.5-0.85 here). Free, the solve straightened every DIP (0 deg: wooden fingertips).
+    T1, T2, RK = np.meshgrid(np.arange(0, 96, 1.5), np.arange(0, 116, 1.5), np.arange(0.5, 0.86, 0.05), indexing='ij')
+    T1, T2, RK = T1.ravel(), T2.ravel(), RK.ravel()
+    T3 = RK * T2
+    N = len(T1)
+    angs = np.radians(np.stack([T1, T2, T3], 1))
+    fr = STYLE['finger_r']
+    for f, (ka, kl, flen, splay, ratios, fs) in FINGER_TABLE.items():
+        base = wr + a * (ka * L) + l * (kl * W) + n * (0.0 if f in ('middle', 'ring') else 0.004 * L / 0.17)
+        d0 = np.array(Matrix.Rotation(math.radians(splay), 3, Vector(n)) @ Vector(a))
+        lens = [flen * L * r for r in ratios]
+        rad = [fr * fs * x for x in (1.0, 0.93, 0.86, 0.72)]
+        dd = np.tile(d0, (N, 1))
+        p = np.tile(base, (N, 1))
+        pts = [p]
+        for i in range(3):
+            dd = _rot_np(dd, _flex_axis(dd, n, l), angs[:, i])
+            p = p + dd * lens[i]
+            pts.append(p)
+        samp, rr, ww = [], [], []
+        for i in range(3):
+            for s_, w_ in ((0.5, 0.6 if i == 0 else 1.0), (1.0, 1.0 if i < 2 else 0.5)):
+                samp.append(pts[i] + (pts[i + 1] - pts[i]) * s_)
+                rr.append(rad[i] + (rad[i + 1] - rad[i]) * s_)
+                ww.append(w_)
+        # + the tendons' coupling: a gripping finger's DIP follows its PIP (~0.7x); a straight DIP reads as a wooden finger
+        cost = np.nan_to_num(_fit_cost(samp, rr, C, F, ww) + 3e-6 * ((RK - 0.67) / 0.15) ** 2, nan=np.inf)
+        k = int(np.argmin(cost))
+        info[f] = [float(T1[k]), float(T2[k]), float(T3[k]), round(math.sqrt(float(cost[k]) / 5) * 1000, 1)]
+        prev = 'hand_l'
+        for i in range(3):
+            nm = f'{f}_{i + 1:02d}_l'
+            bs.append(skeleton.B(nm, Vector(pts[i][k]), Vector(pts[i + 1][k]), prev, connect=(i > 0), flex=Vector(n)))
+            prev = nm
+    # thumb (hand_bones' CMC base and lengths): direction of the first phalanx (two angles about the CMC) and the MCP / IP
+    # flexion (IP = 0.8 MCP) toward n - l, solved so the thumb wraps over the barrel's top
+    tbase = wr + a * (0.1 * L) + l * (0.24 * W) + n * (0.12 * W)
+    td0 = a * 0.62 + l * 0.62 + n * 0.46
+    td0 /= np.linalg.norm(td0)
+    tl = [x * L for x in (0.21, 0.175, 0.145)]
+    nl = (n - l) / np.linalg.norm(n - l)
+    AL, BE, GA = np.meshgrid(np.arange(-100, 101, 2.0), np.arange(-90, 91, 2.0), np.arange(0, 81, 2.0), indexing='ij')
+    AL, BE, GA = AL.ravel(), BE.ravel(), GA.ravel()
+    M = len(AL)
+    d1 = _rot_np(np.tile(td0, (M, 1)), np.tile(n, (M, 1)), np.radians(AL))
+    d1 = _rot_np(d1, _flex_axis(d1, n, l), np.radians(BE))
+    p1 = tbase + d1 * tl[0]
+    d2 = _rot_np(d1, _flex_axis(d1, nl, a), np.radians(GA))
+    p2 = p1 + d2 * tl[1]
+    d3 = _rot_np(d2, _flex_axis(d2, nl, a), np.radians(0.8 * GA))
+    p3 = p2 + d3 * tl[2]
+    rt = [fr * 1.1 * x for x in (1.15, 0.98, 0.9, 0.74)]
+    e0 = _dline(tbase + d1 * tl[0] * 0.5, C, F) - (BARREL_R + rt[0] + GLOVE_T)
+    cost = 0.3 * np.minimum(e0, 0.0) ** 2 + 60.0 * np.minimum(e0 + 0.0015, 0.0) ** 2
+    cost = cost + _fit_cost([p1, p1 + d2 * tl[1] * 0.5, p2, p2 + d3 * tl[2] * 0.5, p3],
+                            [rt[1], rt[1], rt[2], rt[2], rt[3]], C, F, [1.0, 1.0, 1.0, 1.0, 0.7])
+    # a power grip's thumb closes over the index / middle fingers (forward along the barrel), not back toward the heel
+    tipF = (p3 - C) @ F
+    cost = cost + 0.1 * np.maximum(0.03 - tipF, 0.0) ** 2
+    cost = np.nan_to_num(cost + 4e-7 * ((AL / 60) ** 2 + (BE / 60) ** 2), nan=np.inf)
+    k = int(np.argmin(cost))
+    info['thumb'] = [int(AL[k]), int(BE[k]), int(GA[k]), round(math.sqrt(float(cost[k]) / 5) * 1000, 1)]
+    tflex = Vector(n * 0.5 - l)
+    tp = [tbase, p1[k], p2[k], p3[k]]
+    prev = 'hand_l'
+    for i in range(3):
+        nm = f'thumb_{i + 1:02d}_l'
+        bs.append(skeleton.B(nm, Vector(tp[i]), Vector(tp[i + 1]), prev, connect=(i > 0), flex=tflex))
+        prev = nm
+    log(f'arms grip (FLASH #146b): {info}')
+    _GRIP_CACHE['bones'] = bs
+    _GRIP_CACHE['info'] = info
+    return bs
+
+
+def arms_bones():
+    """skeleton.arms_bones (root + the right arm) with the left arm replaced by the solved torch grip."""
+    return [b for b in skeleton.arms_bones(P) if not b.name.endswith('_l')] + left_grip_bones(P)
 
 
 def limbs_sdf(J):
@@ -80,9 +274,10 @@ def build_gloves(fn, J):
     for side in ('l', 'r'):
         g, lo, hi = glove_sdf(fn, J, side)
         # 1.1 mm voxels (was 1.7) and 12k tris per glove (was 10k; arms budget 48k tris): knuckle pads, creases, MCP
-        # ridge survive the decimation (the finer voxels give it a better source surface).
+        # ridge survive the decimation (the finer voxels give it a better source surface). FLASH #146b: 11.95k -- the
+        # grip's fist meshes 14 tris over check_chars' 48 000 at 12k.
         ob = body.sdf_object(g, lo, hi, 0.0011, f'arms_gloves_{side}')
-        garments.decimate(ob, min(1.0, 12000 / max(1, sum(len(p.vertices) - 2 for p in ob.data.polygons))))
+        garments.decimate(ob, min(1.0, 11950 / max(1, sum(len(p.vertices) - 2 for p in ob.data.polygons))))
         parts.append(ob)
     return join(parts, 'arms_gloves')
 
@@ -323,8 +518,136 @@ def join(objs, name):
     return ob
 
 
+def _components(bm):
+    """Connected vertex components of a bmesh: list of vertex-index lists, largest first."""
+    par = list(range(len(bm.verts)))
+
+    def find(i):
+        while par[i] != i:
+            par[i] = par[par[i]]
+            i = par[i]
+        return i
+    for e in bm.edges:
+        a, b = find(e.verts[0].index), find(e.verts[1].index)
+        if a != b:
+            par[a] = b
+    comps = {}
+    for i in range(len(bm.verts)):
+        comps.setdefault(find(i), []).append(i)
+    return sorted(comps.values(), key=len, reverse=True)
+
+
+def _drop_islands(ob, keep_frac=0.02, J=None):
+    """FLASH #146b: delete loose proxy components under keep_frac of its vertices. The gripping fist leaves surface-nets
+    slivers between fingers / thumb / palm at 4 mm voxels; bone heat finds no visible bone for a detached sliver and
+    then fails for EVERY bone ('failed to find solution': the whole rig unweighted)."""
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bm.verts.ensure_lookup_table()
+    comps = _components(bm)
+    small = [i for c in comps if len(c) < keep_frac * len(bm.verts) for i in c]
+    log(f'arms proxy: {len(comps)} components {[len(c) for c in comps[:6]]}, dropping {len(small)} verts')
+    if J is not None:
+        # which part each dropped island was (a 4 mm proxy can pinch off a curled finger: its bones then get no heat)
+        for c in comps:
+            if 20 <= len(c) < keep_frac * len(bm.verts):
+                m = np.mean([np.array(bm.verts[i].co) for i in c], axis=0)
+                near = min(((nm, float(np.linalg.norm(m - (h + t) * 0.5))) for nm, (h, t) in J.items()), key=lambda x: x[1])
+                log(f'arms proxy: dropped island {len(c)} verts at {np.round(m, 3).tolist()} nearest bone {near[0]} '
+                    f'{near[1] * 1000:.0f} mm')
+    if small:
+        bmesh.ops.delete(bm, geom=[bm.verts[i] for i in small], context='VERTS')
+        bm.to_mesh(ob.data)
+    bm.free()
+
+
+def _heat_per_side(proxy, rig_ob, core):
+    """Bone heat on each arm's component separately (left bones on the left component, right on the right), joined."""
+    bm = bmesh.new()
+    bm.from_mesh(proxy.data)
+    bm.verts.ensure_lookup_table()
+    comps = _components(bm)
+    xs = np.array([v.co.x for v in bm.verts])
+    bm.free()
+    parts = []
+    for side, sgn in (('l', -1.0), ('r', 1.0)):
+        keep = set(i for c in comps if np.mean(xs[c]) * sgn > 0 for i in c)
+        ob = proxy.copy()
+        ob.data = proxy.data.copy()
+        bpy.context.scene.collection.objects.link(ob)
+        bm = bmesh.new()
+        bm.from_mesh(ob.data)
+        bm.verts.ensure_lookup_table()
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.index not in keep], context='VERTS')
+        bm.to_mesh(ob.data)
+        bm.free()
+        for g in list(ob.vertex_groups):
+            ob.vertex_groups.remove(g)
+        for m in list(ob.modifiers):
+            ob.modifiers.remove(m)
+        ob.parent = None
+        mine = [b for b in core if b.endswith('_' + side)]
+        rig.auto_weights(ob, rig_ob, only=mine)
+        miss = rig.check_groups(ob, rig_ob, mine)
+        log(f'arms proxy {side}: {len(ob.data.vertices)} verts, heat empty {miss}')
+        parts.append(ob)
+    for g in list(proxy.vertex_groups):
+        proxy.vertex_groups.remove(g)
+    P0 = np.array([v.co for v in proxy.data.vertices])
+    # copy the per-side weights back by vertex position (the parts are subsets of the proxy's vertices)
+    from mathutils.kdtree import KDTree
+    allw = np.zeros((len(P0), len(core)))
+    idx = {nm: j for j, nm in enumerate(core)}
+    for ob in parts:
+        kd = KDTree(len(ob.data.vertices))
+        for v in ob.data.vertices:
+            kd.insert(v.co, v.index)
+        kd.balance()
+        Wp = rig.weight_arrays(ob, core)
+        for i, p in enumerate(P0):
+            co, j, dist = kd.find(p)
+            if dist is not None and dist < 1e-6:
+                allw[i] += Wp[j]
+        bpy.data.objects.remove(ob)
+    rig.set_weights(proxy, core, allw, limit=4)
+
+
+def _fill_empty_groups(proxy, rig_ob, core, empty, reach=0.024, soft=0.004):
+    """FLASH #146b (restart): bone heat fails for the tight grip's pinky ('failed to find solution' -- the curled finger
+    touches the palm and ring finger in the 4 mm proxy) and leaves its three groups empty: the pinky then never moves with
+    a clip (grip_l, the wheel). Fallback for the empty groups only: every proxy vertex within `reach` of one of them is
+    re-weighted over the bones of the same hand by a soft nearest-segment rule, w_i = exp(-(d_i - d_min) / soft), so the
+    joints blend over ~1 cm as bone heat would."""
+    side = empty[0][-2:]
+    hand = [b for b in core if b.endswith(side) and (b.startswith(('hand', 'index', 'middle', 'ring', 'pinky', 'thumb')))]
+    mw = rig_ob.matrix_world
+    segs = []
+    for nm in hand:
+        b = rig_ob.data.bones[nm]
+        segs.append((np.array(mw @ b.head_local), np.array(mw @ b.tail_local)))
+    P0 = np.array([proxy.matrix_world @ v.co for v in proxy.data.vertices])
+    D = np.empty((len(P0), len(hand)))
+    for j, (h, t) in enumerate(segs):
+        ab = t - h
+        u = np.clip(((P0 - h) @ ab) / max(float(ab @ ab), 1e-12), 0.0, 1.0)
+        D[:, j] = np.linalg.norm(P0 - (h + np.outer(u, ab)), axis=1)
+    jemp = [hand.index(nm) for nm in empty if nm in hand]
+    sel = np.nonzero(np.min(D[:, jemp], axis=1) < reach)[0]
+    # only where an empty bone is (among) the nearest: the palm and ring finger keep their heat weights
+    sel = sel[np.min(D[sel][:, jemp], axis=1) <= np.min(D[sel], axis=1) + soft]
+    W = rig.weight_arrays(proxy, core)
+    Wl = np.exp(-(D[sel] - D[sel].min(axis=1, keepdims=True)) / soft)
+    Wl[Wl < 0.02] = 0.0
+    Wl /= Wl.sum(axis=1, keepdims=True)
+    W[sel] = 0.0
+    for j, nm in enumerate(hand):
+        W[sel, core.index(nm)] = Wl[:, j]
+    rig.set_weights(proxy, core, W, limit=4)
+    log(f'arms weights: {len(sel)} proxy verts re-weighted by nearest bone for {empty}')
+
+
 def build():
-    bones = skeleton.arms_bones(P)
+    bones = arms_bones()
     J = body.joints(bones)
     fn = limbs_sdf(J)
     gloves = build_gloves(fn, J)
@@ -341,13 +664,29 @@ def build():
     hi = np.max([p for h, t in J.values() for p in (h, t)], axis=0) + 0.1
     proxy = body.sdf_object(fn, lo, hi, 0.004, 'arms_proxy')
     garments.decimate(proxy, min(1.0, 30000 / max(1, 2 * len(proxy.data.polygons))))
-    core = [b.name for b in skeleton.arms_bones(P) if b.deform]
+    _drop_islands(proxy, J=J)
+    refill = []
+    core = [b.name for b in arms_bones() if b.deform]
     rig.auto_weights(proxy, rig_ob, only=core)
     empty = rig.check_groups(proxy, rig_ob, core)
     if empty:
-        log(f'WARNING arms bone heat left empty groups: {empty}')
+        # FLASH #146b: one failed side must not leave the other unweighted -- heat each arm's component on its own
+        log(f'WARNING arms bone heat left empty groups: {empty} -> per-side heat')
+        _heat_per_side(proxy, rig_ob, core)
+        empty = rig.check_groups(proxy, rig_ob, core)
+        if empty:
+            log(f'WARNING arms bone heat (per side) still left empty groups: {empty} -> nearest-bone weights')
+            _fill_empty_groups(proxy, rig_ob, core, empty)
+            refill = list(empty)
+            empty = rig.check_groups(proxy, rig_ob, core)
+            if empty:
+                log(f'WARNING arms weights still empty: {empty}')
     for ob in (gloves, sleeves, snaps, buttons):
         rig.transfer_weights(proxy, ob, core)
+    if refill:
+        # the proxy lost those fingers (pinched-off islands): weight the full-resolution glove's own finger by nearest
+        # bone too, or it rides the ring finger / palm and never moves with a clip
+        _fill_empty_groups(gloves, rig_ob, core, refill)
     for ob in (fl, switch):
         for g in list(ob.vertex_groups):
             ob.vertex_groups.remove(g)

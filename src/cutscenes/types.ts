@@ -10,7 +10,9 @@ export type P3 = [number, number, number];
 /** Characters a cutscene can drive. `arms` = the first-person arms rig (root = camera). */
 export type CharId = 'ada' | 'harlan' | 'arms';
 
-export type Ease = 'linear' | 'in' | 'out' | 'inOut' | 'hold';
+/** 'decel' (SMOOTH-FRAMES #142): constant deceleration to rest, 1 − (1 − u)² — a car coasting/braking to a stop starts at
+ *  2× its mean speed (the cubic 'out' starts at 3×: C1's coast arrived at 27 m/s after a 19 m/s run). */
+export type Ease = 'linear' | 'in' | 'out' | 'inOut' | 'hold' | 'decel';
 
 /** full = no player input (camera owned by the cutscene); look = mouse-look only; none = normal control. */
 export type LockMode = 'full' | 'look' | 'none';
@@ -33,9 +35,17 @@ export interface CameraShot {
   handheld?: number;
   /** Camera roll (radians), constant or [from, to]. */
   roll?: number | [number, number];
-  /** C2-ESCAPE B8: a step-locked head bob (POV runs): eye + target rise by amp·(1 − cos 2π·hz·τ)/2 − amp/2 (m), and
-   *  the head rolls ±roll (rad) at half the step rate (it alternates with the stride). τ = time since the shot start. */
+  /** C2-ESCAPE B8: a step-locked head bob (POV runs): eye + target drop by (amp/2)·sin 2π·hz·τ (m; the foot plants at (k + ¼)/hz), and the head
+   *  rolls ±roll (rad) at half the step rate (it alternates with the stride). τ = time since the shot start. Both are 0
+   *  at τ = 0 and, when hz·d is a whole number of steps, at the shot's end (SMOOTH-FRAMES #142: was
+   *  amp·(1 − cos 2π·hz·τ)/2 − amp/2, i.e. −amp/2 on the first frame — a drop at every bobbing shot's start). */
   bob?: { amp: number; hz: number; roll?: number };
+  /** SMOOTH-FIX (#145, hunt F4): a plan-space shot that PANS WITH the vehicle track: the look keeps the authored pitch
+   *  and distance, but its yaw = the bearing (from the eye) of `at` (a car-space point, default the car's nose) plus an
+   *  offset that moves from the authored start target's offset to the authored end target's with the car's progress
+   *  across the view (its bearing; the shot's ease if it does not cross). The
+   *  first and last frames are exactly the authored ones; in between the car never slips out of the frame. */
+  track?: { at?: P3 };
 }
 
 /** C2-ESCAPE B8: a camera impulse (the flinch at `head_drop`, the heartbeat jolts): a half-sine of d seconds added to
@@ -218,7 +228,7 @@ export interface VehiclePose {
 /** What a timeline factory may read (snapshot at start). */
 export interface CutsceneContext {
   /** Player eye (PLAN), heading, pitch at the moment the cutscene starts. */
-  player: { eye: P3; heading: number; pitch: number; /** gameplay FOV (settings.fovDeg) — end shots ease to it */ fov?: number };
+  player: { eye: P3; heading: number; pitch: number; /** gameplay FOV (settings.fovDeg) — end shots ease to it */ fov?: number; /** SMOOTH-FRAMES (#142): the torch is on (cutscenes that switch it off for shots away from the eye give it back as it was) */ torch?: boolean };
   /** Ada's root + heading if known (death cutaway stages her grab from where she is). */
   ada: { pos: P3; heading: number } | null;
   flags: ReadonlyMap<string, boolean>;

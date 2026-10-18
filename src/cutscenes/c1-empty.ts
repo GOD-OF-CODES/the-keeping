@@ -68,7 +68,9 @@ export function c1VehicleTrack(): VehicleTrack[] {
     // 19 → 15 m/s, easing out; coughs at 51.4 / 53.6, dies at 55.8
     { t: 50.4, d: 6.2, path: roadPath(140, 23, WEST), ease: 'linear', heading: 'path' },
     // coast off the lane onto the verge at the gate (n 1.75 → 2.8), a soft stop at 61.0
-    { t: 56.6, d: STOP - 56.6, path: [roadPoint(23, WEST), roadPoint(12, 1.9), roadPoint(2, 2.3), gate], ease: 'out', heading: 'path' },
+    // SMOOTH-FRAMES (#142): constant deceleration ('decel': 2 × 41 m / 4.4 s = 18.6 m/s at the S9 cut, ≈ the rooms run's
+    // 18.9, then 4.2 m/s² to rest) — the cubic 'out' rolled in at 27 m/s braking at 1.3 g
+    { t: 56.6, d: STOP - 56.6, path: [roadPoint(23, WEST), roadPoint(12, 1.9), roadPoint(2, 2.3), gate], ease: 'decel', heading: 'path' },
   ];
 }
 
@@ -77,31 +79,52 @@ const POV_SHOTS = new Set<number>(); // indices of shots that are the driver's o
 export const c1Empty: TimelineFactory = (ctx) => {
   const plate = inCar(PLATE_LOCAL, CAR_GATE);
   const cp1 = SPAWN.CP1;
-  const cp1Look = add(cp1.pos, fwd(cp1.heading, -0.01, 10));
+  // SMOOTH-FRAMES (#142): the step-out ends on CP1's own pitch (0.05) — it ended at −0.01 and the hand-back to gameplay
+  // tipped the view 3.4° up in one frame
+  const cp1Look = add(cp1.pos, fwd(cp1.heading, cp1.pitch, 10));
   const car = (t: number, d: number, target: P3[], fov: number | [number, number], o: Partial<CameraShot> = {}): CameraShot => ({
     t, d, space: 'car', path: [DRIVER_EYE], target, fov, ease: 'inOut', handheld: 0.35, ...o,
   });
+  // SMOOTH-FRAMES (#142): the driver's glances look along DIRECTIONS (the targets pushed out to 3 m from the eye) — a
+  // look path through the radio (0.6 m), the medal (0.47 m) and the visor (0.27 m) cut its chord past the eye: 14–20°
+  // per frame whips with the picture spinning (5.0, 27.6) — and the radio glance now holds on the dial (it swept
+  // through it at full speed: duplicate points take no arc length) and settles back on the road.
+  const dirOf = (p: P3, from: P3 = DRIVER_EYE): P3 => {
+    const d = [p[0] - from[0], p[1] - from[1], p[2] - from[2]];
+    const L = Math.hypot(d[0], d[1], d[2]) || 1;
+    return [from[0] + (d[0] / L) * 3, from[1] + (d[1] / L) * 3, from[2] + (d[2] / L) * 3];
+  };
+  const looks = (pts: P3[]): P3[] => pts.map((p) => dirOf(p));
+  const RADIO_HOLD = add(RADIO, [0.012, 0, 0.006]);
 
   const shots: CameraShot[] = [
     // S1 Seek (0–6.6): the road in the low beams, a glance to the radio at 3.4–5.4, back by 6.2
     { ...C1_SHOTS.pov, d: 3.4 },
-    car(3.4, 3.2, [AHEAD, RADIO, RADIO, AHEAD, AHEAD], MM[24]),
+    car(3.4, 0.8, looks([AHEAD, RADIO]), MM[24]),
+    car(4.2, 1.2, looks([RADIO, RADIO_HOLD]), MM[24], { ease: 'linear' }),
+    car(5.4, 0.8, looks([RADIO_HOLD, AHEAD]), MM[24]),
+    car(6.2, 0.4, [AHEAD], MM[24]),
     // S2 EAT (6.6–11.6): the dead diner from its lot; our headlights rake the plywood and leave
     { t: 6.6, d: 5.0, path: [[701.0, -225.0, 1.1], [700.6, -224.6, 1.1]], target: [[667.7, -208.7, 2.4], [640.0, -197.0, 1.2], [614.3, -189.1, 0.8]], fov: MM[28], ease: 'inOut', handheld: 0.25 },
     // S3 Below E (11.6–17.6): lean in to the cluster; rack from the speedo to the fuel needle under E
     // (v2 cluster at car (−0.37, 0.72, 0.785); the eye drops to look through the two-spoke rim's upper opening)
     { t: 11.6, d: 6.0, space: 'car', path: [[-0.31, 0.1, 0.96], [-0.3, 0.17, 0.94]], target: [[-0.43, 0.724, 0.8], [-0.3, 0.724, 0.79], [-0.3, 0.724, 0.79]], fov: MM[65], ease: 'inOut', handheld: 0.3 },
     // S4a Dome on (17.6–21.8): road → the headlamp knob (dome detent) → the passenger seat → the map
-    car(17.6, 4.2, [AHEAD, HEADLAMP_KNOB, CONSOLE_CUP, PASSENGER_SEAT], MM[24]),
+    // (ends on the map: S4b leans over to it from this look — it ended on the seat 2.3° off and zoomed 24 → 35 mm in one frame)
+    car(17.6, 4.2, looks([AHEAD, HEADLAMP_KNOB, CONSOLE_CUP, PASSENGER_SEAT, MAP]), MM[24]),
     // S4b The map (21.8–26.6): lean over to the folded County Road 9 map on the seat ("48", the interstate line);
     // the held-map version waits for the arms_map clip (Blender lane, §10.9)
-    { t: 21.8, d: 4.8, space: 'car', path: [DRIVER_EYE, [-0.22, 0.0, 1.06]], target: [MAP, add(MAP, [-0.03, 0.03, 0])], fov: MM[35], ease: 'inOut', handheld: 0.3 },
+    { t: 21.8, d: 4.8, space: 'car', path: [DRIVER_EYE, [-0.22, 0.0, 1.06]], target: [MAP, add(MAP, [-0.03, 0.03, 0])], fov: [MM[24], MM[35]], ease: 'inOut', handheld: 0.3 },
     // S4c Dome off (26.6–30.2): the map to the lap → the visor photo and the medal → the windscreen → the road
-    car(26.6, 3.6, [MAP, MEDAL, VISOR, WINDSCREEN, AHEAD], MM[24]),
+    // (sits back up from S4b's lean as the look rises: it jumped 0.14 m back and 35 → 24 mm in one frame at 26.6)
+    { ...car(26.6, 3.6, [add(MAP, [-0.03, 0.03, 0]), ...looks([MEDAL, VISOR, WINDSCREEN, AHEAD])], [MM[35], MM[24]]), path: [[-0.22, 0.0, 1.06], DRIVER_EYE] },
     // S5 The truck (30.2–37.8): watch the glow come round; a slow push; the flinch
     car(30.2, 7.6, [AHEAD, [-0.6, 25, 1.0], [-0.9, 12, 0.9], AHEAD], [MM[24], MM[28]], { handheld: 0.5 }),
     // S6 Walls (37.8–43.4): crane over bend B; a tiny car between black walls of forest
-    { t: 37.8, d: 5.6, path: [[348.7, -46.4, 12.0], [349.6, -46.7, 15.5]], target: [[366.0, -52.0, 1.0], [330, -44, 0.6], [270.1, -31.4, 0.0]], fov: MM[50], ease: 'out', handheld: 0.2 },
+    // SMOOTH-FRAMES (#142): looks down the road the car is driving into; the car passes under the crane (1.6 m off its
+    // foot at 40.1) and recedes into the frame. The look used to start back east and swing through the nadir (−82° at
+    // 38.17: lookAt spun the picture ≈ 40° in a frame) 2 s before the car got there.
+    { t: 37.8, d: 5.6, path: [[348.7, -46.4, 12.0], [349.6, -46.7, 15.5]], target: [[330, -44, 0.6], [270.1, -31.4, 0.0]], fov: MM[50], ease: 'out', handheld: 0.2 },
     // S7 48 and eyes (43.4–50.4): NEXT SERVICES 48 MI slides past on the right; eye-shine in the trees
     car(43.4, 7.0, [[0.3, 30, 1.0], [1.4, 18, 1.6], [2.0, 10, 2.2], [0.8, 30, 1.0], [3.0, 30, 0.9]], [MM[24], MM[28]], { handheld: 0.4 }),
     // S8 ROOMS (50.4–56.6): the lantern out of the dark; coughs; the engine dies
@@ -112,7 +135,10 @@ export const c1Empty: TimelineFactory = (ctx) => {
     // car rolls in from the right into the pool, the gate behind its nose, the lantern a small hot point 9 m away and
     // the ROOMS board (faces SE, yaw 45°) ≈ 36° off-axis — readable, not filling the meter
     // runtime lane D: aim ends 0.6 m higher so the ROOMS board (≈ 10° up from the verge) sits inside the letterbox
-    { t: 56.6, d: 5.4, path: [[-0.6, -37.0, 1.5], [-0.4, -36.8, 1.45]], target: [[9.0, -31.0, 1.1], [0.8, -29.2, 1.6]], fov: MM[35], ease: 'out', handheld: 0.3 },
+    // SMOOTH-FIX (#145, hunt F4: "the headlight light disappears in one frame" at 57.03): the pan ran ahead of the car —
+    // its lamps (glaring at the lens, 8–20° off their beam axis) slipped out of the right edge at 57.07 with their
+    // bloom halo, and came back in at 59.2. The pan now follows the car (CameraShot.track): same first and last frames.
+    { t: 56.6, d: 5.4, path: [[-0.6, -37.0, 1.5], [-0.4, -36.8, 1.45]], target: [[9.0, -31.0, 1.1], [0.8, -29.2, 1.6]], fov: MM[35], ease: 'out', handheld: 0.3, track: {} },
     // S10 The house (62.0–69.0): from the dead car, lightning on the rise
     { t: 62.0, d: 7.0, path: [CAM.c1_house_reveal.pos, add(CAM.c1_house_reveal.pos, [0.02, 0.05, 0.02])], target: [CAM.c1_house_reveal.target], fov: [MM[50], MM[44]], ease: 'inOut', handheld: 0.4 },
     // S11 Step out (69.0–75.0): past the tail lamp onto plate RVX-318, rising into the rain to CP1's view up the drive
@@ -163,7 +189,10 @@ export const c1Empty: TimelineFactory = (ctx) => {
     { t: 0, type: 'clip', char: 'arms', clip: 'arms_wheel', loop: true, fallback: ['arms_idle'] },
     ...armsCues,
     // POV exposure (§5.2): +1 EV bias, meter the lower 45 % out (black windscreen) so the cabin forms read
-    { t: 0, type: 'fx', id: 'exposure', params: { biasEV: 1.0, meterLow: 0.45, max: POV_MAX, snap: true } },
+    // SMOOTH-FIX (#145, hunt F2a): every metered cut below carries `cutE`, the exposure the eye settles on for the incoming
+    // shot (scratch/fix/diag C1 `ex`, Medium) — its first frame used to show the previous shot's exposure (C1 0 ×1.75,
+    // 6.6 ×5.6, 11.6 ×0.42, 43.4 ×0.15, 62.0 ×30); the eye takes over from it 0.1 s later (opening.ts)
+    { t: 0, type: 'fx', id: 'exposure', params: { biasEV: 1.0, meterLow: 0.45, max: POV_MAX, snap: true, cutE: 2 * POV_MAX } },
     ...every('wiper', 0.4, ENGINE_DIES, 1.25, { gain: 0.6 }),
     // S1: the radio finds nothing
     { t: 3.6, type: 'sfx', id: 'radio_seek', gain: 0.8 },
@@ -175,9 +204,9 @@ export const c1Empty: TimelineFactory = (ctx) => {
     { t: 4.6, type: 'loop', key: 'radio', id: 'radio_static', gain: 0.45, fade: 0.2 },
     { t: 5.4, type: 'voice', trigger: 'c1:radio_seek' },
     // S2 diner: hold the night meter as our lights rake the lot
-    { t: 6.6, type: 'fx', id: 'exposure', params: { hold: true, snap: true } },
+    { t: 6.6, type: 'fx', id: 'exposure', params: { hold: true, snap: true, cutE: 5.37 } },
     // S3: the needle, the lamp, the chime, "Come on…"
-    { t: 11.6, type: 'fx', id: 'exposure', params: { biasEV: 1.0, meterLow: 0.45, max: POV_MAX, snap: true } },
+    { t: 11.6, type: 'fx', id: 'exposure', params: { biasEV: 1.0, meterLow: 0.45, max: POV_MAX, snap: true, cutE: 2 * POV_MAX } },
     { t: 11.6, type: 'dof', dof: { focusDistance: 0.78, focalLength: 0.12, bokehScale: 2.5 } },
     { t: 13.6, type: 'fx', id: 'dash', params: { on: true, fuelNeedle: -0.02, fuelLamp: true } },
     { t: 14.2, type: 'sfx', id: 'fuel_chime' },
@@ -214,7 +243,7 @@ export const c1Empty: TimelineFactory = (ctx) => {
     // S6 walls: hold the black; S7 back to the POV meter
     { t: 37.8, type: 'fx', id: 'exposure', params: { hold: true, snap: true } },
     { t: 37.8, type: 'light', op: 'lightning', strength: 0.2 },
-    { t: 43.4, type: 'fx', id: 'exposure', params: { biasEV: 1.0, meterLow: 0.45, max: POV_MAX, snap: true } },
+    { t: 43.4, type: 'fx', id: 'exposure', params: { biasEV: 1.0, meterLow: 0.45, max: POV_MAX, snap: true, cutE: 2 * POV_MAX } },
     // S7: three pairs of eye-shine in the tree line (40 m, right); one doe turns away at 49.9, the rest at 50.2
     { t: 49.2, type: 'fx', id: 'deer', params: { eyes: true } },
     { t: 49.9, type: 'fx', id: 'deer', params: { eyes: false, i: 2 } },
@@ -235,14 +264,14 @@ export const c1Empty: TimelineFactory = (ctx) => {
     { t: ENGINE_DIES + 0.2, type: 'light', op: 'runtime', id: 'L_HEADLIGHT_R', on: true, scale: 0.35 },
     { t: ENGINE_DIES + 0.2, type: 'fx', id: 'stall', params: { k: 1 } },
     // S9 gate: the lantern pool; the lights die; a slow brightening
-    { t: 56.6, type: 'fx', id: 'exposure', params: { snap: true } },
+    { t: 56.6, type: 'fx', id: 'exposure', params: { snap: true, cutE: 2.73 } },
     { t: STOP - 0.3, type: 'sfx', id: 'tyres_gravel', gain: 0.5 },
     { t: LIGHTS_DIE, type: 'light', op: 'runtime', id: 'L_HEADLIGHT_L', on: false },
     { t: LIGHTS_DIE, type: 'light', op: 'runtime', id: 'L_HEADLIGHT_R', on: false },
     { t: LIGHTS_DIE, type: 'fx', id: 'stall', params: { k: 0 } },
     { t: 61.8, type: 'sfx', id: 'vacancy_creak', pos: PROP.P_VACANCY_PLATE, room: 'EXT1', gain: 0.9 },
     // S10: lightning reveals the house on the rise (flash hold), "Forty-eight miles to anything…"
-    { t: 62.0, type: 'fx', id: 'exposure', params: { snap: true } },
+    { t: 62.0, type: 'fx', id: 'exposure', params: { snap: true, cutE: 10.86 } },
     { t: FLASH, type: 'light', op: 'lightning', strength: 1 },
     { t: FLASH + 0.08, type: 'score', state: 'drone', stinger: 'score_reveal' },
     { t: 65.6, type: 'voice', trigger: 'c1:engine_dead' },
@@ -250,9 +279,25 @@ export const c1Empty: TimelineFactory = (ctx) => {
     { t: 68.6, type: 'sfx', id: 'latch', gain: 0.7 },
     { t: 69.0, type: 'fx', id: 'car_mount', params: { on: false } },
     { t: 69.0, type: 'fx', id: 'windshield_rain', params: { on: false, intensity: 0 } },
-    { t: 69.0, type: 'fx', id: 'exposure', params: { reset: true } },
+    // SMOOTH-FIX (#145, hunt F3 — the user's "end of the car ride … disappearing and re-appearing"): the step-out used to
+    // hand the cut to the eye (reset + the cut's snap). Its first frame kept S10's 10.6 (×4 blown), then the meter read the
+    // tail lamp alone in a black frame (scene radiance 0.037 mean, the lens 0.32) and stopped down to 1.35: 1.4 s of black
+    // with a flat salmon lens in it, then pure black as the lamp left the frame (70.5–70.9, radiance 0.001–0.003) until
+    // the eye's 6 s brightening found the gravel. Now a camera exposure per moment: 2.2 past the lamp (its rim stays red,
+    // the core clips as a lamp does), opening up to 4.5 for the dark drive as the camera rises past it (69.9–71.2: the
+    // yard's 0.002–0.004 reads), and down to 3.8 once the torch is on (73.7–74.7) — the eye's own value at CP1
+    // (scratch/fix/diag: 3.1 and still rising there, target ≈ 3.8), so control returns with no step.
+    { t: 69.0, type: 'fx', id: 'exposure', params: { fixed: 2.2 } },
+    // (after1: from 70.2 the dark trunk still filled the frame near-black at 70.45–70.7 — the ride starts as the
+    // camera begins to rise past the lamp)
+    { t: 69.9, type: 'fx', id: 'exposure', params: { fixed: 4.5, ramp: 1.3 } },
+    { t: 73.7, type: 'fx', id: 'exposure', params: { fixed: 3.8, ramp: 1.0 } },
     { t: 69.0, type: 'weather', rain: 1, wind: 0.8, inside: 0, surface: 'gravel' },
-    { t: 69.0, type: 'fx', id: 'taillights', params: { on: true, intensity: 0.35 } },
+    // SMOOTH-FIX (#145, hunt F3 "a flat salmon parallelogram"): at the step-out's 2.2 the 0.35 glow put the whole lens at
+    // an exposed red of 1–3 — AgX's path to white turns a red that bright salmon (after2 69.1: median sRGB 197/121/93).
+    // The engine is dead and the battery is going: a weak tail filament. At 0.14 the lens rim exposes ≈ 0.15–0.4 (AgX
+    // keeps it red: 137/24/16 … 175/54/40) and only the bulb's hot zone reaches ≈ 1.3 (orange-red) — a lit red lens.
+    { t: 69.0, type: 'fx', id: 'taillights', params: { on: true, intensity: 0.14 } },
     { t: 69.2, type: 'sfx', id: 'coat_rustle' },
     { t: 70.4, type: 'sfx', id: 'door_slam', gain: 0.45, rate: 1.25 },
     { t: 73.6, type: 'light', op: 'flashlight', on: true },

@@ -16,6 +16,7 @@
 // Faces-hidden audit: her face is only ever behind the in-focus locket (out of focus, hair over it); on Low (no DOF)
 // the beam's glare on the locket and the 26–30° crop keep her at hair and eye shape. Flash-frames hold no figure.
 
+import { sweepTargets, turnBetween } from './math.ts';
 import { add, dist, fwd, headingTo, lens } from './stage.ts';
 import { c4cCarryEnd } from './c4c-step.ts';
 import type { CameraShot, Cue, GradeSpec, P3, TimelineFactory } from './types.ts';
@@ -25,6 +26,17 @@ export const C4C_DURATION = 11;
 export const C4C_TAKE_AT = 4.3;
 /** The C4c film camera's fixed exposure (derivation at its cue). */
 export const C4C_CAMERA_E = 0.2;
+
+/**
+ * SMOOTH-FIX (#145, F2b follow-up): each 0.4 s memory flash-frame is its own set-up, exposed for its subject. Since the
+ * 17:00 exposure fix (ROADMAP ar: exposure now scales RGB before AgX, not after it), the take's 0.2 put the beam-lit
+ * memories deep in AgX's shoulder: scratch/fix/after1 C4c luma 0.29 (hem) / 0.35 (bell) / 0.47 / 0.67 (hatch, flat
+ * white) against the take's 0.10. The scene's own mean radiance under the torch at each camera (scratch/fix/diag `hl`,
+ * Medium: hem 4.7 at 1.2 m, bell 11 at 0.7 m, hatch wide 12.7, hatch close 56 at 0.4 m from the boards) metered so
+ * that e·L̄ ≈ 0.15 (just under AgX's mid-grey 0.18 — the memory grade's vignette and grain sit on top): bright, bleached,
+ * still with the hem's satin, the bell's brass and the boards' grain in them.
+ */
+export const C4C_MEMORY_E = { hem: 0.032, bell: 0.014, hatchWide: 0.012, hatchClose: 0.0027 } as const;
 
 /** CUTSCENES-PLAN §5 memory looks: saturation 0.55–0.6, warm (1.06, 0.97, 0.86) / cold (0.86, 0.95, 1.05), grain ×1.6. */
 export const MEMORY_WARM: GradeSpec = { tint: [1.06, 0.97, 0.86], saturation: 0.6, grain: 1.6, vignette: 1.5 };
@@ -62,8 +74,17 @@ export const c4cRemembers: TimelineFactory = (ctx) => {
   const pov = (t: number, d: number, target: P3, fov: number | [number, number], handheld = 0.25): CameraShot => ({ t, d, path: [eye], target: [target], fov, handheld });
   const flashShot = (t: number, s: { eye: P3; target: P3 }, mm: number): CameraShot => ({ t, d: 0.4, path: [s.eye], target: [s.target], fov: fovOf(mm), handheld: 0.15 });
 
+  // SMOOTH-FRAMES (#142): the take eases in from the player's own view (1 s push-in) and back out to it. It cut in on the same eye
+  // (the gaze snapped onto her chest and the lens jumped from the gameplay 60° to 30° on the first frame) and handed
+  // back from the 26° close-up to the start look at 60° in one frame (no player cue), the DOF snapping off with it.
+  const pf = ctx.player.fov ?? 60;
+  const look0 = add(eye, fwd(ctx.player.heading, ctx.player.pitch, dist(eye, herChest)));
+  const endChest = add(end.pos, [0, 0, 1.2]);
+  const IN = 1.0; // a 1 s push-in (the lens 60–70° → 30° peaks at ≈ 4°/frame at 30 fps)
+  const OUT_T = 9.8; // a 1.2 s pull-back (26° → the 60–70° gameplay lens peaks ≈ 3.7°/frame at 30 fps)
   const shots: CameraShot[] = [
-    pov(0, 2.5, herChest, [30, 26]),
+    { t: 0, d: IN, path: [eye], target: sweepTargets(eye, look0, herChest, turnBetween(eye, look0, herChest), 3), fov: [pf, 30], ease: 'inOut', handheld: 0.25 },
+    pov(IN, 2.5 - IN, herChest, [30, 26]),
     flashShot(2.5, HEM, 50),
     flashShot(2.9, BELL, 85),
     // r4: a 76 mm frame at eye level looked over her shoulders (she is headless) into the dark room — 50 mm, down on
@@ -72,8 +93,13 @@ export const c4cRemembers: TimelineFactory = (ctx) => {
     flashShot(5.5, HATCH_WIDE, 50),
     flashShot(5.9, HATCH_CLOSE, 85),
     pov(6.3, 2.7, herFist, 26, 0.2),
-    pov(9, 2, herFist, 26, 0),
+    pov(9, OUT_T - 9, herFist, 26, 0),
+    { t: OUT_T, d: C4C_DURATION - OUT_T, path: [eye], target: sweepTargets(eye, herFist, endChest, turnBetween(eye, herFist, endChest), 3), fov: [26, pf], ease: 'inOut', handheld: 0 },
   ];
+  /** The DOF eased in / out by its bokeh, one step per 30 fps frame (uniforms only: the cutscene chain stays) — no
+   *  one-frame blur snap. */
+  const bokehRamp = (t0: number, d: number, base: { focusDistance: number; focalLength: number; bokehScale: number }, from: number, to: number, n = Math.max(1, Math.round(d * 30))): Cue[] =>
+    Array.from({ length: n + 1 }, (_, i) => ({ t: Math.round((t0 + (d * i) / n) * 1000) / 1000, type: 'dof' as const, dof: { ...base, bokehScale: from + ((to - from) * i) / n } }));
 
   const cues: Cue[] = [
     { t: 0, type: 'lock', mode: 'full' },
@@ -93,9 +119,13 @@ export const c4cRemembers: TimelineFactory = (ctx) => {
     { t: 0, type: 'clip', char: 'ada', clip: 'ada_look', at: 1.2, speed: 0, fade: 0.2 },
     { t: 0, type: 'heartbeat', bpm: 0 },
     { t: 0.4, type: 'sfx', id: 'ada_drip', pos: herEye, gain: 0.5 },
-    ...(noDof ? [] : ([{ t: 0, type: 'dof', dof: dof(locketD, 0.05) }] as Cue[])),
+    ...(noDof ? [] : bokehRamp(0, IN, dof(locketD, 0.05), 0, 3)),
     // memory, warm: the hem, the bell
     { t: 2.5, type: 'grade', grade: MEMORY_WARM },
+    // SMOOTH-FIX (#145): each flash-frame exposed for itself (C4C_MEMORY_E), back to the take's camera on the cut out
+    { t: 2.5, type: 'fx', id: 'exposure', params: { fixed: C4C_MEMORY_E.hem } },
+    { t: 2.9, type: 'fx', id: 'exposure', params: { fixed: C4C_MEMORY_E.bell } },
+    { t: 3.3, type: 'fx', id: 'exposure', params: { fixed: C4C_CAMERA_E } },
     arms(2.5, false),
     aim(2.5, HEM.target),
     aim(2.9, BELL.target),
@@ -103,9 +133,19 @@ export const c4cRemembers: TimelineFactory = (ctx) => {
     { t: 2.95, type: 'sfx', id: 'spring_bell', pos: BELL.target, room: 'G2', gain: 0.5 },
     { t: 3.3, type: 'grade', grade: null },
     arms(3.3, true),
-    aim(3.3, locketAt),
+    // SMOOTH-FIX (#145): the beam lands in THIS shot's frame (its target, under the locket) — aimed at locketAt it passed
+    // over the glove and lit her out of frame above: 3.33–3.87 rendered pure black (luma 0.0000, scene radiance 0.004,
+    // scratch/fix/after2 C4c f129–f145) after the memory flash, until her hand entered the beam at the top
+    aim(3.3, add(locketAt, [0, 0, -0.3])),
     // the take: her hand enters the beam and closes over the locket
     ...(noDof ? [] : ([{ t: 3.3, type: 'dof', dof: dof(locketD, 0.05) }] as Cue[])),
+    // SMOOTH-FIX (#145b, re-verify N2): ada_finale_take's first frame is a different pose from ada_look's held 1.2 s
+    // frame (her left arm hangs instead of being raised, the right arm and the head she carries hang lower): cross-faded
+    // in 0.15 s on screen at 3.4, it read as one pose pop (3.4 → 3.433: FLICK 64, POP 52–62 to 3.57, no camera move).
+    // The take's first frame is now cross-faded in UNSEEN, under the memory flash-frames (2.5–3.3: other rooms), held
+    // (speed 0, as C7 holds ada_sting's), and the same clip runs on from it at 3.4 (bank.ts keeps a re-cued clip's time) —
+    // the reach still lands at clip 0.45 s = C4C_TAKE_AT.
+    { t: 2.55, type: 'clip', char: 'ada', clip: 'ada_finale_take', speed: 0, fade: 0.4 },
     { t: 3.4, type: 'clip', char: 'ada', clip: 'ada_finale_take', speed: 0.5, fade: 0.15 },
     { t: C4C_TAKE_AT, type: 'sfx', id: 'locket_click', pos: add(eye, fwd(ctx.player.heading, 0, locketD)), gain: 0.7 },
     { t: C4C_TAKE_AT, type: 'attach', char: 'ada', prop: 'locket', bone: 'prop_l' },
@@ -113,6 +153,9 @@ export const c4cRemembers: TimelineFactory = (ctx) => {
     aim(C4C_TAKE_AT, herFist), // the torch follows her closed hand
     // memory, cold: the hatch
     { t: 5.5, type: 'grade', grade: MEMORY_COLD },
+    { t: 5.5, type: 'fx', id: 'exposure', params: { fixed: C4C_MEMORY_E.hatchWide } },
+    { t: 5.9, type: 'fx', id: 'exposure', params: { fixed: C4C_MEMORY_E.hatchClose } },
+    { t: 6.3, type: 'fx', id: 'exposure', params: { fixed: C4C_CAMERA_E } },
     arms(5.5, false),
     aim(5.5, HATCH_WIDE.target),
     aim(5.9, HATCH_CLOSE.target),
@@ -122,7 +165,7 @@ export const c4cRemembers: TimelineFactory = (ctx) => {
     arms(6.3, true),
     aim(6.3, herFist),
     // she draws it to her breastbone; the whisper; a drop on the glove
-    ...(noDof ? [] : ([{ t: 6.3, type: 'dof', dof: dof(dist(eye, herFist), 0.25, 2.5) }] as Cue[])),
+    ...(noDof ? [] : ([{ t: 6.3, type: 'dof', dof: dof(dist(eye, herFist), 0.25, 2.5) }, ...bokehRamp(OUT_T, C4C_DURATION - OUT_T - 0.1, dof(dist(eye, herFist), 0.25, 2.5), 2.5, 0), { t: C4C_DURATION - 0.05, type: 'dof', dof: null }] as Cue[])),
     { t: 7.2, type: 'voice', trigger: 'c4c:there' },
     { t: 7.9, type: 'sfx', id: 'ada_drip', pos: add(eye, [0, 0, -0.5]), gain: 0.35 },
     // she turns to the parlor door
@@ -130,6 +173,8 @@ export const c4cRemembers: TimelineFactory = (ctx) => {
     { t: 10.8, type: 'light', op: 'storm_auto', on: true },
     { t: 10.9, type: 'fx', id: 'beamClamp', params: { on: false } },
     { t: 10.9, type: 'fx', id: 'exposure', params: { snap: true } }, // back to the eye, snapped (as C4a: a reset alone adapts over seconds)
+    // SMOOTH-FRAMES (#142): gameplay resumes on the last camera (her back as she steps off toward the parlor door)
+    { t: C4C_DURATION, type: 'player', pos: eye, heading: headingTo(eye, endChest), pitch: Math.atan2(endChest[2] - eye[2], Math.hypot(endChest[0] - eye[0], endChest[1] - eye[1])) },
   ];
 
   return {

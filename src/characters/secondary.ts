@@ -77,6 +77,9 @@ export class VerletChain {
   /** World Y of a floor the particles may not pass (null = none). Fix round 4: a severed head's wet hair lies ON the
    *  boards — without it the chains hung through the floor and whipped into a 40 cm fan on the nudge's roll. */
   floorY: number | null = null;
+  /** World box top the particles may not pass while over it (null = none). #142c: Ada's wet hair on the sawbuck's
+   *  rubber sheet while her head lies there — it hangs off the edge instead of through the top. */
+  shelf: { minX: number; maxX: number; minZ: number; maxZ: number; y: number; wallX?: number; wallY0?: number } | null = null;
 
   constructor(bones: any[], o: { stiffness?: number; damping?: number; gravity?: number; tipLength?: number } = {}) {
     this.bones = bones;
@@ -145,6 +148,17 @@ export class VerletChain {
         const l = d.length() || 1e-6;
         p.copy(a).addScaledVector(d, this.len[i - 1] / l);
         for (let ci = 0; ci < this.colliders.length; ci++) pushOutOfCapsule(p, this.colliders[ci]); // no iterator objects per call
+        const sh = this.shelf;
+        if (sh !== null && p.y < sh.y && p.y > sh.y - 0.12 && p.x > sh.minX && p.x < sh.maxX && p.z > sh.minZ && p.z < sh.maxZ) {
+          p.y = sh.y; // on the sheet: no bounce, wet drag (as on the floor below)
+          this.prev[i].y = p.y;
+          this.prev[i].x = p.x - (p.x - this.prev[i].x) * 0.3;
+          this.prev[i].z = p.z - (p.z - this.prev[i].z) * 0.3;
+        } else if (sh !== null && sh.wallX !== undefined && p.x > sh.wallX && p.x < sh.minX + 0.1 && p.y < sh.y && p.y > (sh.wallY0 ?? -1e9) && p.z > sh.minZ && p.z < sh.maxZ) {
+          p.x = sh.wallX; // against the sheet hanging down the table's side: wet hair clings, no bounce
+          this.prev[i].x = p.x;
+          this.prev[i].y = p.y - (p.y - this.prev[i].y) * 0.3;
+        }
         if (this.floorY !== null && p.y < this.floorY) {
           p.y = this.floorY;
           this.prev[i].y = p.y; // wet hair on the boards: no bounce

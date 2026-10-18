@@ -79,6 +79,11 @@ export const c6bBait: TimelineFactory = () => {
     { t: 11.0, type: 'dressing', set: 'sting', on: false },
     { t: 11.0, type: 'weather', rain: 1, wind: 0.5, inside: 0, surface: 'gravel' },
     { t: 11.0, type: 'release', char: 'ada' },
+    // SMOOTH-FIX (#145, hunt F2a): the incoming shot's exposure on each metered cut (`cutE`, held 0.1 s, then the eye adapts
+    // on from it; values = what the eye settles on for that shot, scratch/fix/diag `ex` Medium) — the cut frame used to
+    // keep the previous shot's exposure (C6b 6.0 black ×16, 8.5 ×6.7 white). The torch is off from t = 0.
+    { t: 6.0, type: 'fx', id: 'exposure', params: { cutE: 1.252 } },
+    { t: 8.5, type: 'fx', id: 'exposure', params: { cutE: 0.423 } },
   ];
 
   return {

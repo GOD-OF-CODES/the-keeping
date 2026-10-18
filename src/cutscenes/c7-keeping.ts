@@ -8,6 +8,7 @@
 
 import { c1Empty, C1_SHOTS } from './c1-empty.ts';
 import { CAM, CAR_SET, CLEAT_ADA, CLEAT_EYE, CLEAT_FINGERS, DOOR, DRIVER_EYE, PROP, ROCKER_HEADING, add, every, focusAt, inCar } from './stage.ts';
+import { roadPath } from './road.ts';
 import type { CameraShot, Cue, TimelineFactory } from './types.ts';
 
 export const C7_DURATION = 35;
@@ -18,6 +19,8 @@ export const C7_CLEAT_T = 15.8;
 export const C7_CLEAT_D = 1.0;
 
 export const TITLE = 'THE KEEPING';
+/** The westbound lane centre (n, m) — C1's track (c1-empty.ts WEST). */
+const C7_LANE = 1.75;
 
 const shift = (s: CameraShot, t: number, d?: number): CameraShot => ({ ...s, t, d: d ?? s.d });
 
@@ -98,12 +101,24 @@ export const c7Keeping: TimelineFactory = (ctx) => {
     { t: 28.0, type: 'visible', char: 'ada', visible: false },
     { t: 28.9, type: 'sfx', id: 'score_final_bell' },
     { t: 29.8, type: 'card', text: TITLE, style: 'title' },
+    // SMOOTH-FIX (#145, hunt F2a): the incoming shot's exposure on each metered cut (`cutE`, held 0.1 s, then the eye adapts
+    // on from it; values = what the eye settles on for that shot, scratch/fix/diag `ex` Medium) — the cut frame used to
+    // keep the previous shot's exposure (C7 3.5 ×7, the cleat insert 15.8 ×28 and the guest book 18.6 ×50 white, 16.8 and 22.6 black).
+    // (the cuts after the cleat insert are pushed below, on the real clock: the insert shifts this list by 1 s)
+    { t: 3.5, type: 'fx', id: 'exposure', params: { cutE: 1.02 } },
+    { t: 15.8, type: 'fx', id: 'exposure', params: { cutE: 0.418 } },
   ];
 
   // the cleat insert: everything after its start moves 1.0 s later (the rope sound itself plays under the insert)
   const late = (t: number) => (t > C7_CLEAT_T + 1e-6 ? t + C7_CLEAT_D : t);
   for (const c of cues) c.t = Math.round(late(c.t) * 1000) / 1000;
   const cleatEnd = C7_CLEAT_T + C7_CLEAT_D;
+  cues.push(
+    // SMOOTH-FIX (#145, hunt F2a): the cuts after the insert (real clock — the shots are authored on it)
+    { t: cleatEnd, type: 'fx', id: 'exposure', params: { cutE: 24 } },
+    { t: 18.6, type: 'fx', id: 'exposure', params: { cutE: 0.25 } },
+    { t: 22.6, type: 'fx', id: 'exposure', params: { cutE: 2.63 } },
+  );
   cues.push(
     // AD review M-A: on the real route she carries her severed head in her right hand — the head-carry IK pins that hand at
     // her hip and overrode the measured hook pose (no fingers on the rope); free the head for the insert, give it back after
@@ -134,7 +149,14 @@ export const c7Keeping: TimelineFactory = (ctx) => {
       { t: 29.0, v: 1 },
     ],
     letterbox: [{ t: 0, v: 1 }],
-    vehicle: c1.vehicle!.map((v) => ({ ...v, t: v.t - (signPov.t - 3.5) })).filter((v) => v.t + v.d > 0),
+    // SMOOTH-FRAMES (#142): C1's coast segment (56.6) starts at 3× its mean speed — 27 m/s after the rooms run's
+    // 18.9 m/s — which C1 hides on its S9 cut, but the sign POV here runs on to 10.3: the world lurched forward in one
+    // frame (9.73) as the shot faded. Keep the rooms run's speed into the black instead: s 23 → −7.2 in 1.6 s, the
+    // same lane (117 m / 6.2 s = 30.2 m / 1.6 s = 18.9 m/s), the car off screen from 10.3.
+    vehicle: [
+      ...c1.vehicle!.filter((v) => v.t < signPov.t + signPov.d - 1e-6).map((v) => ({ ...v, t: v.t - (signPov.t - 3.5) })).filter((v) => v.t + v.d > 0),
+      { t: 3.5 + signPov.d, d: 1.6, path: roadPath(23, 23 - (117 / 6.2) * 1.6, C7_LANE), ease: 'linear' as const, heading: 'path' as const },
+    ],
     shots: [
       shift(interior, 0, 3.5),
       shift(signPov, 3.5, 6.8),

@@ -62,7 +62,7 @@ export class PauseMenu {
     opts.className = 'tk-opts';
     card.appendChild(opts);
 
-    const toggle = (text: string, key: 'showFps' | 'fpsCapDivisorMode' | 'reducedFlash' | 'invertY') => {
+    const toggle = (text: string, key: 'showFps' | 'showObjective' | 'fpsCapDivisorMode' | 'reducedFlash' | 'invertY') => {
       const l = document.createElement('label');
       l.className = 'tk-toggle';
       const i = document.createElement('input');
@@ -85,6 +85,7 @@ export class PauseMenu {
     };
 
     toggle('Show FPS counter', 'showFps');
+    toggle('Show objective', 'showObjective');
 
     const capRow = document.createElement('div');
     capRow.className = 'tk-cap';

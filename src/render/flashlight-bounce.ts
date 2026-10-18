@@ -95,6 +95,67 @@ export const torchPoolRadiance = Fn(() => {
   return P.radiance.mul(a2.div(s2)).mul(exp(phi2.div(s2).negate()));
 });
 
+/**
+ * FLASH lane (#146): the static world as the torch sees it, published by FlashlightBounce for the first-person arms'
+ * wall pullback (src/characters/arms.ts) and the exposure's near-pool adaptation (src/render/exposure.ts).
+ *   sight(o, d, far): distance to the house / closed door leaves along a WORLD ray (Infinity = none within far).
+ *   hitDist: the beam axis' smoothed distance from the lens to the static surface it lands on (Infinity = none
+ *   within 12 m or the torch is off); subject: true while a character stands in the beam closer than that surface.
+ */
+export const TORCH_WORLD: {
+  sight: ((o: any, d: any, far: number) => number) | null;
+  /** FLASH part 2: the VISIBLE surface along a world ray — the octree + each door leaf's SLAB. The door blockers
+   *  (sight) are the union of the leaf AND its hardware: 0.20 m thick for a 0.04 m leaf (knobs on both faces), 0.46 m
+   *  for the front door (+ the knocker) — their faces stand 8–20 cm proud of the wood, so the near-wall aim's gaze point
+   *  floated in front of a shut door and the hot spot landed 5–15 cm up-right of where you look (verify PD: the gaze
+   *  luma fell 227 → 93 walking up to the front door). Used for the aim and the beam hit; the hand's pullback keeps the
+   *  conservative `sight` (it must clear the knob). null until FlashlightBounce exists (callers fall back to sight). */
+  surface: ((o: any, d: any, far: number) => number) | null;
+  hitDist: number;
+  subject: boolean;
+} = { sight: null, surface: null, hitDist: Infinity, subject: false };
+
+/** A door leaf's slab: the largest mesh under the blocker's object (the hinge group), its box in that frame. */
+interface Slab {
+  object: any;
+  box: any;
+  enabled: () => boolean;
+}
+const _slabInv = new THREE.Matrix4();
+const _slabRay = new THREE.Ray();
+const _slabP = new THREE.Vector3();
+function buildSlabs(blockers: readonly any[]): Slab[] {
+  const out: Slab[] = [];
+  const size = new THREE.Vector3();
+  for (const b of blockers) {
+    const obj = b?.object;
+    if (!obj) continue;
+    obj.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(obj.matrixWorld).invert();
+    let best: any = null;
+    let bestVol = -1;
+    obj.traverse((m: any) => {
+      if (!m.isMesh || !m.geometry || /^bolt_/.test(String(m.name))) return;
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      const bb = m.geometry.boundingBox.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+      bb.getSize(size);
+      const vol = size.x * size.y * size.z;
+      if (vol > bestVol) {
+        bestVol = vol;
+        best = bb;
+      }
+    });
+    if (best) out.push({ object: obj, box: best, enabled: typeof b.enabled === 'function' ? b.enabled : () => true });
+  }
+  return out;
+}
+
+/** Characters that can stand in the beam (scene roots by name: src/characters/ada.ts, harlan.ts). */
+const SUBJECTS = ['ada', 'harlan'];
+/** A character counts as "in the beam" when the beam axis passes within this distance (m) of her standing axis
+ *  (feet → feet + 1.8 m), ahead of the lens and before the static hit: a body is ≈ 0.45 m wide. */
+const SUBJECT_R = 0.45;
+
 const RESAMPLE_MOVE2 = 0.25 * 0.25;
 const RESAMPLE_FRAMES = 15; // trace frames (every 2nd frame) ≈ 0.5 s at 60 fps
 /** PERF review fix round 3 (#128): a MOVE-triggered re-sample waits ≥ 3 trace frames (≈ 0.1 s). Each sample's
@@ -176,7 +237,7 @@ export function traceMesh(mesh: any, o: any, d: any, near: number, far: number, 
 
 export class FlashlightBounce {
   private readonly fl: Flashlight;
-  private readonly collision: { rayDistance(o: any, d: any, far: number): number; octree?: any };
+  private readonly collision: { rayDistance(o: any, d: any, far: number): number; sightDistance?(o: any, d: any, far: number): number; octree?: any };
   private readonly cands: Candidate[] = [];
   private readonly ray = new THREE.Raycaster();
   private readonly rayObj = new THREE.Ray();
@@ -196,14 +257,20 @@ export class FlashlightBounce {
   private frame = 0;
   private sampleAge = 1e9;
   private valid = false;
+  private subjects: any[] | null = null;
+  private subjectsAge = 0;
+  private readonly sp = new THREE.Vector3();
   /** Multiplier on the physical bounce (look API `bounce`). */
   scale = 1;
   /** Beam flux at the base intensity (lm), recomputed by the look sync when the beam changes. */
   flux = 19;
 
-  constructor(fl: Flashlight, roots: any[], collision: { rayDistance(o: any, d: any, far: number): number; octree?: any }) {
+  constructor(fl: Flashlight, roots: any[], collision: { rayDistance(o: any, d: any, far: number): number; sightDistance?(o: any, d: any, far: number): number; octree?: any }) {
     this.fl = fl;
     this.collision = collision;
+    // closed door leaves count (sightDistance): the torch hand stops at a shut door as at a wall
+    TORCH_WORLD.sight = collision.sightDistance ? (o, d, far) => collision.sightDistance!(o, d, far) : (o, d, far) => collision.rayDistance(o, d, far);
+    TORCH_WORLD.surface = (o, d, far) => this.surfaceDistance(o, d, far);
     const size = new THREE.Vector3();
     for (const r of roots) {
       r.updateMatrixWorld(true);
@@ -221,12 +288,42 @@ export class FlashlightBounce {
     this.cands.sort((a, b) => a.vol - b.vol);
   }
 
+  private slabs: Slab[] = [];
+  private slabsFrom = -1;
+
+  /** FLASH part 2: TORCH_WORLD.surface — the octree, then each door leaf's slab (see TORCH_WORLD.surface). */
+  surfaceDistance(o: any, d: any, far: number): number {
+    const blockers: readonly any[] | undefined = (this.collision as any).blockers;
+    // a collision without the blocker list (tests, older callers): its sight line as it is
+    if (!Array.isArray(blockers)) return this.collision.sightDistance ? this.collision.sightDistance(o, d, far) : this.collision.rayDistance(o, d, far);
+    let best = this.collision.rayDistance(o, d, far);
+    if (!blockers.length) return best;
+    if (this.slabsFrom !== blockers.length) {
+      this.slabs = buildSlabs(blockers);
+      this.slabsFrom = blockers.length;
+    }
+    for (const sl of this.slabs) {
+      if (!sl.enabled()) continue;
+      sl.object.updateWorldMatrix(true, false);
+      _slabInv.copy(sl.object.matrixWorld).invert();
+      _slabRay.origin.copy(o).applyMatrix4(_slabInv);
+      _slabRay.direction.copy(d).transformDirection(_slabInv);
+      const p = _slabRay.intersectBox(sl.box, _slabP);
+      if (!p) continue;
+      p.applyMatrix4(sl.object.matrixWorld);
+      const dist = p.distanceTo(o);
+      if (dist < best && dist <= far) best = dist;
+    }
+    return best;
+  }
+
   update(dt: number, on: boolean): void {
     const L = this.fl.light;
     const B = this.fl.bounce;
     if (!B) return;
     if (!on || L.intensity <= 0) {
       this.rhoTarget = 0;
+      TORCH_WORLD.hitDist = Infinity;
     } else if ((this.frame++ & 1) === 0) {
       L.getWorldPosition(this.o);
       L.target.getWorldPosition(this.d);
@@ -244,6 +341,20 @@ export class FlashlightBounce {
           } else this.nTarget.copy(this.d).negate();
         }
       } else dist = this.collision.rayDistance(this.o, this.d, 12);
+      // LOOK #146c: a CLOSED DOOR LEAF is a surface too. The octree holds only the static house, so at a shut door the
+      // beam "landed" behind it (the next wall, or nothing): no near-pool adaptation (G 0 — the meter swallowed the
+      // whole approach: the front door's hot core went 210 → 195 from 1.5 to 1 m, scratch/flash-look/beam-med2 D1) and
+      // the bounce light sat on the far side of the leaf. sightDistance = the octree + the enabled door blockers.
+      // FLASH part 2: the leaf's SLAB, not the blocker box (knobs / knocker: 8–20 cm proud of the wood).
+      if (this.collision.sightDistance) {
+        const ds = this.surfaceDistance(this.o, this.d, Number.isFinite(dist) ? dist : 12);
+        if (ds < dist - 1e-3) {
+          dist = ds;
+          this.nTarget.copy(this.d).negate(); // a leaf faces the hall it closes (blockers carry no triangle normal)
+        }
+      }
+      TORCH_WORLD.hitDist = dist;
+      TORCH_WORLD.subject = this.subjectInBeam(Number.isFinite(dist) ? dist : 12);
       if (Number.isFinite(dist)) {
         this.hit.copy(this.o).addScaledVector(this.d, dist);
         if (!oct?.rayIntersect) this.nTarget.copy(this.d).negate();
@@ -293,6 +404,34 @@ export class FlashlightBounce {
     const flux = this.flux * beam * this.scale * lit;
     const E = (rho * flux) / (4 * Math.PI * R * R * (1 - rho));
     TORCH_POOL.fill.value.copy(L.color).multiplyScalar(E);
+  }
+
+  /** FLASH (#146): is a character standing in the beam ahead of the lens, nearer than the static hit? The collision
+   *  octree holds only the house, so the near-pool exposure term (exposure.ts) must not treat her as the wall. */
+  private subjectInBeam(far: number): boolean {
+    if (!this.subjects || (this.subjects.length < SUBJECTS.length && ++this.subjectsAge > 120)) {
+      this.subjectsAge = 0;
+      let root = this.fl.light;
+      while (root.parent) root = root.parent;
+      this.subjects = SUBJECTS.map((n) => root.getObjectByName?.(n)).filter(Boolean);
+    }
+    for (const g of this.subjects) {
+      if (!g.visible) continue;
+      g.getWorldPosition(this.sp);
+      // closest approach between the beam ray o + t·d (0 < t < far) and the vertical segment sp + (0, h, 0), h ∈ [0, 1.8]
+      const wx = this.o.x - this.sp.x;
+      const wz = this.o.z - this.sp.z;
+      const dh = Math.hypot(this.d.x, this.d.z);
+      if (dh < 1e-4) continue; // straight up/down: no body is crossed
+      let t = -(wx * this.d.x + wz * this.d.z) / (dh * dh); // nearest in the horizontal plane
+      t = Math.min(far, Math.max(0, t));
+      const y = this.o.y + this.d.y * t - this.sp.y;
+      if (y < -0.1 || y > 1.9) continue;
+      const hx = wx + this.d.x * t;
+      const hz = wz + this.d.z * t;
+      if (hx * hx + hz * hz < SUBJECT_R * SUBJECT_R) return true;
+    }
+    return false;
   }
 
   /** Albedo (avgAlbedo of the hit material, material-spec.json) near `dist` along the beam, cheaply (see above). */

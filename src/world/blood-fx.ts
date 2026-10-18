@@ -18,7 +18,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, uniform, instancedBufferAttribute, positionGeometry, varyingProperty, vec2, vec3, vec4, float, exp, normalize, cross, dot, max, min, step, smoothstep, pow, sqrt, mix, abs, cameraPosition, texture, length, clamp, select, attribute, sin, cos, fwidth, atan, tanh, screenUV, viewportOpaqueMipTexture } from 'three/tsl';
 import { planToWorld } from '../shared/coords.ts';
 import { BLOOD_TIERS, ballistic, poolRadius, rng, seedC2, stainsOf, tauFor, terminate, type Particle, type Stain } from './blood-math.ts';
-import { C2_CONTACT, C2_PULSES, C2_DURATION } from '../cutscenes/c2-room.ts';
+import { C2_CONTACT, C2_PULSES, C2_DURATION, C2_ROLL } from '../cutscenes/c2-room.ts';
 import { HEAD_REST, HEAD_LAND, treadNosing } from '../cutscenes/stage.ts';
 import { ADA_LAST_TREAD, adaOnTread } from '../cutscenes/c2c-up.ts';
 import type { P3 } from '../cutscenes/types.ts';
@@ -49,7 +49,11 @@ const FLOOR_RHO_LUM = 0.2126 * FLOOR_RHO[0] + 0.7152 * FLOOR_RHO[1] + 0.0722 * F
 // body (scripts/qa/c2-look.mjs CAP=1, 800 cap verts): cap centroid plan (5.484, 3.307, 1.446), neck axis (cap − the ring
 // 6–8 cm below) bearing 175.0°, elevation +4.8° — the stump now lies near-level along the table end, so the carotids
 // throw west almost horizontally from 0.85 m: pulse 1 (2.8 m/s) lands ≈ 1.1 m west in ≈ 0.42 s.
-export const JET_CUT: P3 = [5.484, 3.307, 1.446];
+// #142c (lead ruling (ao), FRAMES lane): her neck now lies over the west edge with the head attached (ada-table-pose.ts:
+// root +0.20 m west / +3 cm, neck re-posed) — the cut ring moved (5.486, 3.306, 1.445) → (5.283, 3.278, 1.492) at C2 8.45
+// (scratch/smooth-frames/head/posesearch.mjs AXIS=1; the same measure reproduces the old probe to 2 mm), its axis
+// relative to the neck bones unchanged (only neck_01 −10° above it) → the jets keep JET_AZ / JET_EL, origin moved by Δ.
+export const JET_CUT: P3 = [5.283, 3.278, 1.492];
 export const JET_AZ = (175.0 * Math.PI) / 180;
 // review fix round 3 (#127): the ring axis is +4.8° at 6–8 cm but +30.5° at 10–12 cm (the posed neck curves ≈ 25° over
 // its last 10 cm, LOOK gl1); a cut carotid retracts ≈ 1.5–2.5 cm into the stump, so its lumen — the jet's direction — lies
@@ -712,6 +716,53 @@ export function createBloodFx(d: BloodDeps) {
   stainMesh.visible = false;
   stainMesh.renderOrder = 1;
   d.scene.add(stainMesh);
+  // PERF smoothness (#143): the stain material samples viewportOpaqueMipTexture (seam runs, board visibility), so EVERY
+  // scene render that draws this mesh ends the scene pass, copies the opaque frame, builds its full mip chain and
+  // restarts the pass (all MRT attachments reloaded) — and the mesh was drawn (frustumCulled false) in every frame from
+  // C2 t = 0 to the end of the game, stains or not. Per render call (scene.onBeforeRender, before the render list is
+  // built) it is now drawn only when a LIVE stain (its appear time ≤ the blood clock: before it the shader's alpha is
+  // exactly 0) has its conservative bounding sphere (half the quad diagonal at full growth + 2 cm) inside that camera's
+  // frustum. Exact: a culled render had no stain pixel to draw. `?staincull=0` restores the old path (A/B).
+  let stainWant = false;
+  let stainWarm = false;
+  const STAIN_CULL = !/[?&]staincull=0\b/.test(typeof location !== 'undefined' ? location.search : '');
+  const scFr = new THREE.Frustum();
+  const scM = new THREE.Matrix4();
+  const scS = new THREE.Sphere();
+  const stainsInView = (camera: any): boolean => {
+    const force = (globalThis as any).__stainCull; // QA cost probes: 'hide' | 'show' override
+    if (force === 'hide') return false;
+    if (!STAIN_CULL || stainWarm || uStainDbg.value !== 0 || force === 'show') return true;
+    scM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    if (camera.isArrayCamera) return true;
+    scFr.setFromProjectionMatrix(scM, camera.coordinateSystem, camera.reversedDepth);
+    const now = uT.value;
+    for (let i = 0; i < sCount; i++) {
+      if (!(s3[i * 4] <= now)) continue; // not yet appeared (alpha 0) or an unfed pool (t0 1e9)
+      scS.center.set(s1[i * 4], s1[i * 4 + 1], s1[i * 4 + 2]);
+      scS.radius = 0.5 * Math.hypot(s2[i * 4], s2[i * 4 + 1]) + 0.02;
+      if (scFr.intersectsSphere(scS)) return true;
+    }
+    return false;
+  };
+  // The cull toggles the mesh's LAYERS (mask 0 = drawn by no camera), never `visible`: other systems hide scene children
+  // for a render and restore them (the reflection capture keeps only the level root; compileAsync also calls
+  // scene.onBeforeRender). Setting `visible` here re-showed the stains inside the capture's cube renders, whose
+  // viewport-texture copy then hit a canvas-format target (lead B08 run: 73 × "copyFramebufferToTexture: Source and
+  // destination formats do not match. rgba16float bgra8unorm"). `visible` stays blood-fx's wanted state only.
+  const stainMask = stainMesh.layers.mask;
+  {
+    const prev = d.scene.onBeforeRender;
+    d.scene.onBeforeRender = function (renderer: any, scene: any, camera: any, rt: any) {
+      if (stainWant) stainMesh.layers.mask = stainsInView(camera) ? stainMask : 0;
+      return prev.call(this, renderer, scene, camera, rt);
+    };
+  }
+  const setStainOn = (on: boolean) => {
+    stainWant = on;
+    stainMesh.visible = on;
+    stainMesh.layers.mask = stainMask;
+  };
 
   // ---- C2's stains (from the landings) and the pools
   const CELL = { splat: [0, 1, 2, 3, 4, 5, 6, 7], streak: [8, 9, 10], pool: 11, print: [12, 13], puddle: 14, crown: 15 } as const;
@@ -733,7 +784,8 @@ export function createBloodFx(d: BloodDeps) {
   // spreads to the head (10 cm away) by ≈ 9.5 s and reaches ≈ 260 mL by 12 s, then the seep
   addPool([5.24, 3.24, 0.6], (t) => 40 + 220 * sat((t - 7.7) / 4.3) + Math.max(0, t - 12) * 0.6);
   // where pulses 1–2 land (x ≈ 4.2–4.8, y 3.38 — fix round 2 axis): the jets' summed volume as it lands
-  addPool([4.48, 3.37, 0.6], (t) => 45 * sat((t - 7.98) / 0.7) + 15 * sat((t - 9.7) / 0.3));
+  // #142c: from the moved JET_CUT every pulse-1/2 particle reaches the boards (122 of 369 fell back on the sheet before); landings centroid (4.515, 3.388) → (4.428, 3.357) (scratch/smooth-frames/head/jetland.ts)
+  addPool([4.43, 3.36, 0.6], (t) => 45 * sat((t - 7.98) / 0.7) + 15 * sat((t - 9.7) / 0.3));
   if (d.preset !== 'low') {
     // the sheet-corner drip (1 mL/s from 10.4)
     addPool([5.3, 2.2, 0.6], (t) => Math.max(0, Math.min(t, 40) - 10.6) * 1.0);
@@ -742,14 +794,17 @@ export function createBloodFx(d: BloodDeps) {
     // (0.8 m fall, cut face first-ish) splashes ≈ 15 mL at HEAD_LAND at 7.9; at rest the pool is centred 8 cm toward
     // the cut ring (bearing 174°, cutscene-fx REST_FACE) and grows 15 → 40 mL (r ≈ 4 → 7 cm, POOL_THICK 2.75 mm) by
     // the lift at 10.6, then holds (the head is gone; the film only spreads)
-    addPool([HEAD_LAND[0] - 0.05, HEAD_LAND[1], 0.6], (t) => (t < 7.9 ? 0 : 15 + 20 * sat((t - 7.9) / 1.2))); // landing splash + 1.2 s of drain
+    // SMOOTH-FIX (#145, hunt F8): the head rolls on to the rest pose from C2_ROLL (8.2–8.7, cutscene-fx 'nudge'): the
+    // landing spot drains only while it lies there (was 1.2 s, with the roll at 9.45)
+    addPool([HEAD_LAND[0] - 0.05, HEAD_LAND[1], 0.6], (t) => (t < 7.9 ? 0 : 15 + 8 * sat((t - 7.9) / (C2_ROLL - 7.9)))); // landing splash + the drain until the roll
     // fix round 2: the rest pose's neck end bears 151° and is tilted up 35°: the stub drains from its lower rim ≈ 7 cm
     // from the head centre. Both carotids + both jugulars of a severed head drain tens of mL/s at first (≈ 10 % of the
     // 5 L blood volume is above the cut) → ≈ 70 mL by the lift at 10.6 (r ≈ 9 cm at 2.75 mm), the head lies IN it
-    addPool([HEAD_REST[0] - 0.061, HEAD_REST[1] + 0.034, 0.6], (t) => (t < 9.6 ? 0 : 25 + 45 * sat((t - 9.6) / 1.0)));
-    // fix round 2 (ruling h): the boot roll (9.45–9.8) drags the bleeding cut and the soaked hair across the boards —
-    // a smear from the landing to the rest
-    addStain([(HEAD_LAND[0] + HEAD_REST[0]) / 2, (HEAD_LAND[1] + HEAD_REST[1]) / 2, 0.6], Math.atan2(HEAD_REST[1] - HEAD_LAND[1], HEAD_REST[0] - HEAD_LAND[0]), 0.2, 0.08, CELL.streak[1], 0, 9.7, 4, 0.9);
+    // (SMOOTH-FIX #145: from the end of the roll, C2_ROLL + 0.5, ≈ 70 mL by the lift at 10.75 as before)
+    addPool([HEAD_REST[0] - 0.061, HEAD_REST[1] + 0.034, 0.6], (t) => (t < C2_ROLL + 0.5 ? 0 : 20 + 50 * sat((t - C2_ROLL - 0.5) / 1.6)));
+    // fix round 2 (ruling h): the roll to rest (SMOOTH-FIX #145: C2_ROLL 8.2–8.7, was the boot nudge 9.45–9.8) drags the
+    // bleeding cut and the soaked hair across the boards — a smear from the landing to the rest
+    addStain([(HEAD_LAND[0] + HEAD_REST[0]) / 2, (HEAD_LAND[1] + HEAD_REST[1]) / 2, 0.6], Math.atan2(HEAD_REST[1] - HEAD_LAND[1], HEAD_REST[0] - HEAD_LAND[0]), 0.2, 0.08, CELL.streak[1], 0, C2_ROLL + 0.25, 4, 0.9);
   }
 
   // ---- C2c: her wet prints (hall + treads 1–11), the puddle on tread 11, the drip onto tread 10
@@ -888,7 +943,7 @@ export function createBloodFx(d: BloodDeps) {
         clock = 0;
         running = true;
         partMesh.visible = true;
-        stainMesh.visible = true;
+        setStainOn(true);
         headNext = 10.9;
         for (const q of pools) s3[q.i * 4] = 1e9; // re-stamped by updatePools from this clock
         fallNext = 7.6;
@@ -897,7 +952,7 @@ export function createBloodFx(d: BloodDeps) {
         clock = Math.max(clock, C2_DURATION);
         running = true;
         partMesh.visible = true;
-        stainMesh.visible = true;
+        setStainOn(true);
       } else if (seq === 'c2c' && phase === 'start') {
         clock = Math.max(clock, C2C0);
         dripOn = true;
@@ -906,7 +961,7 @@ export function createBloodFx(d: BloodDeps) {
         clock = Math.max(clock, C2C0 + 13.9);
         dripOn = true;
         partMesh.visible = true;
-        stainMesh.visible = true;
+        setStainOn(true);
         running = true;
       }
       uT.value = clock;
@@ -974,7 +1029,8 @@ export function createBloodFx(d: BloodDeps) {
     /** Load warm-up: make both meshes compile (B11). */
     setWarm(on: boolean): void {
       partMesh.visible = on || running;
-      stainMesh.visible = on || running;
+      stainWarm = on;
+      setStainOn(on || running);
       if (on && !running) uT.value = C2_CONTACT + 0.3; // a back-lit jet in flight (the prewarm sees a real frame)
       if (!on && !running) uT.value = -100;
     },
@@ -985,7 +1041,7 @@ export function createBloodFx(d: BloodDeps) {
       clock = -100;
       uT.value = clock;
       partMesh.visible = false;
-      stainMesh.visible = false;
+      setStainOn(false);
     },
     get clock() {
       return clock;

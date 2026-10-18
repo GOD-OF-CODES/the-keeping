@@ -386,7 +386,8 @@ def ada_clips(geo):
 # (left) pumps and its beam follows; the free RIGHT glove takes the newel and the rail (the balustrade is on the east =
 # the player's right going up). Camera space: +Y view, +Z up, +X right (metres).
 def arms_clips():
-    from .clips_arms import REST_WR, F, fist, ik_r, open_hand, reach, sway, tremble
+    from mathutils import Vector
+    from .clips_arms import REST, REST_WR, F, _flash_rest_aim, aim_l, fist, ik2, ik_r, lpath, open_hand, reach, sway, tremble
 
     def run_torch():
         period = 2.0 / 3.1                 # two risers at 3.1 risers/s
@@ -420,18 +421,52 @@ def arms_clips():
         path = reach([(0.0, REST_WR), (0.10, tread + np.array([0, 0.04, 0.10])), (0.16, tread), (1.05, tread),
                       (1.20, REST_WR)])
 
+        # FLASH #146b: the torch fist by IK too. The old FK (upper arm +42 deg about its local X) threw the LEFT wrist UP,
+        # 18 cm ahead of the eye and 13 cm above it, the beam 62 deg up: the gloves filled half the frame through 6.6-7.6
+        # (C2c 7.6 review; with the #146b grip's rest frame the same FK filled 96 % of it). Now the torch fist lands on
+        # tread 13 left of the right glove (shoulder width), the barrel along the tread, the beam on the treads ahead
+        # (13 deg under the dropped gaze at the push-off, so the hand-over to the run clip + beamClamp at 7.66 is smooth)
+        # FLASH #146b R1 (re-verify C2c 6.6-6.77 black): that landing (wrist (-0.20, 0.37, -0.47), barrel 40 deg down) put
+        # the LENS at camera (-0.11, 0.55, -0.52): with the real ST_MAIN (blender/house/stairs.py: riser i at along
+        # (i-1)*0.28, tread i top z0 + i*0.219 -- one tread nearer than the cutscene's treadNosing(k)) the e12low eye is
+        # 0.63 m above tread 13, whose nosing is 5 cm ahead, and riser 14 is 0.33 m ahead: the wrist was ON tread 13 but
+        # the torch head was 8 cm INSIDE it -> the light inside the step, 4-6 black frames (scratch/flash-hand/r1fix:
+        # pre/post captures + predict2.py, the lens per captured camera pose vs the real profile). Any lens >= 0.45 m
+        # ahead and >= 0.25 m under the eye is inside the steps at pitch -28...-35 deg, so the torch arm does not land:
+        # the free RIGHT glove catches the fall on tread 13 and the torch is CLUTCHED to the chest (lens (-0.12, 0.38,
+        # -0.20): 25-28 cm above tread 13 through the left jerk, line of sight to the gaze point, so #145b's gaze aim
+        # lights the frame centre), by 0.12 s (C2c 6.58). As the head whips round to her hand (0.27-0.37 = 6.73-6.83) it
+        # swings out to the pose glance #2 was re-verified with (wrist (-0.20, 0.37, -0.47): unchanged light there),
+        # held to 0.99 (7.45); the turn back to the flight draws it in again (lens (-0.13, 0.42, -0.22) at 1.12: the old
+        # straight path to rest put the lens 3 cm inside tread 14 at 7.567) before the run's rest grip at 1.20.
+        lw0 = tuple(REST['wr_l'])
+        beam0 = REST['beam_dir']
+
+        def wrist_for(lens, aim=None, k=0.8):
+            """Wrist (IK target) that puts the lens at `lens` (camera space) with the hand aimed at `aim`."""
+            lens = Vector(lens)
+            aim = aim if aim is not None else lens + beam0 * 2.0     # parallel to the rest beam
+            w = lens - REST['lens_off']
+            for _ in range(5):                      # fixed point: wrist = lens - (rotated wrist->lens offset)
+                w = lens - (aim_l(w, aim, k) @ REST['L'].inverted()) @ REST['lens_off']
+            return tuple(w), aim
+
+        clutch, aim_clutch = wrist_for((-0.12, 0.38, -0.20))
+        turn, aim_turn = wrist_for((-0.13, 0.42, -0.22))
+        lglance = (-0.20, 0.37, -0.47)
+        aim_glance = Vector((-0.08, 1.4, -0.75))
+        aim_off = Vector((-0.05, 1.5, -0.35))
+        left, lrot = lpath([(0.0, lw0, _flash_rest_aim()), (0.12, clutch, aim_clutch), (0.27, clutch, aim_clutch),
+                            (0.37, lglance, aim_glance), (0.99, lglance, aim_off), (1.12, turn, aim_turn),
+                            (1.20, lw0, _flash_rest_aim())], k=0.8)
+
         def fn(t):
-            fall = ps.ease(t / 0.15)
             slap = math.exp(-((t - 0.16) / 0.03) ** 2)
             hold = ps.ease((t - 0.15) / 0.05) * (1 - ps.ease((t - 1.0) / 0.2))
-            # the torch arm thrown down and forward onto the tread: the torch knocks the wood and rolls half a turn
-            torch = add(F('upperarm_l', 42 * fall * (1 - 0.5 * ps.ease((t - 1.0) / 0.2)), 0, -10 * fall),
-                        F('forearm_l', 22 * fall, 0, 0), F('hand_l', -10 * fall, 0, 0),
-                        F('hand_l', 0, 90 * ps.ease((t - 0.2) / 0.35), 0))
-            return add(sway(t, 0.3), torch, open_hand('r', hold * 0.8), F('hand_r', 24 * hold - 8 * slap, 0, 0),
-                       tremble(t, 0.8 * hold))
-        return Clip('arms_stumble_catch', 1.2, fn, ik=ik_r(path), milestone='M2',
-                    note='C2c 6.46: the toe catches riser 12; both gloves slap tread 13 at 0.16 s (torch knock), '
-                         'torch rolls half a turn in the fist; push off by 1.0-1.2 s')
+            return add(sway(t, 0.3), open_hand('r', hold * 0.8), F('hand_r', 24 * hold - 8 * slap, 0, 0),
+                       F('index_02_l', 6 * slap), tremble(t, 0.8 * hold))
+        return Clip('arms_stumble_catch', 1.2, fn, ik=ik2(path, None, left, lrot), milestone='M2',
+                    note='C2c 6.46: the toe catches riser 12; the right glove slaps tread 13 at 0.16 s, the torch is '
+                         'clutched to the chest, swung toward her for glance #2; push off by 1.0-1.2 s')
 
     return [run_torch(), newel_knock(), stumble_catch()]

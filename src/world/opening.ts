@@ -50,6 +50,11 @@ export interface OpeningDeps {
   glassWet: () => number;
   /** The storm-night opening (C0/C1), not C6/C7's blue hour. */
   night?: () => boolean;
+  /** SMOOTH-FIX (#145): the exposure applied to the last frame (the pipeline uniform; null = unknown) — where an
+   *  eased film-camera cue (`ramp`) starts from. */
+  exposureNow?: () => number | null;
+  /** SMOOTH-FIX (#145): the eye meters a scene texture (false on the Direct path, where the per-cut `cutE` is skipped). */
+  meterOn?: () => boolean;
 }
 
 const LOOK_KEYS = ['biasEV', 'meterLow', 'tauDarken', 'tauBrighten'] as const;
@@ -356,11 +361,21 @@ export function createOpening(d: OpeningDeps) {
 
   // ---- exposure cue (restored when the camera is released)
   let lookSaved: Record<string, number> | null = null;
+  // SMOOTH-FIX (#145, hunt F1/F5/F3): `ramp` s — a film-camera cue (`fixed`) eases there from the exposure on screen
+  // (log space, smoothstep): the gameplay eye → C2's camera as the torch goes down, the iris ride on C2's whip-pan into
+  // the unlit hall, the C1 step-out past the tail lamp. (A bare `fixed` steps in one frame: the B03 → C2 hand-off ×9.5.)
+  let ramp: { e0: number; e1: number; d: number; t: number } | null = null;
+  // SMOOTH-FIX (#145, hunt F2a): `cutE` — the exposure of the INCOMING shot on a cut, held `cutHold` s (default 0.1) and
+  // then handed to the eye, which adapts on from it (exposure.ts: no snap after a film-camera cue). The eye meters a frame
+  // only after it is rendered, so the first frame of every metered cut showed the previous shot's exposure (C7's guest
+  // book ×50 white, C6 27.8 black …); cutE is the value the meter settles on for that shot (scratch/fix/diag `ex`).
+  let cutHold = 0;
   const exposure = (p: Params) => {
     if (p.reset) {
       resetExposure();
       return;
     }
+    const prevFixed = EXPOSURE_CUE.fixed;
     if (!lookSaved) {
       lookSaved = {};
       for (const k of LOOK_KEYS) lookSaved[k] = (LOOK as any)[k];
@@ -374,11 +389,39 @@ export function createOpening(d: OpeningDeps) {
     EXPOSURE_CUE.hp = p.hp === true; // escape fix round (lane CINE): highlight protect under the cue
     EXPOSURE_CUE.cap = p.cap === true; // escape fix round (lane CINE): max clamps the CURRENT exposure at once
     EXPOSURE_CUE.fixed = p.fixed !== undefined ? Number(p.fixed) : null; // fix round 3 (lane CINE): a film camera's fixed exposure
+    ramp = null;
+    cutHold = 0;
+    const rampS = Number(p.ramp ?? 0);
+    if (EXPOSURE_CUE.fixed !== null && rampS > 0) {
+      const now = prevFixed ?? d.exposureNow?.() ?? null;
+      const e0 = Math.max(1e-4, Number.isFinite(now as number) && (now as number) > 0 ? (now as number) : EXPOSURE_CUE.fixed);
+      ramp = { e0, e1: Math.max(1e-4, EXPOSURE_CUE.fixed), d: rampS, t: 0 };
+      EXPOSURE_CUE.fixed = e0;
+    } else if (EXPOSURE_CUE.fixed === null && p.cutE !== undefined && d.meterOn?.() !== false) {
+      EXPOSURE_CUE.fixed = Math.max(1e-4, Number(p.cutE));
+      cutHold = Math.max(1e-3, Number(p.cutHold ?? 0.1));
+    }
     if (p.snap === true) requestExposureSnap();
+  };
+  /** Per frame, before the eye's update (fxw.update runs ahead of the world's atmosphere): the ramp and the cut hold. */
+  const exposureTick = (dt: number) => {
+    if (ramp) {
+      ramp.t += dt;
+      const u = Math.min(1, ramp.t / ramp.d);
+      const sm = u * u * (3 - 2 * u);
+      EXPOSURE_CUE.fixed = ramp.e0 * Math.pow(ramp.e1 / ramp.e0, sm);
+      if (u >= 1) ramp = null;
+    }
+    if (cutHold > 0) {
+      cutHold -= dt;
+      if (cutHold <= 0) EXPOSURE_CUE.fixed = null; // the eye takes over from the cut's value (no snap: exposure.ts)
+    }
   };
   const resetExposure = () => {
     if (lookSaved) for (const k of LOOK_KEYS) (LOOK as any)[k] = lookSaved[k];
     lookSaved = null;
+    ramp = null;
+    cutHold = 0;
     EXPOSURE_CUE.hold = false;
     EXPOSURE_CUE.min = null;
     EXPOSURE_CUE.max = null;
@@ -559,6 +602,7 @@ export function createOpening(d: OpeningDeps) {
       }
     }
     glints.update(d.camera); // after the truck moved (road-glints.ts)
+    exposureTick(dt);
     if (!d.cameraHeld()) {
       if (truckRun || truckSaved) truckStop();
       if (lookSaved || EXPOSURE_CUE.hold || EXPOSURE_CUE.min !== null || EXPOSURE_CUE.fixed !== null) resetExposure();

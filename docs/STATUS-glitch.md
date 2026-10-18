@@ -43,7 +43,7 @@ scratch/glitchfix/c1end.mjs (C1 end on C1's own clock, road/terrain draw presenc
 11. Harlan's clip never reaches the head: his left fist bottoms out at plan (5.46, 3.62), 0.41 m above the boards,
    10.7–10.95, 0.72 m from HEAD_REST (bonetraj.mjs / handtraj.mjs on medium/harlan.glb).
 
-## Done (code; verification runs pending)
+## Done (code; all in HEAD 0ba616a)
 - C1 road: `src/world/yard-cull.ts` — rc9_road + rc9_paint moved out of room_RC9 into `rc9_surface`, drawn whenever
   the viewer is outdoors (cutscene or gameplay, `glimpses.ts` → `yard.surface(level.isOutside())`); the RC9 mask /
   near-house dressing rule now changes only on a camera CUT (> 6 m jump), never mid-shot; `glimpses.ts` keeps the
@@ -120,8 +120,17 @@ scratch/glitchfix/c1end.mjs (C1 end on C1's own clock, road/terrain draw presenc
   NEW: f1209–1213 (11.367–11.5) the pool vanishes again for ≈ 4 frames during the slow turn (r2_top2.jpg).
   probe2 (dist-glitchfix2 build7): arms hidden → still dark (arms ruled out); NOT wall proximity — lit 11.233–11.333
   with the lens 0.21–0.23 m off the wall face, dark 11.367–11.5 at 0.23–0.27 m; the beam ray hits U1_1 at 0.22–0.36 m
-  throughout (a raycast ignores draw visibility). probe3 queued (time-boxed, lead): torch intensity, shadow update,
-  view-caster-cull deltas + culled names, U1_1 effective visibility, PVS room; A/B __vcMode off / forced redraw.
+  throughout (a raycast ignores draw visibility).
+  probe3 (probe3.log, stills p3_strip.jpg): torch 1981–2021 cd, shadow autoUpdate on and redrawn every frame, U1_1
+  effectively visible (room_U1), PVS room U1 / culling on constant, the view-caster cull only drops far yard dressing +
+  doors; ALL THREE stills at 11.4 (normal / __vcMode off / forced shadow redraw) are equally dark → not a draw mask,
+  not the caster cull, not a stale map. CAUSE (geometry): arms_breath_hold lowers the torch — the lens drops from
+  0.26 m to 0.42–0.48 m below the eye 11.2–11.5 (probe2 lp z 5.49 → 5.27, eye 5.75) while the wall is 0.85 m ahead,
+  so the pool's centre sits atan(0.42 / 0.85) ≈ 26° under the gaze: below the letterboxed 35 mm frame (half-vfov
+  18.9°). It slides out at 11.37 and back in at ≈ 11.5 as the slow turn pitches down. RESIDUAL (time box, lead):
+  133 ms with the pool just under the frame edge (a speckle of its rim stays at the bottom-left) — physical, not a
+  pop; was 2 s of black in the live build. Fix options for later: keep the torch higher in arms_breath_hold (lane A
+  clip) or aim the beam at the gaze's wall hit during C2c's top (BEAM_CLAMP.at per frame).
 - Cleaver (r2_clv.jpg): f250/251/253 dark steel with bright wipe streaks; the 8.47 glint (f252) is streaky metal now,
   not a white card. The blood coat on the edge half stays a lamp-lit red (the shared blood material).
 - f257 → f258 (C2 8.6 → 8.667) Harlan's shirt/arm POPPED bright: M-A's lampFlag goes off at 8.6 while the lurch is
@@ -164,5 +173,50 @@ scratch/glitchfix/c1end.mjs (C1 end on C1's own clock, road/terrain draw presenc
   (scratch/glitchfix/play-c6b.mjs wraps scripts/qa/playthrough.mjs unchanged; __game.capture at C6 3.0, C6b 1/4/7/9/11/12.5).
 - Not taken on (lead): C7 2.2 s / C6 18.8 / C5 0.03, 12.9 / C4c 5.53 real-time stalls.
 
-## Left
-everything above; real-time frame-time runs (Medium, Max); gate.
+## Final checks on the final tree (HEAD 0ba616a, dist scratch/dist-glitchfix2 = build8, Medium)
+- npm run typecheck ok · npm test 277/277 · npm run build ok (verify-boot OK: 1 boot chunk, no three / game code) ·
+  assets.mjs --check ok.
+- Playthrough + C6 → C6b stills (scratch/glitchfix/final-play.log, play-c6b.mjs): ended=true at B13, deaths 0,
+  console errors 0 / exceptions 0; C4a + C5b played, C2b not triggered. C6b 9.03 / 11.03 (cleat shot, strip
+  scratch/glitchfix/c6_strip.jpg): the door rope, knot and cleat are drawn — the #141 roadHeld fix holds with #139.
+- C1 end on C1's clock (final-c1.log, stills final/c1/ every 0.5 s): rc9_road + paint drawn on every frame of S8, S9
+  and gameplay; the only BLINK lines are frustum culls of road primitives out of frame (S10 62.0–69 facing the house,
+  S11 71.55–71.8 looking down the drive); RC9 mask flips once, at the S9 cut 56.617. Budget all passes: S9 447 d /
+  1.18 M (live 441 / 1.16 M), the lightning frame 63.217 505 d, S11 ≤ 343 d, gameplay ≤ 318 d; console errors 0.
+- C2c 9–13 s stepped at 30 fps (final-c2c.log, seq final/c2cseq, detect → scratch/glitchfix/detect_final_c2c.txt):
+  the 9.53–11.6 black is gone. Remaining hits, each classified: 9.0 the top shot starts (pool continuous) · 9.3 the
+  wallpaper's speckle shimmer under the torch hot spot (material aliasing, fc_a.jpg f10–13) · 11.6–11.67 the pool
+  re-entering from under the frame (the residual below) · 11.9–12.37 the slow turn sweeping past the newel post at
+  ≈ 0.5 m (parallax, continuous, fc_b.jpg) · 12.53–12.63 the slow turn ENDS at full speed (ease 'in' = 3× the mean
+  rate at its last frame, 7.5°/frame) into the static 12.4 hold: an abrupt stop, then the lagging torch hand catches
+  up and its pool sweeps the treads in ≈ 5 frames, revealing her prints (the #127 stain shading shows a print only
+  where the boards under it are lit) — pre-existing (live f1246) · 12.87–12.97 the designed U1 window stroke.
+
+## Residuals (not fixed here)
+1. C2c 11.37–11.5 (133 ms): the torch pool slips under the letterboxed frame (lens 0.42–0.48 m under the eye in
+   arms_breath_hold, wall 0.85 m ahead → pool ≈ 26° under the gaze vs 18.9° half-vfov). Was 2 s of black live.
+2. C2c 12.4: the slow turn's ease 'in' stops dead at full speed; suggested one-word fix for the FRAMES lane:
+   c2c-up.ts slow-turn shot ease 'in' → 'inOut' (keeps the slow, dreadful start; no camera position change).
+3. C2c 9.3 (and other torch hot spots on U1's wallpaper): speckle shimmer frame to frame — material aliasing.
+4. C2 S9 (20.0–20.4) is still an authored whip-pan (≤ 22°/frame, no blur on Medium); C2c's four head whips are
+   authored 150° turns in 210–230 ms (≤ 56°/frame at 30 fps, bell-shaped now; Max-only blur).
+5. C2 19.067: the lamp is hidden one frame by Harlan's walking leg (physical occlusion).
+6. Medium C1 S9 (the gate shot, 56.6–62) is 445–447 draws (> 400) — pre-existing (441 live): the mounted detailed
+   car interior drawn from the far verge. C2/C2c real time: 4–7 % of frames at 33 ms (one missed vsync) in the
+   lamp-lit parlor on Medium/Max — GPU at ≈ 16.7 ms, no compile/GC stall.
+7. Gameplay at CP1 looking back down the road: the road now continues, but the corridor's pine walls are absent
+   (EXT1's PVS has no RC9) — an open field beyond the yard treeline.
+
+## Requests for the lead
+- Layout (lead-owned): consider RC9 in EXT1/EXT2 visibleRooms only together with the corridor culler running in
+  gameplay (corridor.ts `active` is cutscene-only today; all chunks = 0.98 M tris), or accept the open field.
+- Opening lane: hide P_CAR_INTERIOR's small cabin props in C1 S9 (exterior shot from 9 m, dark cabin) to bring
+  Medium S9 under 400 draws.
+- Lane A: arms_breath_hold holds the torch 0.42–0.48 m under the eye at C2c's top — raise it to ≈ 0.25 m (residual 1);
+  harlan_c2's left hand never reaches the floor head (fist bottoms 0.41 m up, 0.72 m from HEAD_REST) — the grip is now
+  hidden off-frame; a clip that reaches the head would allow an on-screen pickup.
+- FRAMES lane: residuals 2 and 3; the C2 S10/S11 and C2c whips are now sphere sweeps (math.ts sweepTargets) — reuse
+  it for any other look path whose targets pass < 1 m from the eye (scratch/glitchfix/camsweep.ts flags them).
+- scratch/dist-glitchfix removed (disk); scratch/dist-glitchfix2 is the final dist (195 MB) — delete when done.
+
+GLITCH LANE FINISHED 2026-10-12 08:34

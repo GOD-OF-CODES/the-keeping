@@ -254,6 +254,10 @@ export function applySkinOrHair(m: any, ud: Record<string, unknown>, presetId: s
       // colour (whole blood 0.11/0.009/0.008, BLOOD_ALBEDO), 35 % keeps the filmed tissue's variation.
       const filmed = p.colorNode.mul(vec3(0.42, 0.06, 0.05));
       p.colorNode = mix(p.colorNode, mix(filmed, vec3(0.11, 0.009, 0.008), 0.65), capK.mul(uNeckBlood));
+      // #142c (lead ruling (ao)): BEFORE the cut the two cap faces lie inside the seam the first stroke opened at the nape
+      // (docs/C2-ESCAPE.md §2.1 S2: "a dark wet seam, not yet anatomy"); the raw baked tissue rings (pale fat, muscle) at the
+      // seam read as an already-severed neck. Whole: clotting whole blood in a 1–2 cm wedge, ≈ 0.035 / 0.006 / 0.005.
+      p.colorNode = mix(p.colorNode, vec3(0.035, 0.006, 0.005), capK.mul(float(1).sub(uNeckBlood)));
       // M-A C2 upgrades (ruling z5 item 1; ab1 10.5: the lit face-up face read as a clean pale MANNEQUIN): the head
       // landed face-down on its LEFT cheek in the landing splash (cutscene-fx landPose roll −65°, 15 mL at HEAD_LAND)
       // and the boot rolled it face-up through its pool — the down side of the face (left cheek, temple, the left of

@@ -32,6 +32,19 @@ export const c2bDoor: TimelineFactory = (ctx) => {
   // her right foot (ada_vigil, measured: root + (0.01, −0.10, 0.06)) and the hem above it
   const foot: P3 = [ada[0] + 0.05, ada[1] - 0.1, ada[2] + 0.12];
 
+  const torch = ctx.player.torch !== false;
+  // the release shot's gaze (its target eases adaBack → look0, inOut) and the beam's aim easing from the runner to it
+  const runner: P3 = [eye0[0] + 0.3, eye0[1] + 0.9, eye0[2] - 1.6];
+  const beamRise: Cue[] = [];
+  for (let k = 0; k <= 30; k++) {
+    const t = 9.5 + (1.45 * k) / 30;
+    const u = Math.min(1, (t - 9.5) / 1.5);
+    const e = u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2;
+    const gaze: P3 = [adaBack[0] + (look0[0] - adaBack[0]) * e, adaBack[1] + (look0[1] - adaBack[1]) * e, adaBack[2] + (look0[2] - adaBack[2]) * e];
+    const w = e; // the hand lifts with the head
+    const at: P3 = [runner[0] + (gaze[0] - runner[0]) * w, runner[1] + (gaze[1] - runner[1]) * w, runner[2] + (gaze[2] - runner[2]) * w];
+    beamRise.push({ t: Math.round(t * 1000) / 1000, type: 'fx', id: 'beamClamp', params: { on: true, atX: at[0], atY: at[1], atZ: at[2] } });
+  }
   const cues: Cue[] = [
     { t: 0, type: 'lock', mode: 'full' },
     { t: 0, type: 'light', op: 'storm_auto', on: false },
@@ -59,8 +72,25 @@ export const c2bDoor: TimelineFactory = (ctx) => {
     { t: 8.4, type: 'sfx', id: 'knock', pos: D_ADA_HEAD, room: 'U1', gain: 0.3, rate: 0.85 },
     // release on the player's eye
     { t: 9.5, type: 'dof', dof: null },
+    // SMOOTH-FRAMES (#142): the torch rides the CAMERA (render/flashlight.ts), so in the macro and the floor shots it lit
+    // her legs from the lens (clamped at the runner) and flickered pink → black → pink as the 12° clamp swung (cs-frames
+    // C2b 7.03–9.03, scratch/smooth-frames/strips/c2b_floor.jpg): off for the two shots away from the eye, back at the cut
+    // to the eye as the player had it; then the beam rises from the runner to the gaze with the camera instead of
+    // jumping up when the clamp lets go at the hand-back (C2b 11.0 → a one-frame flash on the wall)
+    ...(torch ? ([{ t: 3.0, type: 'light', op: 'flashlight', on: false }, { t: 9.5, type: 'light', op: 'flashlight', on: true }] as Cue[]) : []),
+    ...beamRise,
     { t: 9.5, type: 'clip', char: 'arms', clip: 'arms_idle', loop: true, fallback: [] },
     { t: C2B_DURATION, type: 'release', char: 'ada' },
+    // SMOOTH-FIX (#145, hunt F2a): the incoming shot's exposure on each metered cut (`cutE`, held 0.1 s, then the eye adapts
+    // on from it; values = what the eye settles on for that shot, scratch/fix/diag `ex` Medium) — the cut frame used to
+    // keep the previous shot's exposure (C2b 3.0 ×7 dark, 7.0 ×0.4 bright). The torch is off in both shots.
+    { t: 3.0, type: 'fx', id: 'exposure', params: { cutE: 24 } },
+    { t: 7.0, type: 'fx', id: 'exposure', params: { cutE: 6.51 } },
+    // (after2: the two cuts the hunt did not list — 0.0 from the armoire to its mouth and 9.5 the foot → the hall — kept
+    // the previous exposure on their first frame too: luma 0.0021 between 0.0070 and 0.0109 (×5.2), and 0.0027 between
+    // 0.0062 and 0.0072 (×2.6). The eye snapped to 8.5 / 9.6 and settled at 6.5–7.1 / 7.3–7.8 (scratch/fix/after2 `ex`).)
+    { t: 0, type: 'fx', id: 'exposure', params: { cutE: 7.0 } },
+    { t: 9.5, type: 'fx', id: 'exposure', params: { cutE: 8.0 } },
   ];
 
   return {

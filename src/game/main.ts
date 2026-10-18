@@ -30,6 +30,7 @@ import { deferCompileWaits, installParallelCompile } from '../render/parallel-co
 import { requestExposureSnap } from '../render/exposure.ts';
 import { installPerf, perfBuildClasses, perfBuilds, perfLog, perfMark } from '../render/perf.ts';
 import { installUniformRangePatch } from '../render/uniform-ranges.ts';
+import { HASH_PREPASS, hashPrepassOff, installHashPrepass } from '../render/hash-prepass.ts'; // PERF smoothness (#143) item 3
 import { SHADOW_CANDLE_ID, setCandleShadow } from '../world/lights.ts';
 import type { GameContext } from './context.ts';
 import type { LevelLayout, TriggerVolume } from '../shared/layout-types.ts';
@@ -128,14 +129,43 @@ export async function startGame(h: BootHandoff): Promise<void> {
   const dr = dynResFor(preset, window.devicePixelRatio || 1);
   const dynres = new DynamicResolution(dr, dr.initial);
   if (Math.abs(dynres.scale - preset.sceneScale) > 1e-4) pipeline.setScale(dynres.scale);
-  // M-A cutscene render profile (§5): while a cutscene owns the screen the scale is held (no dynamic resolution) at
-  // the preset's cutscene scale; > 40 ms average over 1 s steps back to the gameplay scale (and the Max beam off).
-  // ?csguard=<ms> adds ms to every measured cutscene frame (QA: proves the guard fires).
-  const csProfile = new CutsceneProfile(preset.id);
+  // M-A cutscene render profile (§5) + PERF round 2 (#150, ruling (aq)): while a cutscene owns the screen the scale is
+  // held (no dynamic resolution) at min(gameplay scale, the cutscene's measured cap), never below the dynres floor;
+  // > 5 % missed vsyncs in 1 s steps it down 0.05, > 40 ms average over 1 s drops it to the floor (and the Max beam off).
+  // ?csguard=<ms> adds ms to every measured cutscene frame (QA: proves the guard fires); ?cscap=0 = no caps (A/B).
+  const drawPx = new THREE.Vector2();
+  const csProfile = new CutsceneProfile(preset.id, undefined, {
+    floor: dr.enabled ? dr.min : undefined,
+    outputPixels: () => {
+      renderer.getDrawingBufferSize(drawPx);
+      return drawPx.x * drawPx.y;
+    },
+    caps: params.get('cscap') === '0' ? { low: {}, medium: {}, max: {} } : undefined,
+    legacy: params.get('csprofile') === 'legacy', // A/B: the #143 baseline profile (no caps, no vsync guard)
+  });
   csProfile.debugAddMs = Number(params.get('csguard') ?? 0) || 0;
   if (params.get('csscale') === '0') csProfile.hold = null; // A/B: hold the gameplay scale (no raise)
   else if (params.get('csscale') === '1') csProfile.hold = CUTSCENE_SCALE_RAISED[preset.id as 'low' | 'medium' | 'max'] ?? null; // A/B: the raise
   let csBeamOff = false;
+  /** The screen-holding cutscene's id (C2, C2c …; null between cutscenes). */
+  const heldCutscene = (): string | null => ((rt.expose.cutscenes as { player?: { active?: string | null } } | null)?.player?.active ?? null);
+  // #150: the hold is applied BEFORE the frame renders (the loop's render and the stepped advance()), so a cutscene's
+  // first frame — the cut — already has its scale; it used to change one frame after the cut (onRendered).
+  const syncCutsceneHold = (): void => {
+    const held = CUTSCENE_SCREEN.held;
+    if (held !== csProfile.active) {
+      const s = held ? csProfile.begin(dynres.scale, heldCutscene()) : csProfile.end();
+      if (s !== null) pipeline.setScale(s);
+      if (!held && csBeamOff) {
+        csBeamOff = false;
+        const fr = rt.expose.rig as { on: boolean; flashlight: { beam: any } } | undefined;
+        if (fr?.flashlight.beam) fr.flashlight.beam.visible = fr.on;
+      }
+    } else if (held) {
+      const s = csProfile.cut(heldCutscene()); // a chained cutscene (C2 → C2c): its own cap on its first frame
+      if (s !== null) pipeline.setScale(s);
+    }
+  };
   camera.updateMatrixWorld(true);
   const tc = performance.now();
   perfMark('warmup');
@@ -221,6 +251,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
         input.endFrame();
       },
       render() {
+        syncCutsceneHold(); // #150: the cut frame renders at the cutscene's scale
         pipeline.render();
       },
       onRendered(t) {
@@ -228,26 +259,19 @@ export async function startGame(h: BootHandoff): Promise<void> {
         if (lastRenderT >= 0 && !paused) {
           const capFps = loop.cap.effectiveCap(settings.fpsCap, settings.fpsCapDivisorMode);
           const target = Math.min(preset.targetFps, capFps > 0 ? capFps : Infinity);
-          const held = CUTSCENE_SCREEN.held;
-          if (held !== csProfile.active) {
-            const s = held ? csProfile.begin(dynres.scale) : csProfile.end();
-            if (s !== null) pipeline.setScale(s);
-            if (!held && csBeamOff) {
-              csBeamOff = false;
-              const fr = rt.expose.rig as { on: boolean; flashlight: { beam: any } } | undefined;
-              if (fr?.flashlight.beam) fr.flashlight.beam.visible = fr.on;
-            }
-          }
           if (csProfile.active) {
-            const back = csProfile.frame(t - lastRenderT);
+            const back = csProfile.frame(t - lastRenderT, 1000 / target);
             if (back !== null) {
               pipeline.setScale(back);
-              const beam = (rt.expose.rig as { flashlight: { beam: any } } | undefined)?.flashlight.beam;
-              if (beam?.visible) {
-                beam.visible = false;
-                csBeamOff = true;
-              }
-              console.info(`[game] cutscene frame-time guard: > 40 ms avg over 1 s — scale ${back.toFixed(2)}, beam off`);
+              const w = csProfile.lastWindow;
+              if (csProfile.lastStep === 'trip') {
+                const beam = (rt.expose.rig as { flashlight: { beam: any } } | undefined)?.flashlight.beam;
+                if (beam?.visible) {
+                  beam.visible = false;
+                  csBeamOff = true;
+                }
+                console.info(`[game] cutscene frame-time guard: ${w?.meanMs} ms avg over 1 s (> 40) — scale ${back.toFixed(3)} (floor), beam off`);
+              } else console.info(`[game] cutscene vsync guard (${csProfile.id}): ${Math.round((w?.missRate ?? 0) * 100)} % missed in 1 s (> 5 %) — scale ${back.toFixed(3)}`);
             }
           } else {
             const s = dynres.update(t - lastRenderT, 1000 / target);
@@ -394,6 +418,8 @@ export async function startGame(h: BootHandoff): Promise<void> {
     builds: () => perfBuilds(),
     perfLog: () => perfLog(),
     buildClasses: () => perfBuildClasses(),
+    /** PERF smoothness (#143): the alpha-hash depth pre-pass (QA A/B: `.setEnabled(false)`), null if not installed. */
+    hashPrepass: () => HASH_PREPASS.current,
     /**
      * Debug screenshot that works in hidden/occluded tabs: renders the pipeline into a render target, reads it back
      * and returns a JPEG data URL (w px wide; AgX output is already display-referred — sRGB-encoded here).
@@ -443,6 +469,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
           lightning.update(dt, false);
           rt.update(dt, now, false, lightning.level);
           input.endFrame();
+          syncCutsceneHold(); // #150: stepped captures see the cutscene scale the player gets (no guard: no real timing)
           pipeline.render();
           if (i % 20 === 19) await new Promise((r) => setTimeout(r, 0));
         }
@@ -640,7 +667,17 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
       // PERF M-A review: the dawn / night re-capture's hooked-material builds happen here, not in C5 / C6 / B12
       const tp = performance.now();
       const bp = perfBuilds();
-      await refl.prewarmRecapture();
+      // PERF smoothness (#143): props the story shows only later in the yard (your car joins the row in C3) were hidden
+      // for this prewarm (m2-world hides them before the capture), so the first dawn re-capture (C5 ≈ 31) built them in
+      // the cube context (real-time Medium: 100 + 133 + 100 ms frames). Show them for the prewarm only — it renders into
+      // the SPARE cube, which a real re-capture overwrites before it is ever sampled.
+      const lateYard = ['P_CAR_ROW'].map((id) => level.prop(id)).filter((o: any) => o && !o.visible);
+      for (const o of lateYard) o.visible = true;
+      try {
+        await refl.prewarmRecapture();
+      } finally {
+        for (const o of lateYard) o.visible = false;
+      }
       console.info(`[reflections] re-capture prewarm ${(performance.now() - tp).toFixed(0)} ms builds=${perfBuilds() - bp}`);
       console.info(`[reflections] ${JSON.stringify(refl.stats)}`);
     } catch (e) {
@@ -690,6 +727,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
     refl?.update(lightning, camera, story.skyTint()); // LIGHTING lane (items 6, 19): flash, camera-in-room, dawn re-capture
     torchBounce.update(dt, rig.on); // LIGHTING lane (item 11): beam bounce at the hit point
     syncSurfaceLook(rig.flashlight, torchBounce, story.skyTint()); // LIGHTING lane (items 5, 6, 11, 19): look → uniforms
+    story.updateCharLights(); // PERF round 2 (#150): last — every light (torch, bounce, flicker, cues) has its value
   };
 
   const runtime: SceneRuntime = {
@@ -773,6 +811,9 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
        */
       afterCompile: async (render: () => void, compile: () => Promise<void>) => {
         const t0 = performance.now();
+        // PERF smoothness (#143, item 3): depth pre-pass under the alpha-hashed hair (src/render/hash-prepass.ts) —
+        // installed here, after the characters' materials are final and before the warm-up compiles them
+        if (!hashPrepassOff() && preset.pipeline === 'post') console.info(`[game] hash pre-pass: ${installHashPrepass(scene, scene).count} mesh(es)`);
         level.setCulling(true);
         const saved = player.eye();
         const yaw = player.yaw;
@@ -1019,6 +1060,94 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
             b.o.visible = b.vis;
             b.o.frustumCulled = b.fc;
           }
+        }
+        // PERF smoothness (#143, ruling (am) item 2): every cutscene shot's first frame — and the middle / 85 % of long
+        // ones — drawn here with the shot's chain (DOF / motion blur) and the cutscene's own culling, so a shot change
+        // inside a cutscene builds no render objects / pipelines (real-time route, Max: C5 0.02 743 ms of node builds +
+        // 2.8 s GPU, C4c 5.37 1.3 s, C7 0.0 3.4 s). Poses from the timelines themselves (src/render/cs-shots.ts).
+        // C0 / C1 / C2 / C2c keep their own steps above. `?csshots=0` skips it (A/B: load-time delta, stalls).
+        if (params.get('csshots') !== '0') {
+          const [{ CUTSCENES }, { Sequencer }, { CS_CULL_IDS, CS_CULL_EXT_IDS }, { cutsceneShotPoses, cutsceneShownProps }] = await Promise.all([
+            import('../cutscenes/index.ts'),
+            import('../cutscenes/sequencer.ts'),
+            import('../cutscenes/bindings.ts'),
+            import('../render/cs-shots.ts'),
+          ]);
+          // where the player stands when each eye-relative cutscene starts (PLAN eye, heading): only their first shot
+          // reads it; a rough eye still warms the room it looks into
+          const EYES: Record<string, [[number, number, number], number]> = {
+            C2b: [[2.55, 4.2, 5.75], -Math.PI / 2],
+            C3: [[1.6, 8.4, 5.75], 0],
+            C4a: [[2.9, 8.0, 5.75], Math.PI / 2],
+            C4c: [[2.6, 1.9, 2.25], 0],
+            C5: [[2.6, 1.9, 2.25], 0],
+            C5b: [[1.8, -2.0, 1.65], Math.PI / 2],
+            C6: [[11.5, -5.5, 1.65], Math.PI / 2],
+          };
+          const ids = ['C2b', 'C3', 'C4a', 'C4c', 'C5', 'C5b', 'C6', 'C6b', 'C7', 'CR'];
+          const ctxFor = (id: string) => ({
+            player: { eye: EYES[id]?.[0] ?? ([2.4, 1.2, 2.25] as [number, number, number]), heading: EYES[id]?.[1] ?? 0, pitch: 0, fov: fov, torch: true },
+            ada: null,
+            flags: new Map<string, boolean>(),
+            seen: false,
+            chained: id === 'C6b' || id === 'CR',
+            motionBlur: !!warmPipe?.blurAvailable,
+            tier: ctx.presetId,
+          });
+          const poses = cutsceneShotPoses(CUTSCENES, Sequencer as any, ids, ctxFor);
+          const shownProps = cutsceneShownProps(CUTSCENES, ids, ctxFor);
+          const tAll = performance.now();
+          const bAll = perfBuilds();
+          // the torch ON: its spot shadow only draws while it is lit (flashlight.ts: autoUpdate = on), and the cutscene
+          // chain's scene pass nests that shadow pass in its own render context (C4c / C5 starts: 17–27 shadow builds)
+          const torchWas = !!rig.on;
+          rig.setOn(true);
+          let k = 0;
+          for (const id of ids) {
+            const mine = poses.filter((p) => p.id === id);
+            if (!mine.length) continue;
+            // C7's car is re-trimmed maroon at its t = 0 (cutscene-fx car_trim clones the tan materials): draw the clone
+            // once here so its shader program / pipelines exist (the cue's own clones then hit the pipeline cache)
+            if (id === 'C7') story.fx.fx?.('car_trim', { style: 'maroon' });
+            // props the cutscene shows with a `prop` cue (hidden at load: C7's air freshener) — drawn with its poses
+            const propsWas = (shownProps.get(id) ?? []).map((pid) => [level.prop(pid), level.prop(pid)?.visible] as const).filter(([o]) => !!o);
+            for (const [o] of propsWas) o.visible = true;
+            overlay.set('compile', Math.min(0.99, cf + (0.99 - cf) * (k++ / ids.length)), `cutscene ${id}`);
+            const ts = performance.now();
+            const b0 = perfBuilds();
+            for (const p of mine) {
+              const w = coords.planToWorld(p.pos);
+              const tg = coords.planToWorld(p.target);
+              camera.position.set(w[0], w[1], w[2]);
+              camera.up.set(0, 1, 0);
+              camera.lookAt(tg[0], tg[1], tg[2]);
+              camera.fov = p.fov;
+              camera.updateProjectionMatrix();
+              camera.updateMatrixWorld(true);
+              // the cutscene binding's culling (src/cutscenes/bindings.ts camera.apply): interior cutscene cameras keep
+              // room + window culling from the room at the camera's feet; the others render everything
+              const feet = p.pos[2] - 0.5;
+              const r = CS_CULL_IDS.has(id) ? level.index.roomAt(p.pos[0], p.pos[1], feet) : undefined;
+              const inside = r !== null && r !== undefined && (CS_CULL_EXT_IDS.has(id) || level.index.rooms.get(r)?.kind === 'interior');
+              level.viewerFeetZ = inside ? feet : null;
+              level.setCulling(inside);
+              level.setViewer(p.pos[0], p.pos[1], inside ? feet : p.pos[2] - 1.6);
+              warmPipe?.setCutscene(p.dof || p.blur ? { ...(p.dof ? { dof: { focusDistance: 2, focalLength: 1, bokehScale: 2 } } : {}), ...(p.blur ? { motionBlur: 0 } : {}) } : null);
+              rig.snap();
+              rig.update(0.016, 0);
+              await compile();
+              render();
+            }
+            if (id === 'C7') story.fx.fx?.('car_trim', { style: 'tan' });
+            for (const [o, v] of propsWas) o.visible = !!v;
+            console.info(`[game] warm cs:${id} ${(performance.now() - ts).toFixed(0)} ms builds=${perfBuilds() - b0} poses=${mine.length}`);
+            await nextFrame();
+          }
+          rig.setOn(torchWas);
+          warmPipe?.setCutscene(null);
+          level.viewerFeetZ = null;
+          level.setCulling(true);
+          console.info(`[game] warm cs-shots ${(performance.now() - tAll).toFixed(0)} ms builds=${perfBuilds() - bAll} poses=${poses.length}`);
         }
         camera.fov = fov;
         camera.updateProjectionMatrix();

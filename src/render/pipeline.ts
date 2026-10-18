@@ -32,6 +32,8 @@ import {
   time,
   uniform,
   unpackRGBToNormal,
+  uv,
+  If,
   vec2,
   vec3,
   vec4,
@@ -102,6 +104,8 @@ export interface Pipeline {
   getScale(): number;
   /** Swap in cutscene DOF / motion blur (null = gameplay chain). Ignored where the preset disables it. */
   setCutscene(fx: CutsceneFx | null): void;
+  /** QA (PERF #143 cost probes): the cutscene fx last passed to setCutscene (post pipeline only). */
+  debugFx?(): CutsceneFx | null;
   /** C2-ESCAPE B8: the motion-blur amount uniform only (no chain switch). */
   setBlurAmount?(v: number): void;
   /** true when the preset has the cutscene motion-blur variant. */
@@ -125,6 +129,33 @@ export interface Pipeline {
 /** Per pass: the call depth it renders its scene at (PassNode.updateBefore → renderer.render → depth + 1) and the
  *  renderer.contextNode active then (a pass without its own contextNode inherits it — e.g. a pass nested in another). */
 type PassState = { depth: number; ctx: any };
+
+/**
+ * PERF smoothness (#143, ROADMAP ruling (am) item 2) — the ROOT CAUSE of the cutscene-start freezes. three r186 keys a
+ * render context by (attachment formats, MRT, renderer CALL DEPTH) (RenderContexts.js:67) and puts the context id into
+ * every render object's material cache key (RenderObject.getMaterialCacheKey: `this.context.id`). The scene pass is
+ * reached at a different nesting depth in each post chain (gameplay: output quad → … → TAAU → scene; DOF: the DOF CoC
+ * quad → … → scene; motion blur …), so the first frame of every cutscene chain node-built every visible object again,
+ * plus the shadow passes nested one level below it (real-time route, Max: C4c 0.02 34 builds → 2.9 s, C5 0.02 31 →
+ * 2.4 s, C5 12.4–12.7 → 1.1 s; earlier lanes papered over it per cutscene with DOF-chain warm-up steps: C0 rc9, the
+ * C2 tableau chains, cs-shots). Pinning the depth the scene pass renders at gives every chain ONE set of render objects:
+ * whatever gameplay (or any warm-up) drew is drawn by every chain with no build. The depth is far deeper than any
+ * natural nesting (≤ 6), so no outer render in progress can share the pinned context (a context is per-render state).
+ * `?scenepin=0` = the old per-chain contexts (A/B).
+ */
+export const SCENE_CALL_DEPTH = 16;
+function pinCallDepth(renderer: any, passNode: any, depth: number): void {
+  const orig = passNode.updateBefore;
+  passNode.updateBefore = function (frame: any) {
+    const d = renderer._callDepth;
+    renderer._callDepth = depth - 1; // Renderer._renderScene increments it before keying the render context
+    try {
+      return orig.call(this, frame);
+    } finally {
+      renderer._callDepth = d;
+    }
+  };
+}
 function trackPass(renderer: any, passNode: any, states: Map<any, PassState>): void {
   const orig = passNode.updateBefore;
   passNode.updateBefore = function (frame: any) {
@@ -416,6 +447,21 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   // DOF uniforms (world units) — shared by every cutscene chain.
   const dofU = { focus: uniform(2.5), focal: uniform(1.2), bokeh: uniform(3) };
   const mbAmount = uniform(1);
+  // PERF smoothness (#143, the C2 judder): the motion-blur variant stays live for a whole sequence at amount 0 (C2 on Max:
+  // 0–27.7 s, blur only 7.42–7.56 and 20.0–21.9), and r186's motionBlur() always takes its 16 velocity-offset taps per
+  // pixel. Branch on the amount uniform (coherent: every pixel takes the same side): at 0 the pass is one tap — the
+  // same value the 16 identical taps averaged to (velocity × 0 = 0 offset). `?mbskip=0` restores the old pass for A/Bs.
+  const MB_SKIP = !/[?&]mbskip=0\b/.test(typeof location !== 'undefined' ? location.search : '');
+  const mbGated = (tex: any) => {
+    if (!MB_SKIP) return motionBlur(tex, vel.mul(mbAmount));
+    return Fn(() => {
+      const c = vec4(tex.sample(uv())).toVar();
+      If(mbAmount.greaterThan(0), () => {
+        c.assign(motionBlur(tex, vel.mul(mbAmount)));
+      });
+      return c;
+    })();
+  };
   let dofNode: any = null;
 
   // One output node per chain shape (gameplay / DOF / motion blur / both), built once and cached: a DOF cue only
@@ -424,7 +470,9 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   /** ?dofmb=0 restores the old guard (DOF wins over motion blur) for an A/B. */
   const DOF_MB_OK = !/[?&]dofmb=0\b/.test(typeof location !== 'undefined' ? location.search : '');
   let current = '';
+  let lastFx: CutsceneFx | null = null; // QA (pass-toggle cost probes): the fx last asked for
   function build(fx: CutsceneFx | null) {
+    lastFx = fx;
     const useDof = !!fx?.dof && preset.post.cutsceneDof;
     // C2-ESCAPE review (Max): the DOF + motion-blur chain logs the TSL `vec3()` join errors and never shows a new
     // scene image — every C2 frame on Max was the stale gameplay frame from before C2 (scratch/esc-review/r5max-01..04).
@@ -448,12 +496,14 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
         // fix round r2 (s6max: the dof → mb order logged the 4 TSL `vec3()` join errors again): motion blur FIRST on the
         // sharpened frame (the path C2c's whip already uses cleanly), then DOF on its result (dof() renders it to a
         // texture). A camera blurs both at once; the order is invisible at the strike's 140 ms. Its own DOF instance.
-        aa = dof(motionBlur(sharpened.getTextureNode(), vel.mul(mbAmount)), scenePass.getViewZNode(), dofU.focus, dofU.focal, dofU.bokeh);
+        aa = dof(mbGated(sharpened.getTextureNode()), scenePass.getViewZNode(), dofU.focus, dofU.focal, dofU.bokeh);
       } else if (useDof) {
-        dofNode ??= dof(sharpened, scenePass.getViewZNode(), dofU.focus, dofU.focal, dofU.bokeh);
+        // PERF smoothness (#143, item 3): the sharpen node's own output TEXTURE — dof() wraps any non-texture input in an
+        // RTT, i.e. one more full-resolution RGBA16F copy pass per DOF frame of the same pixels (same size, texel-exact)
+        dofNode ??= dof(sharpened.getTextureNode(), scenePass.getViewZNode(), dofU.focus, dofU.focal, dofU.bokeh);
         aa = dofNode;
       } else if (useMb) {
-        aa = motionBlur(sharpened.getTextureNode(), vel.mul(mbAmount));
+        aa = mbGated(sharpened.getTextureNode());
       }
       let hdr: any = aa;
       // LIGHTING lane: lateral CA on the HDR texture, before bloom (no extra RTT pass; highlights fringe once)
@@ -473,7 +523,11 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
         bl.highPassFn = glareHighPass;
         hdr = hdr.add(bl);
       }
-      hdr = grade4(hdr.mul(uniforms.exposure));
+      // LEAD ruling (ar), FLASH lane's root cause 2026-10-12: expose RGB only. `hdr.mul(exposure)` scaled ALPHA too, and
+      // renderOutput (RenderOutputNode: clamp a → unpremultiply → tone map → premultiply) then divided the exposure back
+      // out before AgX and re-applied it AFTER — for exposure < 1 (most torch-lit play) exposure became a flat post-AgX
+      // dimmer: the torch's hot core turned a grey disc that DARKENED as a wall came closer (the meter lowered exposure).
+      hdr = grade4(vec4(hdr.rgb.mul(uniforms.exposure), 1));
       let ldr: any = renderOutput(hdr);
       out = finish(ldr);
       chains.set(key, out);
@@ -492,6 +546,11 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   }
   build(null);
   const aoCamPrev = { ok: false, p: [0, 0, 0], f: [0, 0, 1] };
+  // PERF lane (P0-1) compile-in-context: trackPass wraps the passes' updateBefore first, THEN the depth pin wraps that
+  // (outermost), so the depth compileView records is the pinned one
+  const scenePasses = prePass ? [prePass, scenePass] : [scenePass];
+  const compileView = passCompiler(renderer, scene, camera, scenePasses, () => rp.render(), taauNode._originalProjectionMatrix);
+  if (!/[?&]scenepin=0\b/.test(typeof location !== 'undefined' ? location.search : '')) for (const p of scenePasses) pinCallDepth(renderer, p, SCENE_CALL_DEPTH);
 
   return {
     kind: 'post',
@@ -527,11 +586,12 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
     },
     getScale: () => scale,
     setCutscene: (fx) => build(fx),
+    debugFx: () => lastFx,
     setBlurAmount: (v: number) => {
       mbAmount.value = Math.max(0, v);
     },
     blurAvailable: !!preset.post.cutsceneMotionBlur,
-    compileView: passCompiler(renderer, scene, camera, prePass ? [prePass, scenePass] : [scenePass], () => rp.render(), taauNode._originalProjectionMatrix), // PERF lane (P0-1)
+    compileView, // PERF lane (P0-1)
     dispose: () => {
       for (const p of rps.values()) p.dispose();
     },

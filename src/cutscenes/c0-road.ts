@@ -7,7 +7,7 @@
 // end (or a skip, once seen) starts C1 with `chained` (no fade-in). All positions are PLAN (Z-up) from road-rc9.json.
 
 import { DRIVER_EYE } from './stage.ts';
-import { roadTrack } from './road.ts';
+import { roadPoint, roadTrack } from './road.ts';
 import type { CameraShot, Cue, Timeline, TimelineFactory } from './types.ts';
 
 export const C0_DURATION = 30;
@@ -83,13 +83,13 @@ export const c0Road: TimelineFactory = () => {
         [762.2, -269.0, 6.5],
         [762.2, -269.0, 14.0],
       ],
-      target: [
-        [820.0, -306.0, 1.0],
-        [770.0, -277.0, 0.5],
-        [630.0, -198.0, 1.0],
-      ],
+      // SMOOTH-FRAMES (#142): the look TRACKS the car (its body every 0.25 s along the lane it drives here, s 870 → 745
+      // at a constant 17.9 m/s, so a linear ease keeps it centred): the old 3-point path dived 6 m under the crane at
+      // 22.0 — 0.9 s before the car got there — and swung the view 160° in 0.4 s (21°/frame) onto empty road. Now the
+      // pass at 22.9 (9 m away, 58° down) turns the view ≤ 4°/frame.
+      target: Array.from({ length: 29 }, (_, i) => roadPoint(870 - (125 * i) / 28, WEST, 1.0)),
       fov: [MM[28], MM[35]],
-      ease: 'inOut',
+      ease: 'linear',
       handheld: 0.1,
     },
     // Shot 4: car space — over the hood, pull straight back through the windscreen to just above the rim
@@ -138,7 +138,9 @@ export const c0Road: TimelineFactory = () => {
     { t: 3.5, type: 'fx', id: 'exposure', params: { hold: false, snap: true, biasEV: 0.3 } },
     { t: 4.0, type: 'loop', key: 'car_ext', id: 'car_pass_by', gain: 0.25, fade: 3 },
     // Shot 2: wires in the wind; the meter holds at the cut so the headlight rake reads as light arriving
-    { t: 12.5, type: 'fx', id: 'exposure', params: { hold: true, snap: true, biasEV: -0.5 } },
+    // SMOOTH-FIX (#145, hunt F2a): `cutE` = the incoming shot's exposure on the cut frame itself (scratch/fix/diag C0 `ex`;
+    // the eye meters a frame only once it is drawn: 12.5 showed shot 1's 13.9 for a frame, ×0.3 after)
+    { t: 12.5, type: 'fx', id: 'exposure', params: { hold: true, snap: true, biasEV: -0.5, cutE: 6.41 } },
     { t: 12.5, type: 'dof', dof: { focusDistance: 37, focalLength: 14, bokehScale: 2 } },
     { t: 12.5, type: 'loop', key: 'wire', id: 'wire_wind', gain: 0.6, fade: 0.6 },
     { t: 12.5, type: 'fx', id: 'billboard', params: { flutter: 1 } },
@@ -146,7 +148,7 @@ export const c0Road: TimelineFactory = () => {
     { t: 16.8, type: 'sfx', id: 'thunder_near' },
     // Shot 3: the crane; focus follows the car; the title
     { t: 19.0, type: 'loop', key: 'wire', id: null, fade: 1.2 },
-    { t: 19.0, type: 'fx', id: 'exposure', params: { hold: false, snap: true, biasEV: 0.3 } },
+    { t: 19.0, type: 'fx', id: 'exposure', params: { hold: false, snap: true, biasEV: 0.3, cutE: 0.72 } },
     { t: 19.0, type: 'dof', dof: { focusDistance: 30, focalLength: 40, bokehScale: 1.5 } },
     { t: 20.0, type: 'card', text: TITLE, style: 'title' },
     { t: 20.0, type: 'score', state: 'drone', stinger: 'score_reveal' },
@@ -161,7 +163,7 @@ export const c0Road: TimelineFactory = () => {
     // mid-grey ("pale dry concrete"). road.mjs (scratch/rd/road): at 1.7 the low-beam-lit road still read pale —
     // 2 × 15 kcd at 0.64 m over 10–30 m gives ≈ 3–10 lux, L = 0.04·E/π ≈ 0.05–0.13 cd/m²; at 1.0 that maps to
     // ≈ 0.5 × the 0.18 key, a dark wet road with the puddles black (the no-headlight frame shows the wet sparkle).
-    { t: 26.0, type: 'fx', id: 'exposure', params: { min: 1.0, max: 1.0, snap: true } },
+    { t: 26.0, type: 'fx', id: 'exposure', params: { min: 1.0, max: 1.0, snap: true, cutE: 1.0 } },
     { t: 26.0, type: 'dof', dof: { focusDistance: 20, focalLength: 30, bokehScale: 1.5 } },
     // 29.0: the camera passes behind the glass — the driver proxy hides (we are now him), the bed goes muffled
     // (interior weather: the exterior rain lowpassed, §7.13 1.8 kHz), focus racks to the drops 0.18 m away

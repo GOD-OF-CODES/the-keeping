@@ -275,6 +275,84 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
      miss vsync.
   4. Budgets: C5 into CS_CULL_IDS after a same-state A/B; C2c ≥ 1.5 M at 3.75 s; C4c 188 frames over 1.5 M; C6/C7
      draws; B05 491–496 draws; C1 60.6 at 402.
+  Shipped live 2026-10-12 09:20: 0ba616a, live hash index-B0WWAvbg.js; the gate passed tsc, 277 tests, assets,
+  build, and strict Low/Medium/Max/careless(1 death)/torch, all with 0 console errors.
+- **User report 2026-10-12 08:20 → FLASHLIGHT/HANDS lane (#146):** "the flashlight gets dimmer as you approach walls"
+  and "the hand holding the flashlight looks very weird". The lane owns exposure.ts, flashlight*.ts, the look.ts torch
+  and exposure constants, flashlight-rig.ts, arms.ts and the arms Blender sources. Rule: the displayed pool
+  brightness rises monotonically as a wall gets closer (E = I/d²), and the B05 gown must not regress. It also takes
+  the FRAMES lane's finding that the exposure snap lands about 0.3 s after every cutscene cut.
+  (an) P_GATE was built centred on its origin, so its east post stands in the gate opening and C6's car drives
+  through it. The FRAMES lane may fix it surgically (#142b):
+  - farm_gate rebuilt with the hinge at the origin and the posts on the fence line;
+  - the one P_GATE layout entry moved via build-layout.mjs;
+  - stale bakes re-run through assets.mjs;
+  - C6's drive re-routed to cross at x ≈ 1.8.
+- **User requests 2026-10-12 10:30 → rulings:**
+  (ao) C2 continuity: her head is CLEARLY ATTACHED and visible until the cleaver's contact frame. Today she reads as
+  headless from 1.5 s: the head hangs behind the table while a raw neck end faces the camera. At contact it
+  separates and falls physically; the stump, cut face, neck blood and pools appear only from contact on. The pre-C2
+  tableau matches C2's first frame. FRAMES lane, #142c.
+  (ap) CATCH = JUMPSCARE: her face fills the frame, ONLY her face, horrifying, with detailed bruises and scars,
+  photoreal. Catches happen only from B05 on, when she is already severed, so the face is her SEVERED HEAD thrust up
+  to the lens (lore: she brings her face close to a face to know it), with the cut neck at the bottom edge.
+  - Forensic detail: fingertip bruising on the jaw and throat (drowned by hand), a split lip, petechiae in the
+    sclera, old healed scars (the abuse), waterlogged grey-blue skin, iris-less clouded eyes.
+  - Supersedes DESIGN's "humans glimpsed, never inspected" and "death cutaway non-gory".
+  - Method: a pre-rendered Cycles sequence (SSS skin, hair curves, DOF, motion blur), built and rendered from our
+    own Blender scripts through assets.mjs, played full-frame through the game's post chain. Single-frame looks are
+    approved before the full render.
+  - Timing: DEATH_DURATION stays 3 s (≤ 0.15 s lunge, ≈ 0.8–1 s face, then black).
+  - The sting is synthesized. reducedFlash still caps strobes at ≤ 3 Hz.
+  - Low gets the sequence only if it frees equal bytes elsewhere on Low; otherwise an in-engine fallback.
+  - Slot order: user-reported work first. Beam → jumpscare workflow; perf-stalls → hand lane; PERF budgets deferred.
+- **PERF stalls result → ruling (aq), 2026-10-12 16:45.** The cutscene-start freezes are fixed by the render-context
+  depth pin (#143). The C2 judder got WORSE: 21–23 % missed vsyncs on the real route. The cutscene hold freezes the
+  scale gameplay reached in the cheap B03 hall: 0.85 Medium / 0.95 Max, above each preset's base 0.75 / 0.667. On
+  top of that, character shading is more than half of a C2 frame: ~20 lights × 3 probe grids per pixel.
+  (aq) Smoothness beats a higher cutscene resolution. While a cutscene runs, the dynres hold uses
+  min(gameplay scale, a per-cutscene cap). The cap is measured so that cutscene holds 60 fps on the M1, and never goes
+  below the preset's dynres floor. The frame-time guard also steps down on a sustained missed-vsync rate above 5 %
+  over 1 s, not only on frames over 40 ms. Efficiency work comes first, then the cap: per-character light culling
+  (only the lights that reach the character) and C5 cutscene culling. Owner: the next PERF agent, which runs after
+  the ship-verify round.
+- **(ar) 2026-10-12 17:00. Exposure bug fixed, global look change.** In `pipeline.ts`, `hdr.mul(exposure)` scaled
+  ALPHA too. Since 2026-09-30 (4f74a18), for exposure < 1 renderOutput divided the exposure out before AgX and
+  re-applied it after, so on Medium/Max exposure acted as a flat post-tonemap dimmer. Torch hot cores read as grey
+  discs, and the beam DARKENED near walls. The lead applied the FLASH lane's fix: expose RGB only, alpha 1. Low was
+  never affected. Every Medium/Max frame with exposure < 1 changes: true highlights, slightly deeper shadows. That is
+  physically right, but it needs a full-route AD look pass (B05 gown at 2.3 m, C2/C2c, the gate views). FLASH lane
+  part 2 owns the pass and may tune its look.ts fixation constants. Contract #149.
+- **(as) 2026-10-12 17:35. Cut-frame exposure.** The ship-verify hunter shows the FIRST frame after every
+  eye-metered cutscene cut still uses the previous shot's exposure: C7 cleat insert ×28, guest book ×50, plus C0–C6b.
+  The meter reads back one frame late. Fix: meter each cutscene shot's first frame during the cs-shots load warm-up
+  (#143, it already renders every shot pose at load), store a per-shot exposure, and snap to it ON the cut frame.
+  Owners: FLASH (exposure.ts) + PERF (cs-shots.ts), next PERF round. The hunter's other findings go to the
+  ship-verify fixer: C1 step-out black 69–70.9, the C1 57.03 headlight blink, C2 20.5–22.4 black slam, the C2 27.7
+  door-light pop, the C2c 8.53 black, the floor head rolling on its own at C2 9.45, C4a/C4 black stretches, C4c
+  flash-shot black first frames, and the objective line flashing before C2/C2b/C4a.
+- **Ship-verify result (2026-10-13 02:45).** C2 head attached until the strike: CONFIRMED on Medium, Max and 1920×1200.
+  Also fixed and re-verified:
+  - F1: C2's ×16 first frame;
+  - F2b: C4c flash-shot black frames;
+  - F3: C1 step-out black;
+  - F5: C2 door-slam black;
+  - F6: C2 door-light pop;
+  - F7: C2c stair black;
+  - F8: the floor head rolling on its own;
+  - F10: the objective line flashing.
+  Partly fixed:
+  - F2a: per-shot cutE cues land, but C2c 3.667 and C5 25.6 are not covered. The generic fix is (as).
+  - F4: the C1 60.0 lantern bloom still pops at the frame edge.
+  - F9: the C4/C4a views now read, but the bake's U3 light-leak lines show. Lane A owns the U3 night bake; the ×15
+    and ×30 lifts are stand-ins.
+  Open: N1, the C2c 6.6 white flash, which comes from the FLASH arm pose and sits with FLASH part 2.
+  The lead fixed R2-1 (hide exit ×10, the lift now ends on the exit cut) and accepted #145b's one-line
+  reflections.ts fix.
+  (at) SHIP PLAN: push once FLASH part 2 (hand + look pass) passes, so the shipped build is one reviewed state. Gate
+  a snapshot of the tree; the PERF2 judder round (launched 02:55) keeps editing on top and ships in the next push.
+- Jumpscare (ap) workflow and ship-verify workflow (adversarial frame hunt over every cutscene, including the C2
+  head fix) launched 16:40.
 
 ## Then — cutscene rounds (docs/CUTSCENES-PLAN.md §8): M-A … M-F, plus CR end credits (§9)
 Each round: builders → adversarial reviewer → QA (playthrough bot, perf, hero shots) → commit → push → verify live.

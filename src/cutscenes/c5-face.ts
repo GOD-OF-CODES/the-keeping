@@ -23,6 +23,8 @@ export const C5_CLEAT_D = 0.8;
 const FLASH1 = 17.5;
 const FLASH2 = 20.5;
 
+/** SMOOTH-FRAMES (#142): a point 0.3 m inside the parlor doorway (O_PARLOR centre y 1.5, 0.9 m wide) at head height. */
+const C5_DOORWAY: P3 = [3.95, 1.5, 1.8];
 /** Where gameplay resumes: at the threshold, turned toward the open front door. */
 export const C5_END_EYE: P3 = [3.0, 1.75, 2.25];
 
@@ -36,7 +38,10 @@ export const c5Face: TimelineFactory = (ctx) => {
   const frontOut: P3 = [1.8, -1.2, 1.9];
   const endHeading = headingTo(C5_END_EYE, frontOut);
   // the walk to the threshold starts wherever the player stood in the hall
-  const walkMid: P3 = [(eye0[0] + th.pos[0]) / 2 - 0.2, (eye0[1] + th.pos[1]) / 2 + 0.3, 2.2];
+  // SMOOTH-FRAMES (#142): down the hall to a point 1 m in front of the doorway, ON its axis, then straight in — the old
+  // midpoint path ran 0.5 m along the parlor wall looking INTO it: the torch (0.56 m ahead of the eye) went into the
+  // wall and the frame was black 12.5–13.2 (cs-frames C5, scratch/smooth-frames/walls.ts). Works from anywhere in G1.
+  const walkMid: P3 = [2.55, th.pos[1], 2.21];
 
   const cues: Cue[] = [
     { t: 0, type: 'lock', mode: 'full' },
@@ -114,6 +119,14 @@ export const c5Face: TimelineFactory = (ctx) => {
     { t: 30.0, type: 'score', state: 'blue_hour' },
     { t: C5_DURATION, type: 'player', pos: C5_END_EYE, heading: endHeading, pitch: 0 },
     { t: C5_DURATION, type: 'release', char: 'ada' },
+    // SMOOTH-FIX (#145, hunt F2a): the incoming shot's exposure on each metered cut (`cutE`, held 0.1 s, then the eye adapts
+    // on from it; values = what the eye settles on for that shot, scratch/fix/diag C5 `ex` Medium) — the cut frame used to
+    // keep the previous shot's exposure (6.2 ×0.34, 10.0 ×2.7, the cleat insert 25.6 ×45). 0.25 = the room clamp (a brighter
+    // frame clamps too). 6.2 / 10.0 are lit by the player's own torch: only when it is on (the bot's case, measured).
+    // (21.3 and the insert's end cut to the black fade: nothing to expose.)
+    ...(ctx.player.torch ? ([{ t: 6.2, type: 'fx', id: 'exposure', params: { cutE: 0.25 } }, { t: 10.0, type: 'fx', id: 'exposure', params: { cutE: 0.51 } }] as Cue[]) : []),
+    { t: 16.7, type: 'fx', id: 'exposure', params: { cutE: 5.8 } },
+    { t: C5_CLEAT_T, type: 'fx', id: 'exposure', params: { cutE: 0.415 } },
   ];
 
   // the cleat insert: everything after the zip moves 0.8 s later (the zip itself plays under the insert)
@@ -176,7 +189,9 @@ export const c5Face: TimelineFactory = (ctx) => {
       // the door gap: candlelight and the sack's eyeholes
       { t: 6.2, d: 3.8, path: [[2.5, 2.35, 2.05], [2.6, 2.2, 2.05]], target: [doorGap, add(doorGap, [0.05, -0.05, 0.1])], fov: [34, 30], ease: 'inOut', handheld: 0.45 },
       // walked to the threshold — the opening's exact frame
-      { t: 10.0, d: 4.2, path: [add(eye0, [0, 0, -0.05]), walkMid, th.pos], target: [add(adaAtDoor, [0.8, 0.3, 1.2]), [5.0, 2.8, 1.5], th.target], fov: [48, th.fov], ease: 'inOut', handheld: 1.2 },
+      // (the look stays on the doorway — through it, never into the wall beside it — and opens onto the room as the
+      // threshold is reached)
+      { t: 10.0, d: 4.2, path: [add(eye0, [0, 0, -0.05]), walkMid, th.pos], target: [C5_DOORWAY, [4.7, 2.2, 1.6], th.target], fov: [48, th.fov], ease: 'inOut', handheld: 1.2 },
       { t: 14.2, d: FLASH1 - 0.8 - 14.2, path: [th.pos], target: [th.target, add(th.target, [-0.5, -0.3, 0])], fov: th.fov, ease: 'linear', handheld: 0.4 },
       // shadow-play on the tally wall + the door gap
       // LIGHTING lane (item 19): framed ON the wall where the heads land (x 5.5–6.2, z ≈ 2.9), from the east, 1.9 m off

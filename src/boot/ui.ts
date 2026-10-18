@@ -117,6 +117,7 @@ export function createBootUI(host: HTMLElement, initial: Settings): BootUI {
     return l;
   };
   opts.append(toggle('Show FPS counter', () => s.showFps, (v) => (s.showFps = v)));
+  opts.append(toggle('Show objective', () => s.showObjective, (v) => (s.showObjective = v)));
 
   const capRow = h('div', 'tk-cap');
   capRow.append(h('span', 'tk-cap-label', 'Frame-rate cap'));

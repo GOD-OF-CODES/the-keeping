@@ -70,15 +70,35 @@ def ik_r(path):
     return {'forearm_r': {'target': path, 'chain': 2}}
 
 
+def seamless(fn, duration, tb=0.8):
+    """FLASH #146b: a loop with no seam. wobble() is a sum of sines that are not whole cycles of the clip, and the
+    baker (clip.py key_clip) copies frame 0 onto the last key — so the whole mismatch landed in the LAST frame step: the
+    idle torch hand jumped 18.6 mm (HEAD 12.2) once every 4 s (scratch/flash-hand/loopcheck.mjs; in game a 6 px one-frame
+    twitch at rest, scratch/flash-hand/r2m). Over the last `tb` s the pose cross-blends from fn(t) to fn(t - duration)
+    with a smoothstep weight: at the seam both the pose and its velocity equal the loop start's (C1)."""
+    def g(t):
+        w = (t - (duration - tb)) / tb
+        if w <= 0:
+            return fn(t)
+        w = min(1.0, w)
+        w = w * w * (3 - 2 * w)
+        return lerp(fn(t), fn(t - duration), w)
+    return g
+
+
 def idle():
-    return Clip('arms_idle', 4.0, lambda t: sway(t), loop=True, note='hand-held sway; camera bob is runtime')
+    return Clip('arms_idle', 4.0, seamless(lambda t: sway(t), 4.0), loop=True, note='hand-held sway; camera bob is runtime')
 
 
 def toggle():
+    # FLASH #146b: the grip (characters/arms.py GRIP) wraps the thumb over the barrel at ~80 deg MCP flexion, so the old
+    # +22/+30 deg thumb press drove it through the barrel; the click is now a squeeze of the wrapped thumb and index
+    # (a few mm: a rubber switch boot travels ~1.5 mm) with the fist ticking with it.
     def fn(t):
         press = math.exp(-((t - 0.2) / 0.06) ** 2)
-        return add(sway(t), F('thumb_02_l', 22 * press), F('thumb_03_l', 30 * press), F('hand_l', 3 * press))
-    return Clip('arms_flashlight_toggle', 0.5, fn, note='thumb on the slide switch at 0.2 s (click cue)')
+        return add(sway(t), F('thumb_02_l', 6 * press), F('thumb_03_l', 8 * press), F('index_02_l', 5 * press),
+                   F('hand_l', 3 * press))
+    return Clip('arms_flashlight_toggle', 0.5, fn, note='thumb squeezes the switch at 0.2 s (click cue)')
 
 
 def knock():
@@ -121,7 +141,8 @@ def breath_hold():
     def fn(t):
         return add(F('upperarm_l', -8), F('forearm_l', 12), F('upperarm_r', -6), F('forearm_r', 18),
                    fist('l', 0.15), fist('r', 0.6), tremble(t, 1.0 + 0.5 * math.sin(t * 2.0)))
-    return Clip('arms_breath_hold', 2.0, fn, loop=True, note='holding breath in a hide: arms drawn in, trembling, fists tight')
+    return Clip('arms_breath_hold', 2.0, seamless(fn, 2.0, 0.5), loop=True,
+                note='holding breath in a hide: arms drawn in, trembling, fists tight')
 
 
 def freeze():
@@ -145,7 +166,7 @@ def wheel():
 
     def fn(t):
         return add(fist('r', 0.82), grip_l(0.9), sway(t, 0.25))
-    return Clip('arms_wheel', 3.0, fn, loop=True, ik=ik2(right, lambda t: tuple(Rr.to_euler('XYZ')), left,
+    return Clip('arms_wheel', 3.0, seamless(fn, 3.0), loop=True, ik=ik2(right, lambda t: tuple(Rr.to_euler('XYZ')), left,
                                                          lambda t: tuple(Rl.to_euler('XYZ'))),
                 note='hands on the wheel at ten-to-two (C1/C6/C7); the runtime hides the flashlight mesh in the car')
 
@@ -582,8 +603,8 @@ def rim_grip(side, deg):
 
 
 def grip_l(amt=1.0):
-    """Left-hand fingers: the rest pose already curls them ~64 deg round the torch barrel; this adds the last of a
-    rim grip (amt 1) or opens them (amt < 0)."""
+    """Left-hand fingers: the rest pose already wraps them round the torch barrel (characters/arms.py GRIP: a per-finger
+    curl, index open .. pinky tight); this adds the last of a rim grip (amt 1) or opens them (amt < 0)."""
     out = {f'{f}_0{i}_l': (c * amt, 0, 0) for f in ('index', 'middle', 'ring', 'pinky') for i, c in ((1, 8), (2, 14), (3, 10))}
     out['thumb_02_l'] = (10 * amt, 0, 0)
     return out

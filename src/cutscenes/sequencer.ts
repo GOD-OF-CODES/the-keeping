@@ -248,12 +248,16 @@ export class Sequencer {
         pos = carToPlan(pos, v.pos, v.heading);
         target = carToPlan(target, v.pos, v.heading);
       }
+    } else if (s.track) {
+      target = this.trackYaw(rt, t, e, pos, target);
     }
     const fov = typeof s.fov === 'number' ? s.fov : lerp(s.fov[0], s.fov[1], e);
     let roll = s.roll === undefined ? 0 : typeof s.roll === 'number' ? s.roll : lerp(s.roll[0], s.roll[1], e);
     if (s.bob) {
       const tau = t - s.t;
-      const dz = s.bob.amp * (0.5 - 0.5 * Math.cos(2 * Math.PI * s.bob.hz * tau)) - s.bob.amp / 2;
+      // SMOOTH-FRAMES (#142): centred on the path and ZERO at τ = 0 — the old amp·(1 − cos)/2 − amp/2 started every
+      // bobbing shot amp/2 below its path (a 1.5–2 cm drop on its first frame); with hz·d an integer it ends at 0 too
+      const dz = -(s.bob.amp / 2) * Math.sin(2 * Math.PI * s.bob.hz * tau); // down first: the first foot plant at 0.25/hz
       pos = [pos[0], pos[1], pos[2] + dz];
       target = [target[0], target[1], target[2] + dz];
       roll += (s.bob.roll ?? 0) * Math.sin(Math.PI * s.bob.hz * tau);
@@ -268,6 +272,36 @@ export class Sequencer {
       shake[2] += (k.roll ?? 0) * w;
     }
     return { pos, target, fov, roll, shake };
+  }
+
+  /** SMOOTH-FIX (#145): CameraShot.track — the look's yaw follows the vehicle's bearing from the eye (see types.ts). */
+  private trackYaw(rt: ShotRt, t: number, e: number, pos: P3, target: P3): P3 {
+    const s = rt.s;
+    const at = s.track?.at ?? [0, 2.4, 0.6];
+    const bearing = (tt: number, eye: P3): number | null => {
+      const v = this.vehicleAt(tt);
+      if (!v) return null;
+      const p = carToPlan(at, v.pos, v.heading);
+      return Math.atan2(p[1] - eye[1], p[0] - eye[0]);
+    };
+    const yawOf = (eye: P3, tg: P3) => Math.atan2(tg[1] - eye[1], tg[0] - eye[0]);
+    const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    const e0 = rt.eye.at(0);
+    const e1 = rt.eye.at(1);
+    const b0 = bearing(s.t, e0);
+    const b1 = bearing(s.t + s.d, e1);
+    const b = bearing(t, pos);
+    if (b0 === null || b1 === null || b === null) return target;
+    const off0 = wrap(yawOf(e0, rt.at.at(0)) - b0);
+    const off1 = wrap(yawOf(e1, rt.at.at(1)) - b1);
+    // the offset moves with the car's own progress across the view (its bearing), not with the clock: the pan is then
+    // monotonic whenever the car's bearing is (yaw rate = (1 + Δoff/Δb) × bearing rate), with no swing toward a car
+    // that is still far off; a car that does not cross the view falls back to the shot's ease
+    const db = wrap(b1 - b0);
+    const k = Math.abs(db) > 1e-3 ? Math.min(1, Math.max(0, wrap(b - b0) / db)) : e;
+    const yaw = b + off0 + wrap(off1 - off0) * k;
+    const h = Math.hypot(target[0] - pos[0], target[1] - pos[1]);
+    return [pos[0] + Math.cos(yaw) * h, pos[1] + Math.sin(yaw) * h, target[2]];
   }
 
   vehicleAt(t: number): VehiclePose | null {

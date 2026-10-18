@@ -16,6 +16,7 @@ import { planToWorld } from '../shared/coords.ts';
 import { PoseCache, type LoadedCharacter } from './loader.ts';
 import { AngularSpring, StopMotion, VerletChain, type Capsule3 } from './secondary.ts';
 import { HeadCarry } from './head-carry.ts';
+import { SAWBUCK_TOP, SEAM_RIM, TABLE_LIFT, TABLE_ROOT, tableLiftWeight } from './ada-table-pose.ts';
 
 /**
  * Clip preferences per AdaAnim: M2 clips first (picked up automatically once the GLB has them), then the M1 clip
@@ -167,6 +168,7 @@ export class AdaCharacter {
     // escape fix-round review: the GLB ships every shape-key weight at 1 (glTF mesh.weights [1, 1, 1]) — the left eye was
     // OPEN from load, so the C2 13.6 "one clouded eye opens" beat (ruling d) changed nothing. Closed until eyeOpen(true).
     this.eyeOpen(false);
+    this.initSeam(); // #142c: the rest pose, before any clip samples it
   }
 
   /** Per-tick AI output (Director host.ada). */
@@ -192,6 +194,96 @@ export class AdaCharacter {
     this.stop.enabled = o.stopMotion ?? true;
     this.stop.kick();
     this.primed = false;
+  }
+
+  /** World box of the sawbuck top (hair rests on it while her head lies there; #142c). */
+  private readonly shelf = (() => {
+    const a = planToWorld([SAWBUCK_TOP.x0, SAWBUCK_TOP.y1, SAWBUCK_TOP.z]);
+    const b = planToWorld([SAWBUCK_TOP.x1, SAWBUCK_TOP.y0, SAWBUCK_TOP.z]);
+    // the rubber sheet's west drape (props_m1.glb P_RUBBER_SHEET, measured): its face stays west of x 5.24 down to 0.9 m
+    return { minX: Math.min(a[0], b[0]), maxX: Math.max(a[0], b[0]), minZ: Math.min(a[2], b[2]), maxZ: Math.max(a[2], b[2]), y: a[1] + 0.004, wallX: SAWBUCK_TOP.drapeX, wallY0: planToWorld([0, 0, SAWBUCK_TOP.drapeZ0])[1] };
+  })();
+
+  /** #142c: the sampled local rotations the table lift replaced this frame (restored by undoTableLift). */
+  private readonly liftSaved = new Map<any, any>();
+  private rigBase: any = null;
+
+  /** #142c seam: rest matrices (rig-local) of the rim bones and of the head piece's neck_stub, taken at the first update. */
+  private seam: { rim: Array<{ bone: any; w: number; rest: any }>; stub: any; stubRest: any; restPos: any; restQuat: any; restScale: any; driven: boolean } | null | undefined;
+
+  /** Load-time rest pose (called from the constructor, after head-carry mounted the head piece on neck_02). */
+  private initSeam(): void {
+    this.seam = null;
+    const stub = this.c.root.getObjectByName('neck_stub');
+    const rim = SEAM_RIM.map(([n, w]) => ({ bone: this.bones.get(n), w, rest: null as any }));
+    if (!stub || !rim.every((r) => r.bone)) return;
+    this.c.root.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(this.c.root.matrixWorld).invert();
+    for (const r of rim) r.rest = inv.clone().multiply(r.bone.matrixWorld).invert();
+    this.seam = { rim, stub, stubRest: inv.clone().multiply(stub.matrixWorld), restPos: stub.position.clone(), restQuat: stub.quaternion.clone(), restScale: stub.scale.clone(), driven: false };
+  }
+
+  private driveSeam(severed: boolean): void {
+    if (this.seam === undefined) this.initSeam();
+    const s = this.seam;
+    if (!s) return;
+    if (severed) {
+      if (s.driven) {
+        s.stub.position.copy(s.restPos);
+        s.stub.quaternion.copy(s.restQuat);
+        s.stub.scale.copy(s.restScale);
+        s.driven = false;
+      }
+      return;
+    }
+    // Δ_i = R_i · R_i,rest⁻¹ (rig-local motion of each rim bone); the stub's rest point moved by Σ w_i Δ_i and its rest
+    // rotation by the weighted mean of the Δ_i rotations
+    _sInv.copy(this.c.root.matrixWorld).invert();
+    _sP0.setFromMatrixPosition(s.stubRest);
+    _sTarget.set(0, 0, 0);
+    _sQ.set(0, 0, 0, 0);
+    for (const r of s.rim) {
+      _sD.multiplyMatrices(_sInv, r.bone.matrixWorld).multiply(r.rest);
+      _sTarget.addScaledVector(_sP1.copy(_sP0).applyMatrix4(_sD), r.w);
+      _sD.decompose(_sT, _sQi, _sS);
+      if (_sQ.x * _sQi.x + _sQ.y * _sQi.y + _sQ.z * _sQi.z + _sQ.w * _sQi.w < 0) _sQi.set(-_sQi.x, -_sQi.y, -_sQi.z, -_sQi.w);
+      _sQ.set(_sQ.x + _sQi.x * r.w, _sQ.y + _sQi.y * r.w, _sQ.z + _sQi.z * r.w, _sQ.w + _sQi.w * r.w);
+    }
+    _sQ.normalize();
+    s.stubRest.decompose(_sT, _sQi, _sS);
+    _sM.compose(_sTarget, _sQ.multiply(_sQi), _sS).premultiply(this.c.root.matrixWorld);
+    s.stub.parent.updateWorldMatrix(true, false);
+    _sM.premultiply(_sInv.copy(s.stub.parent.matrixWorld).invert());
+    _sM.decompose(s.stub.position, s.stub.quaternion, s.stub.scale);
+    s.stub.updateMatrixWorld(true);
+    s.driven = true;
+  }
+
+  private undoTableLift(): void {
+    if (!this.liftSaved.size) return;
+    for (const [b, q] of this.liftSaved) b.quaternion.copy(q);
+    this.liftSaved.clear();
+    if (this.rigBase) this.c.root.position.copy(this.rigBase);
+  }
+
+  /** #142c: TABLE_ROOT's offset + TABLE_LIFT's root-frame rotations (each P⁻¹·R·P, chains root → tip), scaled by `w`. */
+  private applyTableLift(w: number): void {
+    this.rigBase ??= this.c.root.position.clone();
+    this.c.root.position.set(this.rigBase.x, this.rigBase.y + TABLE_ROOT.up * w, this.rigBase.z + TABLE_ROOT.fwd * w);
+    this.group.updateWorldMatrix(true, false);
+    this.group.getWorldQuaternion(_lrq);
+    _lrqi.copy(_lrq).invert();
+    for (const { bone, deg } of TABLE_LIFT) {
+      const b = this.bones.get(bone);
+      if (!b?.parent) continue;
+      if (!this.liftSaved.has(b)) this.liftSaved.set(b, b.quaternion.clone());
+      b.parent.updateWorldMatrix(true, false);
+      b.parent.getWorldQuaternion(_lpq);
+      _le.set(deg[0] * w * DEG2RAD, deg[1] * w * DEG2RAD, deg[2] * w * DEG2RAD, 'XYZ');
+      _lrw.copy(_lrq).multiply(_lrl.setFromEuler(_le)).multiply(_lrqi);
+      b.quaternion.premultiply(_lpq.invert().multiply(_lrw).multiply(b.parent.getWorldQuaternion(_lpq2)));
+    }
+    this.c.root.updateMatrixWorld(true);
   }
 
   /** Move an overridden Ada without touching her clip. */
@@ -328,6 +420,9 @@ export class AdaCharacter {
   update(dt: number): void {
     const out = this.out;
     const ov = this.ov;
+    // #142c: take the table lift off before anything samples or caches the pose (the mixer only rewrites a bone whose
+    // clip value changed, so on a static clip the layer would otherwise compound frame after frame)
+    this.undoTableLift();
     // ---- visibility + root
     if (ov) {
       this.group.visible = this.forceVisible ?? true;
@@ -385,6 +480,10 @@ export class AdaCharacter {
       this.c.root.updateMatrixWorld(true);
       this.cache.capture();
     } else this.cache.restore();
+    // ---- C2 head attached (lead ruling (ao), #142c): the table clips re-posed so the head rests ON the sawbuck,
+    // turned toward the doorway, instead of inside it (ada-table-pose.ts). After the sampled pose, before the spring.
+    const liftW = ov ? tableLiftWeight(this.currentClip, this.current?.time ?? 0) : 0;
+    if (liftW > 0) this.applyTableLift(liftW);
 
     // ---- head: lifted → turn toward lookYaw; hanging → spring loll
     const headState = ov ? 'hanging' : (out?.head ?? 'hanging');
@@ -413,6 +512,8 @@ export class AdaCharacter {
       if (Math.abs(this.headYaw) > 1e-3) rotateLocal(head, 'y', this.headYaw * 0.5);
     }
     this.c.root.updateMatrixWorld(true);
+    // #142c: while whole, the head piece's neck stub follows the body's rim (no cut faces before the blade)
+    this.driveSeam(severed);
 
     // ---- chains (gown collides with the legs)
     this.updateLegCaps();
@@ -456,6 +557,8 @@ export class AdaCharacter {
       hc.gravity = part ? -40 : 9.81;
       hc.stiffness = part ? 0.02 : loose ? Number((globalThis as { __c2HairK?: number }).__c2HairK ?? 0.05) : 0.16; // QA: __c2HairK
       hc.floorY = loose ? this.group.position.y + 0.003 : null;
+      // #142c: while her head lies on the sawbuck the wet hair lies on the rubber sheet / hangs off its edge, not through it
+      hc.shelf = liftW > 0 && !hc0.severed ? this.shelf : null;
     }
     for (const ch of this.chains) ch.update(cdt);
 
@@ -528,6 +631,24 @@ export class AdaCharacter {
 }
 
 const _q = new THREE.Quaternion();
+const DEG2RAD = Math.PI / 180;
+const _lrq = new THREE.Quaternion();
+const _lrqi = new THREE.Quaternion();
+const _lpq = new THREE.Quaternion();
+const _lpq2 = new THREE.Quaternion();
+const _lrl = new THREE.Quaternion();
+const _lrw = new THREE.Quaternion();
+const _le = new THREE.Euler();
+const _sInv = new THREE.Matrix4();
+const _sD = new THREE.Matrix4();
+const _sM = new THREE.Matrix4();
+const _sP0 = new THREE.Vector3();
+const _sP1 = new THREE.Vector3();
+const _sTarget = new THREE.Vector3();
+const _sT = new THREE.Vector3();
+const _sS = new THREE.Vector3();
+const _sQ = new THREE.Quaternion();
+const _sQi = new THREE.Quaternion();
 const AX = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) } as const;
 
 /** bone.quaternion *= rotation(axis, angle) (local frame). */

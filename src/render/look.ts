@@ -60,6 +60,35 @@ export const LOOK = {
   fixWhite: 0.6,
   fixRatio: 4,
   fixRatioMax: 256,
+  /** FLASH (#146): width (EV) of the soft edges of the fixRatio..fixRatioMax window (0 = the old hard on/off gate). As the
+   *  torch pool filled the disk the ratio crossed 4× and the protect switched fully on/off between two readings. */
+  fixSoft: 1,
+  /** FLASH part 2 (V2): spatial hysteresis of the fixation protect — once engaged, the disk it reads widens to
+   *  fixR × fixHyst (0.15 → 0.24 uv, keeping the same count of top texels): a torch core drifting on the 0.15 disk's edge
+   *  (idle sway, grain) no longer toggles the target ≈ 2 EV between readings (the 0.7 m "breathing"); a subject that
+   *  really leaves the centre is released at once. 1 = the old single disk. */
+  fixHyst: 1.6,
+  /** FLASH part 2 (V2 residual): the meter's noise gate — target changes smaller than meterNoiseEV between readings are
+   *  low-passed with τ meterNoiseTau (s); ≥ 2× meterNoiseEV pass at once. The protects' percentiles jitter ±0.15–0.35 EV
+   *  per reading on a torch-lit wall (texture under the swaying core, TAA jitter, battery flicker dips); with the fast-
+   *  down / slow-up adaptation that read as a 0.2–0.4 EV ripple while standing still. 0 = off (the old meter). */
+  meterNoiseEV: 0.4,
+  meterNoiseTau: 1,
+  // ---- FLASH lane (#146, user 2026-10-12: "the flashlight gets dimmer as you approach walls"). Near-pool adaptation:
+  // walking at a wall, the torch's hot spot gains 2 EV per halving of the distance (E = I/d², aperture-bounded at
+  // contact, flashlight.ts). The meter + protects compensated ALL of it (a camera's auto exposure: the pool stayed the
+  // same grey while the room sank). An eye does not: the pupil (≈ 2–8 mm, 4 EV, 0.2–0.5 s) and local retinal
+  // adaptation take up part of each EV — brightness grows ~ L^0.5 for a small bright field (Stevens' brightness
+  // exponent 0.33–0.5). The meter therefore sees the torch-lit frame with (1 − nearAdapt) of the pool's near gain G
+  // removed, G = log2 E(d)/E(nearD0) along the beam axis on the STATIC surface (flashlight-bounce TORCH_WORLD.hitDist),
+  // only in gameplay (no exposure cue), and never while a character stands in the beam (B05: Ada keeps the fixation
+  // protect as tuned in fix round 4).
+  /** Fraction of each EV of the near pool's gain the eye adapts to (1 = the old full adaptation; 0.5 = half). */
+  nearAdapt: 0.5,
+  /** Distance (m, lens → static surface along the beam) inside which the pool's gain counts as "near". */
+  nearD0: 3,
+  /** Feed-forward of the near gain between meter readings (0 = off, the old behaviour; 1 = full). */
+  nearLead: 1,
   /** Exposure compensation in EV on top of the meter. */
   biasEV: 0,
   /** Adaptation time constants (s). Rod dark adaptation is minutes; 6 s is a game-scale slow brightening.

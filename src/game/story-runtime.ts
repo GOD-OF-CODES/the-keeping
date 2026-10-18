@@ -23,11 +23,14 @@ import { HarlanCharacter } from '../characters/harlan.ts';
 import { FpArms } from '../characters/arms.ts';
 import { loadCharacter } from '../characters/loader.ts';
 import { CharacterBank } from '../characters/bank.ts';
+import { CharacterLights, boneSphere } from '../render/char-lights.ts'; // PERF round 2 (#150): per-character light cost
 import { drawDocumentPage } from '../player/inventory.ts';
 import { createM2World, ITEM_PROPS } from './m2-world.ts';
 import { createCutsceneFx } from '../world/cutscene-fx.ts';
 import { END_CARD_Z, harlanHeldAtTable } from './staging.ts';
 import { createBodyControl, FadeState } from './body-control.ts';
+import { objectiveFor, objectivesActive, OBJECTIVE_REMIND_S } from '../story/objectives.ts';
+import { ObjectiveHud } from '../ui/objective.ts';
 
 /** What main.ts's lightning controller offers the story (strike + storm cadence). */
 export interface LightningControl {
@@ -73,7 +76,13 @@ export async function createStoryRuntime(d: StoryDeps) {
   // the kitchen / bedroom encounters get a flickering warm key instead of reading as flat silhouettes.
   const { lights: lightsOf } = await import('three/tsl');
   const flickerLights = level.lights.flickers.map((f) => f.light);
-  const charLights = lightsOf([...(level.houseLights?.length ? level.houseLights : level.probeLights), ...flickerLights]); // round D perf: no CAR/RC9 spots
+  const charList = [...(level.houseLights?.length ? level.houseLights : level.probeLights), ...flickerLights]; // round D perf: no CAR/RC9 spots
+  // PERF round 2 (#150, ruling (aq)): the same fixed list, each light evaluated only while it can reach a character
+  // (src/render/char-lights.ts: one uniform gate per light, set every frame — dark or out-of-range lights add exactly
+  // 0). No LightsNode change → no program rebuild. `?charlights=0` = the plain shared list (A/B).
+  // + its unshadowed point lights (8 flicker lights) as one loop in the program (`?charpool=0` = each its own light)
+  const charRig = d.params.get('charlights') === '0' ? null : new CharacterLights(charList, { pool: d.params.get('charpool') !== '0' });
+  const charLights = charRig ? charRig.node : lightsOf(charList);
   const lopt = { presetId: ctx.presetId, preset: ctx.preset, lightsNode: charLights };
   const [adaC, harlanC, armsC] = await Promise.all(
     (['ada', 'harlan', 'arms'] as const).map((id) =>
@@ -115,6 +124,38 @@ export async function createStoryRuntime(d: StoryDeps) {
   const characters = new CharacterBank(ada, harlan, arms);
   characters.propSource = (id) => level.prop(id);
   characters.lightsNode = charLights;
+  // #150: the subjects the gated lights must reach — bounding spheres of each figure's bones + a margin that holds every
+  // pixel drawn with the list (flesh, cloth, her long wet hair, the props her hands carry — the C7 sack hangs ≈ 0.5 m
+  // below prop_r). Ada's severable head (ada_head_rig, re-parented to a hand or the floor from C2 on) is its own
+  // subject. Every figure counts whether drawn or not (a figure shown later in the frame can never meet a closed gate).
+  const headRig = ada ? (ada.c.root.getObjectByName('ada_head_rig') ?? null) : null;
+  const headBones: any[] = [];
+  headRig?.traverse((n: any) => {
+    if (n.isBone) headBones.push(n);
+  });
+  const headSet = new Set(headBones);
+  const adaBody = ada ? [...ada.c.bones.values()].filter((b) => !headSet.has(b)) : [];
+  const harlanBones = harlan ? [...harlan.c.bones.values()] : [];
+  const subj = [0, 1, 2].map(() => ({ x: 0, y: 0, z: 0, r: 0 }));
+  const updateCharLights = (): void => {
+    if (!charRig) return;
+    const out = charRig.subjects;
+    out.length = 0;
+    // this frame's pose (a cut teleports a figure: last frame's bone matrices would be at the old place)
+    if (ada) {
+      ada.group.updateWorldMatrix(true, true);
+      if (boneSphere(adaBody, 0.8, subj[0])) out.push(subj[0]);
+      if (headRig && headBones.length) {
+        headRig.updateWorldMatrix(true, true);
+        if (boneSphere(headBones, 0.7, subj[1])) out.push(subj[1]);
+      }
+    }
+    if (harlan) {
+      harlan.group.updateWorldMatrix(true, true);
+      if (boneSphere(harlanBones, 0.7, subj[2])) out.push(subj[2]);
+    }
+    charRig.update();
+  };
   /** The cutscene lane plugs its CutscenePlayer.playCutscene in here (setCutscenePlayer); null = director fallback. */
   let cutscenePlayer: ((id: string, done: (skipped: boolean) => void) => boolean) | null = null;
   let stormNow = { interval: 35, rumble: 1 };
@@ -211,6 +252,12 @@ export async function createStoryRuntime(d: StoryDeps) {
   // ---------------------------------------------------------------- UI: fade, prompt, reading overlay, end card
   const ui = makeUi();
   input.addBlocker(() => ui.reading); // a page on screen: no walking / looking / interacting under it
+  // the top-left objective line (user request 2026-10-12): src/story/objectives.ts → src/ui/objective.ts
+  const objective = new ObjectiveHud();
+  let objRemindK = 0;
+  let fpsEl: HTMLElement | null = null;
+  let fpsTop: number | null = null;
+  let fpsMeasureT = 0;
 
   // ---------------------------------------------------------------- per-frame player sampling
   void ITEM_PROPS;
@@ -699,6 +746,25 @@ export async function createStoryRuntime(d: StoryDeps) {
     }
     // interact / hide / breath gating on the cutscene lock (Space is skip AND breath): src/game/body-control.ts
     body.frame(cs ? cs.lock : null, ui.reading);
+    {
+      const st = director.story.s;
+      const o = objectivesActive(st) ? objectiveFor(st) : null;
+      // hidden inside the very hide the line asks for (B05 armoire, the B09 wardrobe / C4 visit): it has been done
+      const inTarget = !!o?.target && hides.active?.id === o.target.replace(/^P_/, 'H_');
+      const show = ctx.settings.showObjective !== false && !body.cutscene && !st.cutscene && !camHeldByCutscene && !ui.black && !ui.reading && !st.dead && !inTarget;
+      // a reminder (bright again) each OBJECTIVE_REMIND_S without progress; stuckT resets on progress
+      const k = Math.floor(st.stuckT / OBJECTIVE_REMIND_S);
+      const remind = k > objRemindK;
+      objRemindK = k;
+      // below the FPS counter when it is shown (both top-left); re-measured twice a second, not every frame
+      fpsMeasureT -= dt;
+      if (fpsMeasureT <= 0) {
+        fpsMeasureT = 0.5;
+        fpsEl ??= document.querySelector('.tk-fps');
+        fpsTop = ctx.settings.showFps && fpsEl && fpsEl.offsetHeight > 0 ? fpsEl.offsetTop + fpsEl.offsetHeight + 12 : null;
+      }
+      objective.update(paused ? 0 : dt, o, show, remind, fpsTop);
+    }
     m2.update(paused ? 0 : dt);
     fxw.update(paused ? 0 : dt);
     const beat = director.story.beat;
@@ -724,6 +790,8 @@ export async function createStoryRuntime(d: StoryDeps) {
     // runtime review: in the driver's POV the gloves ride the car (stay on the wheel while the head turns) — FpArms.anchorTo
     const da = fxw.driverAnchor?.() ?? null;
     arms?.anchorTo(da ? da.obj : null, da ? da.eye : undefined);
+    // FLASH (#146): the near-wall pull-in stays off while a cutscene holds the camera (authored framings)
+    if (arms) arms.cutsceneHold = camHeldByCutscene;
     if (arms) arms.update(cdt, rig.flashlight.light, rig.flashlight.beam, rig.on, rig.on ? rig.flashlight.light.intensity / rig.flashlight.intensity : 0);
     for (let i = hintMarkers.length - 1; i >= 0; i--) {
       const h = hintMarkers[i];
@@ -761,6 +829,11 @@ export async function createStoryRuntime(d: StoryDeps) {
     rain: () => (fxw.blueHour() > 0.5 ? 0 : 1),
     /** After the level's light update (overrides that must win over the flicker loop). */
     lateUpdate: () => fxw.lateUpdate(),
+    /** PERF round 2 (#150): the characters' gated light list (QA: stats, openNames, force, audit; null with ?charlights=0). */
+    charLights: charRig,
+    /** #150: gates + pools from this frame's lights and figures — main.ts calls it LAST in world() (after the torch rig
+     *  and the bounce light have their values, so a light switched on this frame is never one frame late). */
+    updateCharLights,
     fx: {
       ...fxw,
       // runtime lane D: the road warm-up mounts the interior — compile the arms with the CAR list there too

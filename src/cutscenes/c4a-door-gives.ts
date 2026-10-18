@@ -34,6 +34,11 @@ export const C4A_FLASHES = [6.0, 10.0] as const;
 export const C4A_FLASH_E = 1.2;
 /** The torch-adapted eye in the U3 doorway (auto exposure measured 0.16–0.19, r2–r4): the hand-back shot's camera. */
 export const C4A_HANDBACK_E = 0.17;
+/** SMOOTH-FIX (#145, hunt F9): the dolly's baked night light × this (the window's sky to ≈ 0.015 lux; see its cue). */
+export const C4A_DOLLY_LM = 30;
+/** SMOOTH-FIX (#145b, re-verify F9): the dolly's own camera — 1.2 + 3.3 stops (f/4 → f/1.4 wide open, 1/48 → 1/40 s
+ *  at ISO 3200: the night set-up C2's hall ride uses). Derivation at its cue. */
+export const C4A_DOLLY_E = 12;
 
 const fovOf = (mm: number) => Math.round(lens(mm) * 10) / 10;
 /** A full stroke: 4 return strokes in 0.36 s, the last a continuing current (τ 0.15 s). */
@@ -128,6 +133,21 @@ export const c4aDoorGives: TimelineFactory = (ctx) => {
     { t: f1 + 0.2, type: 'sfx', id: 'gasp', gain: 0.55 },
     { t: f1 + 0.8, type: 'fx', id: 'shadowLight', params: { at: 'lamp' } },
     ...(blur ? ([{ t: 8, type: 'fx', id: 'blurAmount', params: { v: 0.6 } }, { t: 10.95, type: 'fx', id: 'blurAmount', params: { v: 0 } }] as Cue[]) : []),
+    // SMOOTH-FIX (#145, hunt F9): the dolly was PITCH BLACK for 2 s (8.0–10.0, again 10.57–11.0): at the shot's camera
+    // (1.2) the room's baked night light reads 7.5e-5 (scratch/fix/diag C4a `hl`) — ≈ 0.0005 lux on the boards, an order
+    // under a moonlit overcast night's 0.003–0.03 lux (CLAUDE.md), and AgX's toe takes anything under ≈ 0.002 to black.
+    // The window's sky light is lifted to the range's middle for the dolly — the baked atlases × 30 (lmScale; the stroke
+    // at 10.0 is a runtime light, unscaled, so the reveal keeps its ratio) — on the cuts in and out, hidden by them.
+    { t: 8, type: 'lmScale', scale: C4A_DOLLY_LM },
+    { t: 11, type: 'lmScale', scale: 1 },
+    // SMOOTH-FIX (#145b, re-verify F9): the ×30 bake alone left the dolly black — its scene radiance is 4–7e-4 mean (max
+    // 0.04: the window; scratch/fix/r2/diag C4a `hl`), so at the reveal camera's 1.2 the frame sat at e·L̄ ≈ 7e-4, under
+    // AgX's toe (frame luma 0.0000–0.0001 with the subtitle band excluded). The dolly is its own set-up: at 12, e·L̄ ≈ 0.0066
+    // — the level C2's accepted hall shot reads at (C2_HALL_E: 0.006–0.0075 → luma 0.0006–0.0010): the window, the sheeted
+    // chair / treadle / trunk and the form against the window in silhouette, dim and cold. The 10.0 stroke is lit the same
+    // way as the room (both × the exposure), so the reveal keeps its ratio (×4–5 the room, its window highlights clip
+    // briefly, CLAUDE.md lightning). On the cut in (with the bake); the 11.0 cut takes C4A_HANDBACK_E.
+    { t: 8, type: 'fx', id: 'exposure', params: { fixed: C4A_DOLLY_E } },
     // the dress on its form
     stroke(f2, STRIKE),
     flash(f2, 0.5),

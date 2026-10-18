@@ -77,6 +77,15 @@ export const c2cUp: TimelineFactory = (ctx) => {
   // landing is 0.92 m deep: the run now stops 0.8 m from the wall (light 0.24 m off it)
   const topB: P3 = [0.72, 8.2, 4.1 + TOP_EYE];
   const north = Math.PI / 2;
+  // SMOOTH-FIX (#145, hunt F7: C2c 8.53–8.93 went black for 6 frames): at the top of the flight the eye is 0.9 m from the
+  // landing's north wall (WU_U1N face y 9.0) with the run's torch 0.3 m from it and 0.16–0.43 m BELOW the eye
+  // (scratch/fix/diag `tl`: the lens at y 8.66–8.69, z 5.32–5.60). A pool that close is small (the 45° cone ≈ 0.13 m
+  // round at 0.3 m) and it lands that far below the gaze: looking level, the 38° frame shows the wall from z 5.44 up, so
+  // each downstroke of the running arm took the whole pool out of the frame (the speckle in the dark frames is the
+  // wallpaper's sparkle under the beam's own bounce light). A runner looks down at the last treads and the landing: the
+  // scramble's look ends 14° down — the frame's lower half holds the pool through the arm's stroke — and the stop
+  // (9.0–10.4) raises it to the landing's eye line as the breath-hold clip brings the torch up.
+  const topLook = add(topA, fwd(north, -14 * DEG, 3));
   // glance #1: her silhouette rounding the newel (her root (0.85, 3.35)), seen from tread 5 back and down
   // escape fix round (lane CINE, item 5): re-blocked so she reads HEADLESS — her torso stands between the tread-5 eye and
   // the fanlight's lightning patch on the hall floor (≈ (1.9–2.4, 1.9–2.4); eye→torso ray × 1.43 lands in it), a hard
@@ -85,6 +94,9 @@ export const c2cUp: TimelineFactory = (ctx) => {
   // glance #2: her right hand on the wet handrail 0.9 m away (the rail is on the east side, ≈ 0.9 m above the treads)
   const handAt: P3 = [ST_MAIN.x + 0.52, treadNosing(10.6)[1], treadNosing(10.6)[2] + 0.88];
 
+  // SMOOTH-FRAMES (#142): a whole number of steps per bobbing shot, so the bob (sequencer.ts, 0 at τ = 0) is also 0 at
+  // the shot's end and hands over to the next shot without a jump (it ended 0.3–1.75 cm / 0.6° off before)
+  const steps = (hz: number, d: number) => Math.max(1, Math.round(hz * d)) / d;
   const shots: CameraShot[] = [
     // 0.0 the whip turn right, 154° through south, to the stair foot (35 mm, blur 1.0)
     {
@@ -97,11 +109,13 @@ export const c2cUp: TimelineFactory = (ctx) => {
       handheld: 0.6,
     },
     // the hall: 1.95 m in 1.0 s, bob 3 cm at 2.6 Hz
-    { t: whipD, d: hallEnd - whipD, path: [hallEye, footEye], target: [ring(hallEye, hStair, -0.12), [0.55, 4.4, 1.9]], fov: L35, ease: 'in', handheld: 0.9, bob: { amp: 0.03, hz: 2.6, roll: 0.0105 } },
+    // SMOOTH-FRAMES (#142): 'in' ran into the newel at its top speed (16 cm and 8°/frame) and the swing shot started
+    // from rest — the run stopped dead in one frame at 1.65; inOut checks the run into the newel (same 5.9 m/s peak)
+    { t: whipD, d: hallEnd - whipD, path: [hallEye, footEye], target: [ring(hallEye, hStair, -0.12), [0.55, 4.4, 1.9]], fov: L35, ease: 'inOut', handheld: 0.9, bob: { amp: 0.03, hz: steps(2.6, hallEnd - whipD), roll: 0.0105 } },
     // the newel: swing round it (yaw to the flight in 400 ms); the torch fist knocks the cap at 1.80
     { t: hallEnd, d: 0.45, path: [footEye, eyeOnTread(0.4)], target: [[0.55, 4.4, 1.9], add(eyeOnTread(0.4), fwd(north, 12 * DEG, 3))], fov: L35, ease: 'inOut', handheld: 0.9 },
     // risers 1–5 at 3.1 risers/s, pitch +12°
-    { t: hallEnd + 0.45, d: 3.62 - (hallEnd + 0.45), path: [eyeOnTread(0.4), eyeOnTread(2.5), e5], target: [add(eyeOnTread(0.4), fwd(north, 12 * DEG, 3)), add(e5, fwd(north, 12 * DEG, 3))], fov: L35, ease: 'linear', handheld: 0.9, bob: { amp: 0.035, hz: 3.1, roll: 0.0105 } },
+    { t: hallEnd + 0.45, d: 3.62 - (hallEnd + 0.45), path: [eyeOnTread(0.4), eyeOnTread(2.5), e5], target: [add(eyeOnTread(0.4), fwd(north, 12 * DEG, 3)), add(e5, fwd(north, 12 * DEG, 3))], fov: L35, ease: 'linear', handheld: 0.9, bob: { amp: 0.035, hz: steps(3.1, 3.62 - (hallEnd + 0.45)), roll: 0.0105 } },
     // 3.62–3.84 the head turns 150° back over the right shoulder (220 ms); the torch arm stays forward; 28 mm
     { t: 3.62, d: 0.22, path: [e5], target: [add(e5, fwd(north, 12 * DEG, 3)), add(e5, fwd(north - 1.6, -0.2, 2.2)), g1Target], fov: [L35, L28], ease: 'out', handheld: 0.6 },
     // 3.84–4.47 GLANCE #1 held 630 ms: the hard back-lit silhouette against the lightning patch on the hall floor
@@ -111,7 +125,7 @@ export const c2cUp: TimelineFactory = (ctx) => {
     // — 83° in ONE frame; now a sphere sweep back the way the head went (counter-clockwise), same 220 ms
     { t: 4.47, d: 0.22, path: [add(e5, [0, 0.03, 0.01]), eyeOnTread(5.4)], target: sweepTargets(e5, g1Target, add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), turnBetween(e5, g1Target, add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), 1), 4), fov: [L28, L35], ease: 'inOut', handheld: 0.6 },
     // risers 6–12, pitch +10°, breath ragged
-    { t: 4.69, d: 1.77, path: [eyeOnTread(5.4), eyeOnTread(8.5), eyeOnTread(11.6)], target: [add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), add(eyeOnTread(11.6), fwd(north, 10 * DEG, 3))], fov: L35, ease: 'linear', handheld: 1.0, bob: { amp: 0.035, hz: 3.1, roll: 0.0105 } },
+    { t: 4.69, d: 1.77, path: [eyeOnTread(5.4), eyeOnTread(8.5), eyeOnTread(11.6)], target: [add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), add(eyeOnTread(11.6), fwd(north, 10 * DEG, 3))], fov: L35, ease: 'linear', handheld: 1.0, bob: { amp: 0.035, hz: steps(3.1, 1.77), roll: 0.0105 } },
     // 6.46 THE STUMBLE on the creaker 12: pitch −28° in 150 ms, roll −6°, the eye drops to ≈ 0.85 m above tread 12
     { t: 6.46, d: 0.16, path: [eyeOnTread(11.6), e12low], target: [add(eyeOnTread(11.6), fwd(north, 10 * DEG, 3)), add(e12low, fwd(north, -28 * DEG, 1.2))], fov: L35, ease: 'in', handheld: 1.2, roll: [0, -6 * DEG] },
     // gloves slap tread 13 (6.62); the beam swings wild
@@ -124,11 +138,14 @@ export const c2cUp: TimelineFactory = (ctx) => {
     // 7.45–7.66 back round to the flight
     // GLITCH-FIX (C2c 7.53–7.57, f1094): the path from her hand (0.72 m away) to the flight passed 0.47 m from the eye —
     // 47° and 60° in single frames; now a sphere sweep back (counter-clockwise), same 210 ms
-    { t: 7.45, d: 0.21, path: [e12low, add(e12low, [0, 0.12, 0.1])], target: sweepTargets(e12low, handAt, add(e12low, fwd(north, 20 * DEG, 2)), turnBetween(e12low, handAt, add(e12low, fwd(north, 20 * DEG, 2)), 1), 4), fov: L35, ease: 'inOut', handheld: 1.2, roll: [-3 * DEG, 0] },
+    // SMOOTH-FRAMES (#142): starts from where glance #2's drift ENDS (handAt + 4 cm) — it started from handAt: 2.3° jump
+    { t: 7.45, d: 0.21, path: [e12low, add(e12low, [0, 0.12, 0.1])], target: sweepTargets(e12low, add(handAt, [0, 0.04, 0.01]), add(e12low, fwd(north, 20 * DEG, 2)), turnBetween(e12low, add(handAt, [0, 0.04, 0.01]), add(e12low, fwd(north, 20 * DEG, 2)), 1), 4), fov: L35, ease: 'inOut', handheld: 1.2, roll: [-3 * DEG, 0] },
     // 7.66–9.0 scramble up 13–16 (4 risers in 1.34 s), pitch +20°
-    { t: 7.66, d: 1.34, path: [add(e12low, [0, 0.12, 0.1]), eyeOnTread(14, 1.3), eyeOnTread(16, 1.6, 0.05), topA], target: [add(e12low, fwd(north, 20 * DEG, 2)), add(topA, fwd(north, 0, 3))], fov: L35, ease: 'out', handheld: 1.4, bob: { amp: 0.04, hz: 3.0, roll: 0.012 } },
+    { t: 7.66, d: 1.34, path: [add(e12low, [0, 0.12, 0.1]), eyeOnTread(14, 1.3), eyeOnTread(16, 1.6, 0.05), topA], target: [add(e12low, fwd(north, 20 * DEG, 2)), topLook], fov: L35, ease: 'out', handheld: 1.4, bob: { amp: 0.04, hz: steps(3.0, 1.34), roll: 0.012 } },
     // 9.0–10.4 the top: onto the landing; the run stops; breath heaving
-    { t: 9.0, d: 1.4, path: [topA, topB], target: [add(topA, fwd(north, 0, 3)), add(topB, fwd(north, -0.05, 3))], fov: L35, ease: 'out', handheld: 0.7, bob: { amp: 0.008, hz: 0.5 } },
+    // (SMOOTH-FIX #145: inOut — the scramble's 'out' ends at rest, an 'out' here restarted the eye and the look at full
+    // speed in one frame)
+    { t: 9.0, d: 1.4, path: [topA, topB], target: [topLook, add(topB, fwd(north, -0.05, 3))], fov: L35, ease: 'inOut', handheld: 0.7, bob: { amp: 0.008, hz: steps(0.5, 1.4) } },
     // 10.4–12.4 the slow turn right (south) 180° in 2.0 s, slow at first (dread), pitch down to −50°
     {
       t: C2C_SKIP_AT,
@@ -136,14 +153,17 @@ export const c2cUp: TimelineFactory = (ctx) => {
       path: [topB, S.pos],
       target: [add(topB, fwd(north, -0.05, 3)), add(topB, fwd(north - 0.5, -0.12, 3)), add(S.pos, fwd(0, -0.45, 3)), add(S.pos, fwd(-1.2, -0.75, 3.2)), sLook],
       fov: L35,
-      ease: 'in',
+      // SMOOTH-FRAMES (#142, GLITCH residual 2): 'in' ended the turn at its full speed (≈ 9°/frame) into the 12.4 hold —
+      // the view stopped dead; inOut keeps the slow start and settles onto the empty stair
+      ease: 'inOut',
       handheld: 0.5,
     },
     // 12.4–13.9 the empty stair: hold (breath held); 12.9 an involuntary 4 cm lean over the rail; the FOV eases to the
     // gameplay FOV inside the last 600 ms so control returns on this exact camera (no snap)
     { t: 12.4, d: 0.5, path: [S.pos], target: [sLook], fov: L35, handheld: 0.4 },
-    { t: 12.9, d: 0.5, path: [S.pos, add(S.pos, [0, -0.04, -0.01])], target: [sLook, add(sLook, [0, -0.04, -0.01])], fov: L35, ease: 'inOut', handheld: 0.4 },
-    { t: 13.4, d: 0.5, path: [add(S.pos, [0, -0.04, -0.01]), S.pos], target: [add(sLook, [0, -0.04, -0.01]), sLook], fov: [L35, ctx.player.fov ?? 60], ease: 'inOut', handheld: 0.4 },
+    // SMOOTH-FRAMES (#142): the lean and the FOV's return to the gameplay lens share ONE second (was the last 0.5 s for
+    // the lens: 37.8 → 70° peaked at ≈ 6°/frame at 30 fps, a zoom lurch at the hand-back)
+    { t: 12.9, d: 1.0, path: [S.pos, add(S.pos, [0, -0.04, -0.01]), S.pos], target: [sLook, add(sLook, [0, -0.04, -0.01]), sLook], fov: [L35, ctx.player.fov ?? 60], ease: 'inOut', handheld: 0.4 },
   ];
 
   // Ada's root keys (§4.1, C2c time)
@@ -205,7 +225,11 @@ export const c2cUp: TimelineFactory = (ctx) => {
     // not her (the rig holds its world orientation while the camera turns)
     // (r4/r5: an off/on toggle left the level unlit by the torch afterwards — the arm is held instead)
     // review: arms_run_torch's beam bone points off the flight (black climb) — hold the beam within 12° of the gaze
-    { t: 0, type: 'fx', id: 'beamClamp', params: { on: true } },
+    // SMOOTH-FIX (#145b, re-verify F7 + N1): aimed AT the gaze point, not parallel to the gaze (bindings.ts `gaze`): the
+    // run / stumble / breath clips carry the torch 0.25–0.7 m under the eye, and a parallel beam put its pool under the
+    // frame wherever the eye was within ≈ 1.5 m of a surface (6.63–6.8 the stumble whip, 8.53–8.93 and 10.73–11.03 at the
+    // landing wall: black frames). Glance #1 keeps the torch on the flight (torchHold: the held rig's forward).
+    { t: 0, type: 'fx', id: 'beamClamp', params: { on: true, gaze: 1 } },
     { t: 3.6, type: 'fx', id: 'torchHold', params: { on: true } },
     // fix round (item 5): glance #1 — the lightning patch on the hall floor is the brightest thing in frame; the eye
     // stops down for it (cap 1.0, was ≈ 2.2) so her front falls to silhouette and the near balusters stop glowing
@@ -232,13 +256,22 @@ export const c2cUp: TimelineFactory = (ctx) => {
     // highlight protect on; the climb's auto exposure comes back after it
     // (fix round 3: the fixed camera 0.458 is below the old 0.55 glance cap — no cue)
     // (s8med at the real 0.25 exposure: the hot spot sat on the wall upper-left, her hand dark) — the torch on her hand
-    { t: 6.85, type: 'fx', id: 'beamClamp', params: { on: true, atX: handAt[0], atY: handAt[1], atZ: handAt[2] } },
-    { t: 7.66, type: 'fx', id: 'beamClamp', params: { on: true } },
+    // SMOOTH-FIX (#145b): the gaze aim at her hand's distance (the camera looks at handAt; the static sight ray goes past
+    // her hand to the wall) — eased from the swing's aim, no jump at 6.85; back to the gaze's own hit for the turn back
+    // to the flight at 7.45 (with the aim left on her hand, the turn took the pool out of the frame: 7.567–7.633 black)
+    // (#145b, N1: a fixed aim along the flight for the stumble (tread 14's middle, 0.5 m from the lens) was tried — b1:
+    // the 6.6–6.73 white-out was unchanged (luma 0.52 vs 0.50 with the gaze aim): the light there is not the core's spot.
+    // See docs/STATUS-smooth-fix.md "ROUND 2" N1.)
+    { t: 6.85, type: 'fx', id: 'beamClamp', params: { on: true, gaze: 1, d: Math.round(Math.hypot(handAt[0] - e12low[0], handAt[1] - e12low[1], handAt[2] - e12low[2]) * 1000) / 1000 } },
+    { t: 7.45, type: 'fx', id: 'beamClamp', params: { on: true, gaze: 1 } },
     { t: 7.66, type: 'clip', char: 'arms', clip: 'arms_run_torch', loop: true, fade: 0.1, fallback: ['arms_idle'] },
     // the top (9.0): her steps stopped with his; breath held 9.6; one drop below (10.0); heartbeat 120
     { t: 9.0, type: 'loop', key: 'panting', id: null, fade: 0.4 },
     // the run stops: the arms settle (breath heaving) — the held torch comes back up to the eye line
-    { t: 9.0, type: 'clip', char: 'arms', clip: 'arms_breath_hold', fade: 0.4, fallback: ['arms_idle'] },
+    // (SMOOTH-FIX #145 moved this to 8.4 to lift the torch for 8.53–8.93; that put the clip's lowering beat (clip ≈ 2.4 s)
+    // at 10.8, under the eye's tilt up — 5 black frames at 10.73–11.03 (re-verify F7). #145b: back at the authored stop;
+    // the pool stays in frame through both beats by the gaze aim above.)
+    { t: 9.0, type: 'clip', char: 'arms', clip: 'arms_breath_hold', fade: 0.5, fallback: ['arms_idle'] },
     { t: 9.0, type: 'loop', key: 'stump', id: null, fade: 0.2 },
     { t: 9.1, type: 'heartbeat', bpm: 120 },
     { t: 9.6, type: 'sfx', id: 'breath_hold', gain: 0.7 },
@@ -261,7 +294,8 @@ export const c2cUp: TimelineFactory = (ctx) => {
   for (let t = 0.2; t < 5.2; t += 1 / 1.4) cues.push({ t: Math.round(t * 1000) / 1000, type: 'sfx', id: 'bare_feet_wet', pos: t < 2.76 ? [2.8, 2.2, 0.6] : [1.5, 3.3, 0.6], room, gain: 0.8 });
   for (const t of [5.35, 5.75, 6.15, 6.55, 7.2, 8.4, 8.9]) cues.push({ t, type: 'sfx', id: 'bare_feet_wet', pos: adaOnTread(Math.min(11, 1 + (t - 5.3) * 2.6)), room, gain: 0.9 });
   // the player's boots: the hall (2.6 Hz), the treads (3.1 risers/s; the creak on riser 5 at 3.45)
-  for (let t = whipD + 0.05; t < hallEnd; t += 1 / 2.6) cues.push({ t: Math.round(t * 1000) / 1000, type: 'sfx', id: 'step_bare', pos: [1.6, 3.0, 0.6], room, gain: 1 });
+  // SMOOTH-FRAMES (#142): on the hall bob's own foot plants ((k + ¼)/hz, sequencer.ts) — 3 steps in the 1 s run
+  for (let k = 0, hz = steps(2.6, hallEnd - whipD); k < Math.round(hz * (hallEnd - whipD)); k++) cues.push({ t: Math.round((whipD + (k + 0.25) / hz) * 1000) / 1000, type: 'sfx', id: 'step_bare', pos: [1.6, 3.0, 0.6], room, gain: 1 });
   for (let k = 1; k <= 16; k++) {
     const t = k <= 5 ? hallEnd + 0.45 + (k - 0.6) / 3.1 : k <= 11 ? 4.69 + (k - 5.4) / 3.7 : k === 12 ? -1 : 7.66 + (k - 12.4) * 0.335;
     if (t < 0 || t > 9.0) continue;

@@ -18,6 +18,8 @@ export function ease(kind: Ease | undefined, x: number, dflt: Ease = 'inOut'): n
       return 1 - (1 - u) ** 3;
     case 'hold':
       return 0;
+    case 'decel':
+      return 1 - (1 - u) * (1 - u);
     case 'inOut':
     default:
       return u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2;
@@ -75,7 +77,7 @@ export function catmullRomPoint(points: readonly P3[], t: number): P3 {
   ];
 }
 
-/** A path with constant-speed sampling (arc length, like three's Curve.getPointAt with 200 divisions). */
+/** A path with constant-speed sampling (arc length, like three's Curve.getPointAt with 200 divisions; finer on long paths). */
 export class ArcPath {
   readonly points: readonly P3[];
   private readonly lengths: number[] = [];
@@ -87,6 +89,13 @@ export class ArcPath {
       this.length = 0;
       return;
     }
+    // SMOOTH-FRAMES (#142): ≤ 5 cm per table step on long paths. Within a step t is interpolated linearly while the
+    // Catmull-Rom speed is not constant: with 200 steps a 60 m vehicle path (C6's drive) moved 0.059–0.081 m per
+    // 60 Hz frame at a constant 3.7 m/s — a ±15 % speed ripple every few frames (judder through the windscreen).
+    // Short paths (< 10 m chord) keep three's 200 (CatmullRomCurve3.getPointAt parity, tests/cutscene.test.ts).
+    let chord = 0;
+    for (let i = 1; i < points.length; i++) chord += Math.sqrt(dist2(points[i], points[i - 1]));
+    divisions = Math.min(1200, Math.max(divisions, Math.ceil(chord / 0.05))); // C1 builds in ≈ 3.7 ms (1.4 ms at 200)
     let last = catmullRomPoint(points, 0);
     let sum = 0;
     this.lengths.push(0);

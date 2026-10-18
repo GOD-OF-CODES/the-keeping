@@ -132,13 +132,21 @@ def fence_run(p, rng):
 
 @prop('farm_gate', budget=6000)
 def farm_gate(p, rng):
-    """Tubular 5-bar steel farm gate on a timber hinge post, swung open and sagging onto the gravel."""
+    """Tubular 5-bar steel farm gate on a timber hinge post, swung open and sagging onto the gravel.
+
+    ORIGIN = the hinge post's centre (SMOOTHNESS FRAMES lane, contract #142b, lead ruling (an)): the gate hangs in a
+    fence opening from the hinge post at x 0 to the latch post at x = W + 0.17 along local +x (both on the fence line,
+    local y 0); the leaf swings `openDeg` about the hinge into local +y. It was built CENTRED on its origin, so the
+    layout's P_GATE (placed as if the origin were the hinge) stood its latch post in the middle of the drive's
+    opening (C6's car drove through it; CP1 0.36 m from it). A `farm_gate.collider` proxy (two post boxes + the leaf
+    box) replaces the per-mesh oriented boxes, whose single box over both posts would have walled the opening off."""
     W = float(p.get('width', 2.6))
     mat = p.get('mat', 'rust')
     part = Part('farm_gate', rng)
-    hx = -W / 2
-    wood_post(part, rng, 0.2, 1.4, 'bark_wet', x=hx - 0.12, lean=0.03, round_=True)
-    wood_post(part, rng, 0.18, 1.3, 'bark_wet', x=W / 2 + 0.12, lean=0.05, round_=True)
+    hx = 0.12                     # the leaf's hinge line: the post's radius 0.10 + a 2 cm strap gap
+    lx = hx + (W - 0.06) + 0.11   # the latch post: the closed leaf's far end + 2 cm + its radius 0.09
+    wood_post(part, rng, 0.2, 1.4, 'bark_wet', x=0.0, lean=0.03, round_=True)
+    wood_post(part, rng, 0.18, 1.3, 'bark_wet', x=lx, lean=0.05, round_=True)
     leaf = Part('farm_gate.leaf', rng)
     H = 1.12
     r = 0.019
@@ -153,9 +161,20 @@ def farm_gate(p, rng):
     droop = math.radians(3.5 + rng.j(0.8))
     for i, v in enumerate(leaf.verts):   # sag: far end drops, bars bow slightly
         leaf.verts[i] = Vector((v.x, v.y, v.z - v.x * math.sin(droop) - 0.02 * math.sin(v.x / W * math.pi)))
-    open_a = math.radians(72 if 'open' in str(p.get('state', 'open')) else 0)
+    open_a = math.radians(float(p.get('openDeg', 72)) if 'open' in str(p.get('state', 'open')) else 0)
     leaf.extras = {'part': 'leaf', 'hinge_axis': [0, 0, 1], 'open_deg': round(math.degrees(open_a), 1)}
     part.children.append((leaf, T((hx, 0, 0), (0, 0, open_a))))
+    # collider proxy (never drawn, not lightmapped): the two posts and the open leaf's slab
+    # ONE material (the proxies' convention, 'dust_sheet'): two materials exported a Group of two primitives whose
+    # child meshes lost the collider flag, so the runtime boxed the both-posts mesh into one wall across the opening
+    # (gate-check 2026-10-12: the player stopped at y -28.65 / -27.87)
+    col = Part('farm_gate.collider', rng)
+    col.add(box(0.2, 0.2, 1.4, 0.0, 1), 'dust_sheet', T((0, 0, 0.7)))
+    col.add(box(0.18, 0.18, 1.3, 0.0, 1), 'dust_sheet', T((lx, 0, 0.65)))
+    lw = W - 0.06
+    col.add(box(lw, 0.06, 1.0, 0.0, 1), 'dust_sheet', T((hx + math.cos(open_a) * lw / 2, math.sin(open_a) * lw / 2, 0.62), (0, 0, open_a)))
+    col.extras = {'collider': True}
+    part.children.append((col, None))
     return [part]
 
 

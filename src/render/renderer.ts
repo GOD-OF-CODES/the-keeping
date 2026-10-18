@@ -60,7 +60,10 @@ export async function createRenderer(preset: PresetConfig, opts: { forceWebGL: b
     // Character fragments on Max sample albedo + normal + the probe-grid atlases + every shadow map + a reflection
     // cube: 17 > the default 16 per stage (round 3 Max run: harlan_* pipelines invalid). Every WebGPU adapter we
     // target offers more (M1: 48) — ask for up to 32 when the adapter has them.
-    renderer = new THREE.WebGPURenderer({ canvas, antialias, powerPreference: POWER_PREFERENCE, requiredLimits: adapterTexLimits ?? undefined });
+    // PERF smoothness (#143): `?gputime` (QA only) turns on WebGPU timestamp queries — per-render-pass GPU ms for the
+    // real-time frame profiler (scratch/smooth-perf/instr.mjs). Off by default: the queries cost a resolve per frame.
+    const trackTimestamp = typeof location !== 'undefined' && new URLSearchParams(location.search).has('gputime');
+    renderer = new THREE.WebGPURenderer({ canvas, antialias, powerPreference: POWER_PREFERENCE, requiredLimits: adapterTexLimits ?? undefined, trackTimestamp });
     reason = 'WebGPU adapter available';
   } else {
     const context = canvas.getContext('webgl2', { powerPreference: POWER_PREFERENCE, antialias, alpha: true, depth: true, stencil: false });

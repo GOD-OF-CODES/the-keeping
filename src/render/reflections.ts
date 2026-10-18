@@ -373,6 +373,15 @@ export class RoomReflections {
       for (const [g, v] of groupVis) g.visible = v;
       for (const [l, i] of dark) l.intensity = i;
       for (const [c, v] of others) c.visible = v;
+      // SMOOTH-FIX (#145b, re-verify N3: the torch pool blinked off for 6 frames at C5's end — and in gameplay —
+      // whenever the dawn / night re-capture ran): the lightmapped and probe-lit materials light through their own
+      // lightsNode lists (level.ts: lights([torch, bounce, …])), which this face render evaluates whatever the scene's
+      // visibility — with the torch darkened to 0. three r186's AnalyticLightNode is FRAME-updated (color = light.color ×
+      // intensity, once per node frame), so the main render that follows in the SAME frame skipped the update and drew
+      // the torch at 0 on every lightmapped surface (its unshadowed bounce left: ×0.19). scratch/fix/r2/n3 (c5refl.mjs):
+      // the 6 dark frames are exactly the 6 cube-face frames. A new node frame (as compileAsync and pipeline.ts already
+      // do mid-frame) makes the main render re-evaluate them with the restored intensity.
+      if (dark.length) renderer._nodes?.nodeFrame?.update();
     }
     if (++job.face < 6) return;
     this.pending = null;

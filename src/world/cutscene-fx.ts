@@ -20,7 +20,7 @@
 // light update so light overrides win).
 
 import * as THREE from 'three/webgpu';
-import { uniform, texture as tslTexture, vec4, vec3, float, vec2, uv, mix, smoothstep, screenUV, viewportSharedTexture, positionLocal, abs, exp } from 'three/tsl';
+import { uniform, texture as tslTexture, vec4, vec3, float, vec2, uv, mix, smoothstep, screenUV, viewportSharedTexture, positionLocal, abs, exp, normalView } from 'three/tsl';
 import type { Level } from './level.ts';
 import type { CharacterBank } from '../characters/bank.ts';
 import { uFaceFill } from '../characters/skin.ts';
@@ -598,6 +598,9 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
         // in the same part) stays a lit metal ring; only the glass glows.
         const mn = String((Array.isArray(mesh.material) ? mesh.material[0] : mesh.material)?.name ?? '');
         if (lamp === 'head' && /chrome/i.test(mn)) return;
+        // SMOOTH-FIX (#145, hunt F3): the tail lamp's chrome dividers and its clear reverse lens (sedan.py lens_flashlight)
+        // are not lit by the tail bulb — they kept their own materials' look instead of a flat red slab
+        if (lamp === 'tail' && /chrome|lens_flashlight/i.test(mn)) return;
         const m = new THREE.MeshBasicNodeMaterial();
         const gain = lamp === 'head' ? headGlow : tailU;
         if (lamp === 'head') {
@@ -616,7 +619,24 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
           const core = exp(lat.mul(lat).add(ver.mul(ver)).mul(-2.2));
           const k = kelvinToLinearRGB(3200);
           m.colorNode = vec3(k[0], k[1], k[2]).mul(gain.mul(core.mul(9).add(1.2)).add(0.015));
-        } else m.colorNode = vec4(col.r, col.g, col.b, 1).rgb.mul(gain.mul(3).add(0.015));
+        } else {
+          // SMOOTH-FIX (#145, hunt F3 "a FLAT, unshaded salmon-pink parallelogram"): a 1980s tail lamp is a red acrylic
+          // lens over a 5 W tail filament in a reflector — a hot zone round the bulb, falling ≈ 4× to the rim, and the
+          // fluted lens throws less light sideways (seen at 70° off its axis it reads ≈ ½ as bright). Lens-local coords
+          // from the part's bbox (lateral = longest axis, vertical = the middle one); same mean as the old flat value.
+          mesh.geometry.computeBoundingBox();
+          const bb = mesh.geometry.boundingBox;
+          const ext = [bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z];
+          const ord = [0, 1, 2].sort((a, b) => ext[b] - ext[a]);
+          const ax = (i: number) => (i === 0 ? positionLocal.x : i === 1 ? positionLocal.y : positionLocal.z);
+          const ctr = (i: number) => (i === 0 ? (bb.min.x + bb.max.x) / 2 : i === 1 ? (bb.min.y + bb.max.y) / 2 : (bb.min.z + bb.max.z) / 2);
+          const half = (i: number) => Math.max(1e-3, ext[i] / 2);
+          const lat = ax(ord[0]).sub(ctr(ord[0])).div(half(ord[0]));
+          const ver = ax(ord[1]).sub(ctr(ord[1])).div(half(ord[1]));
+          const core = exp(lat.mul(lat).mul(-2.2).add(ver.mul(ver).mul(-1.6)));
+          const facing = abs(normalView.z).mul(0.5).add(0.5); // view-space normal · view axis: the lens face vs edge-on
+          m.colorNode = vec3(col.r, col.g, col.b).mul(gain.mul(3).mul(core.mul(1.35).add(0.3)).mul(facing).add(0.015));
+        }
         mesh.material = m;
       });
       lamps[lamp === 'head' ? 'head' : 'tail'].push(n);
@@ -640,6 +660,12 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
     setRainCar: (id) => (rainCar = id),
     glassWet: () => (rainSim ? Math.min(1, rainSim.film) : 0),
     night: () => blueHour < 0.5, // C0/C1 storm night (C6/C7 blue hour mounts the car at the house too)
+    // SMOOTH-FIX (#145): the exposure on screen (an eased film cue starts there) / whether the eye meters a texture
+    exposureNow: () => {
+      const v = d.pipeline?.()?.uniforms?.exposure?.value;
+      return typeof v === 'number' && Number.isFinite(v) ? v : null;
+    },
+    meterOn: () => !!d.pipeline?.()?.meterTexture,
   });
   const redrawCluster = () => {
     if (!clusterCanvas) return;
@@ -1207,6 +1233,7 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
   // ruling (b): the figures (+ their attached cleaver / head) are the lamp cube's moving casters; re-tagged every
   // ≈ 1 s (attachments change: the head moves to his fist, the cleaver to a hand) — a traverse of ≈ 100 nodes
   let tagT = 0;
+  let lmGridK = 1; // SMOOTH-FIX (#145): the probe grids' share of the lmScale cue (see update)
   const update = (dt: number) => {
     ma.update(dt, d.camera); // M-A SCENES
     lastDt += dt;
@@ -1314,6 +1341,13 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
       pl.uniforms.saturation.value = (1 - blueHour * 0.3) * GRADE.saturation;
     }
     uLmScale.value = GRADE.lm; // M-A `lmScale` cue (1 = as baked)
+    // SMOOTH-FIX (#145, hunt F9): the probe grids are baked from the same light (see setGroundProbes): a scaled bake must
+    // scale them too, or the probe-lit props and characters stay at the old level (after1 C4a dolly: × 30 on the atlases
+    // lifted the frame's radiance only × 5–9 — the sheeted furniture stayed black). 'ground' is the C5 shadow-play's.
+    if (GRADE.lm !== lmGridK) {
+      lmGridK = GRADE.lm;
+      for (const g of level.grids) if (g.id !== 'ground' && g.grid) g.grid.intensity = lmGridK;
+    }
   };
 
   /** After the level's light update (the flicker loop would overwrite the shadow light). */

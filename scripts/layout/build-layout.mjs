@@ -324,7 +324,11 @@ p('P_VACANCY_PLATE', 'vacancy_plate', 'EXT1', [-1.8, -28.62, 1.75], faceYaw(1, -
 p('P_MAILBOX', 'mailbox', 'EXT1', [4.4, -28.7, 0], FACE.S, { params: { name: 'STROUD', mat: 'rust' } });
 p('P_FENCE_W', 'fence_run', 'EXT1', [-9.8, -28.25, 0], 0, { params: { length: 20.4, postSpacing: 2.4, style: 'post_and_wire' }, collider: 'box' });
 p('P_FENCE_E', 'fence_run', 'EXT1', [11.6, -28.25, 0], 0, { params: { length: 16.8, postSpacing: 2.4, style: 'post_and_wire' } });
-p('P_GATE', 'farm_gate', 'EXT1', [0.5, -28.25, 0], 0.35, { params: { width: 2.6, state: 'open_sagging', mat: 'rust' } });
+// SMOOTHNESS FRAMES lane (#142b, lead ruling (an)): origin = the HINGE post (blender/props/exterior.py farm_gate), hung
+// just inside the fence ends (P_FENCE_W's end post at x 0.335 r 0.06, P_FENCE_E's first at 3.278 r 0.05): hinge 0.53,
+// latch 0.53 + 2.33 + 0.17 = 3.03; leaf swung 95° into the yard (at 72° its tip stood 0.69 m into the opening and
+// C6's car could not pass it). It stood centred on 0.5 at yaw 0.35 with its latch post in the drive's opening.
+p('P_GATE', 'farm_gate', 'EXT1', [0.53, -28.25, 0], 0, { params: { width: 2.33, state: 'open_sagging', mat: 'rust', openDeg: 95 } });
 for (const [i, x] of [-14, -6, 8, 16].entries()) p(`P_REFLECTOR_${i + 1}`, 'reflector_post', 'EXT1', [x, -29.0, 0], FACE.S, { collider: 'none' });
 p('P_NEXT_SERVICES', 'road_card', 'EXT1', [18.6, -28.9, 0], FACE.E, { params: { text: 'CARVEL 48' }, collider: 'none' });
 p('P_CAR_GATE', 'sedan', 'EXT1', [2.8, -30.2, 0], faceYaw(-1, 0), { params: { plate: 'RVX-318', paint: 'car_paint_sedan', interior: 'car_interior_tan', state: 'dead_at_gate' }, lighting: 'dynamic', collider: 'box', interaction: 'car', ms: 'M1' });

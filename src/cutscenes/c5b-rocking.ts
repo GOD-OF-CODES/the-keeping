@@ -8,7 +8,8 @@
 // State: L_CANDLE_SILL ends LIT (C6's mirror shot shows it — continuity); the player ends at the foot of the porch
 // steps facing the car (a skip lands there too).
 
-import { PROP, focusAt, headingTo, lens } from './stage.ts';
+import { sweepTargets, turnBetween } from './math.ts';
+import { PROP, add, dist, focusAt, fwd, headingTo, lens } from './stage.ts';
 import type { Cue, P3, TimelineFactory } from './types.ts';
 
 export const C5B_DURATION = 14;
@@ -22,6 +23,9 @@ export const C5B_END_EYE: P3 = [1.8, -4.0, 1.65];
 
 export const c5bRocking: TimelineFactory = (ctx) => {
   const carRow: P3 = [PROP.P_CAR_ROW[0], PROP.P_CAR_ROW[1], 0.9];
+  const MIST: P3 = [2.5, -14, 1.8];
+  const eye0 = ctx.player.eye;
+  const look0 = add(eye0, fwd(ctx.player.heading, ctx.player.pitch, Math.max(1, dist(eye0, MIST))));
   const endHeading = headingTo(C5B_END_EYE, carRow);
   const macroEye: P3 = [2.86, -3.22, 3.81]; // along the gutter, the drop against the misty yard beyond
   const teleEye: P3 = [2.5, -3.6, 1.7];
@@ -54,6 +58,10 @@ export const c5bRocking: TimelineFactory = (ctx) => {
     { t: 12.5, type: 'dof', dof: null },
     rock(13.7, 0.5),
     { t: 12.5, type: 'player', pos: C5B_END_EYE, heading: endHeading, pitch: -0.03 },
+    // SMOOTH-FIX (#145, hunt F2a): the incoming shot's exposure on each metered cut (`cutE`, held 0.1 s, then the eye adapts
+    // on from it; values = what the eye settles on for that shot, scratch/fix/diag `ex` Medium) — the cut frame used to
+    // keep the previous shot's exposure (C5b 3.5 ×1.9; 0.25 = the room clamp: a brighter frame clamps too).
+    { t: 3.5, type: 'fx', id: 'exposure', params: { cutE: 0.25 } },
   ];
 
   return {
@@ -69,7 +77,10 @@ export const c5bRocking: TimelineFactory = (ctx) => {
     ],
     shots: [
       // the open door frames grey mist; drops fall from the eave across frame
-      { t: 0, d: 3.5, path: [[1.95, -0.55, 2.25], [1.9, -1.8, 2.2]], target: [[2.5, -14, 1.8]], fov: [ctx.player.fov ?? 60, lens(35)], ease: 'inOut', handheld: 0.5 },
+      // SMOOTH-FRAMES (#142): from the player's own eye and gaze (the trigger fires as they walk out through the door) —
+      // the shot started 0.3 m ahead of them, 10° off their heading: a one-frame jump (cs-frames C5b 0.033). 'out' starts
+      // at ≈ the walking pace (3 × 1.6 m / 3.5 s) and settles on the porch.
+      { t: 0, d: 3.5, path: [eye0, [1.9, -1.8, 2.2]], target: sweepTargets(eye0, look0, MIST, turnBetween(eye0, look0, MIST), 3), fov: [ctx.player.fov ?? 60, lens(35)], ease: 'out', handheld: 0.5 },
       // eave macro (100 mm, DOF ≈ 0.4 m)
       { t: 3.5, d: 3.0, path: [macroEye, [2.87, -3.22, 3.806]], target: [[EAVE_DROP[0], EAVE_DROP[1], EAVE_DROP[2] - 0.015]], fov: lens(100), ease: 'linear', handheld: 0.25 },
       // crane up and back (24 mm)

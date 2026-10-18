@@ -3,7 +3,7 @@
 // Intensity convention: runtime candela = Blender W / (4π) (CLAUDE.md light units).
 
 import * as THREE from 'three/webgpu';
-import { Fn, If, Loop, cameraPosition, dot, float, length, max, mx_noise_float, positionWorld, smoothstep, uniform, vec3 } from 'three/tsl';
+import { Fn, If, Loop, atan, cameraPosition, dot, float, fract, frameId, interleavedGradientNoise, length, max, mx_noise_float, positionWorld, screenCoordinate, smoothstep, tan, uniform, vec3 } from 'three/tsl';
 import { SKY_U } from '../world/atmosphere.ts';
 import type { PresetConfig } from './presets.ts';
 import { kelvinToLinearRGB } from '../world/lights.ts';
@@ -35,6 +35,8 @@ const REFLECTOR_D = 0.05;
 export const uTorchPos = uniform(new THREE.Vector3());
 /** 1 while the torch is on (R2-2: its cookie and shadow PCF are skipped in every fragment while it is off). */
 export const uTorchLit = uniform(1);
+/** FLASH (#146): 1 = the reflector's aperture near field on the hot core (below); 0 = the old far-field core (A/B). */
+export const uTorchNear = uniform(1);
 
 /** Flashlight cookie: hot core, flat spill shelf, a faint reflector ring, lens smudges. lightCoord.xy in [0,1]. */
 export const flashlightCookie = Fn(([lightCoord]: [any]) => {
@@ -48,13 +50,23 @@ export const flashlightCookie = Fn(([lightCoord]: [any]) => {
 const cookieLit = Fn(([lightCoord]: [any]) => {
   const p = lightCoord.xy.sub(0.5).mul(2);
   const r = p.length();
-  const core = r.mul(r).div(uTorchSigma2).negate().exp().mul(uTorchCore);
+  const dist = positionWorld.distance(uTorchPos).max(0.05);
+  // FLASH (#146) — the hot core's aperture near field. The 2 kcd peak (2.9° HWHM) is the reflector's FAR-field
+  // pattern; a surface at distance d sees the Ø D = 5 cm mouth as a disc of angular radius D/2d, and the pattern it
+  // receives is the far-field core convolved with that disc. Per-axis variances add (Gaussian e^(−r²/σ²): σ²/2; uniform
+  // disc of radius R: R²/4, R = D/2d in r units, tan 45° = 1):  σ_eff² = σ² + D²/(8 d²), peak × σ²/σ_eff² (the core's
+  // flux π σ² is conserved). On-axis E = I/d² · σ²/σ_eff² = I σ² / (σ² d² + D²/8): −8 % at 1 m, 8 → 5.9 klx at 0.5 m,
+  // 32 → 13.4 klx at 0.25 m, → 23 klx at contact (the order of Φ_core/A = 25 lm / 20 cm² ≈ 12.7 klx) — still rising
+  // monotonically as the lens nears a wall, never the unbounded 1/d² of a point source (200 klx at 0.1 m: the meter
+  // then crushed the room to black). Same D/d smear as the seam below.
+  const nearW = float(REFLECTOR_D * REFLECTOR_D * 0.125).div(dist.mul(dist)).mul(uTorchNear);
+  const sig2 = uTorchSigma2.add(nearW);
+  const core = r.mul(r).div(sig2).negate().exp().mul(uTorchCore).mul(uTorchSigma2.div(sig2));
   const spill = float(1).sub(smoothstep(uTorchShelf, 0.95, r)).mul(uTorchSpill);
   // reflector seam (round 3, item 11): a FAR-field feature — the seam images to a sharp ring only once the reflector
   // (Ø ≈ 5 cm) is small next to the throw. Near the torch every point of the surface sees the whole mouth, so the
   // ring is smeared by its angular size (D/d rad, ÷ tan 45° in r units): width² = 0.08² + (D/d)². Amplitude 0.01
   // (was 0.025, read as a lens halo at 1 m), scaled 0.08/width so its flux is conserved while it smears.
-  const dist = positionWorld.distance(uTorchPos).max(0.05);
   const smear = float(REFLECTOR_D).div(dist);
   const width = smear.mul(smear).add(0.0064).sqrt();
   const ringOffset = r.sub(0.42).div(width);
@@ -78,6 +90,8 @@ export interface Flashlight {
   bounce: any;
   /** 1 while the torch is on (uTorchLit). */
   lit: any;
+  /** FLASH (#146): the core's aperture near field (uTorchNear; ?debug A/B: .value = 0 → the old far-field core). */
+  near: any;
   setOn(on: boolean): void;
   update(dt: number, t: number): void;
 }
@@ -124,12 +138,18 @@ export function createFlashlight(camera: any, preset: PresetConfig): Flashlight 
     // along your own beam you see their weak back-scatter — a faint shaft round the core, never a laser rod);
     // σs = the scene's fog extinction outdoors (SKY_U.fogSigma ≈ 0.01 /m in this rain), 4e-4 /m indoors (dusty air).
     const len = 14;
-    const geo = new THREE.ConeGeometry(Math.tan(light.angle * 0.5) * len * 1.05, len, 32, 1, true);
+    // FLASH part 2 (V5): the cone covers the light's whole cone. It was built with tan(angle / 2) — SpotLight.angle is
+    // already the HALF-angle — so the mesh ended at 23.6° while the spill (7 cd) runs to the 45° edge: the shaft was cut
+    // off along a hard line (the wedge edge in scratch/flash-verify/crop-ground-beam.jpg, left). The spot's own penumbra
+    // falloff (below) now shapes the edge, as it does for the light on the surfaces.
+    const geo = new THREE.ConeGeometry(Math.tan(light.angle) * len * 1.02, len, 32, 1, true);
     geo.translate(0, -len / 2, 0);
     geo.rotateX(-Math.PI / 2); // apex at origin, pointing -z
     const uAxis = uniform(new THREE.Vector3(0, 0, -1));
     const uCd = uniform(0);
     const uTanA = uniform(1);
+    const uCosO = uniform(Math.cos(light.angle));
+    const uCosI = uniform(Math.cos(light.angle * (1 - light.penumbra)));
     const uCol = uniform(new THREE.Color(kc[0], kc[1], kc[2]));
     const _q = new THREE.Vector3();
     uAxis.onRenderUpdate(() => {
@@ -139,7 +159,20 @@ export function createFlashlight(camera: any, preset: PresetConfig): Flashlight 
     });
     uCd.onRenderUpdate(() => light.intensity);
     uTanA.onRenderUpdate(() => Math.tan(light.angle));
-    const N = 12;
+    uCosO.onRenderUpdate(() => Math.cos(light.angle));
+    uCosI.onRenderUpdate(() => Math.cos(light.angle * (1 - light.penumbra)));
+    /**
+     * FLASH part 2 (V5) — the LADDER: 12 evenly spaced steps from the eye to the cone's far wall (≈ 1.2 m apart) sampled
+     * the in-scattering's near-lens peak (∝ 1/d², d ≥ 0.4 m) once or not at all, and where a step crossed it depended on
+     * the ray's length: 3–6 evenly spaced bright bars beyond the torch head on the wet path (every outdoor Max view; in
+     * the live build too). Now two strategies combined by the balance heuristic (multi-sample MIS, Veach 1997):
+     * N_U steps uniform in t (the far shaft, as before) + N_E EQUIANGULAR steps about the lens (Kulla & Fajardo 2012:
+     * θ uniform between the ray's ends as seen from the lens, t = Δ + Dₑ·tan θ, pdf ∝ 1/(Dₑ² + (t − Δ)²) — the 1/d² peak
+     * is integrated almost exactly), each sample weighted f / (N_U·p_U + N_E·p_E). Both stratified with one per-pixel
+     * offset (interleaved gradient noise + a golden-ratio step per frame: TAAU resolves the rest). Same 12 iterations.
+     */
+    const N_U = 6;
+    const N_E = 6;
     const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: true, side: THREE.BackSide, blending: THREE.AdditiveBlending });
     mat.colorNode = Fn(() => {
       const toP = positionWorld.sub(cameraPosition);
@@ -149,33 +182,54 @@ export function createFlashlight(camera: any, preset: PresetConfig): Flashlight 
       // and lost the opaque frame (black). The cone is depth-TESTED instead: where a surface is nearer than the cone's
       // far wall the pixel is not drawn — the shaft simply ends where the beam meets the world (a hit within the
       // 14 m cone hides the glow in front of it, an acceptable loss: there the lit surface dominates).
-      const dt = tBack.div(N);
       const sigma = max(SKY_U.fogSigma, 4e-4);
+      // the lens as seen along this view ray: closest approach at t = Δ, distance D (softened by 0.2 m, the scale of
+      // the near-field bound below, so the equiangular pdf stays finite on rays through the lens)
+      const lc = uTorchPos.sub(cameraPosition);
+      const delta = dot(lc, rd);
+      const de2 = dot(lc, lc).sub(delta.mul(delta)).max(0).add(0.04);
+      const de = de2.sqrt();
+      const thA = atan(delta.negate().div(de));
+      const dTh = atan(tBack.sub(delta).div(de)).sub(thA).max(1e-4);
+      const pU = float(1).div(tBack);
+      const xi = fract(interleavedGradientNoise(screenCoordinate.xy).add(float(frameId).mul(0.618034)));
       const acc = float(0).toVar();
-      Loop(N, ({ i }: any) => {
-        const x = cameraPosition.add(rd.mul(float(i).add(0.5).mul(dt)));
+      const inscatter = (t: any) => {
+        const x = cameraPosition.add(rd.mul(t));
         const v = x.sub(uTorchPos);
+        const dd = dot(v, v);
         // near field: a 5 cm reflector only forms its 2000 cd beam beyond ≈ I·A/Φcore = 2000 · 0.002 / 25 ≈ 0.16 m²
         // (d ≈ 0.4 m); inside that the column's illuminance is bounded by Φ/A ≈ 12.5 klux, not I/d² (beamab: the
         // unclamped 1/d² beside the lens read 75 nits and blacked the frame through the exposure meter)
-        const d2 = dot(v, v).max(0.16);
+        const d2 = dd.max(0.16);
         const s = dot(v, uAxis);
+        const u = t.sub(delta);
+        const pE = de.div(dTh.mul(de2.add(u.mul(u))));
+        const w = float(1).div(pU.mul(N_U).add(pE.mul(N_E)));
         If(s.greaterThan(0.01), () => {
           const r = length(v.sub(uAxis.mul(s))).div(s).div(uTanA);
           const core = r.mul(r).div(uTorchSigma2).negate().exp().mul(uTorchCore);
           const spill = float(1).sub(smoothstep(uTorchShelf, 0.95, r)).mul(uTorchSpill);
           const tail = float(1).sub(smoothstep(0.6, 1.0, r)).mul(uTorchTail);
-          const prof = core.add(spill).add(tail);
+          // the spot's own cone falloff (SpotLightNode.getSpotAttenuation), as on the lit surfaces
+          const cone = smoothstep(uCosO, uCosI, s.div(dd.sqrt()));
+          const prof = core.add(spill).add(tail).mul(cone);
           // scattering angle: light travels along v̂, leaves toward the eye along −rd
-          const c = dot(v, rd).negate().div(d2.sqrt());
+          const c = dot(v, rd).negate().div(dd.sqrt().max(1e-4));
           const g = 0.6;
           const phase = float((1 - g * g) / (4 * Math.PI)).div(float(1 + g * g).sub(c.mul(2 * g)).pow(1.5));
-          acc.addAssign(prof.mul(phase).div(d2));
+          acc.addAssign(prof.mul(phase).div(d2).mul(w));
         });
+      };
+      Loop(N_U, ({ i }: any) => {
+        inscatter(float(i).add(xi).div(N_U).mul(tBack));
+      });
+      Loop(N_E, ({ i }: any) => {
+        inscatter(delta.add(de.mul(tan(thA.add(dTh.mul(float(i).add(xi).div(N_E)))))));
       });
       // beamab2 (Max, road): one NaN pixel here spread through bloom/TAAU and blacked the whole frame — clamp to a
       // finite, physically generous ceiling (≈ 4 nits: the near-lens column in thick mist)
-      return vec3(uCol).mul(max(acc.mul(dt).mul(sigma).mul(uCd).mul(uTorchLit), 0).min(4));
+      return vec3(uCol).mul(max(acc.mul(sigma).mul(uCd).mul(uTorchLit), 0).min(4));
     })();
     beam = new THREE.Mesh(geo, mat);
     beam.position.copy(light.position);
@@ -205,6 +259,7 @@ export function createFlashlight(camera: any, preset: PresetConfig): Flashlight 
     gain: 1,
     bounce,
     lit: uTorchLit, // ?debug A/B (R2-2)
+    near: uTorchNear,
     setOn(v: boolean) {
       on = v;
       // PERF (review): the light stays visible — light.visible = false drops it from the scene's light list, which

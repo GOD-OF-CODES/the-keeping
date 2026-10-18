@@ -321,6 +321,16 @@
       "outputs": []
     },
     {
+      "id": "scare-look",
+      "group": "scare",
+      "manual": true,
+      "description": "JUMPSCARE #147 look round: the Cycles-only severed-head close-up (blender/scare/*), ONE still (hero or jaw-spasm frame) -> scratch/jumpscare/look-r<N>.png/.exr + sheet-r<N>.png. Pass --force (job args are not hashed) and --job-args=\"--round N --spp 96 --frame hero\"",
+      "script": "blender/scare/scare_render.py",
+      "inputs": ["blender/scare/scare_head.py", "blender/scare/scare_tex.py", "blender/scare/scare_hair.py",
+                 "blender/scare/scare_scene.py", "blender/characters/sdf.py", "blender/characters/mesher.py"],
+      "outputs": []
+    },
+    {
       "id": "head-lab",
       "group": "review",
       "manual": true,

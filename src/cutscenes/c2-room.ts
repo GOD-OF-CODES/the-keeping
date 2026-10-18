@@ -25,6 +25,8 @@ export const C2_CONTACT = 7.56;
 /** The head separates / is out of the bottom of the frame / lands off-screen. */
 export const C2_SEVER = 7.6;
 export const C2_HEAD_LANDS = 7.9;
+/** SMOOTH-FIX (#145, hunt F8): the landed head rolls face-up (cutscene-fx 'nudge', 0.5 s) — off the frame, before 8.6. */
+export const C2_ROLL = 8.2;
 /** GLITCH-FIX: Harlan's fist closes on the hair (was 10.6, in frame) — the bottom of his squat, off the frame. */
 export const C2_GRIP = 10.75;
 /** The rope comes off the cleat. */
@@ -53,6 +55,21 @@ export const C2_PULSES = [
 export const C2_CAMERA_E = 0.625;
 /** The S6 100 mm insert (12.9–14.9, a separate set-up): ISO 3200, f/1.4, 1/48 s → 0.49 / 0.3842 = 1.27. */
 export const C2_INSERT_E = 1.27;
+/**
+ * SMOOTH-FIX (#145, hunt F5): S9's whip-pan leaves the lamp pool for the unlit hall (the rope along the cornice, the
+ * front door slamming). At f/2 the hall read pitch-black for 1.9 s (scene radiance 0.0023–0.003 vs the parlor's
+ * 0.010–0.012, scratch/fix/diag C2 20.6–22.4 `hl`; AgX's toe crushes everything under ≈ 0.002 to 0) — the beat the shot
+ * exists for could not be seen. The operator rides the iris and the shutter on the pan: f/1.4 (+1 EV) at a 360° shutter,
+ * 1/24 s (+1 EV) → 4 × 0.625 = 2.5: the hall's mean lands at ≈ 0.007 on the AgX input, as the parlor's at f/2.
+ * Back to f/2 on the turn to her (S10) while the frame is still on the dark hall.
+ */
+export const C2_HALL_E = 2.5;
+/** SMOOTH-FIX (#145, hunt F1): the gameplay eye → the film camera, and the torch lowered and off, over this many s
+ *  (the same clock for both, so the frame darkens monotonically from the torch-lit gameplay frame to the lamp's).
+ *  (after2, 0.6 s: the walk-in carries the torch toward the door jamb — its pool there brightens ×1.13–1.17 a frame
+ *  (1/d², the pre-roll's own trend) faster than the fade took it down: luma 0.009 → 0.0255 at 0.23 s, then ×0.4 a frame
+ *  to 0.0025. In 0.3 s the pool is gone before the jamb is close: a ≤ ×1.15 rise for 3 frames, then down.) */
+export const C2_HANDOFF_S = 0.3;
 
 /** Fix round 2 (ruling g): the eye over the severed head, 8.6–17.9 (the lurch in; 1.42 m from the head). */
 export const C2_E4: P3 = [4.62, 2.38, 1.92];
@@ -195,6 +212,9 @@ export const c2Room: TimelineFactory = (ctx) => {
     { t: 25.7, d: 3.3, path: [S10_EYE, [2.9, 2.15, 2.24], C2_END_EYE], target: [add(ADA_WALK[2], [0, 0, 1.3]), add(ADA_WALK[4], [0, 0, 1.4]), C2_END_TARGET], fov: [L44, L40], ease: 'inOut', handheld: 1.2 },
   ];
 
+  // SMOOTH-FIX (#145, hunt F1): where the torch is lowered to — the boards 1.6 m in from the threshold on the tableau's
+  // bearing (below the frame's bottom edge from the threshold eye)
+  const TORCH_DOWN: P3 = [C2E_T[0] + 1.6 * Math.cos(T_MAX_YAW_50), C2E_T[1] + 1.6 * Math.sin(T_MAX_YAW_50), GROUND];
   const room = 'G2';
   const neckSnd: P3 = NECK;
   const cues: Cue[] = [
@@ -202,7 +222,13 @@ export const c2Room: TimelineFactory = (ctx) => {
     { t: 0, type: 'light', op: 'storm_auto', on: false },
     // the lamp is the ONE key: the player's torch (a 2000 cd co-located key that flattened the tableau and blew the
     // sheet out in r1) is lowered and off through C2; it comes on with the run (C2c t = 0)
-    { t: 0, type: 'light', op: 'flashlight', on: false },
+    // SMOOTH-FIX (#145, hunt F1): lowered over the hand-off (bindings torchFade: its pool fades out on screen while the
+    // eye's exposure eases to the film camera's — see the exposure cue), then off. It was switched off on the first
+    // frame while the exposure stepped 0.066 → 0.625: that frame was ×16 the B03 frame (the TAAU history's torch haze).
+    // (after1: lowered too — left on the doorway, its pool on the near jamb brightened ×2.6 as the eye walked in, then
+    // slid off it ×0.06 in 4 frames; now the beam drops onto the boards inside the door as it fades, the click at the end)
+    { t: 0, type: 'fx', id: 'torchFade', params: { d: C2_HANDOFF_S, e1: C2_CAMERA_E, lowerX: TORCH_DOWN[0], lowerY: TORCH_DOWN[1], lowerZ: TORCH_DOWN[2] } },
+    { t: C2_HANDOFF_S, type: 'sfx', id: 'flashlight_click', gain: 0.35 },
     // K3: the lamp is the key and the one shadow light (map every frame in C2)
     { t: 0, type: 'fx', id: 'shadowLight', params: { at: 'lamp' } },
     { t: 0, type: 'light', op: 'cast_shadow', id: 'L_LAMP_PARLOR', on: true },
@@ -223,7 +249,9 @@ export const c2Room: TimelineFactory = (ctx) => {
     // [0.5, 2.2] → [0.5, 1.3] → [0.5, 3.6] → [0.5, 2.2]), which only clamped NEW meter readings: in QA (c2-meter m2med)
     // the strike 7.75 ran at 5.63 and the E4 hero 10.5 at 1.90 (stale readings), the run-to-run drift of fix round 2.
     // The lamp pool is the exposure; past 2–3 m the room goes to black; no meter, no adaptation, no drift.
-    { t: 0, type: 'fx', id: 'exposure', params: { fixed: C2_CAMERA_E } },
+    // SMOOTH-FIX (#145, hunt F1): the first frame is the gameplay frame (the eye's exposure, the torch still up); the
+    // camera takes over in C2_HANDOFF_S (opening.ts `ramp`: log space, smoothstep) as the torch goes down
+    { t: 0, type: 'fx', id: 'exposure', params: { fixed: C2_CAMERA_E, ramp: C2_HANDOFF_S } },
     // S6 the 100 mm eye insert is its own set-up (hard cuts in and out): the same stock wide open, f/1.4 (+1 EV,
     // e = 0.18·3200/48 / (12.5·1.96) / 0.3842 = 1.27) — at f/2 the face under the hair read L 0.01–0.017 (AgX-in ≈ 0.008,
     // black: m3med 13.9). Back to f/2 on the cut out.
@@ -245,7 +273,11 @@ export const c2Room: TimelineFactory = (ctx) => {
     { t: 0, type: 'place', char: 'harlan', pos: HARLAN_C2.pos, heading: HARLAN_C2.heading },
     { t: 0, type: 'visible', char: 'harlan', visible: true },
     { t: 0, type: 'clip', char: 'harlan', clip: 'harlan_c2', fade: 0, speed: 0, fallback: ['harlan_opening'] },
-    { t: 0, type: 'dof', dof: { focusDistance: 3.0, focalLength: 1.6, bokehScale: 2 } },
+    // SMOOTH-FIX (#145, after3): the film lens's depth of field racks in over the hand-off — at full bokeh on the first
+    // frame the torch-lit jamb 0.5 m away went soft in ONE frame and its clipped hot spot spread into a halo (luma ×1.48
+    // on that frame against the walk-in's ×1.13; scratch/fix/after3 C2 f26 → f27). One dof cue per 30 fps frame
+    // (uniforms only, as C4c's push-in).
+    ...Array.from({ length: 19 }, (_, i): Cue => ({ t: Math.round((i / 30) * 1000) / 1000, type: 'dof', dof: { focusDistance: 3.0, focalLength: 1.6, bokehScale: (2 * i) / 18 } })),
     { t: O, type: 'clip', char: 'ada', clip: 'ada_c2', fade: 0.2, fallback: ['ada_table'] },
     { t: O, type: 'clip', char: 'harlan', clip: 'harlan_c2', fade: 0, fallback: ['harlan_opening'] },
     { t: 0.3, type: 'sfx', id: 'apron_creak', pos: [5.15, 3.95, 1.6], room, gain: 0.7 },
@@ -266,9 +298,14 @@ export const c2Room: TimelineFactory = (ctx) => {
     { t: 7.62, type: 'subtitle', speaker: '', text: '(a choked cry)', d: 1.2, caption: true },
     { t: C2_HEAD_LANDS, type: 'sfx', id: 'head_drop', pos: HEAD_LAND, room, sched: true },
     { t: 8.6, type: 'dof', dof: { focusDistance: 1.45, focalLength: 0.5, bokehScale: 2 } },
-    // S4: the boot nudge (9.45), the roll to rest by 10.1; thunder through the shutters (9.8)
-    { t: 9.45, type: 'fx', id: 'adaHead', params: { mode: 'nudge' } },
-    { t: 9.45, type: 'sfx', id: 'head_nudge', pos: HEAD_REST, room },
+    // S4: thunder through the shutters (9.8)
+    // SMOOTH-FIX (#145, hunt F8): the face-down → face-up roll ran at 9.45 with no boot near it (harlan_c2's toe stays
+    // ≥ 0.47 m off: the head rolled over by itself on camera, under the nudge sfx). It is now the end of its own fall:
+    // it lands (7.9) with ≈ 0.6 m/s of the cut still in it, bounces and skids (7.9–8.2) and rolls over onto the occiput
+    // (8.2–8.7, 150° at the 9 cm radius ≈ 0.47 m/s) — all below the rigid S3 frame; the lurch to E4 (8.6–9.3) finds it
+    // settling face-up in its pool. (C2_ROLL)
+    { t: C2_ROLL, type: 'fx', id: 'adaHead', params: { mode: 'nudge' } },
+    { t: C2_ROLL + 0.05, type: 'sfx', id: 'head_nudge', pos: HEAD_REST, room, gain: 0.7 },
     { t: 9.8, type: 'sfx', id: 'thunder_distant', gain: 0.6 },
     // GLITCH-FIX: the grip at the bottom of his squat (fist 0.41 m over the boards 10.7–10.95), out of the frame
     { t: C2_GRIP - 0.03, type: 'sfx', id: 'hair_wring', pos: HEAD_REST, room },
@@ -301,6 +338,15 @@ export const c2Room: TimelineFactory = (ctx) => {
     { t: C2_ROPE_T, type: 'sfx', id: 'rope_pulleys', pos: PROP.P_PULLEY_3, room: 'G1' },
     { t: C2_ROPE_T, type: 'fx', id: 'rope_run', params: { dir: 'close' } },
     { t: C2_ROPE_T, type: 'fx', id: 'blurAmount', params: { v: 0.8 } },
+    // SMOOTH-FIX (#145, hunt F5): the iris + shutter ride as the pan leaves the lamp pool and back to f/2 as the lit
+    // parlor swings into the S10 sweep. #145 after1 iteration (luma, scratch/fix/det/a1-C2-1): the ride opened 20.3–20.9 on a
+    // smoothstep while the whip (cut at 20.07) had already left the pool — 20.43–20.6 still fell ×0.36–0.47 a frame to
+    // 0.0002; it now opens from the whip's first frame (20.1–20.7). The return over 21.9–22.45 closed the iris while the
+    // sweep crossed Harlan's dark corner: 22.27–22.4 read 1e-5 (black) at e 0.8–0.63; the pool enters at 22.43 (0.0005 →
+    // 0.003 → 0.0065 → 0.0087 at f/2). The iris now holds f/1.4 over the corner and is pulled in 0.22 s as the pool
+    // comes in (22.38–22.6), so the pool's arrival rises smoothly instead of ×6 a frame.
+    { t: 20.1, type: 'fx', id: 'exposure', params: { fixed: C2_HALL_E, ramp: 0.6 } },
+    { t: 22.38, type: 'fx', id: 'exposure', params: { fixed: C2_CAMERA_E, ramp: 0.22 } },
     { t: 21.05, type: 'door', id: 'D_FRONT', action: 'slam' },
     { t: 21.05, type: 'sfx', id: 'door_slam', pos: DOOR.front, room: 'G1', sched: true },
     { t: 21.5, type: 'sfx', id: 'bolt_drop', pos: PROP.P_BOLT_BOX, room: 'G1' },
@@ -327,7 +373,12 @@ export const c2Room: TimelineFactory = (ctx) => {
     { t: 28.3, type: 'sfx', id: 'latch', pos: DOOR.parlor, room: 'G1', rate: 0.8 },
     { t: 28.3, type: 'door', id: 'D_PARLOR', action: 'lock' },
     // the lamp's direct light goes behind a shut door: off until B05 (C2c roams it to the fanlight / U1 window)
-    { t: 27.7, type: 'fx', id: 'shadowLight', params: { at: 'off' } },
+    // SMOOTH-FIX (#145, hunt F6): off once the door IS shut — at 27.7 the leaf was still swinging (D_PARLOR closes from
+    // 27.6 at 70°/s: ≤ 92° → shut by 28.92) and its lit face went dark in one frame. The leaf is one of the lamp's cube
+    // casters, so the light narrows with the closing gap by itself; C2c switches it off again at its t = 0.
+    // (#145 after1 iteration: 28.95 still darkened C2's LAST frame, 28.967, ×0.06 one frame before the cut to C2c — now on the cut itself,
+    // the frame C2c starts on; a skip applies it as a state cue)
+    { t: C2_DURATION, type: 'fx', id: 'shadowLight', params: { at: 'off' } },
     { t: C2_DURATION, type: 'fx', id: 'blood', params: { seq: 'c2', phase: 'end' } },
   ];
   // the drip into the pool before the strike (one drop every ≈ 0.7 s, its pitch falling as the pool deepens)
@@ -380,4 +431,4 @@ export const c2Room: TimelineFactory = (ctx) => {
 };
 
 /** For tests: every cue time of a C2 element that §2.1 fixes. */
-export const C2_MARKS = { contact: C2_CONTACT, sever: C2_SEVER, headLands: C2_HEAD_LANDS, rope: C2_ROPE_T, lamp: LAMP_FLAME } as const;
+export const C2_MARKS = { contact: C2_CONTACT, sever: C2_SEVER, headLands: C2_HEAD_LANDS, roll: C2_ROLL, rope: C2_ROPE_T, lamp: LAMP_FLAME } as const;

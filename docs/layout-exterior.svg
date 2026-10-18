@@ -192,8 +192,8 @@
 <text x="277.8" y="915.8" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444">FENCE_W</text>
 <rect x="675.9" y="916.3" width="7" height="7" fill="#444"/><line x1="679.4" y1="919.8" x2="679.4" y2="925.4" stroke="#444" stroke-width="1.2"/>
 <text x="684.4" y="915.8" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444">FENCE_E</text>
-<rect x="465" y="916.3" width="7" height="7" fill="#444"/><line x1="468.5" y1="919.8" x2="470.5" y2="925.1" stroke="#444" stroke-width="1.2"/>
-<text x="473.5" y="915.8" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444">GATE</text>
+<rect x="465.6" y="916.3" width="7" height="7" fill="#444"/><line x1="469.1" y1="919.8" x2="469.1" y2="925.4" stroke="#444" stroke-width="1.2"/>
+<text x="474.1" y="915.8" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444">GATE</text>
 <rect x="189.5" y="930.5" width="7" height="7" fill="#444"/><line x1="193.0" y1="934.0" x2="193.0" y2="939.7" stroke="#444" stroke-width="1.2"/>
 <text x="198" y="930" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#444">REFLECTOR_1</text>
 <rect x="341.5" y="930.5" width="7" height="7" fill="#444"/><line x1="345.0" y1="934.0" x2="345.0" y2="939.7" stroke="#444" stroke-width="1.2"/>

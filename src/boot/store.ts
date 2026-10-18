@@ -37,6 +37,7 @@ export function loadSettings(): Settings {
     const o = JSON.parse(raw) as Partial<Settings>;
     if (o.preset && (PRESET_IDS as readonly string[]).includes(o.preset)) s.preset = o.preset;
     s.showFps = bool(o.showFps, s.showFps);
+    s.showObjective = bool(o.showObjective, s.showObjective);
     if (o.fpsCap === 0 || o.fpsCap === 30 || o.fpsCap === 60) s.fpsCap = o.fpsCap as FpsCap;
     s.fpsCapDivisorMode = bool(o.fpsCapDivisorMode, s.fpsCapDivisorMode);
     s.reducedFlash = bool(o.reducedFlash, s.reducedFlash);

@@ -1951,15 +1951,16 @@
    "type": "farm_gate",
    "room": "EXT1",
    "pos": [
-    0.5,
+    0.53,
     -28.25,
     0
    ],
-   "yaw": 0.35,
+   "yaw": 0,
    "params": {
-    "width": 2.6,
+    "width": 2.33,
     "state": "open_sagging",
-    "mat": "rust"
+    "mat": "rust",
+    "openDeg": 95
    },
    "lighting": "static",
    "collider": "box",

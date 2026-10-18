@@ -10,6 +10,8 @@ export type FpsCap = 0 | 30 | 60;
 export interface Settings {
   preset: PresetId;
   showFps: boolean;
+  /** The top-left objective line (src/ui/objective.ts) — on by default. */
+  showObjective: boolean;
   fpsCap: FpsCap;
   /** Cap frames to refresh / round(refresh / cap) to avoid judder on 120/144 Hz displays. */
   fpsCapDivisorMode: boolean;
@@ -27,6 +29,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   preset: 'medium',
   showFps: false,
+  showObjective: true,
   fpsCap: 60,
   fpsCapDivisorMode: true,
   reducedFlash: false,

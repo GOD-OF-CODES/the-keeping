@@ -27,6 +27,23 @@ const SLATS_FACE: [number, number, number] = [NODE.U3_WARD_HC[0], NODE.U3_WARD_H
 /** Segments hold their DOF/heartbeat until the next phase replaces them (or HemOverlay.stop()). */
 const SEGMENT_HOLD = 60;
 
+/**
+ * SMOOTH-FIX (#145b, re-verify F9 second half): the slat view was black for the whole visit. The U3 bake reads
+ * 1.5e-5 mean scene radiance through the slats (scratch/fix/r2/diag C4 `hl`, every phase): ≈ 0.0005 lux on the boards,
+ * an order under a moonlit overcast rainy night's 0.003–0.03 lux (CLAUDE.md), so even the eye at its ceiling (24) put
+ * the frame at e·L̄ ≈ 3.6e-4, under AgX's toe (luma 7e-5–1.2e-4 outside the lightning). While the player hides in Ada's
+ * wardrobe the room's baked night light (atlases + probe grids, the `lmScale` path) is lifted × C4_HIDE_LM — the boards
+ * to ≈ 0.0075 lux, inside the real range, and e·L̄ ≈ 0.0054: the level C2's accepted hall shot and C4a's dolly read at
+ * (luma 0.0006–0.001: the window, the dress on its form, Ada against the window, the slat edges). The lightning is a
+ * runtime light (unscaled): a stroke is still ×45 the room. It eases in over the first seconds in the hide (τ
+ * C4_HIDE_LM_TAU_IN, log space — it reads as the eye adjusting to the dark wardrobe) and back out after you leave it
+ * (τ C4_HIDE_LM_TAU_OUT). A stand-in for lane A's U3 night bake (requested): with the room baked to the real range,
+ * C4_HIDE_LM goes back to 1. Driven by bindings.ts (tickHideLm) from `HemOverlay.lmWanted`.
+ */
+export const C4_HIDE_LM = 15;
+export const C4_HIDE_LM_TAU_IN = 1.6;
+export const C4_HIDE_LM_TAU_OUT = 1.2;
+
 /** One overlay timeline per phase group. Ids: C4_approach, C4_hem, C4_look, C4_leave. */
 export function hemSegment(phase: DressPhase): Timeline {
   const base = { lock: 'none' as const, skippable: false };
@@ -109,6 +126,8 @@ export class HemOverlay {
   private readonly hideId: string;
   private segment: string | null = null;
   private lastPhase: string | null = null;
+  /** SMOOTH-FIX (#145b): the player is inside this hide (the U3 night-light lift, C4_HIDE_LM). */
+  private inHide = false;
 
   constructor(player: CutscenePlayer, hideId = 'H_ADA_WARDROBE') {
     this.player = player;
@@ -119,7 +138,13 @@ export class HemOverlay {
     return this.segment;
   }
 
+  /** SMOOTH-FIX (#145b): the bake scale the hide view wants (C4_HIDE_LM inside Ada's wardrobe, 1 elsewhere). */
+  get lmWanted(): number {
+    return this.inHide ? C4_HIDE_LM : 1;
+  }
+
   update(out: DressView | null, hiddenIn: string | null): void {
+    this.inHide = hiddenIn === this.hideId;
     const inVisit =
       !!out && hiddenIn === this.hideId && (out.state === 'SCRIPTED' || out.state === 'LOOK') && (out.room === 'U3' || out.room === 'U1') && (DRESS_PHASES as readonly string[]).includes(out.phase);
     if (!inVisit) {
