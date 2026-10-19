@@ -10,7 +10,7 @@
 // on the meshes whose world box holds the hit. Every 2nd frame; smoothed so the bounce never pops.
 
 import * as THREE from 'three/webgpu';
-import { Fn, exp, float, max, normalize, positionWorld, reflectVector, roughness, uniform, vec3 } from 'three/tsl';
+import { Fn, exp, float, max, normalize, positionWorld, reflectVector, renderGroup, roughness, uniform, vec3 } from 'three/tsl';
 import { specById } from '../materials/spec-index.ts';
 import type { Flashlight } from './flashlight.ts';
 
@@ -61,20 +61,23 @@ const ROOM_RHO = 0.3;
  * leather had no environment at all and rendered black against the lit floor/wall. The pool is a Lambertian disc at
  * the hit point: radiance L = I_b / A (I_b = ρΦ/π, the bounce intensity; A = π r², r ≈ dist·tan 18° — the shelf that
  * carries ~90 % of the flux — stretched by 1/cos at oblique incidence). Uniforms are written by FlashlightBounce.
+ * FLASH part 2, fixer r3 (#146e): all in the shared RENDER group (one UBO written once per render) — written every
+ * frame, read by the arms only; a plain object-group uniform can be held at its creation value by a draw (the torch
+ * cookie's V4, flashlight.ts), so nothing the torch updates per frame lives in a per-object UBO.
  */
 export const TORCH_POOL = {
-  pos: uniform(new THREE.Vector3(0, -1000, 0)),
-  normal: uniform(new THREE.Vector3(0, 1, 0)),
+  pos: uniform(new THREE.Vector3(0, -1000, 0)).setGroup(renderGroup),
+  normal: uniform(new THREE.Vector3(0, 1, 0)).setGroup(renderGroup),
   /** Pool radiance (linear RGB, cd/m²-scaled like every light here). */
-  radiance: uniform(new THREE.Color(0, 0, 0)),
-  radius: uniform(0.3),
+  radiance: uniform(new THREE.Color(0, 0, 0)).setGroup(renderGroup),
+  radius: uniform(0.3).setGroup(renderGroup),
   /** The beam's interreflected light around the player (irradiance, lux): what lights the faces of the hand that
    *  see neither the beam nor the pool. Integrating-sphere estimate E = ρΦ / (A(1 − ρ)), A = 4πR², R ≈ 1–1.6 m (the
    *  near enclosure) — ≈ 0.4–0.7 lux (vs ≈ 20–120 lux in the hot spot: the hand reads ~1/40 of the pool, dim but
    *  solid). Indoors only (no enclosure outside: the open field returns nothing). */
-  fill: uniform(new THREE.Color(0, 0, 0)),
+  fill: uniform(new THREE.Color(0, 0, 0)).setGroup(renderGroup),
   /** Debug A/B gain on the fill (1 = physical). */
-  gain: uniform(1),
+  gain: uniform(1).setGroup(renderGroup),
 };
 
 /**

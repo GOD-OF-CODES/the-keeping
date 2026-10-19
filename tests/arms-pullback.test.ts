@@ -332,3 +332,68 @@ test('pitch decoupling eases (no pop on a fast look)', () => {
   }
   assert.ok(maxStep < 0.01, `largest per-frame lens step ${maxStep} m (≤ 1 cm at 60 fps)`);
 });
+
+// FLASH part 2 (fixer r2): a wall BESIDE the player (the torch side). The pull only probes along the torch line, so the
+// elbow went into a left-hand wall (in game: the sleeve cut by the wallpaper at the bottom-left, looking down while
+// hugging a wall — scratch/flash-fixr2/elbowsim.ts). The elbow now swings down out of it; the torch does not move.
+function sideWallProbe(getW: () => number) {
+  TORCH_WORLD.sight = (o: any, d: any, far: number) => {
+    const W = getW();
+    if (d.x >= -1e-6) return Infinity;
+    const t = (-W - o.x) / d.x;
+    return t >= 0 && t <= far ? t : t < 0 ? 0 : Infinity;
+  };
+}
+const elbowWorld = (arms: any) => {
+  const e = new THREE.Vector3();
+  arms.c.bones.get('forearm_l').getWorldPosition(e);
+  return e;
+};
+
+test('a wall beside the torch arm: the elbow swings out of it, the torch and its beam stay put', () => {
+  const W = 0.21; // the synthetic elbow sits ≈ 1.9 cm past x = −0.21 (the shoulder 2 cm clear of it)
+  const run = (fold: boolean) => {
+    const { arms, light } = makeArms();
+    arms.foldEnabled = fold;
+    sideWallProbe(() => W);
+    for (let i = 0; i < 90; i++) arms.update(1 / 60, light, null);
+    return { arms, lens: lensWorld(light), dir: beamDir(light), elbow: elbowWorld(arms) };
+  };
+  const off = run(false);
+  const on = run(true);
+  assert.ok(off.elbow.x < -W, `the clip elbow is inside the wall without the fold (x ${off.elbow.x.toFixed(3)})`);
+  assert.ok(on.arms.fold > 0.05, `the elbow swung (${((on.arms.fold * 180) / Math.PI).toFixed(1)}°)`);
+  assert.ok(on.elbow.x > -W, `the elbow is out of the wall (x ${on.elbow.x.toFixed(3)} vs wall −${W})`);
+  assert.ok(on.elbow.y < off.elbow.y, 'it swung DOWN (toward the body), not up');
+  assert.ok(on.lens.distanceTo(off.lens) < 1e-3, `the lens did not move (${(on.lens.distanceTo(off.lens) * 1000).toFixed(2)} mm)`);
+  assert.ok(on.dir.angleTo(off.dir) < 1e-3, 'the beam kept its direction');
+  // far from the wall: no swing
+  const { arms, light } = makeArms();
+  sideWallProbe(() => 2);
+  for (let i = 0; i < 60; i++) arms.update(1 / 60, light, null);
+  assert.ok(arms.fold < 1e-6, `no swing away from walls (${arms.fold})`);
+});
+
+test('strafing into a wall beside the torch arm: the elbow gives way smoothly (no one-frame swing)', () => {
+  for (const speed of [1.6, 3.6]) {
+    const { arms, light } = makeArms();
+    let W = 0.8;
+    sideWallProbe(() => W);
+    for (let i = 0; i < 30; i++) arms.update(1 / 30, light, null);
+    let prev = elbowWorld(arms);
+    let maxStep = 0;
+    let maxIn = 0;
+    for (let i = 0; i < 45; i++) {
+      W = Math.max(0.21, W - speed / 30);
+      arms.update(1 / 30, light, null);
+      const e = elbowWorld(arms);
+      // the elbow's move relative to the body, minus nothing: the rig is fixed, the wall comes in
+      maxStep = Math.max(maxStep, e.distanceTo(prev));
+      maxIn = Math.max(maxIn, -W - e.x);
+      prev = e;
+    }
+    assert.ok(maxStep < 0.06, `${speed} m/s: largest elbow step ${(maxStep * 100).toFixed(1)} cm per 30 fps frame`);
+    assert.ok(maxIn < 0.03, `${speed} m/s: the elbow never went more than 3 cm into the wall (${(maxIn * 100).toFixed(1)} cm)`);
+    assert.ok(-W - elbowWorld(arms).x < 0, 'settled: out of the wall');
+  }
+});

@@ -773,6 +773,9 @@ So no cutscene stalls on a shader compile.
 
 ---
 
+> **LEAD 2026-10-19, ruling (aw), docs/ROADMAP.md:** the user asked to stop making new cutscenes. M-B, M-C, M-E and the
+> unbuilt parts of M-D are CANCELLED (F1, F2, C3b, C4b, C3a, C2a). M-F's QA items fold into the final round.
+
 ## 8. Milestones (ship order: cheapest high payoff first)
 
 1. **M-A: Freeze and profile, plus five cheap scenes.**

@@ -306,6 +306,18 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
   - The sting is synthesized. reducedFlash still caps strobes at ≤ 3 Hz.
   - Low gets the sequence only if it frees equal bytes elsewhere on Low; otherwise an in-engine fallback.
   - Slot order: user-reported work first. Beam → jumpscare workflow; perf-stalls → hand lane; PERF budgets deferred.
+- **(au) JUMPSCARE staging, 2026-10-19 06:55** (answers the AD round-2 question): the cut neck is dropped as a
+  requirement of (ap). The user asked for ONLY her face; the neck renders read as ham and cost a pass per round. The
+  face fills the frame (brow to chin ≥ 85 % of the height, both eyes open and clear), and every bruise, scar, the split
+  lip, the haemorrhaged eyes and the marbling sit in the lit part of the face. Full text: STATUS-jumpscare.md.
+- **(av) JUMPSCARE render rule, 2026-10-19 07:20.** Still review 3 failed r35: "a good mid-budget CG cinematic, not a
+  photograph", but with the right ingredients: the double milky stare, the broken incisor, bruising and haemorrhage
+  in the beam. The 3-review loop had run out, so 147i did gate-safe prep (--seq path, motion test, encoder) and refused
+  to render, which was correct. Ruling: two more fix + review loops. The still is judged AS PLAYED (full screen, ~1 s,
+  the game's grain / vignette / CA) and at 100 %; the 100 % flaws become a polish list. If the last review still fails
+  only "photograph" but is horrifying, the sequence renders and ships with the honest gap logged, and the look keeps
+  improving by re-rendering. Render budget ≤ 4 h of Blender lock in jobs of ≤ 45 min, so other lanes' browser runs
+  interleave. No stepped timing (the user reads it as a bug).
 - **PERF stalls result → ruling (aq), 2026-10-12 16:45.** The cutscene-start freezes are fixed by the render-context
   depth pin (#143). The C2 judder got WORSE: 21–23 % missed vsyncs on the real route. The cutscene hold freezes the
   scale gameplay reached in the cheap B03 hall: 0.85 Medium / 0.95 Max, above each preset's base 0.75 / 0.667. On
@@ -353,9 +365,21 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
   a snapshot of the tree; the PERF2 judder round (launched 02:55) keeps editing on top and ships in the next push.
 - Jumpscare (ap) workflow and ship-verify workflow (adversarial frame hunt over every cutscene, including the C2
   head fix) launched 16:40.
+- SHIPPED 2026-10-18 23:15: d7022c7 ("Ship 2") = snapshot tree e89f968f (index-BXPp9eAT.js). Gate: typecheck,
+  npm test 345/345, assets --check, build + verify-boot; strict playthroughs medium / max / low / careless (1 death) /
+  torch all reach B13 with 0 console errors, 4 requests before Start; gate views vs ship 1 show no regression
+  (scratch/lead-ship2). NOT in it (next push): FLASH 146d elbow fold, PERF2 caps/gates still being measured, the
+  assets.mjs queue fairness fix (#151). Lid-closed-on-battery sleep froze every lane 22:05–23:00 (no hang).
 
-## Then — cutscene rounds (docs/CUTSCENES-PLAN.md §8): M-A … M-F, plus CR end credits (§9)
-Each round: builders → adversarial reviewer → QA (playthrough bot, perf, hero shots) → commit → push → verify live.
+## Then — NO new cutscenes (ruling (aw), 2026-10-19 09:55; the user: "remove more cutscenes to be made")
+- CANCELLED, not to be built: F1 "Tuesday, the 6:10", F2 "What the Water Keeps", C3b "When He Rang", C4b "The
+  Twelfth Can", C3a "Six Thousand Nights", C2a "Eleven Names", the M-B memory-look infrastructure (grade cue, lmScale,
+  DOM gate) and Escape Phase 2's "extra clips". None has voice lines in voice-script.json, so nothing to remove there.
+- KEPT (built, fix/polish only): C0, C1, C2, C2b, C2c, C3, C4, C4a, C4c, C5, C5b, C6, C6b, C7, CR end credits, death
+  → jumpscare.
+- What remains, in order (the user also said "complete tasks fast"): finish the three running rounds (FLASH fix,
+  PERF2 judder verify, JUMPSCARE) → one FINAL round (release bake alone on mains power, the PERF budgets moved out of
+  PERF2, a whole-route QA + pacing pass on Low/Medium/Max) → ship → voices last with the user's key.
 
 ## Finish line
 All cutscenes + credits roll; top realism items done; Medium ≥ 45 fps and < 15 s warm load; Max within budget;

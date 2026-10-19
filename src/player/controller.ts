@@ -32,6 +32,8 @@ export const STEP_MAX = 0.27;
 /** How far ahead of the capsule centre (move direction) the step cap also looks for the floor it stands on. */
 const DATUM_AHEAD = 0.12;
 const STEP_LIFTS = [STEP_UP, STEP_UP / 2, STEP_UP / 4] as const;
+/** The free tread a furniture step needs beyond the substep's move (m): about a foot's depth (FLASH fixer r3, #146e). */
+const STEP_TREAD = 0.12;
 const SNAP_DOWN = 0.38;
 
 /**
@@ -334,6 +336,17 @@ export class PlayerController {
           if (this.world.collision.octree.capsuleIntersect(trial)) continue;
           trial.translate(_t.set(move.x, 0, move.z));
           if (this.world.collision.octree.capsuleIntersect(trial)) continue;
+          // FLASH fixer r3 (#146e): off the designed stairs a step needs a TREAD — the lifted capsule must also fit
+          // STEP_TREAD further on. A lip in front of a wall (P_MIRROR_HALL: the marble slab's bounds stand 1 cm proud of
+          // the frame's at 0.40–0.43 m) only ever gave an edge rest at the sphere's equator, accepted (0.19 m ≤ STEP_MAX),
+          // slid off and fell: a 0.2 m camera hop 3× a second.
+          if (!onStairs) {
+            const k = STEP_TREAD / wantH;
+            trial.translate(_t.set(move.x * k, 0, move.z * k));
+            const blockedAhead = this.world.collision.octree.capsuleIntersect(trial);
+            trial.translate(_t.set(-move.x * k, 0, -move.z * k));
+            if (blockedAhead) continue;
+          }
           // gameplay-d (B10 back-stair stall): accept the step only if the swept landing is HIGHER than where we
           // started. The old full-depth resolve let the lower floor's penetration swamp the riser-edge contact and
           // dropped the capsule back every substep (the sphere centre is 0.26 m behind the edge after one 1.3 cm

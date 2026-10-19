@@ -595,6 +595,13 @@ analysis `node scratch/flash-beam/analyze.mjs scratch/flash-look/beam-med med`, 
   (d) glance #2 (7.1): the frame is the balusters 0.3 m from the eye, lit hot by the torch 0.25 m from them, and her hand
   is not in the frame at 7.1 (framing, unchanged by this lane).
 
+- **[WITHDRAWN 2026-10-19 — the cause was this lane's flashlight.ts (stale cookie uniforms), fixed in Fixer round 3 /
+  #146e; do NOT stop the cue down or move BEAM_CLAMP.at]** (FIX part 2, V4 — C2c cue owner: FRAMES / SMOOTH-FIX; c2c-up.ts / bindings.ts, not this lane's files) the stumble
+  6.58–6.75 is a one-frame ×8 luma jump (0.043 → 0.340 at 6.6) into ≈ 5 near-white frames on Medium (0.15–0.30 on Max):
+  #145b's gaze clamp aims the clutched torch at riser 13 ≈ 0.4 m from the lens under C2c's FIXED film exposure 0.458 —
+  E = I·σ²/(σ²d² + D²/8) ≈ 8.1 klx (flashlight.ts near field) on a dark tread (ρ ≈ 0.1) ≈ 120 pre-AgX = white. No pose
+  the clutch allows moves it more than ≈ 0.5 EV (HAND #3). Lever: stop the cue down 2–3 EV for 6.58–6.75 (ramped over
+  2 frames each side), or move BEAM_CLAMP.at past the tread (≥ 1.2 m from the lens) for those frames.
 - (LOOK #146c, the (ar) look pass — cutscene owners / FRAMES / SMOOTH-FIX, not this lane's files):
   (a) C2c 6.8–7.4 (glance #2, film-camera cue 0.458): the hand rail 0.25 m from the lens now clips with a glare streak
       (p98 163 → 234, clip 1.1 %; sheets/med-c5c2c-crops.jpg bottom) — the honest (ar) result of a 2 kcd torch at 25 cm;
@@ -606,6 +613,19 @@ analysis `node scratch/flash-beam/analyze.mjs scratch/flash-look/beam-med med`, 
       (ar); compare same shots, not same clocks.
   (d) HAND numbers: PULL_LIFT 0.25 → 0 changes the drawn-in pose at walls (fist at the chest, not the chin), so the
       hand-views 'wall' bbox/lens rows from #146b no longer match.
+
+- (FIX part 2 round 3, NEW-G1 hop — PLAYER lane, src/player/controller.ts, not this lane's file) the 0.2 m camera hop
+  walking into P_MIRROR_HALL hugging the G1 east wall is the step-up accepting an EDGE REST on the marble slab's 1 cm lip
+  (the slab's box is 1 cm wider than the frame's): feet +0.19 m ≤ STEP_MAX, then it slides off and falls, 3× a second.
+  Proposed fix (scratch/flash-fixr3/controller-patched.ts, +12 lines in step()'s STEP_LIFTS loop, off the designed
+  stairs only): after `trial.translate(move)` clears, also require the lifted capsule to fit STEP_TREAD = 0.12 m further
+  along the move (`trial` moved by move·(0.12/|move|), capsuleIntersect → `continue`, moved back). Evidence: real
+  geometry + the real controller in node 15 hops → 0; tests/collision-stairs.test.ts 19/19 on the patch + a new
+  "1 cm lip in front of a wall" test (real: eye 0.238 m in one frame; patched 0 — copy it from
+  scratch/flash-fixr3/collision-stairs-patched.test.ts); a house-wide sweep of every prop collider: 322 → 105 hops, none
+  added, every changed walk a hop site (mirror, P_STOOL, P_BUCKET, the U3 stove / dress form). Alternative (data):
+  give the slab's box the frame's width in the prop (blender/props/furniture.py mirror_crepe: `box(W + 0.1, …)` → W)
+  — fixes this one mirror only.
 
 ## Requests for the lead (HAND, #146b)
 0. (smooth motion, all characters) blender/lib/export.py or blender/anim/build_anims.py (lane A): Blender 5.2's glTF
@@ -1005,3 +1025,663 @@ errors / 0 exceptions; scratch/flash-fixr1/R2)
   0.458. E at 0.4 m = I·σ²/(σ²d² + D²/8) = 8.1 klx (flashlight.ts near field) → a dark tread (ρ ≈ 0.1) at ≈ 260 nits × 0.458
   ≈ 120 pre-AgX = white with no texture. No pose the clutch allows changes that by more than ≈ 0.5 EV (HAND #3). The lever
   is the cue (c2c-up.ts) or the clamp (bindings.ts): request (For other lanes) below.
+
+## Fixer round 2 (part 2, agent "fix" #2, 2026-10-18 20:58–) — the never-run browser checks of round 1 + gate
+RESTART NOTE: round 1 stopped 2026-10-13 08:59 with F1 (pan2 no-hit ride + noise gate), X1 (Max: V5 never compiled in a
+browser — the beam cone is Max-only) and G1 (gate) queued but NEVER RUN (blocked behind Blender; F1.log / G1.log only
+"waiting"). The owned source files are byte-identical to the 08:59 tree (nothing in src/ changed since), except this
+round's QA switch below. Work dir scratch/flash-fixr2/ (run.sh M | X | G, runs.txt with free disk, verify.mjs = round 1's
+copy + the beam A/B, elbowsim.ts). Dist scratch/dist-flash-fix (built 21:08; delete at the end).
+- Offline gates (21:00–21:10): typecheck clean · npm test 345/345 · assets --check ok (low 26.99 / 27, medium 53.80, max
+  77.14 MB — no asset changes this round; Low's ≈ 10 KB headroom untouched) · vite build + verify-boot OK.
+- flashlight.ts: QA-only uniform `uBeamOld` (`rig.flashlight.beamOld`, default 0 = the round-1 MIS march, identical
+  output): 1 = the live build's march (12 mid-point steps uniform in t, no jitter, Δt = tBack/12) for a same-frame ladder
+  A/B on Max. APPROXIMATE "old": the round-1 cone smoothstep stays applied in old mode (≈ 1 inside the old 23.6° mesh),
+  so the old wedge edge reads slightly softer than the live build's.
+- Queued 21:10:55 (FIFO behind the lead's ship gate scratch/lead-ship2): M (Medium: look1 + beam U3N/G3E/PD 3…0.25 m,
+  holds 2 / 0.7 m + walk-ins G3E/U3N/G3N/PW/U3O + rt walk-ins U3N/G3E/PD/U4T + pan2 = round 1's F1), X (Max: look1 + beam
+  U3N/PD + beamv new | old | off with fps), G (strict torch-on Medium gate + C1 29.5–30.5 / C2c 6.2–8.0 frames).
+- FOUND offline, NOT fixed (scratch/flash-fixr2/elbowsim.ts: real arms.glb + FpArms + FlashlightRig, a plane wall at an
+  angle, the arm triangles rasterised 160×100 with near-plane clipping): the near-wall pull only probes along the TORCH
+  line, so a wall beside the player never folds the arm. Wall 0.27 m to the LEFT (hugging it), pitch −35°: sleeve cells
+  on screen 189 in front / 116 BEHIND the wall plane = a visible cut line where the forearm enters the wallpaper; level
+  gaze: 0 / 2 (fine). 45° into the U3O corner (pull 0.38): only ≈ 9 cells of glove at the bottom-left (elbow 12 cm into
+  the wall, off-screen). Fix direction (not started): an elbow probe (shoulder → elbow ray) that swings the IK pole down
+  toward the body when the elbow is inside a wall.
+  More cases (same sim): the 0.85 m back-stair landing (walls 0.425 m each side) is clean even looking down 50° (sleeve
+  cells behind the wall 0); the cut needs the eye within ≈ 0.30 m of a LEFT wall AND a downward look (0.27 m: 116 cells,
+  0.30 m: 14, 0.35 m: 0, of 16 000) — a strip of sleeve at the bottom-left corner. Residual, logged for a later round.
+- M (Medium, 21:1x–21:31, dist-flash-fix = round 1's tree + the beamOld switch; 0 console errors / 0 exceptions, load
+  285 s; scratch/flash-fixr2/M, analysis M/{settled,holds,gazewalk,detect}.txt):
+  · BEAM CURVE (settled real time, GAZE = displayed luma at the frame centre; pool = plane-centred), 3 / 2 / 1.5 / 1 / 0.7 /
+    0.4 / 0.25 m: U3N gaze 27 24 186 245 250 247 248, pool 198 228 242 249 252 248 248; G3E gaze 7 18 197 243 250 249 249,
+    pool 213 234 240 249 252 249 250; PD (front door from the porch) gaze 44 45 44 247 246 246 241 (PD pool/miss columns
+    are on the knob-padded blocker plane — not valid there, round 1 R2). Aim miss at 1 / 0.7 / 0.4 m: U3N 2.4 / 0.9 /
+    0.3 cm, G3E 2.5 / 1.2 / 0.1 cm (verifier: 6–11 / 14–16 cm). PASS (monotonic at the gaze; ≤ 2.5 cm).
+  · HOLDS (EV p2p over the last 10 s): 0.7 m U3N 0.09, G3E 0.07, PD 0.15 — 'fix' on 87–99 % of readings (verifier 0.92 /
+    0.93 / one-way +1.35); 2 m U3N 0.19, G3E 0.07, PD 0.28 one-way (round 1 before the noise gate 0.20 / 0.23 / 0.56).
+    PASS (< 0.2 EV standing still near a wall; the 2 m door is convergence, 0 reversals).
+  · REAL-TIME WALK-INS (gazewalk): biggest gaze fall from the running max G3E 15.0, U3N 21.2, PD 62.7 — all in the far
+    zone (eye 2.3–3.2 m, luma < 50 = grain on the dark wall); U4T 11.6 near contact (0.57 → 0.27 m). Verifier 98–169.
+  · CONTACT (CDP walk-ins, detect FLICKER): G3E 2.6, U3N 3.4, PW 0.8 (verifier 20.5 / 17.0 / 28.3); U3O 13.8 (corner,
+    T1 20.3, verifier 35.5); G3N 21.1 at f55 (T1 8.6, verifier 18.4): the pool is steady (642–649 px) and the luma rises
+    smoothly — the flicker is the bezel rim's thin glint (≈ 3 px × 60 px, the polished rim 15 cm from a ≈ 9 klx pool)
+    crossing the bottom-left corner for 3 frames as the torch head leaves the frame (scratch/flash-fixr2/
+    g3n-contact-53-58.jpg). Varies run to run (sub-pixel). Honest residual: no DoF on the arms, so a rim 15 cm from the
+    eye is drawn sharp where a camera would blur it away.
+  · PAN2 (ST_MAIN balusters, every frame; round 1's no-hit ride fix, first time in a browser): lens step max / median
+    slow 10.8 / 1.3 px @1280 (T1 21.8 / 1.9, verifier 33.6), fast 35.6 / 4.2 (T1 49.6 / 14.3, M1 68.9, verifier 53).
+    PASS. detect still flags pan2-slow f46 (39.9): the beam axis slips from a baluster 0.24 m away to the wall 2.78 m
+    behind it (hitD row) — the light moving between bars as a swept torch does, not the torch jumping (lens step 8.2 px).
+  · LOOK route stills: C2c 15.5 identical to the verifier's (e 0.4428 cue both; scratch/flash-fixr2/c2c-b05-ab.jpg);
+    B05 4 m e 0.33 → 0.67 ('key' both; p98 74 → 108, 0 % clip: the stair, banister and wall read, gown not blown —
+    the tree's lightmaps/meter moved between the verifier's 03:44 snapshot and round 1's 08:59 tree); B05 2.3 m e 0.29
+    'fix', centre p98 210 (round 1: 210).
+  · AIM_NEAR 1.25 (round 1's reversible tuning) — JUDGED: the pool drifts from ≈ 0.6 of the frame height at 2 m (aim 0,
+    held low) to 0.54 at 1.5 m and centred at 1 m (scratch/flash-fixr2/aimnear-sheet.jpg) — reads as lighting where you
+    look as you close in, not a crosshair. KEPT. AIM_MAX 65° kept (needed looking down at a wall within 0.4 m).
+- ELBOW FOLD (arms.ts, NEW this round — ships only if S below confirms it in the browser; pre-fold copy
+  scratch/flash-fixr2/arms.ts.orig): each frame one ray from the shoulder to the IK elbow's OUTER sleeve surface (the
+  elbow + ELBOW_MARGIN 2 cm along its bend direction); if a wall is nearer, the elbow swings DOWN about the shoulder→wrist
+  line to the first clear angle (signed clearance sampled every 15°, the zero crossing interpolated, ≤ 90°), eased
+  (τ 0.08 s out / 0.3 s back), the probe margin led by the elbow's approach speed (+ v·0.12 s, ≤ 0.3 m: strafing into a
+  wall the fold starts early). The hand keeps its world pose (wrist target unchanged) → the torch, beam and pool do not
+  move. Off under cutscenes / cues / the car (same gate as the pull). QA switch `arms.foldEnabled`, value `arms.fold`.
+  Offline (elbowsim.ts, real GLB, 160×100 raster with near-plane clipping; cells of arm BEHIND the wall plane on screen):
+  hugging a left wall at 0.27 m looking down 35°: 116–120 → 0 (sleeve 6 cells in front); 0.30 m: 14 → 0; level gaze
+  1 → 0; deepest vertex −11.5 → −1.8…−5 cm (off-screen); U3O corner elbow 11.5 cm in → clear; 0.85 m back-stair landing
+  (walls 0.425 m) folds 8–15° (elbow drops a little in the narrow stair; nothing penetrated before); front-wall / idle:
+  fold 0, identical. Strafing left into a wall (30 fps): 1.6 m/s pitch −35° cells behind ≤ 17 for 2 frames (was 183
+  sustained), elbow ≤ 3.8 cm/frame over ≈ 8 frames; 3.6 m/s ≤ 75 for 2–3 frames (the fold catches up), ≤ 6 cm/frame.
+  Tests (tests/arms-pullback.test.ts +2): beside a wall the elbow leaves it and swings down, lens < 1 mm / beam < 1 mrad
+  unchanged, no swing far from walls; strafing at 1.6 / 3.6 m/s the elbow steps < 6 cm/frame, never > 3 cm in, settles out.
+  npm test 349/349 (21:40; arms-pullback 13/13).
+- DIST SPLIT: scratch/dist-flash-fix (21:08) = round 1 + beamOld → M only (V1–V3, pan, beam curve, look stills); deleted
+  21:31 after M. scratch/dist-flash-fix2 (rebuilt 21:36, before S started: + the fold + its approach-state reset when the fold is off) = + the elbow fold → S (fold in the browser + U3O hide-mesh A/B + doors),
+  X (Max V5 + beam), G2 (the final strict torch-on gate). LEAD: src/characters/arms.ts and tests/arms-pullback.test.ts
+  changed AFTER the lead's 20:58 ship build (scratch/dist-ship2): lead-ship2's gates do not cover the fold; G2 does.
+- S (Medium, 21:47–21:52, dist-flash-fix2; 0 console errors / 0 exceptions, load 94.7 s; scratch/flash-fixr2/S, ana-s.sh):
+  · SIDE WALL (eye 0.28 m from a wall on the torch side, pitch −35 / 0 / −55°, U3N damask + G3N planks; fold off | on
+    same pose, seeded): the fold engages at 59–61°; arm vertices behind the wall plane (every 8th) 543–579 → 198–236,
+    deepest −10.2…−10.9 → −4.1…−4.5 cm; the fist, torch and beam unchanged (lens px within 0–19 px: idle sway). Look
+    (S/sheet-fold.jpg, fold-ab-zoom.jpg, gamma 2): off = the forearm lies along the bottom-left INTO the wall; on = it
+    drops toward the bottom edge under the unmoved fist — reads as an arm with the elbow tucked, not a hinge. KEPT.
+  · U3O CORNER (45° in, level): fold 89°, behind 252 → 0, deepest −9.2 → +0.1 cm; looking down 30° there: fold 0
+    (nothing to clear). The off-still's white wash is the advance()-stepped harness (a stale meter reading: ev +1.13 vs
+    −4.87 on), not the arms — the exposures of these A/B stills are harness noise, judge shapes only.
+  · STRAFE into the wall at the walking speed, pitch −35° (34 CDP frames each): fold ramps 10 → 62° over ≈ 6 frames
+    (≈ 10°/frame), lens step ≤ 15 px (off ≤ 12); behind max 664/672 → 547/483 (the peak frame, then 414 and falling as
+    the fold completes); FLICKER on 2.3 (U3N) / 12.1 (G3N f16: the forearm sweeping the dark wall as it drops — a
+    continuous motion, scratch/flash-fixr2/strafe-g3n-bl.jpg), off 1.4 / 1.9.
+  · DOORWAYS (kitchen arch, CDP walk 70 frames): archW (the south jamb 0.3 m on the torch side) fold 0 — the jamb
+    never reached the elbow; archE (along the passage/kitchen north wall at 0.3 m) fold up to 62°, FLICKER on 1.9 vs off
+    5.3, lens steps identical (110 px = the torch passing the frame edge in both).
+  · U3O HIDE-MESH A/B (the verifier's arc/spike; CDP walk-in, seeded): FLICKER norm 14.6 @f66 · every arm mesh hidden
+    13.0 @f67 · torch meshes hidden 6.7 @f68 → most of the U3O contact flicker is the SCENE (the pool straddling the
+    corner at 0.36 m), not the arms. The thin dotted edge of the pool's spill disc at < 0.2 m (scratch/flash-fixr2/
+    u3o-bl-58-68.jpg) also stays with the arms hidden: a render-side (TAAU/shadow-edge) artefact — PERF/RENDER lanes.
+- X (Max, 22:5x–23:07 on mains, dist-flash-fix2; 0 console errors / 0 exceptions — the round-1 MIS beam shader compiles and
+  runs (it is Max-only: never in a browser before); load 169 s; scratch/flash-fixr2/X, ana-x.sh):
+  · BEAM CURVE 2 / 1 / 0.7 / 0.4 m: U3N gaze 12 246 250 246, pool 215 249 250 247, miss 1.7 / 0.3 / 0.8 cm at 1 / 0.7 /
+    0.4 m; PD gaze 40 244 247 244. PASS (monotonic at the gaze from the near zone in).
+  · HOLD 0.7 m (last 10 s): U3N 0.17 EV, 'fix' 99 % — PASS; PD (front door) 0.31 EV, 2 reversals, 'fix' 99 % — better
+    than the verifier's one-way +1.35 EV creep but still over the 0.2 target (the door's hardware glints in the
+    fixation disk; Medium PD 0.15).
+  · V5 LADDER (beamv, same pose: new MIS march + full 45° cone | old 12-step march + old 23.6° mesh (uBeamOld 1) | beam
+    off; X/sheet-beamv.jpg, crops scratch/flash-fixr2/beamv-crops.jpg gamma 2.4): rain view — the old march draws a
+    brighter wedge with 2–3 bands just beyond the torch head, the new one is smooth there; path view (pitch −15°) — no
+    ladder in either at that pose. Subtle on screen at the gameplay exposure; the CPU replica (beamsim.mjs, re-run) old
+    max error ±64 % between neighbouring rays → new ≤ 28 % per frame, 1 % averaged over the per-pixel offsets.
+  · FPS (beamv, 7.5 s each, vsync-capped): path 57.05 / 57.05 / 57.05 avg (new / old / off), rain, porch, hall 60.0 in
+    all three modes — the full cone costs nothing measurable at the cap; Max ≥ 45 holds in these views. (Headroom under
+    the cap not measured: no uncapped mode in shot.mjs.)
+- G2 = THE GATE (23:31–23:37, dist-flash-fix2 = the final tree incl. the elbow fold; QA_STRICT=1 QA_TORCH_ON=1, cs-frames
+  wrapper with C1 29.5–30.5 / C2c 6.2–8.0 stepped; scratch/flash-fixr2/G2, G2.log): `done: ended=true beat=B13
+  game=541.03s wall=316s deaths=0`, 17/17 assertions, 0 unstick rescues, console errors 0 · warnings 0 · exceptions 0,
+  load 37.2 s, exit 0. (On battery from 23:07: no fps claimed from G2.)
+  · C1 29.5–30.5 (C1-0, 61 frames): both gloves on the wheel, the torch hidden (torchVis 0, I 0 every row;
+    scratch/flash-fixr2/c1-30.jpg); the one detect FLICKER (29.6, 39.5) is the oncoming headlights/wiper as the verifier
+    found — not the arms.
+  · C2c 6.2–8.0 (C2c-1): no black frame; the stumble 6.6–6.73 is still the white flash (V4, the cue's — request).
+- Offline gates on the final tree (23:40–23:41): typecheck clean · npm test 349/349 · assets --check ok (low 26.99 / 27,
+  medium 53.80, max 77.14 MB; no asset change). The final tree = G2's dist (21:36 build) + one comment-only edit in
+  arms.ts (the fold's header comment).
+- PERF note (the fold): +1 BVH ray per frame while the arm is active, up to 7 (≈ 0.05 ms each) when a wall is within
+  ≈ 0.3 m of the elbow; no new passes, materials or draw calls.
+
+### Fixer round 2 — FINAL JUDGE (harsh AD, biggest first) + what is left
+1. The user's complaint — the beam getting dimmer as you approach a wall — is FIXED on Medium and Max at every site
+   measured, judged where the player LOOKS (gaze luma): rooms U3N / G3E and the front door rise monotonically from 2 m
+   to contact; the hot spot sits on the gaze point within ≈ 2.5 cm from 1.25 m in (was 13–16 cm above-right); it no
+   longer hops over what you look at (real-time walk-in gaze falls: near zone ≈ 0–12, verifier 98–169).
+2. Exposure: standing 0.7 m from a wall the frame no longer breathes (Medium 0.07–0.15 EV p2p, Max U3N 0.17; verifier
+   0.66–1.23 with 4–6 reversals). Max at the front door 0.31 EV (2 reversals) — better, not perfect.
+3. Contact: the pool no longer jumps at wall contact (G3E/U3N/PW FLICKER 20.5/17.0/28.3 → 2.6/3.4/0.8). Still not clean:
+   (a) at G3N the polished bezel rim reflects the 9 klx pool as a thin sharp arc for ≈ 3 frames as the torch head leaves
+   the bottom-left corner — the arms have no depth of field, so a rim 15 cm from the eye is drawn crisp where a camera
+   would blur it to nothing; (b) at a 45° corner (U3O) the flicker is the SCENE (stays with every arm mesh hidden): the
+   pool straddling the corner, a green shadow wedge from the corner trim, and a DOTTED rim on the spill disc when the
+   lens is < 0.2 m from a wall (render-side; run E = torch shadow map on | off pending, see below).
+4. The hand beside walls (NEW this round): the forearm no longer cuts into a wall on the torch side — the elbow tucks
+   down, the fist and beam unmoved; reads as an arm. At a 3.6 m/s strafe the fold lags 2–3 frames (≤ 75 cells of sleeve
+   behind the wall briefly).
+5. Max volumetric beam: the old march's bright wedge/bands beyond the torch head are gone in the rain view; the shaft
+   is now the full 45° cone with the spot's own falloff. It is a faint effect at gameplay exposure either way.
+6. Still NOT photoreal (honest, unchanged by this round): the glove is a near-black silhouette in torch-lit rooms (glove
+   albedo request stands); the torch core on near walls and cloth is a smooth white disc with a soft halo (no texture
+   inside the core); fist-and-forearm enter from the left edge when looking down (the grip geometry, a design call); C2c
+   6.6–6.73 is a white flash (V4, the cue's exposure — request below).
+
+### Requests for the lead (FIX part 2, round 2)
+1. SHIP COVERAGE: src/characters/arms.ts (elbow fold) and tests/arms-pullback.test.ts changed after the lead's 20:58
+   dist-ship2 build — lead-ship2's five gates do not include them; G2 above (strict torch-on Medium) does. State at
+   00:08: HEAD = d7022c7 "Ship 2" (round 1's V1–V3/V5 code is in it); this round's arms.ts fold, flashlight.ts beamOld
+   QA switch and the two arms-pullback tests are UNCOMMITTED in the tree (git diff HEAD: 3 files, +190 / −6). A Max/Low
+   playthrough on the final tree was not run by this lane.
+2. V4 (C2c cue owner, FRAMES / SMOOTH-FIX): stop the film camera down 2–3 EV for 6.58–6.75 or move BEAM_CLAMP.at past the
+   tread (details under "For other lanes").
+3. Glove albedo (skin.ts / material-spec `leather_worn`, HAND request 1) still stands: the glove reads as a black shape.
+4. Design call: depth of field for the first-person arms (or a near-eye fade of their specular) — the only way to remove
+   the crisp bezel glint at wall contact (item 3a of the judge); not started.
+5. Disk: 11–14 GB free during this round (the floor is 12); this lane's footprint is two 196 MB dists (deleted at the end)
+   + ≈ 120 MB of run output. The big scratch users are other lanes' (scratch/fix 1.0 G, scratch/reverify 1.0 G,
+   scratch/hunt 460 M).
+6. Not committed (per the task); contract row #146d logged.
+7. PERF/RENDER (pipeline.ts, not this lane): the torch pool's rim on a wall < 0.2 m from the lens shows a dotted/comb
+   texture in stepped frames (U3O / G3N contact); E proved it is NOT the torch shadow map — likely the post grain or
+   TAAU on a very steep gradient. One look in real time on that lane's tools.
+8. Not run by this lane: the U4T back-stair landing look with the fold (offline: 8–15° elbow drop, nothing penetrated
+   before) and Max/Low playthroughs on the final tree.
+- E (Medium, 23:59–00:04, dist-flash-fix2, on battery; scratch/flash-fixr2/E): the dotted pool rim at U3O contact with the
+  torch's shadow map ON | OFF (same seeded walk-in, arm meshes hidden; scratch/flash-fixr2/edgeab-u3o.jpg): BOTH the
+  dotted rim and the green wedge are unchanged with the shadow OFF → not the torch shadow map (no bias change needed in
+  flashlight.ts). The rim is the spot cone's falloff (penumbra 22.5–45° × the cookie's spill/tail) on a wall 14 cm from
+  the lens, shown across a huge contrast ratio; its comb/dotted texture is most likely the post grain / TAAU on that
+  steep gradient — PERF/RENDER lane (pipeline.ts) to look at. The wedge is scene geometry at the corner lit by the
+  torch, not an artefact of the shadow. The run then FATALed in QA code: re-enabling castShadow at runtime crashes r186's
+  ShadowNode ("Cannot read properties of null (reading 'depthTexture')") — a harness artefact (gameplay never toggles
+  castShadow; setOn uses shadow.autoUpdate); 0 console errors before it. The U4T landing fold look (queued after it)
+  did NOT run — offline only: the fold drops the elbow 8–15° in the 0.85 m landing where nothing penetrated before.
+- CLEANUP (00:06): scratch/dist-flash-fix and scratch/dist-flash-fix2 deleted; run output kept in scratch/flash-fixr2/.
+
+## Re-verify (part 2) — INDEPENDENT RE-VERIFIER of fixer rounds 1–2 (agent "reverify", 2026-10-19 00:07–; edits nothing in the project but this section)
+Snapshot under test: `git stash create` bf4911e0 (00:07) → dist scratch/dist-flash-reverify (vite build 00:08, verify-boot OK).
+Still valid at 02:40: the owned files (arms.ts, flashlight.ts, exposure.ts, look.ts, flashlight-bounce.ts, flashlight-rig.ts)
+and pipeline.ts are hash-identical to the snapshot; the tree's only changes since are blender/scare/scare_tex.py, docs and
+the manifests' `generatedAt`. Work dir scratch/flash-reverify/ (verify.mjs = the verifier's scenario unchanged + `hug`
+(walk along a LEFT wall, fold column) + fold on|off A/B stills + `beamv` at the verifier's facade poses + HOLDS=2,0.7 +
+the LOOKDISTS guard; chain.sh A B C E; holds.py, seqstats.py; the verifier's settled.py / gazewalk.py / detect.py).
+- RESTART NOTE (re-verifier #2, 02:40): instance #1 built the dist, ran the offline gates + aimsim/elbowsim, queued run C at
+  00:12; C waited for the JUMPSCARE Blender + another lane's Chrome, then its load STALLED 1800 s at "Compiling shaders —
+  cutscene C4a" (01:32; the Mac went into Deep Idle around then) and the instance died. Nothing browser-side ran. Re-queued
+  02:52 as A (Medium: beam + holds, CDP walk-ins ×7 + sprints, rt walk-ins, pan2, hand2, hug) → B (Max: look1, beam + holds,
+  rt walk-ins, hand views, beamv) → C (strict torch-on Medium gate + C1/C2c frames) → E (Max gate + C2c).
+- Offline gates on the current tree (02:4x): `npm test` 349/349 (test2.log) · typecheck clean (tsc2.log) · assets --check ok
+  at 00:08 (low 26.99 / 27, medium 53.80, max 77.14 MB; no asset change since). CONFIRMED.
+- Fixer claims checked offline: round 2's changes are uncommitted (git diff HEAD: arms.ts / flashlight.ts /
+  arms-pullback.test.ts, 3 files +190 / −6) — CONFIRMED; contract row #146d — present; the V4 request under "For other
+  lanes" — present (C2c cue owner, 0.458 / BEAM_CLAMP.at); `uBeamOld` defaults to 0 — CONFIRMED; the fold and aim are gated
+  off under cutscenes / cues / BEAM_CLAMP / the car anchor (`free`, `armActive`) — CONFIRMED by reading. The verifier's
+  aimsim on the current arms.ts gives miss 0.000 m from 1.25 to 0.3 m (2 m: aim 0, 27 cm under by design; 1.5 m: 7 cm) —
+  the closed form solves the harness exactly, so it is weak evidence; the browser decides.
+- RUN A (Medium, 1280×800, 02:52–03:15, load 204.5 s, exit 0, **0 console errors / 0 exceptions**, on mains from 03:10;
+  scratch/flash-reverify/runA, ana.sh → settled.txt / holds.txt / gazewalk.txt / detect.txt / seqstats.txt):
+  · V1 AIM (settled real time, the verifier's settled.py): GAZE luma 3 / 2 / 1.5 / 1 / 0.7 / 0.4 / 0.25 m — U3N 21 25 220
+    241 246 247 248; G3E 21 17 126 242 246 248 249; PD 10 36 50 230 242 244 240; U4T – 22 183 234 246 241 242 (verifier
+    U3N 30 – 57 134 159 245 234). Miss at 1 / 0.7 m: U3N 2.8 / 1.8 cm, G3E 2.8 / 2.0, U4T 2.1 / 1.8 (verifier 6–11 / 14–16,
+    all UP; now ±1–2 cm, no consistent direction); lever 0.204 m unchanged. PD miss/pool columns are on the knob-padded
+    blocker plane (fixer R2) — gaze only there. Real-time walk-ins (gazewalk.py): the NEAR zone (eye < 1.25 m) rises
+    monotonically at all 4 sites (U3N 164 → 250 → 254, G3E 170 → 241 → 255, PD 68 → 127 → 250, U4T 189 → 233 → 242 with
+    a 2-point dip 234 → 232 at 0.65 m); the biggest falls are in the FAR zone only (aim 0 by design): G3E 31.6 / U3N 18.0
+    at 3.0 → 2.4 m (luma < 60), PD 64.7 at 3.2 → 2.8 m (the pool slides down off the gaze as you close in — the torch held
+    low), U4T 14.0 at contact. Verifier 98–169 in the near zone → FIXED on Medium.
+  · V2 HOLDS (holds.py; 13.4 s at 10 Hz after a 3.5 s settle): 0.7 m whole-trace p2p / reversals / last-10-s p2p — U3N
+    0.48 / 0 / 0.12, G3E 0.39 / 0 / 0.15, PD 0.38 / 0 / 0.21, U4T **1.09 / 0 / 0.52** (one-way +1.09 EV, still climbing at
+    13 s: target −2.80…−1.70 while the EV starts at the 1 m point's −3.71; 'fix' 100 %); 2 m: U3N 0.67 / 0 / 0.21, G3E
+    0.18 / 0 / 0.09, PD 0.70 / 2 / 0.30 (target −2.50…−1.36), U4T **1.05 / 3 / 0.31** (target −4.09…−2.85 standing still).
+    The verifier's 0.7 m breathing (U3N/G3E 0.92/0.93 EV, 4–5 reversals) is GONE (0 reversals, ≤ 0.15 EV last 10 s). The
+    door CREEP is smaller but NOT gone at U4T (verifier +1.59 one-way → +1.09 one-way, unconverged); U4T 2 m still has 3
+    reversals over 13 s (a 1.2 EV target range with aim 0). PARTIAL.
+  · V3 CONTACT (detect FLICKER at contact, CDP walk-ins 1.6 m/s): G3E 2.1, U3N 2.1, PW 1.2, U3O 7.3, PD 6.2, U4T 8.3, G3N
+    **12.5**, sprint PD 12.9, sprint U3N 8.1 (verifier 20.5 / 17.0 / 28.3 / 35.5 / – / – / 18.4 / 21.4). The pool no longer
+    jumps (pool step ≤ 10 px at every flat-wall site). Still there (strip-contact-g3n-u3o.jpg, gamma 1.6): G3N f53–56 the
+    thin sharp bezel glint crossing the lower left for 4 frames + a comb-dotted pool rim at f52; U3O f61–64 a pale green
+    blade (the corner trim) flashing at the bottom as the pool straddles the corner. PARTIAL (as the fixer says).
+  · ELBOW FOLD (new, hug sequences — eye 0.30 m from the U1 / G1 east wall on the torch side, walking south, pitch −30 / −10):
+    fold 45–61° held, steps ≤ 2.4°/frame in U1, arm vertices behind the wall ≤ 81 (every 8th; all off-screen: the strip
+    shows only the fist + torch head at the lower left, no forearm in the wallpaper). Fold on | off stills: no visible
+    difference in these poses (the forearm is out of frame) — the fold does no harm here; its visual benefit is only in the
+    fixer's S poses. G1: fold steps 17°/frame once (f104–106, passing the hall mirror) — off-screen.
+  · NEW (G1 hug, other lanes): walking along the G1 east wall into P_MIRROR_HALL (the crepe-draped hall mirror) the player
+    gets stuck and the camera HOPS 22 cm up and falls back every 8 frames (eye z 2.25 → 2.47 → 2.25, y fixed) — a step-up
+    loop on the mirror's collider (player lane); meanwhile the torch is 8 cm from the black crepe, the meter opens to
+    EV +2.9 and the barrel + both gloves render as pale cream-white objects (raw-hugG1-57-92.jpg) and FLICKER 69 at f57.
+    Harness: `advance()` with W held — the same physics as a held key, but not seen with real input yet.
+  · Pre-existing (identical in the verifier's runA/runB2 rows): at the end of a fast crouched look-down (5.3°/frame to −80°)
+    the fist kicks back down 27 px @1280 in one frame (pitch-decoupling spring reversing) — FLICKER 14.8. Minor.
+- RUN B (Max, 1280×800, 03:15–03:32 on mains, load 186.7 s, exit 0, **0 console errors / 0 exceptions**; runB/):
+  · V1 (settled real time): GAZE 3 / 2 / 1.5 / 1 / 0.7 / 0.4 / 0.25 m — U3N 47 26 151 246 244 245 248, G3E 8 17 192 246 246
+    246 249, PD 58 54 48 248 242 241 241, U4T – 129 166 205 224 229 229 (verifier Max U3N 9 81 206 136 235 247, PD 51 149
+    111 94 173 156). Miss at 1 / 0.7 m: U3N 1.6 / 2.0 cm, G3E 1.5 / 1.8, U4T 2.8 / 1.0 (verifier 13–16 cm UP at 0.7). The Max
+    U4T POOL (plane-centred) still dips 228 → 212 → 226 at 1.5 / 1 / 0.7 m, but the GAZE rises 166 → 205 → 224 — the leaf
+    you look at no longer goes dimmer. Real-time walk-ins: biggest gaze fall U3N 5.3, PD 8.8, U4T 1.4 (verifier U3N 250 →
+    166, PD 219 → 87). FIXED on Max.
+  · V2 HOLDS 0.7 m (whole p2p / reversals / last 10 s): U3N 0.50 / 0 / 0.17, G3E 0.44 / 0 / 0.09, PD 0.45 / 0 / 0.15, U4T
+    0.27 / 0 / 0.25 (verifier U3N 0.66 / 4, G3E 0.87 / 4, U4T 1.23 / 6, PD +1.35 one-way). The fixer's Max PD 0.31 with 2
+    reversals is NOT reproduced: 0.15, 0 reversals here. 2 m: U3N 0.34 / 0 / 0.16, G3E 0.67 / 0 / 0.14, PD 0.82 / 2 / 0.38,
+    U4T 1.46 / 3 / 0.15 (target −5.41…−3.63 standing still). Breathing at 0.7 m GONE on Max; at 2 m (aim 0) the door
+    sites still wander 0.4–1.5 EV with 2–3 reversals in the first seconds. Note: at U4T Medium settles 2–3 EV brighter than
+    Max (0.7 m: −2.62 vs −5.40) for a similar picture (u4t-med-max.jpg) — not investigated (a preset lighting difference).
+  · V5 (the verifier's method: look1 gate-dark / drive-dark stills; v5-look1-ab.jpg = verifier 03:44 | now): the 5–6
+    evenly spaced bars and the hard 23.6° wedge beyond the torch head are GONE in both views. Same-session A/B (beamv,
+    v5-beamv-ab.jpg, old march + old mesh | new, gate / drive / rain): old shows the ladder in all three, new is smooth in
+    all three. FIXED. Observation: at the gameplay exposure the new shaft is essentially invisible near the lens (no visible
+    beam in the mist at all) — honest for a 27 lm torch in light rain, but the rain itself is not lit in the beam either.
+  · LOOK (look-max-live-vs-now.jpg: live build runD | now): U1 wall 1 m a grey disc under the old claw → a hot core with a
+    spill ring and the damask readable; sewing room a dim veil → the dress core and the floor read; B05 4 m and the upper
+    hall unchanged. Better in every comparable view. Still not photoreal: the core is a smooth white disc with no texture,
+    the far-wall pool 5 m down the hall is a glowing orb, the U1 'wall' spill rim has a dotted/comb texture.
+  · HAND (hand-max-sheet.jpg: rain / idle / walk / wall / crouch / down45): the old claw is gone; the torch head with its
+    silver ring and a black fist sit at the bottom-left / bottom-centre and read as "a torch held low". The glove is still a
+    featureless black silhouette in every view (never reads as leather); in the G1 mirror case (run A) the same gloves
+    turned pale cream-white at EV +2.9. It no longer looks weird; it does not yet look like a photographed hand.
+- RUN C = THE GATE (strict torch-on Medium, cs-frames C1 29.5–30.5 / C2c 6.2–8.0; 03:39–03:45, load 39.7 s; runC/):
+  `done: ended=true beat=B13 game=579.7s wall=352s deaths=0`, 17/17 assertions, console errors 0 · warnings 0 ·
+  exceptions 0, exit 0. CONFIRMED (the fixer's G2 reproduced on the same tree).
+  · V4 C2c stumble (route frames + detect, the verifier's method): luma 6.567 0.043 → 6.600 **0.341** → 0.456 → 0.501 →
+    0.493 → 0.360 — frame-for-frame the verifier's (0.340 / 0.455 / 0.500 / 0.493 / 0.354) and the fixer's G2; min luma
+    0.032 over 6.2–8.0 (no black frame); 7.567 → 7.600 drops ×0.19 on the glance cut. The white flash is UNCHANGED — NOT
+    FIXED (the cue's exposure; request stands with the C2c owner).
+  · C1 29.5–31: torch hidden every row (torchVis 0, I 0) — CONFIRMED; detect's one FLICKER (45.7 @ 29.6) is the frame the
+    verifier and the fixer attributed to the wiper crossing the oncoming light (not the arms).
+### Re-verify (part 2) — VERDICT (snapshot bf4911e0 = the current tree's runtime; biggest first) — E (Max gate) and H (hop probe) appended below when done
+1. V1 near-wall aim overshoot — FIXED, CONFIRMED on Medium and Max with the verifier's own tools (settled.py GAZE + miss,
+   gazewalk.py real-time walk-ins): the hot spot sits ≤ 2.8 cm from the gaze at 1 m and ≤ 2.0 cm at 0.7 m at every site
+   (was 13–16 cm UP); the luma where you look rises monotonically from 1.5 m to contact; near-zone walk-in falls ≤ 14
+   (was 98–169). The user's "dimmer as you approach" is fixed where the player looks. Residual by design: from 3 m to 2 m
+   (aim 0, torch held low) the pool slides below the gaze and the gaze luma falls 18–65 points while the pool itself
+   brightens (PD 3.2 → 2.8 m: 65).
+2. V2 exposure breathing — the 0.7 m breathing is GONE (0 reversals at all 8 site×preset holds; last-10-s p2p ≤ 0.21 EV
+   except one). NOT fully gone: Medium U4T (wardrobe leaf) still creeps one way +1.09 EV over 13 s at 0.7 m (unconverged,
+   last 10 s 0.52) and at 2 m the door sites still swing (Medium U4T 1.05 EV / 3 reversals, PD 0.70 / 2; Max U4T 1.46 / 3,
+   PD 0.82 / 2) — the disk-edge case the guard was meant for. PARTIAL. The fixer's "Max PD 0.31 / 2 reversals" was not
+   reproduced (0.15 / 0 here).
+3. V3 contact pop — PARTIAL, as the fixer says: the pool jump and TAA double core are gone (flat-wall FLICKER 1.2–8.3,
+   was 17–35); the G3N bezel glint (a thin sharp arc for 4 frames, FLICKER 12.5) and the U3O corner flash (a pale green
+   trim blade + a comb-dotted pool rim for 4 frames) remain.
+4. V4 C2c stumble white flash — NOT FIXED (identical luma to the verifier: 0.043 → 0.341 → 0.501); not this lane's file.
+5. V5 Max volumetric ladder — FIXED, CONFIRMED at the verifier's gate/drive stills and in a same-session old/new A/B
+   (gate, drive, rain); 0 console errors on Max. The new shaft is all but invisible at gameplay exposure.
+6. Elbow fold (new) — no harm found: hugging the U1 / G1 east walls it holds 45–61° with ≤ 2.4°/frame steps, the forearm
+   never shows in the wallpaper, on|off stills are identical in these poses (the forearm is out of frame there).
+7. NEW (other lanes): walking along the G1 east wall into the crepe-draped hall mirror the camera hops 22 cm up and falls
+   every 8 frames — CONFIRMED in real time (run H: 14 hops of 0.206 m in 4.2 s; only with the eye ≈ 0.3 m off the
+   wall, 0.45 m off it the player slides past). Cause not verified. With the torch 8 cm from the black crepe the
+   meter opens to EV +2.9 and the torch barrel and both gloves render as pale cream-white shapes (raw-hugG1-57-92.jpg).
+8. HAND / LOOK: the claw is gone; the fist and torch read as "a torch held low" on Max in every view (no longer weird),
+   but the glove is a featureless black silhouette at normal exposure and pale white at high exposure — never leather.
+   Max look vs the live build: better in every comparable torch-lit view; still not photoreal (white textureless core,
+   the far-wall pool a glowing orb, a comb-dotted spill rim on near walls).
+Gates on this tree: strict torch-on Medium playthrough → title, 0 deaths, 17/17 assertions, 0 console errors / warnings /
+exceptions (run C) and on Max (run E); npm test 349/349; typecheck clean; assets --check ok (re-run 04:33: low 26.99 /
+27, medium 53.80, max 77.14 MB). Runs A, B, C, E, H: 0 console errors / 0 exceptions. NOT checked by this pass: the
+fixer's S-pose fold benefit (eye 0.28 m, pitch −35/−55: sleeve behind the wall 543–579 → 198–236), the strafe fold rate,
+and fps (no fps part; run A started on battery).
+- RUN E = Max GATE (strict torch-on, 04:2x, load 39.1 s; runE/): `done: ended=true beat=B13 game=625.43s deaths=0`, 17/17
+  assertions, console errors 0 · warnings 0 · exceptions 0, exit 0. C2c stumble on Max: 6.567 0.043 → 6.600 0.148 → 0.202
+  → 0.258 → 0.293 (verifier 0.147 / 0.202 / 0.259 / 0.295), min 0.027 — unchanged, tamer than Medium. CONFIRMED.
+- RUN H = REAL-TIME HOP PROBE (Medium, rAF loop, W held through g.input, eye height every rendered frame, 04:28–04:31,
+  0 console errors; runH/med-verify.json `hop`): walking south along the G1 east wall with the eye 0.30 m off it, the
+  player stops at y 8.08 against P_MIRROR_HALL (pier mirror, box collider) and the eye SNAPS UP 0.206 m in one frame, falls
+  back over ≈ 0.25 s, and snaps up again — 14 times in 4.2 s (eye 2.25 ↔ 2.48 m, 60 fps). 0.15 m and 0.30 m further from
+  the wall the player slides past the mirror with no hop. The hop is CONFIRMED in real time. Cause NOT verified: most
+  likely the step-up in src/player/controller.ts (STEP_UP 0.32 trial lift, STEP_MAX 0.27 cap) re-trying on the mirror's
+  box every few frames. Player lane, not FLASH.
+- CLEANUP (04:32): scratch/dist-flash-reverify deleted (no other scratch/dist-flash-* existed); run output kept in
+  scratch/flash-reverify/ (123 MB). 16 GB free. Only this section of docs/STATUS-flash.md was edited.
+
+### Requests for the lead (RE-VERIFY, part 2)
+1. V4 stands with the C2c cue owner (FRAMES / SMOOTH-FIX): the stumble is still a ×8 one-frame white flash on Medium.
+2. PLAYER lane (src/player/controller.ts): the step-up loop on P_MIRROR_HALL (run H) — the camera hops 21 cm three
+   times a second while you walk into the hall mirror hugging the G1 east wall. A step trial that lands on a box higher
+   than STEP_MAX should not lift the eye at all.
+3. FLASH follow-up (this lane, if another round runs): (a) the door-site exposure — Medium U4T 0.7 m still creeps +1.1 EV
+   one way over 13 s, and at 2 m (aim 0) U4T / PD swing 0.7–1.5 EV with 2–3 reversals on both presets; (b) the G3N bezel
+   glint and the U3O corner flash at contact (needs the DoF / near-eye specular fade design call); (c) why U4T meters
+   2–3 EV brighter on Medium than on Max for the same picture.
+4. Glove albedo (HAND request 1) still stands: black at normal exposure, pale cream-white at EV +2.9 (the G1 mirror
+   case), never leather.
+
+## Fixer round 3 (part 2, agent "fix" #3, 2026-10-19 04:40–) — the re-verifier's V4 + NEW-G1 hop
+Work dir scratch/flash-fixr3/; dist scratch/dist-flash-fix (current tree; deleted at the end). On mains, 17 GB free.
+Plan: (1) G1 mirror hop — node repro of the step-up on P_MIRROR_HALL's per-mesh box colliders + a scratch-patched
+controller as evidence (player lane's file: request only); (2) V4 C2c stumble — ownership discriminator: the APPLIED
+exposure per frame and the pre-exposure HDR of the riser at the frozen 6.6 frame, Medium vs Max (the same cp / pt /
+lens pos / 2 kcd / fixed 0.458, yet Medium's riser is a uniform white slab and Max's a hot core with texture —
+scratch/flash-fixr3/med-vs-max-6.6-6.67.jpg); same-frame toggles (bounce / near field / bloom); (3) re-checks (beam
+U3N + G3E, B05, C2c 15.5, C1 30) + the strict torch-on Medium gate.
+### NEW-G1 mirror hop — ROOT CAUSE FOUND (offline, real geometry + the real controller; player lane's file → request)
+- Repro (scratch/flash-fixr3/hopsim.ts: the REAL collision.glb + P_MIRROR_HALL from props_m1.glb placed as level.ts does,
+  colliders from propColliderMeshes(…, 'box') + the REAL PlayerController, W held south along the G1 east wall): x 3.30
+  → 15 hops > 5 cm in 4.2 s, max eye step 0.204 m/frame at 60 fps (30 fps 0.220, 144 fps 0.178), stuck at plan y 8.080;
+  x 3.15 / 3.00 → 0 hops. Run H measured 14 hops, 0.206 m, y 8.08 / 0 / 0 — the same numbers. 'mesh' colliders: 14 hops.
+- Cause: the pier mirror is one GLB mesh with 4 primitives → 4 oriented boxes. The frame box (wood) is 0.80 m wide,
+  full height; the marble slab's box (enamel_chipped, 0.40–0.43 m above the floor) is 0.82 m wide — a 1 cm LIP proud of
+  the frame on each side (crepe box too, from 0.86 m). Walking into the mirror's side the capsule's cylinder touches the
+  lip (a wall contact) → the step-up trial (lift 0.32 m, move 1–13 mm) is clear → snapDown(0.37) finds the lip's top
+  edge at the sphere's EQUATOR (edge rest, n.y ≈ 0.1) → feet 0.19 m up ≤ STEP_MAX 0.27 → accepted; the next substeps
+  push the sphere off the 1 cm edge (the frame stands right behind it) and it falls 0.2 m in ≈ 0.25 s; repeat. The cap
+  measures the sphere's BOTTOM, not where it is supported, and an edge rest has no tread behind it.
+- Proposed fix (src/player/controller.ts, step(), off the designed stairs only): after the trial clears the substep move,
+  the lifted capsule must ALSO fit STEP_TREAD = 0.12 m further along the move (a foot's depth) — otherwise it is a lip
+  in front of a wall, not a step. Scratch copy scratch/flash-fixr3/controller-patched.ts (+12 lines, marked "FLASH fixer
+  r3"); designed stairs (onStairs) keep the old rule.
+- Evidence for the fix (offline): hopsim x 3.30 at 30 / 60 / 144 fps → 0 hops, max eye step ≤ 2 mm; tests/collision-
+  stairs.test.ts against the patched copy 19/19 (ST_MAIN-like 0.25 / 0.28 m goings, the doorway lintel, the 0.25 m lone
+  step, every step-cap case) + a new "1 cm lip in front of a wall" test ×3 fps: real controller FAILS (eye 0.238 m in
+  one frame), patched passes (scratch/flash-fixr3/collision-stairs-patched.test.ts, -real.test.ts).
+  House-wide sweep (scratch/flash-fixr3/stepsweep.ts: collision.glb + EVERY layout prop collider, the layout stairs for
+  onStairs; 4768 walks = 0.5 m grid × 8 headings in 11 areas, 1.5 s at 60 fps): camera hops > 5 cm real 322 → patched
+  105; the patch adds a hop nowhere; all 79 differing walks are hop sites (the mirror both sides — the real controller
+  even ends PERCHED on the 1 cm lip at feet +0.22 —, the parlor stool P_STOOL, the zinc bucket P_BUCKET, the U3 stove /
+  dress form); the 105 left are the stairs (ST_MAIN / ST_BACK treads lift the eye a riser per frame — legit, unsmoothed)
+  and furniture tops ≥ 0.12 m deep under the 0.27 m cap (the bucket rim, a stove plinth) — the step cap's own call.
+### V4 C2c stumble — browser session A (Medium 1280×800, dist-flash-fix = the current tree, --beat B03; 04:53–05:16,
+0 console errors / 0 exceptions; scratch/flash-fixr3/A, r3.mjs, ana.sh)
+- A FOUND DISCREPANCY: on the real route walked from B03 (the c2c-handover walk → C2 → C2c, no input, stepped 1/30 s) the
+  stumble is NOT a white flash: luma 6.567 0.043 → 6.600 **0.145** → 0.184 → 0.220 → 0.193 → 0.081 → 0.199 → 0.211 →
+  6.835 0.148 (gate runs C / G2 / the verifier: 0.341 → 0.456 → 0.501 → 0.493 → 0.360). Same camera (cp / pt identical to
+  the mm), same lens (lp ±2 mm), I ≈ 2000 cd, the applied exposure 0.458 every frame. The picture is the hot core on
+  riser 13 with its stains readable, the tread top in grazing spill (scratch/flash-fixr3/A-vs-runC.jpg: left = this
+  session, right = gate run C — a uniform white riser under a milky full-frame veil). Before the drop (≤ 6.567) both
+  runs match to 0.001 luma: the difference appears only on the near-surface frames. → V4's white flash is a STATE the
+  gate playthrough carries into C2c (it did not come from Medium vs Max: Max's gate frame looks like this session's).
+  The gate run G (queued) logs the applied exposure, the cutscene fx (DOF / blur), scene scale, bloom, the bounce and
+  torch base intensity, the near-field switch and the shadow autoUpdate per frame to find which.
+- Frozen same-frame A/B at 6.600 (pre-exposure HDR, look.hdr, uv 0.5/0.7 = the riser under the core): base 23.05 · bloom 0
+  22.6 · torch core 0 → **1.84** (the core is 92 % of it) · spill + tail 0 → 20.2 · near field off (+ bounce 0, a
+  sequencing slip) 15.7. At 6.667 (the camera in the treads, lens 0.18 m from the tread) the centre is spill-lit: 5.09 →
+  spill 0 1.39, core 0 4.27. Display: bloom 0 removes the haze over the tread top (luma 0.165 → 0.124); sheets
+  scratch/flash-fixr3/A/med-ab-6.600-sheet.jpg / -6.667-sheet.jpg (base | bloom 0 | bounce 0 / near 0 | core 0 | spill 0).
+- The cue owner's two levers emulated on a C2c replay from 6.20 (cutscenes.player.play startAt, same session; the base
+  replay matches the route frames to ±0.03 luma; scratch/flash-fixr3/replay-base-stop-far.jpg rows base / stop / far):
+  · stop (−2.5 EV over 2 frames from 6.58, held to 6.75, back by 6.85): peak 0.220 → 0.087, the riser still reads; the
+    frames look under-exposed (a dark vignette), 6.733 0.041.
+  · far (BEAM_CLAMP-style aim up the flight, plan (0.55, 8.1, 4.4) ≈ 1.25 m, for 6.46–6.85): WORSE — 6.467–6.5 the wall
+    loses its pool (0.034 → 0.009) and 6.767–6.833 are BLACK frames (0.000–0.002: the camera whips to her hand while the
+    beam stays up the flight). Not recommended.
+- Mirror (B03, the re-verifier's hop pose): 10 hops > 5 cm (max 0.22 m) in 3 s of W held — confirmed again in the
+  browser; standing against the mirror the frame is metered 'key', exposure 0.61 (EV −0.71), lens 0.147 m from the
+  collider box: the gloves are not cream-white at B03's lighting (the re-verifier's EV +2.9 case was at B05 —
+  scratch/flash-fixr3/A/med-mirror-stand.jpg). Residual, not chased.
+- IN THE BROWSER (H, Medium, --beat B05, a QA-only build scratch/dist-flash-hop = the tree + the patched controller
+  injected by scratch/flash-fixr3/vite.hop.config.ts — the tree's controller.ts untouched; the re-verifier's real-time
+  rAF hop probe, W held through g.input; 05:37–05:41, 0 console errors / 0 exceptions): x 3.30 → 248 frames, eye
+  2.250–2.258 m, max up-step 0.001 m/frame, **0 hops** (run H on the live tree: 14 hops of 0.206 m), the player stops
+  against the mirror at y 8.08 as before; x 3.15 / 3.00 → 0 hops, they slide past the mirror as before. Dist deleted.
+### Gate G (strict torch-on Medium, cs-frames C1 29.5–31.5 + C2c 6.2–8.0, 960×600, dist-flash-fix = the current tree;
+05:12–05:37 incl. queue; scratch/flash-fixr3/G)
+`done: ended=true beat=B13 game=581.73s wall=316s deaths=0`, 17/17 assertions, console errors 0 · warnings 0 · exceptions 0,
+load 171.6 s, exit 0. C1 29.5–31.5: the torch hidden every row (torchVis 0, I 0). C2c stumble: luma 0.043 → 0.340 →
+0.455 → 0.500 → 0.492 → 0.359 (the verifier's numbers again). Per-row state (XROW): applied exposure 0.458, the beam
+hit 0.536 m at 6.6 (session A: 0.535), bounce 2.06 cd (A 2.09), torch base 2000 cd, the near field on, the torch shadow
+updating, cutscene fx {motionBlur 0} (no DOF), scene scale 0.75, bloom 0.22 — the LIGHTING STATE IS THE SAME as session
+A's, where the frame is a textured core (0.145). Max session X (my route, 1280×800) = the Max gate run E frame for frame
+(0.146 / 0.203 / 0.257 / 0.277 vs 0.148 / 0.202 / 0.258 / 0.293) and its pre-exposure HDR = Medium A's (riser 22.6 vs
+23.1; 6.667 centre 5.07 vs 5.09). So the white flood is not light, exposure or FLASH state: it is the Medium gate's
+RENDER of the same HDR — 960×600 at scale 0.75 (≈ 720×450 internal) vs 1280×800 in A. Session A2 (= A at 960×600,
+queued) separates resolution from the route.
+### Restart (agent "fix" #3 restarted, 06:51–) — A2 + L were run but not written up; then the route-state discriminator
+- A2 (= session A at the gate's 960×600, B03 route, 05:39–06:04, 0 console errors / 0 exceptions; scratch/flash-fixr3/A2):
+  luma 6.567 0.044 → 6.600 **0.150** → 0.188 → 0.221 → 0.181 → 6.737 0.031 → 0.230 → 0.205 → 0.149 (A at 1280×800:
+  0.145 / 0.184 / 0.220 / 0.193 / 0.081). Frozen 6.600 render toggles: base 0.129 · bloom 0 0.091 · sharpen 0 0.133 ·
+  scale 0.60 / 0.85 / 1.00 → 0.136 / 0.134 / 0.137 (pre-exposure riser 23.2–24.6 in all). → RESOLUTION AND SCALE ARE
+  RULED OUT: the white flood (gate 0.340 / 0.455 / 0.500) appears only when the game is PLAYED FROM THE START (C0 → C1 →
+  … → C2c, the gate route), never after a `?beat=B03` jump. The earlier "RENDER of the same HDR at 960×600" guess is wrong.
+  Side note (not chased): the B03 route has a one-frame dark dip at 6.737 (A 0.081, A2 0.031) that the gate frames do
+  not show (0.493 → 0.360).
+- Zero-cost row diff (G/C2c-1 vs A/med-c2c, every field both log, 6.50–6.80): camera pos / pitch identical to the mm,
+  fov 37.85, lens ±3 mm, torch I 1970–2010 cd vs 1996–2014, exposure 0.458, lightning 0, no hide, draw calls equal
+  (± 2). Nothing logged so far differs → run S (gate route, STOP after C2c, the pre-exposure HDR probe + a full state dump:
+  every pipeline uniform, look.get(), the cutscene profile, the torch spot's cone / shadow, renderer / camera / scene,
+  a census of every visible light) and run T (the same dump on the B03 route at 960×600); diff.
+- L (beam re-check, Medium 1280×800, --beat B03, 05:39–06:07, 0 console errors / 0 exceptions; scratch/flash-fixr3/L,
+  sheet L-sheet.jpg = U3N 1 m | U3N 0.4 m | B05 4 m / C2c 15.5 | B05 2.3 m | C1 30 s from gate G):
+  · BEAM CURVE 3 / 2 / 1.5 / 1 / 0.7 / 0.4 / 0.25 m (settled.py): U3N GAZE 28 30 221 240 247 247 247, pool 198 234 244
+    249 252 247 248, miss at 1 / 0.7 / 0.4 m 3.0 / 2.0 / 0.8 cm; G3E GAZE 64 17 215 241 244 248 249, pool 218 235 240 249
+    253 249 250, miss 2.7 / 2.1 / 0.8 cm. Same as the re-verifier's run A (U3N 21 25 220 241 246 247 248) — monotonic at
+    the gaze from 1.5 m to contact; the pool's 252 → 247 at 0.4 m is the near-field clamp (5 luma, not visible).
+  · HOLD 0.7 m: U3N last 10 s 0.07 EV / 0 reversals, G3E 0.08 / 0 ('fix' 100 %).
+  · B05 4 m e 0.665 'key', p98 109, 0 % clip (stair, banister, Ada and her lamp read); B05 2.3 m e 0.317 'fix' p98 79;
+    C2c 15.5 e 0.459 cue, p98 78; C1 30 s: both gloves on the wheel, torch hidden (torchVis 0, I 0) — all as round 2.
+  · Look (harsh): the U3N core is still a smooth textureless white disc inside a hard-edged spill ring; the thin
+    vertical line under the core at 1 m / 0.4 m is the damask motif's own stem (cropped at gamma 1.4: seam.jpg — the same
+    stem repeats in the pattern columns; G3E plaster shows no line), not a cookie seam. G3E's plaster cracks read as thick
+    dark drawn lines (material lane, not FLASH).
+- S (GATE route, Medium 960×600, cs-frames SCENE=C2c 6.45–6.8 STOP=1 PROBE=1 + the state dump xrow-state.js; 06:58–07:00,
+  0 console errors) vs T (B03 route, r3.mjs, same dump + the same PROBE box; 07:04–07:14, 0 console errors; T's first
+  attempt was killed while waiting for a Blender job, exit 130, re-run): the flood REPRODUCES in S (luma 0.043 → 0.340 →
+  0.455 → 0.500 → 0.492 → 0.357) and not in T (0.044 → 0.151 → 0.191 → 0.223 → 0.182). PRE-EXPOSURE HDR (look.hdr, the
+  centre 62 % box): 6.567 S 0.298 / T 0.307 → 6.600 **S 20.8 / T 3.85** → 6.633 36.1 / 2.68 → 6.667 41.7 / 3.30. → it is
+  LIGHT in the scene pass (5–13× more), not the post chain / grade / exposure. The dump diff at 6.600 (statediff.mjs):
+  every pipeline uniform, every look.get() value, the cutscene profile (C2c, scale 0.75), the torch spot (angle 45°,
+  penumbra 0.5, decay 2, shadow 1024 / bias / near / far), renderer (pr 1, 960×600, AgX), camera (near 0.03, fov 37.85),
+  scene, lightning 0 — ALL IDENTICAL. Light census: the same 7 visible lights (torch 1974 vs 2022 cd, bounce, landing
+  candle, U2 lamp, 3 probe grids); only the bounce differs (S 2.07 cd 0.88 m from the eye, T 1.01 cd 2.16 m — the
+  bounce's every-2nd-frame hit update falls on 6.600 in the gate route and on 6.567 / 6.635 in the B03 route).
+- Hypotheses tested and FALSIFIED in the gate route (same luma and HDR to ±0.003 / ±0.5 %):
+  · U1 — the cookie reading a one-frame-old shadow matrix (r186 lightProjectionUV uses light.shadow.matrix; outside the
+    projected box SpotLightNode skips the cookie = 2000 cd everywhere): a pre-render hook forcing
+    light.shadow.updateMatrices(light) on every frame → 0.340 / 0.454 / 0.499, HDR 20.9 (unchanged).
+  · W — the bounce light (look.set({bounce: 0}) from 6.467) → 0.340 / 0.454 / 0.499, HDR 21.0 (unchanged); the logged
+    bounce geometry is sane (4 cm off the hit, axis along the surface normal, facing the lens).
+  Queued: Y (B03 route with ONE extra 0.1 ms frame before the window: flips every every-2nd-frame cadence in the game),
+  K (gate route, a same-frame A/B kit at 6.600: torch 0 / core 0 / spill 0 / bounce 0 / reflections 0 / probe grids 0 /
+  other lights 0 / torch shadow intensity 0 / near field 0 / arms hidden + the material under the beam) and KB (the same
+  kit on the B03 route).
+- Y (B03 route + one extra 0.1 ms frame before the window, 07:47–08:14): unchanged (0.152 / 0.191 / 0.224, HDR 4.2) — the
+  extra frame did not flip the bounce's cadence either (inconclusive; the bounce is ruled out by W anyway).
+- K (gate route) vs KB (B03 route), same-frame A/B kit at 6.600 (abkit.js: 3 × 0.1 ms frames per variant, pre-exposure
+  HDR at the 62 % box / the riser below the core (uv 0.5, 0.72) / the upper wall / the riser's right end; sheet
+  K-vs-KB.jpg). The beam lands on the same mesh + material in both (G1_stair_2, trim_chipped, lightmapped, roughness 1).
+  | variant | gate box / riser / right | B03 box / riser / right |
+  | base re-render | 12.1 / 110 / 0.26 (stepped frame: box 20.8) | 4.49 / 16.5 / 0.28 (stepped: 3.85) |
+  | torch 0 (torchCd 0.001) | 0.005 / 0.014 / 0.014 | 0.005 / 0.013 / 0.014 |
+  | core 0 | **13.3 / 59 / 8.7** — the frame turns a uniform white | 0.63 / 1.76 / 0.29 (as physics says) |
+  | spill + tail 0 | 10.9 / 114 / 0.015 | 4.1 / 15.4 / 0.015 |
+  | near field 0 | 12.2 / 110 / 0.28 | 4.5 / 11.8 / 0.30 |
+  | bounce 0 / reflections 0 / probe grids 0 / other lights 0 / torch shadow intensity 0 / arms hidden | ±3 % | ±3 % |
+  → ALL of the flood is the torch's own light (torch 0 kills it), but in the gate route the riser's torch light does not
+  behave like the cookie: removing the hot core leaves half of it and BRIGHTENS the rest of the frame 30×, and the near
+  field (which only acts on the core) does nothing there. The flood also decays under re-renders (box 20.8 stepped → 12.1
+  after 3 frozen frames) — something per-frame. Queued K2 / KB2: the riser material's explicit LightsNode list dumped in
+  both routes (every light, in-scene or not, its world pose), 6 frozen re-renders (decay curve), and two variants:
+  every other light in that list at 0, and the torch narrowed to 5°.
+- K2 (gate route, 08:27–08:50, 0 console errors): the riser's explicit LightsNode list is the same 4 lights as built at
+  load (torch, bounce, the hall candle and parlor lamp at 0) — no ghost / duplicate light. Frozen re-renders of the SAME
+  frame are not stable in the gate route: K base box 12.1 / riser 110 / right end 0.26, K2 base 23.3 / 158 / **9.1**
+  (K's "core 0" frame, 13.3 / 59 / 8.7, is the same 'flood' state — so core 0 did not cause it). The stepped frame is the
+  flood every time (S / U1 / W / K: 20.8–21.0). A 5° cone (K2 'narrow') leaves the core disc + bright OUTLINES on every
+  stain and on the nosing edges with the riser between them dark — an edge-only term. Queued K3: a per-render trace
+  (12 frozen re-renders: HDR + the spot's angle / shadow fov / the riser centre's projected light coordinate / the
+  lens pose / scale / draw calls) + a forced material rebuild + a fresh material clone on the riser.
+- K3 (gate route, 08:54–09:20): 12 frozen re-renders all in the flood state (box 21.6–23.0 / riser 169–175 / riser end
+  8.8–9.1) while the JS side is identical to the B03 route to the mm (lens (0.387, 4.042, −7.198) vs (0.385, 4.039,
+  −7.195), target, angle 45°, shadow fov 90°, I 1983 vs 2022 cd, scale 0.75, 960×600). material.needsUpdate on the
+  riser: no change. A fresh material clone: the riser loses the torch entirely (0.014 — a clone is not a valid A/B).
+  → the GPU-side data of ONE draw differs from the JS state.
+### V4 — ROOT CAUSE FOUND (KB3, 09:19–09:37, B03 route, 0 console errors): the riser's draw uses the cookie's OLD values
+| probe (pre-exposure HDR) | gate route, flood (K2 / K3) | B03 route, base (KB3) | B03 route + cookie set to flashlight.ts's INITIAL uniform values (KB3 `defaults`) |
+| 62 % box | 22–24 | 4.51 | **24.4** |
+| riser below the core (uv 0.5, 0.72) | 158–174 | 14.8 | **162.8** |
+| riser right end (uv 0.85, 0.72) | 8.7–9.1 | 0.29 | **9.03** |
+| upper wall (uv 0.5, 0.2) — another draw | **0.057** | 0.059 | 2.06 |
+flashlight.ts declared the cookie uniforms with the round-2 profile (core 0.87, σ² 0.012, spill **0.13**, shelf 0.4,
+tail **0.02**); look.ts's live profile (copied in by surfaces.ts on the first frame) is 1 / 0.0036 / **0.0035** / 0.4 /
+**0.0008** — 37× less spill, 25× less tail. On the played route the stair risers' draw (G1_stair_2 / trim_chipped)
+renders with the old values (260 cd of "spill" on a riser 0.53 m away = 906 lux → the uniform white slab) while the wall
+above it — another draw — has LOOK's (0.057 in the gate = B03's 0.059; forcing the old values everywhere lights it 35×).
+The uniforms were plain OBJECT-group uniforms (one UBO per draw); which draw keeps its creation-time copy depends on
+the route (a ?beat=B03 jump never shows it). Exposure, the cue, the bounce, the shadow matrix, reflections, probes,
+other lights, the arms and the resolution are all ruled out above (S/T/U1/W/K/K2/K3). → V4 is THIS lane's (flashlight.ts),
+not the C2c cue owner's: the three earlier V4 requests (exposure stop-down / BEAM_CLAMP.at) are WITHDRAWN — the stop
+under-exposes the stumble and the far aim gives black frames (session A replays above).
+### FIX (in the tree; contract #146e) — src/render/flashlight.ts + src/render/flashlight-bounce.ts
+1. Every uniform the cookie reads (uTorchCore / Sigma2 / Spill / Shelf / Tail, uTorchPos, uTorchLit, uTorchNear,
+   uBeamOld) is in three's shared RENDER group (`.setGroup(renderGroup)` — one UBO written once per render; three's own
+   pattern for light uniforms, Lights.js lightShadowMatrix): no draw can hold a private stale copy.
+2. Their initial values are LOOK's live profile (a draw frozen at creation values is frozen at the right ones).
+3. TORCH_POOL (the arms' pool env, written every frame) likewise in the RENDER group.
+typecheck clean; npm test 349/349 (test4.log); built scratch/dist-flash-fix2 (verify-boot OK). Browser verification
+queued: K4 (old dist: does the stale draw follow later value changes at all — for the systemic request), K5 (fix2,
+gate route: stepped C2c 6.2–8.0 + the kit), G2 (fix2, the full strict torch-on Medium gate), L2 (fix2, beam U3N/G3E).
+- K4 (OLD dist, gate route, 09:38–10:0x, 0 console errors): stepped 6.600 = the flood again (luma 0.340). Kit at 6.600:
+  base re-render box 4.51 / riser 15.7 / end 0.28 (= B03's correct values this time) → spill + tail 0 → riser **106** →
+  tail 0 alone → 105 → old values → 157. The stale draw DOES follow later value changes, but not to the values set:
+  after "spill 0" it shows a spill near the OLD 0.13, not 0 — the riser's copy of the cookie uniforms is unreliable
+  (it lags / lands on the wrong values) rather than simply frozen. Consistent with a per-draw object-UBO bookkeeping
+  fault for uniforms shared across many programs, not with any value this lane writes. Systemic request below.
+### V4 AFTER the fix — K5 (scratch/dist-flash-fix2 = the fixed tree, GATE route, strict torch-on, C2c 6.2–8.0 stepped
++ the kit at 6.600; 09:38–10:2x incl. 40 min behind JUMPSCARE Blender jobs; **0 console errors / 0 exceptions**)
+| C2c t | 6.567 | 6.600 | 6.633 | 6.667 | 6.700 | 6.733 | 6.767 |
+| gate BEFORE (S) luma | 0.043 | **0.340** | 0.455 | 0.500 | 0.492 | 0.357 | 0.302 |
+| gate AFTER (K5) luma | 0.043 | **0.148** | 0.186 | 0.221 | 0.188 | 0.057 | 0.215 |
+| B03 route (T, old dist) | 0.044 | 0.151 | 0.191 | 0.223 | 0.182 | 0.032 | — |
+| gate pre-exposure HDR box before → after | 0.298 → 0.300 | **20.8 → 4.45** | 36.1 → 2.60 | 41.7 → 3.39 | 46.1 → 3.18 | 19.8 → 0.44 | 9.3 → 4.25 |
+Kit at 6.600 on the fixed gate route: base box 4.40 / riser 16.2 / end 0.285 (B03 4.49 / 16.5 / 0.28); torch core 0 →
+riser 1.67 (B03 1.76: the draw follows the look values live now); the OLD values forced → 23.8 / 159.5 / 9.04 (the
+fingerprint reversed: the flood is exactly the old profile). Sheet scratch/flash-fixr3/v4-before-after.jpg (top: gate
+before 6.600 / 6.633 / 6.667 — a white slab under a milky veil; bottom: after — the hot core on riser 13 with its
+stains, then the riser in spill with the core on the tread). FIXED.
+- Residual now visible on the played route (was masked by the flood; the B03 route always had it): a ONE-FRAME DARK DIP
+  at 6.733–6.736 (luma 0.188 → 0.057 → 0.215; HDR 3.18 → 0.44 → 4.25) as the lens passes ≈ 0.10 m from tread 13
+  (hitD 0.096–0.128). Not V4. Probe K6 queued (kit at 6.73: torch shadow off / shadow near plane 0.02 / near field /
+  bounce / arms hidden).
+### GATE G2 on the fixed tree (scratch/dist-flash-fix2; strict torch-on Medium, cs-frames C1 29.5–31.5 + C2c 6.2–8.0,
+960×600, PROBE every 3rd frame; 10:07–10:32 incl. the queue; scratch/flash-fixr3/G2)
+`done: ended=true beat=B13 game=528.77s wall=296s deaths=0`, **17/17 assertions, console errors 0 · warnings 0 ·
+exceptions 0**, load 243.5 s (the full shader recompile of the new uniform layout happened inside the normal load;
+not a regression signal — G was 171.6 s and other lanes' Blender jobs were running), exit 0.
+- C2c stumble (route frames): 6.567 0.043 → 6.600 **0.148** → 0.186 → 0.222 → 0.204 → 6.733 0.113 → 0.195 → 0.230
+  (before, gate G: 0.340 → 0.455 → 0.500 → 0.492 → 0.359). C1 29.5–31.5: torch hidden, I 0 every row.
+- detect.py FLICKER on C2c 6.2–8.0 got WORSE in number while the picture got right: f16 @6.733 114 (before 49), f12 @6.600
+  72.8 (before < 10). Before, the flood saturated every frame white, so whips hardly changed the pixels; now the
+  frames carry texture and the whip shows. f12 is the stumble's own content change (the riser enters the view, turn
+  11.7°, step 0.24 m). f16 is the residual one-frame dark dip (below).
+- THE 6.733 DARK DIP (scratch/flash-fixr3/dip-sheet.jpg: 6.700 | 6.733 | 6.767): mid-whip (detect: turn 29.4° then
+  53°, labelled CUT) the torch is being swung from the chest clutch out to the glance-#2 pose (lens 0.297, 7.043 →
+  0.408, 7.150 → 0.704, 7.119: 0.15 then 0.30 m per frame) and its beam crosses tread 13 0.13 m under the lens — BELOW
+  the frame; that one frame is lit only by the riser's spill (pre-exposure box 0.44 vs 3.2 / 4.3 either side). It is
+  in every route and run (B03 0.031–0.081, K5 0.057, G2 0.113): MOST LIKELY choreography (the C2c camera whip + the
+  stumble_catch torch swing) — inferred from the frames; the same-frame probe (K6: torch shadow off / shadow near
+  plane 0.02 / near field / bounce / arms hidden at 6.733) was NOT run, so a torch-side cause is not excluded. Request
+  to the C2c / FRAMES owner below, with that caveat.
+### L2 — beam + look re-check on the fixed tree (Medium 1280×800, --beat B03, 10:32–10:35, 0 console errors / 0 exceptions)
+- BEAM CURVE 1.5 / 1 / 0.7 / 0.4 m (settled.py): U3N GAZE 136 242 247 247, pool 245 249 251 249, miss 12.2 / 3.1 / 1.7 /
+  0.8 cm; G3E GAZE 218 242 248 248, pool 240 250 253 249, miss 5.5 / 3.0 / 1.4 / 0.9 cm. 1 m → contact unchanged from L
+  (monotonic at the gaze). U3N 1.5 m GAZE 136 (L 221): the aim spring was mid-settle at that read (miss 12 vs 6 cm, aim
+  weight 0.74 both) — the aim is geometry (arms.ts, untouched), not shading; G3E 1.5 m matches (218 vs 215).
+- LOOK CHANGE (honest — scratch/flash-fixr3/look-L-L2.jpg): with every draw on LOOK's profile, views where the B03 route's
+  draws had held the OLD profile get darker outside the hot core. CAVEAT: L vs L2 are two B03 sessions of stills that are
+  not deterministic (K vs K2 differed on the same frame); p98 94 → 18 is too large for hand sway, so the reading is
+  CONSISTENT WITH stale draws in L, not a same-frame A/B (confirm: the kit's `defaults` variant at the sewing pose). B03 sewing still: before, the window frame, floor
+  and a wide pool around the dress form read (p98 94); after, the dress form's hot core in a near-black room (p98 18).
+  B05 4 m: e 0.665 → 0.448 'key', p98 109 → 87, the banister / stair a little dimmer. The PLAYED route's hero shots barely
+  move (gate G vs G2, gate-G-G2.jpg: upper-hall-ada 0.0131 → 0.0107 linear luma, Harlan's bedroom 0.0185 → 0.0162 — the
+  far-wall hot spot keeps its pool, less halo). The old profile is physically wrong for the CLAUDE.md torch: 260 cd of
+  spill to 22° ≈ 120 lm on top of the core (the spec is ≈ 27 lm at 2–3 kcd; LOOK's profile integrates to ≈ 31 lm, and a
+  27 lm / 2 kcd torch has room for a spill of ≤ 0.5 % of peak). The darker rooms are what the documented torch does;
+  which surfaces showed the brighter spill before was a route-dependent accident. If the AD wants the room more
+  readable, the honest knob is LOOK.torchSpill / torchTail (FLASH-owned): 0.005 / 0.001 stays inside ≈ 28 lm.
+### GATE GX — Max on the fixed tree (strict torch-on, C2c 6.2–8.0 frames, 960×600; 10:35–10:5x incl. the queue)
+`done: ended=true beat=B13 game=515.57s wall=228s deaths=0`, **17/17 assertions, console errors 0 · warnings 0 ·
+exceptions 0**, load 252.4 s, exit 0. C2c stumble on Max: 0.043 → 0.149 → 0.206 → 0.258 → 0.291 → 6.733 0.115 → 0.237
+(Max before, re-verifier run E: 0.148 → 0.202 → 0.258 → 0.293 — Max's riser draw was not stale on that run; the 6.733
+mid-whip dip is there too). Cleanup 10:5x: scratch/dist-flash-fix + dist-flash-fix2 deleted; run output kept in
+scratch/flash-fixr3/ (51 MB); 15 GB free.
+### LOW — gate GL on the fixed tree + a same-route BEFORE (11:0x–11:2x; builds dist-flash-fix3 / dist-flash-before —
+the before = the tree with this round's uniform change undone in memory by scratch/flash-fixr3/vite.before.config.ts)
+- GL (fixed, strict torch-on Low, C2c 6.2–8.0 frames): `done: ended=true beat=B13 game=598.57s wall=195s deaths=0`,
+  **17/17, console errors 0 · warnings 0 · exceptions 0**, load 107 s. C2c: 6.567 0.040 → 6.600 0.111 → 0.160 → 0.192
+  → 0.173 → 6.733 **0.0003** → 0.153.
+- GLB (BEFORE, same route, Low, STOP after C2c; 0 console errors): 0.040 → **0.211 → 0.332 → 0.396 → 0.393** → 6.733
+  **0.0015** → 0.208; pre-exposure HDR 21.1 / 36.0 / 41.4 / 46.0 (the same flood as Medium's) → after 4.4-ish. So Low
+  had the white flash too and it is fixed; and the 6.733 frame is BLACK on Low both before and after (pre-existing:
+  no bounce / fill on Low, so the one frame whose pool sits just below the frame edge — camera pitch −31.5°, the hit
+  51° below the horizon, the frame's bottom edge at −50.5° — has nothing lit in view; dip-low.jpg, gamma 2.5: only the
+  riser's cone-edge glow). A one-frame BLACK flash on Low at the stumble — user-visible; request 4 (C2c / FRAMES).
+- Both dists deleted (11:2x).
+### Fixer round 3 — FINAL JUDGE (harsh AD, biggest first) + what is left
+1. V4 (the C2c stumble white flash) — FIXED, root cause in THIS lane: the torch cookie's uniforms were per-draw
+   object-group uniforms initialised to a stale round-2 profile (37× LOOK's spill); on the played route the stair
+   risers' draw rendered with it. Now every cookie uniform is in the shared render group with LOOK's values. Gate route
+   6.600 / 6.633 / 6.667: luma 0.340 / 0.455 / 0.500 → 0.148 / 0.186 / 0.222 (Medium, K5 and G2), pre-exposure HDR 20.8 →
+   4.45; the frame is the hot core on riser 13 with its stains, then the riser in spill. The session-A note above ("not
+   light, exposure or FLASH state … the Medium gate's RENDER of the same HDR") was WRONG: it was light, and FLASH's.
+2. NEW, now visible on the played route (the flood used to hide it; the B03 route always had it): a one-frame dark dip at
+   C2c 6.733 (0.20 → 0.06–0.11 → 0.20, Medium and Max; a fully BLACK frame on Low, 0.0015 before the fix → 0.0003 after —
+   pre-existing) — most likely the swinging torch's beam crossing the tread just
+   below the frame mid-whip (inferred; the same-frame probe was not run). Request to the C2c / FRAMES owner with that
+   caveat. A user who reads one-frame pops as bugs will see it.
+   HAND after the TORCH_POOL move (hand-L-L2.jpg, B05 2.3 m fist crop, L vs L2): unchanged — still a black fist.
+3. LOOK change from the fix (honest): surfaces that used to get the stale bright spill on some routes now get LOOK's
+   physical 7 cd spill — the B03-route sewing still lost its readable floor and window (p98 94 → 18); the played-route
+   hero shots barely moved (−15 % at most). The torch now does what its documented ≈ 31 lm / 2 kcd profile says; whether
+   the room should read more is an AD call on LOOK.torchSpill / torchTail (0.005 / 0.001 stays ≈ 28 lm).
+4. NEW-G1 mirror hop — root cause found, patch verified offline (322 → 105 hops house-wide, none added) and in the
+   browser (QA build: 14 hops → 0); the player lane's file — request below, not applied.
+5. Still not photoreal (unchanged this round): the hot core is a smooth textureless white disc; the glove is a black
+   featureless silhouette at normal exposure; the far-wall pool 5 m away reads as a glowing orb; G3E's plaster cracks
+   are drawn lines (material lane).
+6. Systemic risk (lead / RENDER): other runtime-written globals are the same object-group pattern (uLightning,
+   uSkyFill, …) — request 2. Gates on the final tree: typecheck clean, npm test 349/349, assets --check ok (low 26.99 /
+   27, medium 53.80, max 77.14 MB), strict torch-on Medium gate G2 and Max gate GX to the title with 0 console errors /
+   warnings / exceptions, and the Low gate GL likewise; beam curve U3N / G3E monotonic at the gaze from 1 m to contact (L2).
+### Requests for the lead (FIX part 2, round 3)
+1. **V4 — WITHDRAW the three earlier V4 requests** (this file's "For other lanes" V4 entry, round 2's request 2, the
+   re-verifier's request 1): the C2c stumble's white flash is not the cue's exposure and not BEAM_CLAMP.at — it was this
+   lane's torch cookie uniforms (root cause + fix above, contract #146e). The emulated exposure stop-down under-exposes
+   the stumble (6.733 luma 0.041) and the far aim gives black frames (6.767–6.833 0.000–0.002): neither should be built.
+2. **SYSTEMIC (RENDER / lead):** a plain module-level `uniform()` (OBJECT group: one UBO per draw) that is written AFTER
+   draws were created can reach some draws late / wrong on some routes (K4: after `spill = 0` the stale riser draw
+   showed a spill near the OLD value, not 0; on the B03 jump the same draw is fine). The torch's are fixed (RENDER
+   group). The same pattern exists elsewhere — values written every frame or on events, read by many programs:
+   `uLightning` (lightmap-material.ts: the lightning flash lightmap — a stale draw could miss a stroke or keep it),
+   `uSkyFill` (C6 blue hour), `uReflection` / `uReflLod` / `uCandleSpec` / `uSpecProxyLo/Hi` / `uOpenSkyE` (initial
+   values = LOOK's today, so a frozen copy is harmless until someone tunes LOOK), `materialUniforms` (bind.ts),
+   `GLARE_BASE` (pipeline.ts, post — one draw, low risk), SKY_U (atmosphere.ts). Recommendation: `.setGroup(renderGroup)`
+   for every global that the game writes at runtime (three's own pattern for light uniforms), and initial values equal
+   to the synced ones. One stepped check: lightning on the played route (C0 → B03) vs a `?beat` jump, lightmapped walls.
+3. **PLAYER lane (src/player/controller.ts) — the G1 hall-mirror camera hop (NEW-G1)**, root cause + verified patch:
+   P_MIRROR_HALL's marble-slab box stands 1 cm proud of its frame box at 0.40–0.43 m; walking into its side the step-up
+   trial lifts the capsule onto that lip as an EDGE rest at the sphere's equator (0.19 m ≤ STEP_MAX 0.27 → accepted),
+   the next substeps push it off and it falls 0.2 m over 0.25 s: a 0.2 m camera hop ≈ 3× a second. Patch (12 lines, off
+   the designed stairs only): after the trial clears the substep move, the lifted capsule must also fit STEP_TREAD =
+   0.12 m further along the move (a foot's depth) — else it is a lip in front of a wall. `scratch/flash-fixr3/
+   controller-patched.ts` (diff vs the tree: the STEP_TREAD const + the `if (!onStairs)` block; NOTE the scratch copy
+   reads `process.env.STEP_TREAD` for the node sims — in the real file it must be a plain `const STEP_TREAD = 0.12`).
+   Evidence: hopsim.ts (real collision.glb + mirror colliders + the real controller: 15 hops → 0 at 30/60/144 fps);
+   `collision-stairs-patched.test.ts` (19/19 + a new "1 cm lip in front of a wall" case ×3 fps that the real controller
+   FAILS: eye +0.238 m in one frame) and `-real.test.ts`; `stepsweep.txt` / `stepsweep-patched-hops.txt` (4768 walks
+   over every collider: camera hops > 5 cm 322 → 105, none added; the 105 left are stair treads (a riser per frame —
+   unsmoothed, the player lane's call) and furniture tops ≥ 0.12 m deep under the 0.27 m cap); browser run H (QA build
+   with the patch injected, real-time W held: 14 hops of 0.206 m → 0).
+4. C2c / FRAMES owner (c2c-up.ts + blender/anim/clips_escape.py stumble_catch): the one-frame dark dip at C2c 6.733 (luma
+   0.20 → 0.06–0.11 → 0.20 on every route on Medium / Max, a BLACK frame on Low before and after this round's fix;
+   dip-sheet.jpg, dip-low.jpg) — the beam's hit sits 51° below the horizon, the frame's bottom edge at −50.5° — mid-whip the swinging torch's beam crosses the tread just
+   below the frame (inferred from the frames; FLASH's same-frame probe K6 — shadow near plane / arms hidden — was not
+   run: route it back to FLASH first if the swing is not the cause). Options: ease the swing so the pool stays in the
+   bottom of the frame for that frame, or let the whip carry the cue's motion blur on Medium. Not V4 (FLASH can retime
+   the arms clip if the cue owner wants the swing changed — ask).
+5. Load time: the fix changes the WGSL of every torch-lit program (render-group uniforms), so every one recompiles at
+   load (no new variants). G2 / GX loads were 243 / 252 s with other lanes' Blender + Chrome jobs running (G earlier:
+   172 s; Low GL 107 s) — re-measure the ship build's load once, quietly. All three presets
+   now gated on the fixed tree: Medium G2, Max GX, Low GL — 17/17 each, 0 console errors / warnings / exceptions.
+6. AD call (LOOK.torchSpill / torchTail, FLASH-owned constants): with the fix every surface gets LOOK's physical spill
+   (7 cd, ≈ 31 lm total). Rooms outside the hot core can read darker than some earlier screenshots, which (route-
+   dependently) showed surfaces lit by the stale 37× spill (look-L-L2.jpg — consistent with that, not a same-frame A/B).
+   If the AD wants the room more readable within the CLAUDE.md torch (≈ 27 lm, 2–3 kcd), 0.005 / 0.001 stays ≈ 28 lm;
+   the old 0.13 is ≈ 150 lm and must not come back.
+7. Not committed (per the task). Contract row #146e logged. scratch/dist-flash-fix, -fix2, -fix3 and -before deleted;
+   run output kept in scratch/flash-fixr3/ (QA scripts: abkit.js, abwrap.mjs, r3.mjs, run2.sh, statediff.mjs,
+   xrow-*.js, vite.before.config.ts).

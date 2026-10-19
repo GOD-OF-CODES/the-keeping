@@ -29,6 +29,7 @@ const PIPELINE = path.join(ROOT, 'blender/pipeline.json');
 const CACHE = path.join(ROOT, '.cache');
 const LOCK = path.join(CACHE, 'blender.lock');
 const CHROME_LOCK = path.join(CACHE, 'chrome.lock'); // held by scripts/shot.mjs (headless-Chrome QA)
+const CHROME_QUEUE = path.join(CACHE, 'chrome.queue'); // shot.mjs waiters' tickets: <ms since epoch, 15 digits>-<pid>
 const LOGS = path.join(CACHE, 'logs');
 const STATE = path.join(CACHE, 'assets-state.json');
 const PUBLIC = path.join(ROOT, 'public');
@@ -256,6 +257,23 @@ async function acquireLock(timeoutMs = 60 * 60 * 1000) {
   fs.mkdirSync(CACHE, { recursive: true });
   const t0 = Date.now();
   let told = false;
+  // First come, first served with scripts/shot.mjs too (lead 2026-10-18: back-to-back Cycles rounds re-took the Blender
+  // lock within seconds of the last, and shot.mjs runs queued since 21:52 never got a window). Before taking our lock,
+  // wait out every live headless-Chrome ticket filed before we started. We hold nothing while waiting, so no deadlock.
+  for (;;) {
+    let ahead = [];
+    try {
+      ahead = fs.readdirSync(CHROME_QUEUE).filter((n) => {
+        const [ms, pid] = n.split('-').map(Number);
+        return ms < t0 && pid && pidAlive(pid);
+      });
+    } catch {}
+    if (!ahead.length) break;
+    if (!told) log(`waiting: ${ahead.length} headless-Chrome run(s) queued before this job …`), (told = true);
+    if (Date.now() - t0 > timeoutMs) throw new Error('timed out waiting for queued headless-Chrome runs');
+    await sleep(3000);
+  }
+  told = false;
   for (;;) {
     try {
       fs.mkdirSync(LOCK);

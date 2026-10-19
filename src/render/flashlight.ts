@@ -3,7 +3,7 @@
 // Intensity convention: runtime candela = Blender W / (4π) (CLAUDE.md light units).
 
 import * as THREE from 'three/webgpu';
-import { Fn, If, Loop, atan, cameraPosition, dot, float, fract, frameId, interleavedGradientNoise, length, max, mx_noise_float, positionWorld, screenCoordinate, smoothstep, tan, uniform, vec3 } from 'three/tsl';
+import { Fn, If, Loop, atan, cameraPosition, dot, float, fract, frameId, interleavedGradientNoise, length, max, mix, mx_noise_float, positionWorld, renderGroup, screenCoordinate, smoothstep, tan, uniform, vec3 } from 'three/tsl';
 import { SKY_U } from '../world/atmosphere.ts';
 import type { PresetConfig } from './presets.ts';
 import { kelvinToLinearRGB } from '../world/lights.ts';
@@ -19,24 +19,42 @@ import { enableViewCasterCull } from './view-caster-cull.ts';
  * with a hotspot 2× its spill: a flat near-white disc with black 20 cm outside it. The AD's 60 cd / 0.9 / 0.12 inside
  * the old cone integrates to only 2.3 lm, so the shelf and the wider cone carry the 15–25 lm a 2-D-cell bulb
  * (≈ 1.2 W PR2) puts out; peak 120 cd is the lower end of real 2-D incandescent torches (100–1000 cd).
- * Every term is a uniform (look API torchCore/torchSigma2/torchSpill/torchShelf/torchTail).
- * SUPERSEDED (runtime AD review, round D): the live profile is LOOK.torch* in look.ts — 2000 cd / 30.9 lm (CLAUDE.md). */
-export const uTorchCore = uniform(0.87);
-export const uTorchSigma2 = uniform(0.012);
-export const uTorchSpill = uniform(0.13);
+ * Every term is a uniform (look API torchCore/torchSigma2/torchSpill/torchShelf/torchTail). The live profile is
+ * LOOK.torch* in look.ts (runtime AD review, round D) — 2000 cd peak, core 1 · σ² 0.0036 · spill 0.0035 · shelf 0.4 ·
+ * tail 0.0008 ≈ 31 lm (CLAUDE.md: a 1990s 2-D krypton torch, ≈ 27 lm, 2–3 kcd); src/render/surfaces.ts copies it in.
+ *
+ * FLASH part 2, fixer r3 (V4, the C2c stumble's white flash — contract #146e): these uniforms were plain OBJECT-group
+ * uniforms initialised to the round-2 profile above (0.87 / 0.012 / 0.13 / 0.4 / 0.02 — 37× LOOK's spill, 25× its
+ * tail). On the route the player actually plays (C0 → C1 → … → C2c, not a ?beat=B03 jump) the G1 stair risers'
+ * draw (G1_stair_2, trim_chipped) kept those creation-time values in its own object UBO while every other surface
+ * had LOOK's: at the stumble (lens 0.53 m from riser 13) the riser took 260 cd of "spill" — a uniform white slab, the
+ * pre-exposure HDR 5–10× the physical frame (gate 20.8 vs 3.9), luma 0.04 → 0.34 → 0.50 in one frame. Fingerprint
+ * (scratch/flash-fixr3 K2/K3 vs KB3): the B03 route with the cookie forced back to these old values reproduces the
+ * gate's riser to ±5 % (box 24.4 / riser 163 / riser end 9.0 vs 22–24 / 158–174 / 8.7–9.1) — and the wall above it
+ * (another draw) stayed at LOOK's values in the gate. So: (1) the initial values ARE LOOK's now, a draw frozen at its
+ * creation values is frozen at the right ones; (2) every uniform the cookie reads lives in the shared RENDER group
+ * (one UBO written once per render, three's own pattern for light uniforms, Lights.js lightShadowMatrix): no draw
+ * can hold a private stale copy. Keep both: LOOK edits through the look API still reach every draw via (2).
+ */
+export const uTorchCore = uniform(1).setGroup(renderGroup);
+export const uTorchSigma2 = uniform(0.0036).setGroup(renderGroup);
+export const uTorchSpill = uniform(0.0035).setGroup(renderGroup);
 /** Normalised radius where the spill shelf starts to fade (fades out by 0.95). */
-export const uTorchShelf = uniform(0.4);
+export const uTorchShelf = uniform(0.4).setGroup(renderGroup);
 /** Corona: stray light off the reflector rim, a faint skirt out to the cone edge (fraction of peak). */
-export const uTorchTail = uniform(0.02);
+export const uTorchTail = uniform(0.0008).setGroup(renderGroup);
 
 /** Reflector mouth diameter (m) of a 2-D-cell torch. */
 const REFLECTOR_D = 0.05;
 /** World position of the torch (updated per render from the light). */
-export const uTorchPos = uniform(new THREE.Vector3());
+export const uTorchPos = uniform(new THREE.Vector3()).setGroup(renderGroup);
 /** 1 while the torch is on (R2-2: its cookie and shadow PCF are skipped in every fragment while it is off). */
-export const uTorchLit = uniform(1);
+export const uTorchLit = uniform(1).setGroup(renderGroup);
 /** FLASH (#146): 1 = the reflector's aperture near field on the hot core (below); 0 = the old far-field core (A/B). */
-export const uTorchNear = uniform(1);
+export const uTorchNear = uniform(1).setGroup(renderGroup);
+/** FLASH part 2 (V5) QA A/B: 1 = the Max beam's OLD march (12 mid-point steps uniform in t, no jitter — the ladder);
+ *  0 = the MIS march (default). Same-frame before/after on Max: `__game.rig.flashlight.beamOld.value = 1`. */
+export const uBeamOld = uniform(0).setGroup(renderGroup);
 
 /** Flashlight cookie: hot core, flat spill shelf, a faint reflector ring, lens smudges. lightCoord.xy in [0,1]. */
 export const flashlightCookie = Fn(([lightCoord]: [any]) => {
@@ -92,6 +110,8 @@ export interface Flashlight {
   lit: any;
   /** FLASH (#146): the core's aperture near field (uTorchNear; ?debug A/B: .value = 0 → the old far-field core). */
   near: any;
+  /** FLASH part 2 (V5): the Max beam's old 12-step march (uBeamOld; QA A/B: .value = 1 → the ladder). */
+  beamOld: any;
   setOn(on: boolean): void;
   update(dt: number, t: number): void;
 }
@@ -205,7 +225,8 @@ export function createFlashlight(camera: any, preset: PresetConfig): Flashlight 
         const s = dot(v, uAxis);
         const u = t.sub(delta);
         const pE = de.div(dTh.mul(de2.add(u.mul(u))));
-        const w = float(1).div(pU.mul(N_U).add(pE.mul(N_E)));
+        // QA A/B (uBeamOld = 1): the old estimator's weight Δt = tBack / 12
+        const w = mix(float(1).div(pU.mul(N_U).add(pE.mul(N_E))), tBack.div(N_U + N_E), uBeamOld);
         If(s.greaterThan(0.01), () => {
           const r = length(v.sub(uAxis.mul(s))).div(s).div(uTanA);
           const core = r.mul(r).div(uTorchSigma2).negate().exp().mul(uTorchCore);
@@ -221,11 +242,13 @@ export function createFlashlight(camera: any, preset: PresetConfig): Flashlight 
           acc.addAssign(prof.mul(phase).div(d2).mul(w));
         });
       };
+      // QA A/B (uBeamOld = 1): the old march — step k = 0…11 at (k + ½)/12 of the ray, no jitter
+      const tOld = (k: any) => k.add(0.5).div(N_U + N_E).mul(tBack);
       Loop(N_U, ({ i }: any) => {
-        inscatter(float(i).add(xi).div(N_U).mul(tBack));
+        inscatter(mix(float(i).add(xi).div(N_U).mul(tBack), tOld(float(i)), uBeamOld));
       });
       Loop(N_E, ({ i }: any) => {
-        inscatter(delta.add(de.mul(tan(thA.add(dTh.mul(float(i).add(xi).div(N_E)))))));
+        inscatter(mix(delta.add(de.mul(tan(thA.add(dTh.mul(float(i).add(xi).div(N_E)))))), tOld(float(i).add(N_U)), uBeamOld));
       });
       // beamab2 (Max, road): one NaN pixel here spread through bloom/TAAU and blacked the whole frame — clamp to a
       // finite, physically generous ceiling (≈ 4 nits: the near-lens column in thick mist)
@@ -260,6 +283,7 @@ export function createFlashlight(camera: any, preset: PresetConfig): Flashlight 
     bounce,
     lit: uTorchLit, // ?debug A/B (R2-2)
     near: uTorchNear,
+    beamOld: uBeamOld,
     setOn(v: boolean) {
       on = v;
       // PERF (review): the light stays visible — light.visible = false drops it from the scene's light list, which

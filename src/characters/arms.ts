@@ -214,6 +214,28 @@ const GAZE_HOP = 0.25;
  *  real wrist + forearm reach that turn easily with the fist drawn in to the chest (out of frame at level gaze). */
 const AIM_MAX = (65 * Math.PI) / 180;
 /**
+ * FLASH part 2 (fixer r2) — the ELBOW beside a wall. The near-wall pull only probes along the torch line, so a wall at
+ * the player's LEFT never moved the arm: the clip holds the elbow ≈ 0.42 m left of the eye, the body capsule lets the eye
+ * come within 0.27 m of a wall, and the forearm went into the wallpaper — looking down 35° hugging a left wall, 116 of
+ * 16 000 frame cells showed sleeve BEHIND the wall plane (a cut line at the bottom-left; scratch/flash-fixr2/elbowsim.ts,
+ * the real arms.glb). A person drops the elbow against the body instead. Each frame one ray from the shoulder to the
+ * IK elbow's OUTER sleeve surface (the elbow + ELBOW_MARGIN along its bend direction); if a wall is nearer, the elbow
+ * swings DOWN about the shoulder→wrist line to the first clear angle (sampled every ELBOW_STEP, the crossing
+ * interpolated, ≤ ELBOW_MAX), eased (τ out / in), the margin led by the elbow's approach speed (ELBOW_LEAD). The hand
+ * keeps its world pose — the torch, its beam and its pool do not move; only the arm's angle changes. Offline
+ * (elbowsim.ts): hugging a left wall looking down 35° the sleeve cells behind the wall 116 → 0; strafing into it at
+ * 1.6 m/s ≤ 17 cells for 2 frames (was 183 sustained), the elbow ≤ 3.8 cm per 30 fps frame.
+ */
+const ELBOW_MARGIN = 0.02;
+const ELBOW_STEP = (15 * Math.PI) / 180;
+const ELBOW_MAX = (90 * Math.PI) / 180;
+const ELBOW_TAU_OUT = 0.08;
+const ELBOW_TAU_IN = 0.3;
+/** How far beyond the margin the elbow ray looks (m) — the signed clearance's range and the lead's cap. */
+const ELBOW_LOOK = 0.3;
+/** Lead (s) of the elbow probe on an approach: margin + v·ELBOW_LEAD (≤ ELBOW_LOOK). */
+const ELBOW_LEAD = 0.12;
+/**
  * FLASH #146b (the hand): the torch hand is on the body, not on the skull. Looking up or down is mostly the neck: a
  * person raises or lowers the torch to light where they look, but the fist does not ride the head through the whole
  * pitch — welded (the old rig), the fist sat at the same spot of the frame at −45° and +30° (scratch/flash-hand/before
@@ -270,6 +292,12 @@ export class FpArms {
   /** FLASH (#146): near-wall aim weight toward the gaze point (0..1, smoothed; QA reads it) and its debug switch. */
   aim = 0;
   aimEnabled = true;
+  /** FLASH part 2 (fixer r2): the elbow's swing down from a side wall (rad, smoothed; QA reads it) and its switch. */
+  fold = 0;
+  foldEnabled = true;
+  /** The clip elbow's last signed clearance (m) and its smoothed approach speed (m/s) for ELBOW_LEAD. */
+  private elbowC = Infinity;
+  private elbowV = 0;
   /** FLASH #146b: the pitch decoupling (PITCH_K; 0 = the welded hand, A/B) and its current eased swing (rad, QA). */
   pitchK = PITCH_K;
   pitchSwing = 0;
@@ -553,6 +581,13 @@ export class FpArms {
       this.probeDt = 0;
       const want = this.wantP;
       if (dt > 0) this.pull += (want - this.pull) * (1 - Math.exp(-dt / (want > this.pull ? PULL_TAU_OUT : PULL_TAU_IN)));
+      let wantF = 0;
+      if (this.foldEnabled && free) wantF = this.wantFold(this.pull, dir, dt);
+      else {
+        this.elbowC = Infinity; // no stale clearance → no fake approach speed when the fold comes back on
+        this.elbowV = 0;
+      }
+      if (dt > 0) this.fold += (wantF - this.fold) * (1 - Math.exp(-dt / (wantF > this.fold ? ELBOW_TAU_OUT : ELBOW_TAU_IN)));
       const wantAim = this.wantA;
       if (dt > 0) {
         // critically damped (AIM_W), the exact step: x(t) = x* + (c1 + c2 t) e^(−ωt), c1 = x0 − x*, c2 = v0 + ω c1
@@ -567,7 +602,7 @@ export class FpArms {
           this.aimV = 0;
         }
       }
-      if (this.pull > 1e-4 || this.aim > 1e-3) {
+      if (this.pull > 1e-4 || this.aim > 1e-3 || this.fold > 1e-3) {
         this.poseArm(this.pull, dir, this.aim);
         this.relMatrix(this._m).decompose(this._p, this._q, this._d);
         dir = this._d.copy(this.beamAxis).applyQuaternion(this._q).normalize();
@@ -576,6 +611,9 @@ export class FpArms {
       this.pull = 0;
       this.aim = 0;
       this.aimV = 0;
+      this.fold = 0;
+      this.elbowC = Infinity;
+      this.elbowV = 0;
       this.aimFree = false;
     }
     this.placeLight(light, beam, dir);
@@ -598,7 +636,7 @@ export class FpArms {
     this.c.root.updateMatrixWorld(true);
     this.relMatrix(this._m).decompose(this._p, this._q, this._d);
     let dir = this._d.copy(this.beamAxis).applyQuaternion(this._q).normalize();
-    if (this.armActive && (this.pull > 1e-4 || this.aim > 1e-3)) {
+    if (this.armActive && (this.pull > 1e-4 || this.aim > 1e-3 || this.fold > 1e-3)) {
       // a fresh gaze ray only while the aim is live (under a cutscene / cue it decays toward the last gameplay point)
       if (this.aim > 1e-3 && this.aimFree) this.gazeRay();
       this.poseArm(this.pull, dir, this.aim);
@@ -777,6 +815,72 @@ export class FpArms {
     return g;
   }
 
+  /** The two-bone IK frame for a wrist drawn back by `pull` along the beam (`dirRig`): fills S (shoulder), T (unit
+   *  shoulder→wrist), pole (the clip's bend direction ⊥ T) and side (T × pole, signed so +side lowers the elbow);
+   *  returns [a, L, cosA, sinA]. Reads the CURRENT bone pose (the clip pose: call before the IK is applied). */
+  private ikFrame(pull: number, dW: any, S: any, T: any, pole: any, side: any): [number, number, number, number] {
+    const { up, fore, hand } = this.armL!;
+    const E = this._w[1];
+    const H = this._w[2];
+    up.getWorldPosition(S);
+    fore.getWorldPosition(E);
+    hand.getWorldPosition(H);
+    const a = S.distanceTo(E);
+    const b = E.distanceTo(H);
+    T.copy(H).addScaledVector(dW, -pull).sub(S);
+    side.set(0, 1, 0).transformDirection(this.parent.matrixWorld);
+    T.addScaledVector(side, pull * this.pullLift);
+    const L = Math.min(a + b - 1e-3, Math.max(Math.abs(a - b) + 1e-3, T.length()));
+    T.normalize();
+    pole.copy(E).sub(S);
+    pole.addScaledVector(T, -pole.dot(T));
+    if (pole.lengthSq() < 1e-8) pole.set(0, -1, 0).addScaledVector(T, T.y); // straight arm: bend down
+    pole.normalize();
+    side.copy(T).cross(pole);
+    if (side.y > 0) side.negate();
+    const cosA = Math.min(1, Math.max(-1, (a * a + L * L - b * b) / (2 * a * L)));
+    return [a, L, cosA, Math.sqrt(1 - cosA * cosA)];
+  }
+
+  /** FLASH part 2 (fixer r2): the elbow's swing (rad) that keeps it ELBOW_MARGIN out of the walls (see ELBOW_MARGIN).
+   *  Signed clearance c(φ) = wall distance along the shoulder→elbow ray − (a + margin), sampled every ELBOW_STEP; the
+   *  target is the first zero crossing, linearly interpolated (no 15° quantisation). The margin grows with the elbow's
+   *  approach speed (ELBOW_LEAD): strafing into a wall the fold starts early instead of catching up 6 cm per frame. */
+  private wantFold(pull: number, dirRig: any, dt: number): number {
+    const sight = TORCH_WORLD.sight;
+    if (!sight || !this.armL) return 0;
+    const [S, , , T, pole, dW, side, q] = this._w;
+    this.parent.updateWorldMatrix(true, false);
+    dW.copy(dirRig).transformDirection(this.parent.matrixWorld);
+    const [a, , cosA, sinA] = this.ikFrame(pull, dW, S, T, pole, side);
+    // the probe: shoulder → the elbow's OUTER sleeve surface (the elbow + m along its bend direction p(φ) — the side of
+    // the elbow that meets a wall), so the margin holds across the arm even when the upper arm runs along the wall
+    const clear = (phi: number, m: number): number => {
+      const c = Math.cos(phi);
+      const sn = Math.sin(phi);
+      q.copy(T).multiplyScalar(a * cosA).addScaledVector(pole, (a * sinA + m) * c).addScaledVector(side, (a * sinA + m) * sn);
+      const dist = q.length();
+      const h = sight(S, q.divideScalar(dist), dist + ELBOW_LOOK);
+      return Math.min(h, dist + ELBOW_LOOK) - dist;
+    };
+    // the clip elbow's approach speed toward what is beside it (smoothed; capped: a door swinging shut is not a speed)
+    const c0raw = clear(0, ELBOW_MARGIN);
+    if (dt > 0) {
+      const v = Number.isFinite(this.elbowC) ? Math.min(4, Math.max(0, (this.elbowC - c0raw) / dt)) : 0;
+      this.elbowV += (v - this.elbowV) * (1 - Math.exp(-dt / 0.1));
+    }
+    this.elbowC = c0raw;
+    const m = ELBOW_MARGIN + Math.min(ELBOW_LOOK, this.elbowV * ELBOW_LEAD);
+    let prev = c0raw - (m - ELBOW_MARGIN);
+    if (prev >= 0) return 0;
+    for (let phi = ELBOW_STEP; phi <= ELBOW_MAX + 1e-6; phi += ELBOW_STEP) {
+      const c = clear(phi, m);
+      if (c >= 0) return phi - ELBOW_STEP * (c / Math.max(1e-6, c - prev));
+      prev = c;
+    }
+    return ELBOW_MAX;
+  }
+
   /** Two-bone IK on the left arm: the hand (and the torch it holds) drawn back by `pull` m along the beam axis
    *  (`dirRig`, rig frame) and lifted PULL_LIFT × pull, the elbow folding in the clip pose's bend plane; the hand keeps
    *  its world orientation, turned by `aim` (0..1) of the rotation that points the beam at the gaze point. */
@@ -831,6 +935,12 @@ export class FpArms {
     pole.addScaledVector(T, -pole.dot(T));
     if (pole.lengthSq() < 1e-8) pole.set(0, -1, 0).addScaledVector(T, T.y); // straight arm: bend down
     pole.normalize();
+    if (this.fold > 1e-4) {
+      // FLASH part 2 (fixer r2): the elbow swung down from a side wall (see ELBOW_MARGIN) — about u, toward −y
+      const side = this._w[7].copy(T).cross(pole);
+      if (side.y > 0) side.negate();
+      pole.multiplyScalar(Math.cos(this.fold)).addScaledVector(side, Math.sin(this.fold)).normalize();
+    }
     const cosA = Math.min(1, Math.max(-1, (a * a + L * L - b * b) / (2 * a * L)));
     const sinA = Math.sqrt(1 - cosA * cosA);
     // new elbow E' = S + a(cos A u + sin A pole); new wrist T' = S + L u
