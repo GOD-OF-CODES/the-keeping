@@ -218,6 +218,25 @@ export class Atmosphere {
     this.exposure = new AutoExposure(this.o.renderer, p.meterTexture, p.uniforms.exposure);
   }
 
+  /**
+   * POLISH #156e (F3: stepping out of a hide by the front with the torch on showed a washed-out pink-white frame for
+   * 0.7–1.7 s): the hide is a cut in light level both ways — in, the torch goes off and the eye is snapped to the dark
+   * slats (main.ts); out, the torch comes back on in the room you hid from, but the eye still held the hide's dark
+   * adaptation (up to ×24) and darkened at τ 0.5 s behind a 0.25 s meter. Out of a hide the eye starts from where it was
+   * in that room before you hid (same place, same torch state), then snaps to the first post-exit reading.
+   */
+  private preHideEv: number | null = null;
+  hideCut(inside: boolean): void {
+    const e = this.exposure;
+    if (!e) return;
+    if (inside) {
+      this.preHideEv = e.ev;
+      return;
+    }
+    if (this.preHideEv !== null) e.restore(this.preHideEv);
+    this.preHideEv = null;
+  }
+
   /** Debug API (window.__game.look): attaches to the existing look(heading, pitch) function. */
   attachApi(target: any): any {
     return attachLookApi(target, {

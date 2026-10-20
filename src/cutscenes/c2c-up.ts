@@ -117,13 +117,26 @@ export const c2cUp: TimelineFactory = (ctx) => {
     // risers 1–5 at 3.1 risers/s, pitch +12°
     { t: hallEnd + 0.45, d: 3.62 - (hallEnd + 0.45), path: [eyeOnTread(0.4), eyeOnTread(2.5), e5], target: [add(eyeOnTread(0.4), fwd(north, 12 * DEG, 3)), add(e5, fwd(north, 12 * DEG, 3))], fov: L35, ease: 'linear', handheld: 0.9, bob: { amp: 0.035, hz: steps(3.1, 3.62 - (hallEnd + 0.45)), roll: 0.0105 } },
     // 3.62–3.84 the head turns 150° back over the right shoulder (220 ms); the torch arm stays forward; 28 mm
-    { t: 3.62, d: 0.22, path: [e5], target: [add(e5, fwd(north, 12 * DEG, 3)), add(e5, fwd(north - 1.6, -0.2, 2.2)), g1Target], fov: [L35, L28], ease: 'out', handheld: 0.6 },
+    // POLISH #156c (C2C-3667: one BLACK frame at 3.667, luma 0.0005 between 0.068 and 0.0045): the turn crossed the
+    // unlit east hall LEVEL (15°, −4° at 3.667) — nothing there is lit but the stroke's patch further round. A head
+    // whipped back over the shoulder on a stair drops toward the treads behind it: the mid-turn waypoint is now pitched
+    // −0.6 rad (was −0.2), so 3.650 / 3.667 / 3.683 pass over the near balusters and treads in the torch's spill
+    // (view-sphere probe at 3.667, scratch/polish/c2cview.mjs: (15°, −4°) 1.7 → (30°, −25°) 11.9 · (0°, −30°) 7.9 of
+    // 255) — same 220 ms, same end aim, peak 27°/frame at 60 Hz (was 28°), the pitch still settles monotonically.
+    { t: 3.62, d: 0.22, path: [e5], target: [add(e5, fwd(north, 12 * DEG, 3)), add(e5, fwd(north - 1.6, -0.6, 2.2)), g1Target], fov: [L35, L28], ease: 'out', handheld: 0.6 },
     // 3.84–4.47 GLANCE #1 held 630 ms: the hard back-lit silhouette against the lightning patch on the hall floor
     { t: 3.84, d: 0.63, path: [e5, add(e5, [0, 0.03, 0.01])], target: [g1Target], fov: L28, ease: 'linear', handheld: 0.5 },
     // 4.47–4.69 turn forward
     // GLITCH-FIX (C2c 4.6, detect.py's top LOCAL POP f1006): the two-point target path cut the chord 1.1 m from the eye
     // — 83° in ONE frame; now a sphere sweep back the way the head went (counter-clockwise), same 220 ms
-    { t: 4.47, d: 0.22, path: [add(e5, [0, 0.03, 0.01]), eyeOnTread(5.4)], target: sweepTargets(e5, g1Target, add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), turnBetween(e5, g1Target, add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), 1), 4), fov: [L28, L35], ease: 'inOut', handheld: 0.6 },
+    // POLISH #156g (review F2, C2c 4.583: one BLACK frame at 60 Hz, mean 6.3 → 0.34 → 14.0 of 255 on Medium, 0.38 on Max;
+    // already in the release): the turn-back's mirror image — the straight pitch blend (−44.5° → +10°) crossed the unlit
+    // east hall nearly LEVEL (28.7°, −12.4°). The head stays low on the treads while it comes round and lifts onto the
+    // flight at the end: pitch dip −0.35 rad (sin-shaped, 0 at both ends) → 4.567 (8°, −39°), 4.583 (38°, −26°), 4.600
+    // (60°, −13°). Same 220 ms, same end aim, same counter-clockwise turn; peak step 30°/frame at 60 Hz (was 31°); the
+    // pitch rises monotonically from 4.53 on (a ≤ 1.2° sag before it, the head settling). The dip ALONE did not light
+    // 4.583 (0.31 of 255: unlike 3.667, no stroke lights the hall here) — the torchHold release at 4.575 below does.
+    { t: 4.47, d: 0.22, path: [add(e5, [0, 0.03, 0.01]), eyeOnTread(5.4)], target: sweepTargets(e5, g1Target, add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), turnBetween(e5, g1Target, add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), 1), 4, -0.35), fov: [L28, L35], ease: 'inOut', handheld: 0.6 },
     // risers 6–12, pitch +10°, breath ragged
     { t: 4.69, d: 1.77, path: [eyeOnTread(5.4), eyeOnTread(8.5), eyeOnTread(11.6)], target: [add(eyeOnTread(5.4), fwd(north, 10 * DEG, 3)), add(eyeOnTread(11.6), fwd(north, 10 * DEG, 3))], fov: L35, ease: 'linear', handheld: 1.0, bob: { amp: 0.035, hz: steps(3.1, 1.77), roll: 0.0105 } },
     // 6.46 THE STUMBLE on the creaker 12: pitch −28° in 150 ms, roll −6°, the eye drops to ≈ 0.85 m above tread 12
@@ -234,7 +247,12 @@ export const c2cUp: TimelineFactory = (ctx) => {
     // fix round (item 5): glance #1 — the lightning patch on the hall floor is the brightest thing in frame; the eye
     // stops down for it (cap 1.0, was ≈ 2.2) so her front falls to silhouette and the near balusters stop glowing
     // (fix round 3: the fixed camera already sits below that cap — 0.458 < 1.0; the stroke over-exposes it briefly)
-    { t: 4.6, type: 'fx', id: 'torchHold', params: { on: false } },
+    // POLISH #156g (review F2, 4.583 black at 60 Hz): the arm comes round with the head one 60 Hz frame sooner (was 4.6).
+    // Held, the beam points up the flight (north, +12°, 45° cone): a frame centred 10–50° east of north at any pitch
+    // holds nothing it lights — the turn's pitch dip alone left 4.583 at 0.31 of 255 (scratch/polish/f2/g-med-after).
+    // Released at 4.575 (between the 4.567 and 4.583 frames; a 30 Hz frame still releases it in the 4.6 frame, as
+    // before), the gaze aim puts the pool on the treads / balusters the eye is turning onto.
+    { t: 4.575, type: 'fx', id: 'torchHold', params: { on: false } },
     // 3.62 the fanlight stroke behind her — the reason to look back (the roaming shadow light)
     { t: FANLIGHT_STROKE.t, type: 'fx', id: 'shadowLight', params: { at: 'fanlight', pulses: FANLIGHT_STROKE.pulses } },
     { t: 3.88, type: 'sfx', id: 'score_hit', sched: true, gain: 0.9 },

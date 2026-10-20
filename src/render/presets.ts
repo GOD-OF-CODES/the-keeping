@@ -84,8 +84,9 @@ export const PRESETS: Record<PresetId, PresetConfig> = {
     sceneScale: 0.75,
     dynamicResolution: { enabled: true, min: 0.6, max: 0.85 },
     // FINAL #153g turned the cutscene motion blur on for Medium; the lead reverted it for the release (ruling bg): small
-    // HDR highlights smeared into dotted glitter on the C2c opening whip. It returns once the blur clamps highlights.
-    post: { bloom: true, gtao: false, volumetricBeam: false, chromaticAberration: 1, filmGrain: 0.03, vignette: 0.4, sharpen: 1.2, cutsceneDof: true, cutsceneMotionBlur: false },
+    // HDR highlights smeared into dotted glitter on the C2c opening whip. POLISH #156: the blur now clamps each tap's
+    // radiance to the span's local level (pipeline.ts jitterBlur) — back on (no stop-motion whips on the default tier).
+    post: { bloom: true, gtao: false, volumetricBeam: false, chromaticAberration: 1, filmGrain: 0.03, vignette: 0.4, sharpen: 1.2, cutsceneDof: true, cutsceneMotionBlur: true },
     textures: { heroSize: 1024, baseSize: 512, uniqueSize: 1024, anisotropy: 8 },
     lightmaps: { resolution: 2048, lightningFlashMaps: false },
     shadows: { flashlightMapSize: 1024, radius: 2 },

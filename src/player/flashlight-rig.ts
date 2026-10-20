@@ -11,6 +11,8 @@ import type { PresetConfig } from '../render/presets.ts';
 const HAND_W = 2 * Math.PI * 4.5;
 const HAND_ZETA = 0.75;
 const HAND_MAX = 0.025;
+/** POLISH #156f: the most the hand (the torch) may trail the gaze, rad (15°; the beam's spill cone is 45°). */
+const RIG_LAG_MAX = (15 * Math.PI) / 180;
 
 export class FlashlightRig {
   readonly rig: any;
@@ -100,6 +102,12 @@ export class FlashlightRig {
     } else {
       // rotational lag (hand follows the head), ~70 ms time constant
       this.rig.quaternion.slerp(this.q, 1 - Math.exp(-dt * 14));
+      // POLISH #156f (F4: one fully BLACK gameplay frame at the careless route's B06 entry, scratch/polish/q3/b06 frame
+      // 59): the view snapped 98° in one 1/30 s frame, the hand trailed it by 62° and the beam lit nothing in frame (a
+      // dark room, the eye adapted to the torch at e 0.08). A hand is on an arm that turns with the shoulders: it never
+      // trails the gaze by more than RIG_LAG_MAX. The lag is ω·70 ms, so this only acts above ≈ 210°/s (flicks, snaps).
+      const lag = this.rig.quaternion.angleTo(this.q);
+      if (lag > RIG_LAG_MAX) this.rig.quaternion.rotateTowards(this.q, lag - RIG_LAG_MAX);
     }
     // hand sway: slow wander + tremble
     const w = 0.006 + 0.02 * this.tremble;

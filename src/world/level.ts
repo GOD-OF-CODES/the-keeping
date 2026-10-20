@@ -621,11 +621,18 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
   const allSpots = new Set([...runtimeLights.runtime.values()].map((r) => r.light));
   // props AD review: house props are probe-lit; the grids hold only candle BOUNCE (captured from lightmapped
   // surfaces), so add the unshadowed candle/lamp flicker lights for their DIRECT term (else black beside a candle).
-  const probeNode = lights([...probeLights.filter((l) => l !== extGridObj && !allSpots.has(l)), ...runtimeLights.flickers.map((f) => f.light)]);
+  // POLISH #156b: on tiers with flash lightmaps (Max) the U3 window spot exists only for the C4 moon key (lights.ts
+  // U3_MOON, peak 0) — every house prop would otherwise loop over it in every room. Only the U3 sheets and the dress
+  // (dust_sheet / wedding_satin) see it there; the U3 atlas (forRooms) and the characters keep it on every tier. On
+  // Medium / Low it is the lightning window spot, in this list as before.
+  const moonOnly = new Set(runtimeLights.lightningSpots.filter((s) => s.moon && s.peak === 0).map((s) => s.light));
+  const probeList = [...probeLights.filter((l) => l !== extGridObj && !allSpots.has(l) && !moonOnly.has(l)), ...runtimeLights.flickers.map((f) => f.light)];
+  const probeNode = lights(probeList);
+  const moonNode = moonOnly.size ? lights([...probeList, ...moonOnly]) : null;
   level.probeLightsNode = probeNode;
   level.probeLights = probeLights;
   for (const m of level.probeLit) {
-    m.lightsNode = probeNode;
+    m.lightsNode = moonNode && /^(dust_sheet|wedding_satin)/.test(String(m.name ?? '')) ? moonNode : probeNode;
     m.needsUpdate = true;
   }
   // R2-1 (round 3): exterior probe-lit surfaces get their own LightsNode — the exterior grid CLAMPED (a twin sharing

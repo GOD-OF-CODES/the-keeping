@@ -661,6 +661,8 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
   // LIGHTING lane: sky, fog, lightning shadow, exposure, white balance (src/world/atmosphere.ts, REALISM-BACKLOG)
   const { Atmosphere } = await import('../world/atmosphere.ts');
   const atmo = new Atmosphere({ renderer, scene, camera, fog, preset, lightningDir: level.lights.lightningDir, events: ctx.events });
+  // POLISH #156e (F3): the eye across the hide cut (`?hidecut=0` = the release behaviour, for A/Bs)
+  if (params.get('hidecut') !== '0') ctx.events.on('player:hide', ({ inside }) => atmo.hideCut(inside));
   let warmPipe: Pipeline | null = null; // runtime lane D: the load warm-up also draws the opening through the DOF chain
   // LIGHTING lane (REALISM-BACKLOG item 6): box-projected per-room reflection cubes (Medium/Max), hooked into the
   // glossy materials BEFORE the first compile and captured once from the lightmapped house (src/render/reflections.ts)
@@ -823,6 +825,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
       flashlight: rig.flashlight,
       rig,
       doors: level.doors,
+      toast: toastEl.show, // POLISH #156d QA: the pickup / hint toast
       /**
        * Load-time shader warm-up (PERF-PLAN P0-1/P0-2). Walks the camera through every playable room's centre, 4
        * headings, culling ON: `compile()` builds the room's pipelines asynchronously in the context the frame is drawn
@@ -1333,16 +1336,40 @@ function makeToast(): { show(text: string): void } {
     textShadow: '0 1px 4px #000',
     pointerEvents: 'none',
     opacity: '0',
-    transition: 'opacity .35s',
+    transition: 'opacity .35s, bottom .25s ease-out',
   } as Partial<CSSStyleDeclaration>);
+  el.className = 'tk-toast';
   document.body.appendChild(el);
   let timer = 0;
+  let follow = 0;
+  // POLISH #156d (F5: the 'Locket' pickup toast was drawn INSIDE the subtitle panel while Ada's letter reading was on
+  // screen, B09): the toast sits at 14 % of the height, the subtitles at 7vh — a 2–3 line cue reaches past it. While
+  // the toast shows it keeps 12 px above the top of the subtitle cue on screen (re-placed every 100 ms: a cue may start,
+  // grow or end after the toast), else at its usual 14 %.
+  const place = () => {
+    const H = window.innerHeight || 800;
+    let bottom = 0.14 * H;
+    const cue = document.querySelector('.tk-subs__cue.is-on') as HTMLElement | null;
+    if (cue) {
+      const r = cue.getBoundingClientRect();
+      if (r.height > 0 && r.top < H) bottom = Math.max(bottom, H - r.top + 12);
+    }
+    const v = `${Math.round(bottom)}px`;
+    if (el.style.bottom !== v) el.style.bottom = v;
+  };
   return {
     show(text: string) {
       el.textContent = text;
+      place();
       el.style.opacity = '1';
       clearTimeout(timer);
-      timer = window.setTimeout(() => (el.style.opacity = '0'), 2600 + text.length * 35);
+      clearInterval(follow);
+      follow = window.setInterval(place, 100);
+      const id = follow;
+      timer = window.setTimeout(() => {
+        el.style.opacity = '0';
+        window.setTimeout(() => clearInterval(id), 400); // keep clear of the cue through the fade-out
+      }, 2600 + text.length * 35);
     },
   };
 }

@@ -119,6 +119,8 @@ export interface Pipeline {
   setBlurAmount?(v: number): void;
   /** true when the preset has the cutscene motion-blur variant. */
   readonly blurAvailable?: boolean;
+  /** POLISH #156 QA: the motion blur's highlight clamp switch (uniform, 1 = on). */
+  readonly mbClamp?: any;
   /**
    * PERF-PLAN P0-1: compiles (async) everything the camera sees with the current culling, in the context the frame is
    * really drawn in, so the next render finds its shader pipelines ready. Render nothing until it resolves.
@@ -475,6 +477,22 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   const MB_TAPS = 24;
   const MB_SHUTTER = 0.25; // NDC → uv (0.5) × a 180° shutter (0.5)
   const MB_MAX_SPAN = 0.3; // uv
+  // POLISH #156 (rv2 MAX-BLUR residual / NEW-MED-TRAILS: small HDR highlights smeared into DOTTED glitter trails, C2c
+  // 0.2 / 0.233 at 1:1). 24 stratified taps over a whip's ≈ 380 px span are ≈ 16 px apart, so a highlight narrower
+  // than that stride lands on at most ONE tap of a pixel: ≈ 1 trail pixel in 8 takes H/24 (a bright dot, H = 10–100×
+  // the frame) and its neighbours nothing. The physical streak is H × width / span — continuous and faint. Firefly
+  // rejection by count: a first pass over the same 24 taps takes the TRIMMED mean luminance (the two brightest taps
+  // dropped) — the level of the span without its outliers — and the second pass clamps each tap's radiance,
+  // luminance-preserving (hue kept), to MB_CLAMP_K × that level. A lone glint then adds ≤ (K − 1)/24 of the local level
+  // (under the ISO-1600 grain) instead of H/24, while a bright patch hit by ≥ 3 taps (a lit wall, a window, her gown)
+  // sets the trimmed mean itself and passes unclamped — the count of hits per pixel varies by ±1 only, so the clamp adds
+  // no new noise at a smear's edges (a first try clamped to 6 × the log-average of 8 jittered pilot taps: the pilot's
+  // own hit-or-miss stippled every bright edge, q1/mb-med-ab-crop.jpg). Cost: a second read of the same 24 texels,
+  // blur frames only. `?mbclamp=0` = the unclamped #153f pass for A/Bs.
+  const MB_CLAMP = !/[?&]mbclamp=0\b/.test(typeof location !== 'undefined' ? location.search : '');
+  const MB_CLAMP_K = 8;
+  /** QA same-frame A/B (`__game.pipeline.mbClamp.value = 0`): 1 = clamped (shipped), 0 = the #153f average. */
+  const uMbClamp = uniform(1);
   const jitterBlur = (tex: any, v: any) =>
     Fn(() => {
       const uvs = uv();
@@ -490,11 +508,32 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
       p3.addAssign(dot(p3, p3.yzx.add(33.33)));
       const j = fract(p3.x.add(p3.y).mul(p3.z));
       const acc = vec4(0).toVar();
+      if (!MB_CLAMP) {
+        Loop({ start: int(0), end: int(MB_TAPS), type: 'int', condition: '<' }, ({ i }: any) => {
+          const t = float(i).add(j).div(MB_TAPS).sub(0.5);
+          // NOT .sample(uv).level(0): PassTextureNode.clone() (PassNode.js:69) drops uvNode, so level() after sample()
+          // sampled the pixel's own uv 24 times — the first build of this pass was inert (q1/q2 probes, crisp whips)
+          acc.addAssign(tex.sample(uvs.add(span.mul(t))));
+        });
+        return acc.div(MB_TAPS);
+      }
+      // pass 1: Σ luminance and the two largest (m1 ≥ m2) over the span's 24 taps
+      const sl = float(0).toVar();
+      const m1 = float(0).toVar();
+      const m2 = float(0).toVar();
       Loop({ start: int(0), end: int(MB_TAPS), type: 'int', condition: '<' }, ({ i }: any) => {
         const t = float(i).add(j).div(MB_TAPS).sub(0.5);
-        // NOT .sample(uv).level(0): PassTextureNode.clone() (PassNode.js:69) drops uvNode, so level() after sample()
-        // sampled the pixel's own uv 24 times — the first build of this pass was inert (q1/q2 probes, crisp whips)
-        acc.addAssign(tex.sample(uvs.add(span.mul(t))));
+        const l = luminance(tex.sample(uvs.add(span.mul(t))).rgb).toVar();
+        sl.addAssign(l);
+        m2.assign(max(m2, min(m1, l)));
+        m1.assign(max(m1, l));
+      });
+      const cap = sl.sub(m1).sub(m2).max(0).div(MB_TAPS - 2).mul(MB_CLAMP_K).add(uMbClamp.oneMinus().mul(1e30)).toVar();
+      // pass 2: the same taps, each clamped to the cap (scene units; exposure-independent)
+      Loop({ start: int(0), end: int(MB_TAPS), type: 'int', condition: '<' }, ({ i }: any) => {
+        const t = float(i).add(j).div(MB_TAPS).sub(0.5);
+        const c = tex.sample(uvs.add(span.mul(t)));
+        acc.addAssign(c.mul(min(float(1), cap.div(max(luminance(c.rgb), float(1e-9))))));
       });
       return acc.div(MB_TAPS);
     })();
@@ -638,6 +677,7 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
       mbAmount.value = Math.max(0, v);
     },
     blurAvailable: !!preset.post.cutsceneMotionBlur,
+    mbClamp: uMbClamp, // POLISH #156 QA
     compileView, // PERF lane (P0-1)
     dispose: () => {
       for (const p of rps.values()) p.dispose();

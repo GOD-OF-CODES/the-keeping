@@ -460,6 +460,23 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
   C6b 57.4 fps; Max 57.3 fps avg, 4.30 % over 20 ms, worst segment C4c 46.4 fps (≥ 45 floor). Strict medium / max /
   low / careless (1 death) / torch: all reach B13, 0 console errors, 0 stale-probe loads. typecheck, npm test 373/373
   (one flaky run seen earlier: 1 fail, then 3 clean runs), assets --check, build + verify-boot, no key string in dist.
+- SHIPPED 2026-10-20 08:36: 92d9e60 ("Release: voices, release lighting, catch jumpscare, final fixes"),
+  index-D35-LAyd.js. Vercel built only the Preview for the build-branch push and never started a Production deploy for
+  the main push of the same SHA. The lead promoted that Ready preview (`vercel promote`; production
+  the-keeping-i8ckux9te, build log has index-D35-LAyd.js + verify-boot OK). Polling the site with curl now hits
+  Vercel's bot challenge (403 "Security Checkpoint"); verify through `vercel inspect` / GitHub deployments instead.
+- (bh) 2026-10-20 13:10, POLISH 1 (wf_d2311ec5-967, docs/STATUS-polish.md, #156–156g): re-review PASS.
+  - Motion blur drops the two brightest taps and clamps the rest to 8× (no glitter); Medium cutscene blur is back ON.
+  - C4 wardrobe visit lit by a motivated 0.6 cd 7500 K moon key through the U3 window (≈ 0.024 lux; reads, still a
+    dark shot ≈ 10–17/255).
+  - C2c 3.667 and 4.583 black frames gone (the head turns dip toward the torch-lit balusters).
+  - Hide exit restores the pre-hide exposure (no pink-white frames).
+  - Torch lag clamped to 15° (no black frame on fast flicks).
+  - Pickup toast sits above the subtitles.
+  - The careless gate's B05 failure was the QA bot's hero-shot frame swinging the now-clamped beam onto Ada; it is
+    fixed in the harness (rig.hold during that frame). A real player who points the torch at Ada is seen, as designed.
+  - Known, minor: the C4 visit is still dark, the careless B05 beam margin is 0.19 m, the R1-5 hem line, the one-frame
+    dip before the jumpscare face cut (also in the release), and the jumpscare face reads CG.
 - FINAL FIX / QA list, collected 2026-10-19 13:20 (owners after the running rounds end):
   1. C2c 6.733: a one-frame dark dip on Medium/Max that is BLACK on Low (the beam pool below the frame mid-whip; FLASH
      fixer r3 residual). Owner: c2c-up.ts / clips_escape.py stumble_catch.

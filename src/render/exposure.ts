@@ -353,6 +353,26 @@ export class AutoExposure {
     this.nextMeter = this.t; // meter on the next update (it reads the frame rendered after this one)
   }
 
+  /** POLISH #156e (F3): put the eye back to a known adaptation (a hide exit: the same room and torch state as before
+   *  the hide) and continue from there. Every reading issued before now is dropped (they metered the dark hide) and a
+   *  pending snap is cancelled — NOT re-armed: the first post-exit frame may still show the torch coming up, and a snap
+   *  to it would put the eye straight back to the hide's ceiling. The next regular reading adapts as usual (τ).
+   *  Ignored under a film-camera cue (it owns the exposure). */
+  restore(ev: number): void {
+    if (EXPOSURE_CUE.fixed != null || !Number.isFinite(ev)) return;
+    snapRequested = false;
+    this.ev = ev;
+    this.targetEV = ev;
+    this.haveTarget = true;
+    this.cutAt = this.t;
+    this.snapAfter = -1;
+    this.snapIssued = false;
+    this.filtT = ev;
+    this.filtAt = this.t;
+    this.nextMeter = this.t + PERIOD * 0.5;
+    this.out.value = this.exposure;
+  }
+
   /**
    * Per simulation step. `lightning` = current flash level; `fallback` = the zone's exposure where there is nothing to
    * meter (Direct path). Returns the linear exposure to put in the pipeline uniform.

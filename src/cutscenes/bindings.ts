@@ -9,9 +9,9 @@
 import * as THREE from 'three/webgpu';
 import { planToWorld, worldToPlan } from '../shared/coords.ts';
 import { CutscenePlayer, localSeenStore, type CharacterDirector, type CutsceneDeps, type SeenStore } from './host.ts';
-import { C4_HIDE_LM_TAU_IN, C4_HIDE_LM_TAU_OUT, HemOverlay } from './c4-hem.ts';
+import { C4_HIDE_LM, C4_HIDE_LM_TAU_IN, C4_HIDE_LM_TAU_OUT, HemOverlay } from './c4-hem.ts';
 import { GRADE } from '../render/grade.ts'; // SMOOTH-FIX (#145b): the C4 hide view's night-light lift (tickHideLm)
-import { setCandleShadow } from '../world/lights.ts';
+import { setCandleShadow, U3_MOON } from '../world/lights.ts';
 import { uHideDim } from '../world/hide-dim.ts'; // FINAL-B (#154, R1-4): the wardrobe's own parts stay un-lifted
 import { hasRecipe } from '../audio/synth/index.ts';
 
@@ -743,6 +743,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
     if (left) {
       GRADE.lm = 1;
       uHideDim.value = 1;
+      U3_MOON.k = 0;
       return;
     }
     const cur = Math.max(1e-3, GRADE.lm);
@@ -754,6 +755,8 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
     }
     // FINAL-B (#154, R1-4): inside the wardrobe its own slats keep the un-lifted light (src/world/hide-dim.ts)
     uHideDim.value = want > 1 ? 1 / Math.max(1, GRADE.lm) : 1;
+    // POLISH #156b: the moon-window key (lights.ts U3_MOON) rides the lift's own log-space ease (0 → 1 as it settles)
+    U3_MOON.k = want > 1 ? Math.max(0, Math.min(1, Math.log(Math.max(1, GRADE.lm)) / Math.log(C4_HIDE_LM))) : 0;
   };
   // FINAL-B (#154, R1-1): the exit cut itself. tickHideLm runs inside update() BEFORE the frame's exits happen — the
   // wardrobe-back push (m2-world, after this update) and hem.update(…, hides.active) — so it saw the hide a frame late
@@ -766,6 +769,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
     if (p.inside) return;
     hideLmPrev = 1;
     uHideDim.value = 1;
+    U3_MOON.k = 0; // POLISH #156b: the moon key ends on the exit cut with the lift
     const act = player.active;
     if (act && !act.startsWith('C4_')) return; // a Director cutscene owns the grade (its teardown resets it)
     GRADE.lm = 1;

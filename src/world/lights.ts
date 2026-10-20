@@ -23,6 +23,33 @@ const FLICKER_SHARE = 0.22;
 export const MOONLIGHT = 0.07;
 
 /**
+ * POLISH #156b (C4 wardrobe visit near-black for ≈ 26 s on Medium / Max): the overcast moonlit WINDOW of Ada's sewing
+ * room (O_U3_E, 0.8 × 1.5 m, behind the dress) as a soft cool key — the window's lightning spot (L_LTN_U3E: 1.1 m
+ * outside the glass, aimed into the room) carries a steady moon term while the player hides in her wardrobe. It lights
+ * Ada's flank as she crosses the room and stands at the slats, and the boards and sheeted shapes she is seen against,
+ * from the only light source the room has. What the hide can SEE is the room's west half, ≈ 5 m from the window (the
+ * dress and the window itself are behind the wardrobe's own east side: its front corner is at −29° from the eye, the
+ * dress at −28°): 0.6 cd = 0.024 lux there — inside a moonlit overcast rainy night's 0.003–0.03 lux (CLAUDE.md); 0.09 lux
+ * on the dress back 1.85 m from it (out of view). Colour: the night sky through the glass, 7500 K (layout L_SKY).
+ * Physically a 0.003 cd/m² overcast sky over the 1.2 m² window is ≈ 0.004 cd: like the hide lift (c4-hem.ts
+ * C4_HIDE_LM) it is the eye's dark adaptation, written as the outdoor range, never more. 0.2 cd (0.008 lux in view)
+ * still left the visit ≈ 65 % black (scratch/polish/c4t-sheet.jpg).
+ * `k` (0..1) is driven by bindings.ts tickHideLm with the hide lift's own ease (in on settling into the hide, 0 ON the
+ * exit cut). On Max (flash lightmaps, no lightning spots) the same spot is created for this term alone.
+ */
+export const U3_MOON_LIGHT_ID = 'L_LTN_U3E';
+export const U3_MOON_CD = 0.6;
+/** `k` the eased level (0..1); `cd` the key's candela (`?u3moon=<cd>` QA override, 0 = off). */
+export const U3_MOON = {
+  k: 0,
+  cd: (() => {
+    const m = /[?&]u3moon=([0-9.]+)/.exec(typeof location !== 'undefined' ? location.search : '');
+    return m ? Number(m[1]) : U3_MOON_CD;
+  })(),
+};
+export const U3_MOON_K = 7500;
+
+/**
  * PERF-PLAN P0-2: the one runtime light that ever casts a shadow (C2's candle tableau, C5's shadow-play, C7). It casts
  * from load — a castShadow toggle changes the LightsNode cache key, so every material on it (parlor atlas, characters,
  * arms) would be disposed and rebuilt twice per toggle pair. Outside those shots the shadow is muted (shadow.intensity
@@ -355,7 +382,10 @@ export class RuntimeLights {
   readonly clipOn = uClipOn;
   /** Lightning: directional (exterior) + window spots (interior, tiers without flash maps). */
   readonly lightningDir: any;
-  readonly lightningSpots: Array<{ light: any; room: string; peak: number }> = [];
+  readonly lightningSpots: Array<{ light: any; room: string; peak: number; moon?: boolean }> = [];
+  /** POLISH #156b: the U3 window spot's two colours (lightning 9000 K, the moon key U3_MOON_K) — mixed by intensity. */
+  private readonly moonColor = new THREE.Color(...kelvinToLinearRGB(U3_MOON_K));
+  private readonly flashColor = new THREE.Color();
   /** r3 AD review: room → floor id, and the ground rooms a stair climbs out of (see update()). */
   private readonly roomFloor = new Map<string, string>();
   private readonly stairFoot = new Set<string>();
@@ -469,9 +499,12 @@ export class RuntimeLights {
     this.group.add(this.lightningDir, this.lightningDir.target);
     this.lightningPeakDir = 2.2 * (sun ? Math.max(0.5, Math.min(2, sun.watts / 3)) : 1);
     if (opts.props) this.createRuntime(layout, opts.props);
-    if (opts.lightningSpots) {
+    {
       for (const l of layout.lights) {
         if (l.role !== 'lightning' || l.type !== 'area' || !l.target) continue;
+        // POLISH #156b: tiers with flash lightmaps (Max) still get the U3 window spot, for the moon key only (peak 0)
+        const moon = l.id === U3_MOON_LIGHT_ID;
+        if (!opts.lightningSpots && !moon) continue;
         const [x, y, z] = planToWorld(l.pos);
         const [tx, ty, tz] = planToWorld(l.target);
         const s = new THREE.SpotLight(new THREE.Color(...kelvinToLinearRGB(l.kelvin)), 0, 12, Math.PI / 3.2, 0.85, 2);
@@ -481,7 +514,7 @@ export class RuntimeLights {
         s.name = `lightning_${l.id}`;
         this.group.add(s, s.target);
         // Area watts over a window-sized portal → peak candela.
-        this.lightningSpots.push({ light: s, room: roomForTarget(layout, l.target), peak: (l.watts / (4 * Math.PI)) * 0.9 });
+        this.lightningSpots.push({ light: s, room: roomForTarget(layout, l.target), peak: opts.lightningSpots ? (l.watts / (4 * Math.PI)) * 0.9 : 0, moon });
       }
     }
   }
@@ -621,7 +654,18 @@ export class RuntimeLights {
     // outdoors (gate, C1 reveal) the upper windows must still flash from inside: keep every seen spot there (crossOk)
     for (const s of this.lightningSpots) {
       const sameFloor = !vf || this.roomFloor.get(s.room) === vf;
-      s.light.intensity = lightning * s.peak * ((!seen || seen.has(s.room)) && (sameFloor || crossOk) ? 1 : 0);
+      const gate = (!seen || seen.has(s.room)) && (sameFloor || crossOk) ? 1 : 0;
+      const flash = lightning * s.peak * gate;
+      if (!s.moon) {
+        s.light.intensity = flash;
+        continue;
+      }
+      // POLISH #156b: + the steady moon-window key (U3_MOON), its colour mixed with the flash's by intensity
+      const key = Math.max(0, Math.min(1, U3_MOON.k)) * U3_MOON.cd * gate;
+      s.light.intensity = flash + key;
+      if (!s.light.userData.flashColor) s.light.userData.flashColor = s.light.color.clone();
+      const w = flash + key > 1e-9 ? key / (flash + key) : 0;
+      s.light.color.copy(this.flashColor.copy(s.light.userData.flashColor).lerp(this.moonColor, w));
     }
     for (const f of this.followers) this.follow(f);
   }

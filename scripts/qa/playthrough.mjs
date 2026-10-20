@@ -772,6 +772,23 @@ function installBot(cfg) {
     const p = pos();
     g.look(Math.atan2(target[1] - p[1], target[0] - p[0]), pitch);
   };
+  /**
+   * POLISH #156h (review F1): the one frame a hero shot advances after turning the camera onto its subject. The torch
+   * stays where the player's hand had it (rig.hold): the shot is a camera pose, not a player action. With the hand's lag
+   * capped at 15° (#156f) that frame used to swing the lit beam onto her body in 'upper-hall-ada' — her NEXT update
+   * started a beam LOOK at 4.07 m (the careless gate's B05 then never got its ≥ 6 m glance: 18 / 20). The release's 70 ms
+   * lag hid this (the beam got 37 % of the way round in that frame).
+   */
+  bot.heroFrame = async () => {
+    const r = g.rig;
+    const was = r.hold;
+    r.hold = true;
+    try {
+      return await g.advance(1, 1 / 30);
+    } finally {
+      r.hold = was;
+    }
+  };
 
   bot.status = () => {
     const s = st();
@@ -835,8 +852,8 @@ export default async function (qa) {
       heroDone.add('facade');
     }
     if (s.want) {
-      if (s.want === 'upper-hall-ada') await qa.eval(`(() => { const p = window.__bot; const a = ${JSON.stringify(s.ada?.pos ?? null)}; if (a) p.aim(a, -0.05); return window.__game.advance(1, 1/30); })()`);
-      if (s.want === 'harlan-bedroom') await qa.eval(`(() => { window.__bot.aim([8.2, 2.6, 4.1], -0.08); return window.__game.advance(1, 1/30); })()`);
+      if (s.want === 'upper-hall-ada') await qa.eval(`(() => { const p = window.__bot; const a = ${JSON.stringify(s.ada?.pos ?? null)}; if (a) p.aim(a, -0.05); return p.heroFrame(); })()`);
+      if (s.want === 'harlan-bedroom') await qa.eval(`(() => { window.__bot.aim([8.2, 2.6, 4.1], -0.08); return window.__bot.heroFrame(); })()`);
       await qa.shot(s.want);
       heroDone.add(s.want);
       qa.log(`shot ${s.want} @ ${s.t}s`);
