@@ -97,34 +97,90 @@ export function createM2World(d: M2Deps) {
     for (const n of p.cut) n.visible = cut;
   };
 
-  // rest positions of the bundle (the layout places them on the floor under the hem)
-  const rest = new Map<string, any>();
-  for (const id of ['P_LOCKET', 'P_TICKET']) {
-    const o = prop(id);
-    if (o) rest.set(id, { p: o.position.clone(), q: o.quaternion.clone() });
+  // LOCKET #158b: where the hem bundle lands. The layout `pos` of P_LOCKET / P_TICKET is where they are sewn in: 0.2 m
+  // from the form's axis, 12 cm up — INSIDE the round-E skirt (hem radius ≈ 0.59 m × folds, blender/props/textiles.py),
+  // so the dropped bundle stayed in the cloth where nobody could see or take it. Cutting the FRONT hem (the cut state's
+  // missing strip) opens it: the bundle falls out of the cut and lands on the boards just in front of the hem. Measured
+  // from the dress at load (its cut-state mesh), so restores (?beat=, CP6, saves) put it there too.
+  const BUNDLE_SILL = 0.09; // m above the floor: the cut opening's sill (the 4 cm hem + the 6–8 cm strip removed)
+  const G = 9.81;
+  const rest = new Map<string, { p: any; q: any; from: any }>();
+  {
+    const dress = prop('P_DRESS');
+    if (dress) {
+      dress.updateMatrixWorld(true);
+      const o = new THREE.Vector3().setFromMatrixPosition(dress.matrixWorld);
+      // prop front = −y in PLAN = +Z in the glTF / three local frame
+      const front = new THREE.Vector3(0, 0, 1).transformDirection(dress.matrixWorld).setY(0).normalize();
+      const side = new THREE.Vector3(-front.z, 0, front.x);
+      // the cut hem's reach toward the front: its lowest vertices (< 0.25 m) within ±20° of the front
+      let hemR = 0;
+      const v = new THREE.Vector3();
+      const cosMax = Math.cos(0.35);
+      for (const n of dressParts().cut)
+        n.traverse((m: any) => {
+          const pos = m.isMesh ? m.geometry?.attributes?.position : null;
+          if (!pos) return;
+          for (let i = 0; i < pos.count; i++) {
+            v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld).sub(o);
+            if (v.y > 0.25) continue;
+            const along = v.x * front.x + v.z * front.z;
+            if (along > 0 && along >= Math.hypot(v.x, v.z) * cosMax) hemR = Math.max(hemR, along);
+          }
+        });
+      if (!(hemR > 0.2 && hemR < 1.2)) hemR = 0.66; // textiles.py: flare 0.59 × the deepest fold 1.12
+      const floorY = (x: number, z: number) => level.collision.floorBelow(x, o.y + 0.3, z, 1.0) ?? o.y;
+      const place = (id: string, out: number, across: number, twist: number) => {
+        const obj = prop(id);
+        if (!obj) return;
+        const w = o.clone().addScaledVector(front, hemR + out).addScaledVector(side, across);
+        w.y = floorY(w.x, w.z) + 0.0005;
+        const from = o.clone().addScaledVector(front, hemR - 0.03).addScaledVector(side, across * 0.4);
+        from.y = w.y + BUNDLE_SILL;
+        const toLocal = (x: any) => (obj.parent ? obj.parent.worldToLocal(x.clone()) : x.clone());
+        const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), twist).multiply(obj.quaternion);
+        rest.set(id, { p: toLocal(w), q, from: toLocal(from) });
+        obj.position.copy(rest.get(id)!.p);
+        obj.quaternion.copy(q);
+        obj.updateMatrixWorld(true);
+      };
+      // the locket a hand's width out of the cut, the card a little further and to one side (paper drifts as it falls)
+      place('P_LOCKET', 0.11, 0.05, 0.6);
+      place('P_TICKET', 0.16, -0.13, -0.9);
+    }
   }
   const dropFromHem = (id: string, delay: number) => {
     const o = prop(id);
     const r = rest.get(id);
     if (!o || !r) return;
-    o.visible = true;
-    const flutter = id === 'P_TICKET';
-    tween(o, delay + (flutter ? 1.0 : 0.45), (obj, _u, t) => {
-      const k = Math.max(0, t - delay) / (flutter ? 1.0 : 0.45);
-      const u = Math.min(1, k);
+    o.visible = false;
+    o.userData.landed = false;
+    const paper = id === 'P_TICKET';
+    // the locket falls freely from the sill (t = √(2h/g) ≈ 0.135 s) and slides out a few cm; the card drifts down
+    // (paper: ≈ 0.5 m/s with drag) with a flutter
+    const tFall = paper ? 0.45 : Math.sqrt((2 * BUNDLE_SILL) / G);
+    const dur = paper ? 0.7 : 0.32;
+    const h0 = r.from.y - r.p.y;
+    tween(o, delay + dur, (obj, _u, t) => {
+      const k = Math.max(0, t - delay);
       obj.visible = t >= delay;
-      obj.position.copy(r.p);
-      obj.position.y += (1 - u * u) * 0.42 + (u >= 1 ? 0 : 0);
-      if (flutter) {
-        obj.position.x += Math.sin(u * 9) * 0.05 * (1 - u);
-        obj.rotation.set(0, 0, 0);
-        obj.quaternion.copy(r.q);
-        obj.rotateZ(Math.sin(u * 7) * 0.5 * (1 - u));
-      }
+      const u = Math.min(1, k / dur);
+      const e = 1 - (1 - u) * (1 - u); // out of the cut with friction (ease-out)
+      obj.position.lerpVectors(r.from, r.p, e);
+      const f = Math.min(1, k / tFall);
+      obj.position.y = r.p.y + h0 * (paper ? 1 - Math.pow(f, 1.4) : 1 - f * f);
+      obj.quaternion.copy(r.q);
+      if (paper) obj.rotateX(Math.sin(f * 8) * 0.35 * (1 - f));
+      else if (f < 1) obj.rotateX(0.5 * (1 - f)); // tips flat as it lands
       obj.updateMatrixWorld(true);
-      if (u >= 1 && !obj.userData.landed) {
+      if (f >= 1 && !obj.userData.landed) {
         obj.userData.landed = true;
-        play(flutter ? 'paper' : 'locket_click', { pos: worldPosOf(obj), room: 'U3', gain: 0.6 });
+        play(paper ? 'paper' : 'locket_click', { pos: worldPosOf(obj), room: 'U3', gain: 0.6 });
+      }
+      if (u >= 1) {
+        obj.position.copy(r.p);
+        obj.quaternion.copy(r.q);
+        obj.updateMatrixWorld(true);
       }
     });
   };

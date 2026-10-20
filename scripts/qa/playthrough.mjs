@@ -221,6 +221,9 @@ function installBot(cfg) {
     glanceT0: {},
     aimAdaUntil: -1,
     aimT: {},
+    // LOCKET #158: real-pick probes before every interaction (aimProbe)
+    aims: [],
+    aimSeen: new Set(),
     flee: null,
   };
   window.__bot = bot;
@@ -243,9 +246,96 @@ function installBot(cfg) {
       };
   }
 
+  // LOCKET #158: the bot used to call use() without aiming, so the real player path (src/world/interactables.ts pick():
+  // box pre-filter → exact hit on the nearest candidate → static-collision line of sight) went untested — and the hem
+  // bundle sat unreachable inside the skirt for a release. aimProbe(id) runs that REAL pick from the bot's own eye,
+  // aimed the way a player aims: at the target's shown surface (its shown meshes' box centres + triangle centroids,
+  // the overall box centre first). No frame is advanced and the camera is restored at once, so a probe never changes the
+  // run (no game time passes, the torch never swings onto Ada). ok = at least one aim gives the target's prompt;
+  // frac = the share of aims that do (how easy it is); centre = the dead-centre aim does.
+  const aimProbe = (id) => {
+    const ix = g.interact;
+    const it = ix.items.find((i) => i.id === id);
+    if (!it) return { id, ok: false, why: 'no interactable' };
+    const cam = ix.camera;
+    const V = cam.position.constructor;
+    const shownO = (o) => {
+      for (let n = o; n; n = n.parent) if (n.visible === false) return false;
+      return true;
+    };
+    const f2 = (v) => +(+v).toFixed(2);
+    let pts = [];
+    let U = null;
+    it.object.updateMatrixWorld(true);
+    it.object.traverse((m) => {
+      if (!m.isMesh || !m.geometry || !shownO(m)) return;
+      const geo = m.geometry;
+      if (!geo.boundingBox) geo.computeBoundingBox();
+      const b = geo.boundingBox.clone().applyMatrix4(m.matrixWorld);
+      U = U ? U.union(b) : b;
+      pts.push(b.getCenter(new V()));
+      const pos = geo.attributes.position;
+      const idx = geo.index;
+      const nt = Math.floor((idx ? idx.count : pos.count) / 3);
+      const step = Math.max(1, Math.floor(nt / 16));
+      for (let t = 0; t < nt; t += step) {
+        const c = new V();
+        for (let k = 0; k < 3; k++) c.add(new V().fromBufferAttribute(pos, idx ? idx.getX(t * 3 + k) : t * 3 + k));
+        pts.push(c.multiplyScalar(1 / 3).applyMatrix4(m.matrixWorld));
+      }
+    });
+    if (!U) return { id, ok: false, why: 'nothing shown' };
+    if (pts.length > 96) pts = pts.filter((_, i) => i % Math.ceil(pts.length / 96) === 0);
+    pts.unshift(U.getCenter(new V()));
+    cam.updateMatrixWorld();
+    const eye = new V().setFromMatrixPosition(cam.matrixWorld);
+    const q0 = cam.quaternion.clone();
+    let pass = 0;
+    let centre = false;
+    let diag = null;
+    const winners = {};
+    try {
+      for (let i = 0; i < pts.length; i++) {
+        cam.lookAt(pts[i]);
+        cam.updateMatrixWorld();
+        ix.exactAge = 0;
+        ix.exactBoxBest = null;
+        const f = ix.pick();
+        const ok = !!f && f.id === id && f.label() !== null;
+        if (ok) {
+          pass++;
+          if (i === 0) centre = true;
+        } else winners[f ? f.id : 'none'] = (winners[f ? f.id : 'none'] ?? 0) + 1;
+        if (i === 0) {
+          const hs = ix.ray.intersectObject(it.object, true).filter((h) => shownO(h.object));
+          diag = { hit: hs.length ? f2(hs[0].distance) : null, col: f2(Math.min(9, ix.level.collision.rayDistance(ix.ray.ray.origin, ix.ray.ray.direction, 9))), cands: (ix.cands ?? []).map((c) => c.id) };
+        }
+      }
+    } finally {
+      cam.quaternion.copy(q0);
+      cam.updateMatrixWorld();
+      ix.exactAge = 0;
+      ix.exactBoxBest = null;
+    }
+    const label = it.label();
+    return { id, ok: pass > 0 && label !== null, frac: f2(pass / pts.length), centre, label, aims: pts.length, dist: f2(eye.distanceTo(pts[0])), eye: [f2(eye.x), f2(-eye.z), f2(eye.y)], crouch: f2(g.player?.crouch ?? 0), winners, diag };
+  };
+  /** Probe once per beat + target + kind (the ledger's three pages, repeated bell pulls → one probe). */
+  const aimCheck = (id, kind) => {
+    const key = `${beat()}:${kind}:${id}`;
+    if (bot.aimSeen.has(key)) return;
+    bot.aimSeen.add(key);
+    const a = aimProbe(id);
+    a.beat = beat();
+    a.kind = kind;
+    a.t = +bot.t.toFixed(1);
+    bot.aims.push(a);
+    L(`aim ${kind} ${id}: ${a.ok ? `prompt "${a.label}"` : 'NO PROMPT'} (${a.frac} of ${a.aims ?? 0} aims, centre ${a.centre ? 'ok' : 'no'}, ${a.dist} m)`);
+  };
   const interact = (id, action) => {
     const it = g.interact.items.find((i) => i.id === id);
     if (it) {
+      aimCheck(id, 'interact');
       L(`use ${id}${action ? ':' + action : ''}`);
       it.use(false);
     } else {
@@ -295,6 +385,7 @@ function installBot(cfg) {
         if (door && !doorLock(door)) {
           const dd = g.doors.doors.get(door);
           if (dd && Math.abs(dd.angle) < 30 && Math.abs(dd.target) < 30) {
+            aimCheck(door, 'door');
             L(`open ${door}`);
             g.openDoor(door);
           }
@@ -421,7 +512,7 @@ function installBot(cfg) {
       case 'B05':
         if (hidden()) return f.first_hide_done ? wait('unhide') : wait('slats');
         // C2-ESCAPE §4.5: control at the stair top; the lightning showed the armoire ajar — walk there and hide
-        if (!f.first_hide_done) return go('u_armoire', () => g.hides.enter('H_ARMOIRE'), 'to the armoire', 1.6);
+        if (!f.first_hide_done) return go('u_armoire', () => (aimCheck(HIDES.H_ARMOIRE.propId, 'hide'), g.hides.enter('H_ARMOIRE')), 'to the armoire', 1.6);
         return go('u2_mid', undefined, 'sneak to U2', 1.6);
       case 'B06':
         if (!f.ledger_read || s.ledgerPages < 3) return go('u2_ledger', () => interact('P_LEDGER', 'read_ledger'), 'ledger');
@@ -447,8 +538,15 @@ function installBot(cfg) {
         if (!f.letter_read) return go('u3_letter', () => interact('P_LETTER', 'read_letter'), 'letter');
         if (!f.has_shears) return go('u3_letter', () => interact('P_SHEARS', 'take_shears'), 'shears');
         if (!f.hem_cut) return go('u3_dress', () => interact('P_DRESS', 'cut_hem'), 'hem');
-        if (!f.has_locket && !f.locket_given) return go('u3_dress', () => interact('P_LOCKET', 'take_locket'), 'locket');
-        if (!f.dress_visit_done) return hidden() ? wait('dress visit') : go('u3_wardrobe', () => g.hides.enter('H_ADA_WARDROBE'), 'hide for the dress visit');
+        if (!f.has_locket && !f.locket_given) {
+          // LOCKET #158: a player takes the bundle once it has dropped out of the cut (0.25 s + 0.32 s), not mid-air
+          if (bot.t - (bot.hemT ??= bot.t) < 1.0) return wait('the bundle drops');
+          return go('u3_dress', () => {
+            aimCheck('P_TICKET', 'probe'); // the bus ticket lies beside it (the route does not read it)
+            interact('P_LOCKET', 'take_locket');
+          }, 'locket');
+        }
+        if (!f.dress_visit_done) return hidden() ? wait('dress visit') : go('u3_wardrobe', () => (aimCheck(HIDES.H_ADA_WARDROBE.propId, 'hide'), g.hides.enter('H_ADA_WARDROBE')), 'hide for the dress visit');
         // gameplay-d review: leave the way a player does — hold S in the wardrobe ("push through the back", m2-world.ts);
         // walking u3_wardrobe → u4t_top went through the wardrobe body (B09 unstick)
         // careless: out of the wardrobe into the sewing room first and light her up as she walks off down the hall
@@ -457,7 +555,7 @@ function installBot(cfg) {
         if (hidden()) return wait('unhide');
         // round E: still in the sewing room after the visit (e.g. respawned at CP6) — out through the wardrobe's back,
         // as a player does (get in, push through), never by walking through the wardrobe body
-        if (g.room() === 'U3') return go('u3_wardrobe', () => g.hides.enter('H_ADA_WARDROBE'), 'into the wardrobe to leave');
+        if (g.room() === 'U3') return go('u3_wardrobe', () => (aimCheck(HIDES.H_ADA_WARDROBE.propId, 'hide'), g.hides.enter('H_ADA_WARDROBE')), 'into the wardrobe to leave');
         bot.locket = false;
         bot.beamOn = false;
         return go('u4_foot', undefined, 'servants stair');
@@ -813,7 +911,7 @@ function installBot(cfg) {
       ended: bot.ended,
     };
   };
-  bot.summary = () => ({ beats: bot.beats, checkpoints: bot.checkpoints, cutscenes: bot.cutscenes, gates: bot.gates, deaths: bot.deaths, unsticks: bot.unsticks, frameErrors: bot.errors, adaTrace: bot.trace.slice(-40), strikes: bot.strikes, hints: st().hintsGiven, stimuli: stims.slice(-80), log: bot.log.slice(-60), states: Object.fromEntries(Object.entries(bot.states).map(([k, v]) => [k, +v.toFixed(1)])), beamHits: bot.beamHits, escape: bot.escape });
+  bot.summary = () => ({ beats: bot.beats, checkpoints: bot.checkpoints, cutscenes: bot.cutscenes, gates: bot.gates, deaths: bot.deaths, unsticks: bot.unsticks, frameErrors: bot.errors, adaTrace: bot.trace.slice(-40), strikes: bot.strikes, hints: st().hintsGiven, stimuli: stims.slice(-80), log: bot.log.slice(-60), states: Object.fromEntries(Object.entries(bot.states).map(([k, v]) => [k, +v.toFixed(1)])), beamHits: bot.beamHits, escape: bot.escape, aims: bot.aims });
   return true;
 }
 
@@ -906,6 +1004,18 @@ export default async function (qa) {
   // strict is the DEFAULT gate (QA_STRICT=0 opts out)
   if (strict) qa.assert(sum.unsticks.length === 0, `no unstick rescues (${sum.unsticks.length}: ${sum.unsticks.map((u) => u.beat + '@' + u.at).join(' ')})`);
   if (!cfg.torchOn) qa.assert(sum.deaths.length === 0, `stealth player never caught (deaths ${sum.deaths.length})`);
+  // LOCKET #158: every interaction the bot performs (and every door it opens / hide it enters) gives its prompt to the
+  // REAL pick, aimed from the bot's own spot; the pickups must also be EASY to aim at: the dead-centre aim (the box
+  // centre: in the air for an L-shaped hammer) or at least half of the aims at their surface give the prompt
+  const aims = sum.aims ?? [];
+  qa.log('aim probes (real pick from the bot eye; frac of aims, c = centre ok): ' + aims.map((a) => `${a.beat} ${a.kind} ${a.id} ${a.ok ? 'ok' : 'FAIL'} ${a.frac}${a.centre ? 'c' : ''} ${a.dist}m`).join(' · '));
+  const aimFails = aims.filter((a) => !a.ok);
+  const aimMsg = (a) => `${a.beat} ${a.kind} ${a.id} from ${a.eye} → ${a.why ?? JSON.stringify(a.winners)} ${JSON.stringify(a.diag ?? null)}`;
+  if (strict) qa.assert(aimFails.length === 0, `every bot interaction / door / hide is focusable by aiming from the bot's spot (${aims.length} probes; fails: ${aimFails.map(aimMsg).join(' ; ') || 'none'})`);
+  for (const id of ['P_LOCKET', 'P_TICKET', 'P_SHEARS', 'P_HAMMER', 'P_JERRY_10', 'P_LEDGER', 'P_LETTER']) {
+    const a = aims.find((x) => x.id === id);
+    if (a || (strict && sum.beats[0]?.beat === 'B01')) qa.assert(!!a && a.ok && (a.centre || a.frac >= 0.5), `pickup ${id}: easy to aim at from the bot's spot (${a ? `"${a.label}", centre ${a.centre ? 'ok' : 'no'}, ${a.frac} of ${a.aims} aims, ${a.dist} m` : 'never probed'})`);
+  }
   qa.assert(sum.frameErrors.length === 0, `no frame threw inside the game (${sum.frameErrors.length}: ${sum.frameErrors.map((e) => `${e.beat}/${e.cs}: ${e.msg.slice(0, 120)}`).join(' ; ')})`);
   // per-beat timing: game / wall seconds spent in each beat (first entry → next beat's first entry or the end) + deaths
   const beatTimes = [];

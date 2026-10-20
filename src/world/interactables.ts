@@ -26,9 +26,18 @@ export interface Interactable {
   /** fast = the run key is held (fast door push). */
   use(fast: boolean): void;
   reach?: number;
+  /**
+   * LOCKET #158: aim tolerance (m) for small pickups. The world box of the item's shown meshes, grown by `pad`, counts
+   * as its surface for the pick (a 30 mm locket + chain on the boards is 13–19 px at 1.2–1.8 m; a dead-centre aim at
+   * its box hit chain wire or air half the time). Padded items are tracked live (they drop / move): no cached centre.
+   */
+  pad?: number;
 }
 
 const REACH = 1.9;
+/** LOCKET #158: reach for things lying on the floor. A standing eye (1.65 m) over an item 1 m in front of the feet is
+ *  √(1² + 1.65²) = 1.93 m away — past REACH; 2.2 m covers ≈ 1.3 m in front of the feet (you bend or kneel for it). */
+export const FLOOR_REACH = 2.2;
 
 export class Interactables {
   readonly items: Interactable[] = [];
@@ -54,6 +63,12 @@ export class Interactables {
   private readonly _inv = new THREE.Matrix4();
   private readonly _lr = new THREE.Ray();
   private readonly proxyMeshes = new Map<Interactable, any[]>();
+  /** LOCKET #158: per padded item, its shown meshes' world box grown by `pad` (refreshed every pick). */
+  private readonly padBoxes = new Map<Interactable, any>();
+  /** LOCKET #158: each item's object → the item (a mesh belongs to its innermost item, see ownedByOther). */
+  private readonly owners = new Map<any, Interactable>();
+  private readonly _pb = new THREE.Box3();
+  private readonly _pc = new THREE.Vector3();
   private readonly cands: Interactable[] = [];
   private exactAge = 0;
   private exactBoxBest: Interactable | null = null;
@@ -104,6 +119,7 @@ export class Interactables {
 
   add(it: Interactable): void {
     this.items.push(it);
+    this.owners.set(it.object, it);
     const b = new THREE.Box3().setFromObject(it.object);
     if (!b.isEmpty()) this.centres.set(it, { c: b.getCenter(new THREE.Vector3()), r: b.getSize(new THREE.Vector3()).length() / 2 });
   }
@@ -207,6 +223,32 @@ export class Interactables {
     return best;
   }
 
+  /**
+   * LOCKET #158 (audit): door-mounted props ship inside doors.glb as children of their leaf (P_KNOCKER under D_FRONT,
+   * level.ts), so the door's recursive raycast hit the knocker's own meshes at the knocker's distance and the door —
+   * bound first — won every aim at it ("Try the door"; 0 / 36 aims gave "Knock" from the porch). A mesh belongs to the
+   * innermost registered item: the outer item skips hits on a nested item's meshes.
+   */
+  private ownedByOther(o: any, it: Interactable): boolean {
+    for (let n = o; n && n !== it.object; n = n.parent) {
+      const w = this.owners.get(n);
+      if (w && w !== it) return true;
+    }
+    return false;
+  }
+
+  /** LOCKET #158: a padded item's shown meshes' world box grown by `pad` (null when nothing is shown). */
+  private padBox(it: Interactable): any | null {
+    let box = this.padBoxes.get(it);
+    if (!box) this.padBoxes.set(it, (box = new THREE.Box3()));
+    box.makeEmpty();
+    for (const m of this.proxies(it)) {
+      if (!isShown(m)) continue;
+      box.union(this._pb.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld));
+    }
+    return box.isEmpty() ? null : box.expandByScalar(it.pad ?? 0);
+  }
+
   private pick(): Interactable | null {
     const cam = this.camera;
     cam.updateMatrixWorld();
@@ -220,10 +262,25 @@ export class Interactables {
     cands.length = 0;
     for (const it of this.items) {
       const reach = it.reach ?? REACH;
-      const cs = this.centres.get(it);
-      if (cs && cs.c.distanceTo(this._o) > reach + cs.r + 0.5) continue;
+      if (!it.pad) {
+        const cs = this.centres.get(it);
+        if (cs && cs.c.distanceTo(this._o) > reach + cs.r + 0.5) continue;
+      }
       if (!isShown(it.object)) continue;
-      const d = this.boxDistance(it, reach);
+      // LOCKET #158: an item that is not usable right now (label null: the cut dress, a boarded door, a taken item)
+      // neither wins the pick nor hides a usable one behind or inside it — the cut dress hid the locket in its hem
+      // from every angle. Real occluders are the static collision (line of sight below).
+      if (it.label() === null) continue;
+      let d = Infinity;
+      if (it.pad) {
+        const pb = this.padBox(it);
+        if (!pb || pb.getCenter(this._pc).distanceTo(this._o) > reach + 0.5 * pb.getSize(this._p).length() + 0.5) continue;
+        const p = this.ray.ray.intersectBox(pb, this._p);
+        if (p) {
+          const dp = p.distanceTo(this._o);
+          if (dp <= reach) d = dp;
+        }
+      } else d = this.boxDistance(it, reach);
       if (!Number.isFinite(d)) continue;
       cands.push(it);
       n++;
@@ -251,15 +308,24 @@ export class Interactables {
       bd = Infinity;
       for (const it of cands) {
         const reach = it.reach ?? REACH;
+        let dIt = Infinity;
         const hits = this.ray.intersectObject(it.object, true);
         for (const h of hits) {
           if (h.distance > reach) break;
           if (!isShown(h.object)) continue;
-          if (h.distance < bd) {
-            bd = h.distance;
-            best = it;
-          }
+          if (this.ownedByOther(h.object, it)) continue; // LOCKET #158: a nested item's own surface (P_KNOCKER on D_FRONT's leaf)
+          dIt = h.distance;
           break;
+        }
+        // LOCKET #158: a padded item's grown box is part of its surface (the box pass above measured it this frame)
+        if (it.pad) {
+          const pb = this.padBoxes.get(it);
+          const p = pb && !pb.isEmpty() ? this.ray.ray.intersectBox(pb, this._p) : null;
+          if (p) dIt = Math.min(dIt, p.distanceTo(this._o));
+        }
+        if (dIt <= reach && dIt < bd) {
+          bd = dIt;
+          best = it;
         }
       }
       this.exactBest = best;
@@ -295,6 +361,16 @@ const TAKE_LABEL: Record<string, string> = {
   take_shears: 'Sewing shears',
   take_locket: 'Locket',
   take_can: 'Jerry can',
+};
+
+/**
+ * LOCKET #158: aim aids for small pickups (layout action → Interactable `pad` / `reach`). The hem bundle (30 mm locket,
+ * 70 × 35 mm ticket) lies on the boards in front of the dress after the cut (src/game/m2-world.ts, #158b), so it also
+ * gets the floor reach.
+ */
+const PICK_AID: Record<string, { pad: number; reach?: number }> = {
+  take_locket: { pad: 0.06, reach: FLOOR_REACH },
+  read_ticket: { pad: 0.05, reach: FLOOR_REACH },
 };
 
 export interface BindDeps {
@@ -460,6 +536,11 @@ export function bindDefaultInteractions(ix: Interactables, d: BindDeps): void {
     } else {
       const labels: Record<string, string> = { car: 'The car', peek_grate: 'Look through the grate', listen_hatch: 'Listen', pull_bell: 'Pull the bell' };
       it = { id: p.id, object: obj, action: act, label: () => labels[act] ?? 'Use', use: () => emit(p.id, act) };
+    }
+    const aid = PICK_AID[act];
+    if (it && aid) {
+      it.pad = aid.pad;
+      if (aid.reach) it.reach = aid.reach;
     }
     if (it) ix.add(it);
   }

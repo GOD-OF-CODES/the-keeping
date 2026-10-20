@@ -477,6 +477,14 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
     fixed in the harness (rig.hold during that frame). A real player who points the torch at Ada is seen, as designed.
   - Known, minor: the C4 visit is still dark, the careless B05 beam margin is 0.19 m, the R1-5 hem line, the one-frame
     dip before the jumpscare face cut (also in the release), and the jumpscare face reads CG.
+- SHIPPED 2026-10-20 13:30: 308851e ("Polish: smooth cutscene motion blur, moonlit wardrobe visit, no black or
+  washed-out frames"), index-gt-3qOTV.js; production the-keeping-maey1tef4 (build log has the index + verify-boot OK).
+  Pushing main FIRST, then build, gave a Production deploy directly (no promote needed).
+- HOTFIX (bi) 2026-10-20: the user was stuck at B09: no prompt to take the locket after cutting the hem. The bundle
+  sat inside the rebuilt skirt, and the cut dress (label null) still won every aim. Fix #158: null-label items never
+  win or occlude the pick; the bundle drops onto the floor in front of the cut; pad + floor reach for the locket and
+  ticket. The audit also fixed the front-door knocker (D_FRONT won every aim). The QA bot now aim-checks every
+  interaction, door and hide through the real pick (strict fails on a miss). Shipped alone, without the LOAD lane's edits.
 - FINAL FIX / QA list, collected 2026-10-19 13:20 (owners after the running rounds end):
   1. C2c 6.733: a one-frame dark dip on Medium/Max that is BLACK on Low (the beam pool below the frame mid-whip; FLASH
      fixer r3 residual). Owner: c2c-up.ts / clips_escape.py stumble_catch.
