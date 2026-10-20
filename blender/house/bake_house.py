@@ -1,6 +1,7 @@
 """Bake one lightmap atlas of the house (one atlas per Blender process, docs/SMOKE.md S4), then OIDN + per-tier KLM.
 
   bake_house.py -- --atlas LM_GROUND [--size 1024] [--samples 32] [--out public/assets] [--no-flash]
+                   [--legacy-fill] [--no-ship] [--dump DIR]
 
 Scene: .cache/house/house.blend (exact geometry + UV2 of the exported GLBs) + the placed props from
 .cache/props/props.blend (static props of this atlas are bake targets in the atlas's top band, the rest occluders)
@@ -9,8 +10,15 @@ Scene: .cache/house/house.blend (exact geometry + UV2 of the exported GLBs) + th
 occluders only. Flash atlases (layout atlases[].flash) get a second bake with ONLY the lightning lights (mode
 flash), a bright storm sky and Cycles portals in the sky-portal windows -> lm_<atlas>_flash.klm (additive).
 
-Outputs: .cache/bake/lm_<id>.npz (rgb float32 + mask, post-OIDN), public/assets/<tier>/lm_<id>.klm + .json.
-Full quality (release): --size 2048 --samples 128 (browser closed; ~2.4 GB per process).
+Outputs: .cache/bake/lm_<id>.npz (rgb float32 + mask + island label map, post-OIDN), public/assets/<tier>/lm_<id>.klm
++ .json. Full quality (release): --size 2048 --samples 128 (browser closed; ~2.4 GB per process).
+
+Post-process (FINAL-BAKE #152, lib/islands.py): every texel an island touches but Cycles did not bake is filled from
+that island (or, for islands thinner than a texel, from the 3D-nearest baked surface), gutters grow from ONE island
+each, and the gutters are rebuilt after OIDN — the old global dilate + whole-atlas OIDN gave sub-texel trim strips
+their shelf neighbours' light (the U3 / U4T orange leak lines). --legacy-fill restores the old path.
+--no-ship: bake + process only (nothing written to .cache/bake or public/assets); --dump DIR: raw / legacy / new
+atlases as KLM m10 (+ raw .npy) for scratch/final-bake/lmdiag2.mjs.
 """
 import math
 import sys
@@ -22,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import bpy  # noqa: E402
 import numpy as np  # noqa: E402
 
-from lib import bake, encode, oidn, scene  # noqa: E402
+from lib import bake, encode, islands, oidn, scene  # noqa: E402
 from house import scene_prep  # noqa: E402
 from house.plan import Plan  # noqa: E402
 
@@ -33,6 +41,9 @@ SPP = int(args.get('samples', 32))
 OUT = Path(args.get('out', scene.REPO / 'public' / 'assets'))
 BLEND = Path(args.get('blend', scene.CACHE / 'house' / 'house.blend'))
 SHORT = ATLAS.replace('LM_', '').lower()
+LEGACY = bool(args.get('legacy_fill'))
+NO_SHIP = bool(args.get('no_ship'))
+DUMP = Path(args['dump']) if args.get('dump') else None
 T = scene.Timer()
 t_start = time.perf_counter()
 
@@ -67,27 +78,62 @@ scene.log(f'{ATLAS}: {len(objs)} objects, {tris} triangles, {len(base_lights)} l
           f'{SIZE}^2 @ {SPP} spp')
 
 
+ISL = None
+if not LEGACY:
+    bpy.context.view_layer.update()       # appended props: matrix_world current before reading world positions
+    with T('islands'):
+        ISL = islands.analyse(objs, SIZE)
+
+
+def _legacy(rgba, mask):
+    rgba = bake.dilate(rgba, mask, iterations=16)
+    return bake.fill_empty(rgba)
+
+
+def _dump(tag, name, rgb):
+    DUMP.mkdir(parents=True, exist_ok=True)
+    (DUMP / f'{SHORT}_{tag}_{name}.klm').write_bytes(encode.klm_bytes(rgb, 10, 3, None))
+
+
 def bake_one(tag):
     with T(f'bake_{tag}'):
         rgba, info = bake.bake_atlas(objs, SIZE, name=f'{SHORT}_{tag}')
     mask = bake.coverage_mask(rgba)
+    label = None
+    if DUMP:
+        DUMP.mkdir(parents=True, exist_ok=True)
+        np.save(DUMP / f'{SHORT}_{tag}_raw.npy', rgba)
     with T(f'dilate_{tag}'):
-        rgba = bake.dilate(rgba, mask, iterations=16)
-        rgba = bake.fill_empty(rgba)
+        if ISL is None:
+            filled = _legacy(rgba, mask)
+        else:
+            filled, mask, label = islands.fill(rgba, mask, ISL)
     with T(f'oidn_{tag}'):
-        den, oinfo = oidn.denoise(rgba, prefer='cpu')
+        den, oinfo = oidn.denoise(filled, prefer='cpu')
     den[..., 3] = mask
-    return den, mask, info, oinfo
+    if label is not None:
+        with T(f'refill_{tag}'):
+            den = islands.refill(den, mask, label)
+    if DUMP:
+        _dump(tag, 'new', den[..., :3])
+        _dump(tag, 'filled', filled[..., :3])
+        if label is not None:
+            np.save(DUMP / f'{SHORT}_{tag}_label.npy', label)
+            old, _ = oidn.denoise(_legacy(rgba, bake.coverage_mask(rgba)), prefer='cpu')
+            _dump(tag, 'legacy', old[..., :3])
+    return den, mask, info, oinfo, label
 
 
-def save(den, mask, lm_id, tiers=None):
+def save(den, mask, lm_id, policy, label=None):
+    if NO_SHIP:
+        return [], encode.stats(den)
     d = scene.CACHE / 'bake'
     d.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(d / f'{lm_id}.npz', rgb=den[..., :3].astype(np.float32), mask=mask)
-    policy = {t: p for t, p in encode.TIER_POLICY.items() if tiers is None or t in tiers}
+    extra = {} if label is None else {'label': label.astype(np.int32)}
+    np.savez_compressed(d / f'{lm_id}.npz', rgb=den[..., :3].astype(np.float32), mask=mask, **extra)
     with T(f'encode_{lm_id}'):
         written = encode.encode_tiers(den, lm_id.replace('lm_', ''), OUT, policy=policy, intensity=math.pi,
-                                      max_resolution=int(adef.get('maxResolution', 2048)))
+                                      max_resolution=int(adef.get('maxResolution', 2048)), label=label)
     return written, encode.stats(den)
 
 
@@ -95,8 +141,10 @@ res = {'job': f'bake-house-{SHORT}', 'ok': True, 'atlas': ATLAS, 'size': SIZE, '
        'objects': len(objs), 'triangles': tris, 'prop_placements_in_scene': n_props,
        'lightmapped_prop_objects': sum(1 for o in objs if o.get('lm_prop')), 'portals': len(portals),
        'sky': {'model': 'CIE overcast', 'Lz': scene_prep.SKY_LZ * SKY_GAIN, 'kelvin': scene_prep.SKY_KELVIN}}
-den, mask, info, oinfo = bake_one('base')
-written, st = save(den, mask, f'lm_{SHORT}')
+if ISL is not None:
+    res['islands'] = ISL['info']
+den, mask, info, oinfo, label = bake_one('base')
+written, st = save(den, mask, f'lm_{SHORT}', encode.TIER_POLICY, label)
 res['base'] = {'bake_seconds': info['bake_seconds'], 'coverage': info['coverage'], 'oidn': oinfo, 'stats': st,
                'files': {w['tier']: w['bytes'] for w in written}}
 
@@ -107,12 +155,13 @@ if adef.get('flash') and not args.get('no_flash'):
     scene_prep.uniform_world((0.55, 0.62, 0.8), 2.5)       # storm sky during a strike
     if not portals:
         portals = [scene_prep.portal(w, f"portal_{w['id']}") for w in scene_prep.window_openings(P, only_sky=True)]
-    den, mask, info, oinfo = bake_one('flash')
-    written, st = save(den, mask, f'lm_{SHORT}_flash', tiers=('max',))   # flash maps are a Max-tier feature (PLAN)
+    den, mask, info, oinfo, label = bake_one('flash')
+    written, st = save(den, mask, f'lm_{SHORT}_flash', encode.FLASH_POLICY, label)   # Max-tier feature (PLAN)
     res['flash'] = {'bake_seconds': info['bake_seconds'], 'lights': len(flash), 'portals': len(portals),
                     'stats': st, 'files': {w['tier']: w['bytes'] for w in written}}
 
 res['timings_s'] = T.t
 res['process_seconds_in_python'] = round(time.perf_counter() - t_start, 2)
-scene.write_json(scene.CACHE / 'bake' / f'lm_{SHORT}.json', res)
+if not NO_SHIP:
+    scene.write_json(scene.CACHE / 'bake' / f'lm_{SHORT}.json', res)
 scene.result(res)

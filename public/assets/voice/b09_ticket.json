@@ -1,0 +1,41 @@
+{
+  "id": "b09_ticket",
+  "durationSec": 6.56,
+  "words": [
+    {
+      "text": "Carvel,",
+      "start": 0.214,
+      "end": 0.84
+    },
+    {
+      "text": "six-ten...",
+      "start": 0.89,
+      "end": 2.08
+    },
+    {
+      "text": "Tuesday,",
+      "start": 2.13,
+      "end": 2.72
+    },
+    {
+      "text": "October",
+      "start": 2.75,
+      "end": 2.96
+    },
+    {
+      "text": "twelfth.",
+      "start": 3.04,
+      "end": 3.6
+    },
+    {
+      "text": "Nineteen",
+      "start": 4.905,
+      "end": 5.285
+    },
+    {
+      "text": "seventy-six.",
+      "start": 5.355,
+      "end": 6.565
+    }
+  ]
+}

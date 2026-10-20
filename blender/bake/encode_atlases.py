@@ -4,7 +4,8 @@
 
 Input: .cache/bake/lm_<atlas>[_flash].npz (rgb float32 + coverage mask, post-OIDN; written by
 blender/house/bake_house.py). Output: public/assets/<tier>/lm_<atlas>.klm + .json with lib/encode.py TIER_POLICY
-(flash maps: Max tier only, as in bake_house.py). A tier the policy no longer ships for an atlas is removed.
+(flash maps: encode.FLASH_POLICY, Max tier only, as in bake_house.py; the island label map from
+lib/islands.py, when the npz has one, keeps the tier downsamples island-aware). A tier the policy no longer ships for an atlas is removed.
 QA per written file: decode it again (reference decoder) and measure the display-referred error against the
 tier-size float source on every covered texel — 8-bit sRGB code values after three r186 AgX, per albedo
 0.2/0.5/0.8, worst over the runtime exposure envelope (lib.encode.display_error).
@@ -51,7 +52,7 @@ for f in files:
     rgba = np.empty(z['rgb'].shape[:2] + (4,), np.float32)
     rgba[..., :3] = z['rgb']
     rgba[..., 3] = z['mask']
-    policy = {t: p for t, p in encode.TIER_POLICY.items() if not flash or t == 'max'}
+    policy = encode.FLASH_POLICY if flash else encode.TIER_POLICY
     for tier in encode.TIER_POLICY:                  # drop files of tiers / containers no longer shipped
         for ext in ('klm', 'exr', 'json'):
             stale = OUT / tier / f'{lm_id}.{ext}'
@@ -70,7 +71,8 @@ for f in files:
 
     t0 = time.perf_counter()
     written = encode.encode_tiers(rgba, lm_id[3:], OUT, policy=policy, intensity=math.pi,
-                                  max_resolution=int(adef.get('maxResolution', 2048)), on_written=check)
+                                  max_resolution=int(adef.get('maxResolution', 2048)), on_written=check,
+                                  label=z['label'] if 'label' in z.files else None)
     row = {'seconds': round(time.perf_counter() - t0, 2), 'tiers': {}}
     for w in written:
         q = qa.get(w['tier'], {})

@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.00548,
-    "p99": 0.04314,
-    "max": 13.70549,
-    "coverage": 0.4876
+    "mean": 0.00567,
+    "p99": 0.04969,
+    "max": 13.69531,
+    "coverage": 0.6032
   },
   "file": "lm_kitchen.klm"
 }

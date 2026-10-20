@@ -1,0 +1,51 @@
+{
+  "id": "b01_come_on",
+  "durationSec": 3.6,
+  "words": [
+    {
+      "text": "Come",
+      "start": 0.151,
+      "end": 0.16
+    },
+    {
+      "text": "on...",
+      "start": 0.32,
+      "end": 2.079
+    },
+    {
+      "text": "come",
+      "start": 2.2,
+      "end": 2.243
+    },
+    {
+      "text": "on,",
+      "start": 2.323,
+      "end": 2.563
+    },
+    {
+      "text": "don't",
+      "start": 2.583,
+      "end": 2.723
+    },
+    {
+      "text": "do",
+      "start": 2.776,
+      "end": 2.883
+    },
+    {
+      "text": "this",
+      "start": 2.931,
+      "end": 3.123
+    },
+    {
+      "text": "to",
+      "start": 3.176,
+      "end": 3.283
+    },
+    {
+      "text": "me.",
+      "start": 3.363,
+      "end": 3.603
+    }
+  ]
+}

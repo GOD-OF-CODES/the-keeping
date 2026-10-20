@@ -371,12 +371,109 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
   (scratch/lead-ship2). NOT in it (next push): FLASH 146d elbow fold, PERF2 caps/gates still being measured, the
   assets.mjs queue fairness fix (#151). Lid-closed-on-battery sleep froze every lane 22:05–23:00 (no hang).
 
+- SHIPPED 2026-10-19 16:25: b235f41 ("Ship 3") = snapshot tree 004f944d (index-C6UcP2cD.js). Gate: typecheck,
+  npm test 347/347, assets --check, build + verify-boot; strict playthroughs medium / max / low / careless (1 death) /
+  torch reach B13 with 0 console errors. The first Max run lost its headless-Chrome connection in the C7 sting after
+  B13 (no console error); the re-run passed, so it is logged as a one-off. In it: FLASH #146d elbow fold, #146e stumble
+  flash fix, #146f mirror hop, #151 queue fairness. NOT in it: PERF2, JUMPSCARE, FINAL-BAKE, #151b, ruling (aw)/(ax) docs.
+- (ax) 2026-10-19 15:50, BLENDER ORDER (FINAL-BAKE asked): the release bake goes before the remaining jumpscare
+  chunks (shortest job first: the dev re-bake plus 7 one-atlas release jobs ≈ 1–1.5 h, vs ≈ 17 scare frames ≈ 2.7 h).
+  `.cache/blender.hold.json` holds `scare-*` jobs until the release chain logs CHAIN DONE (lead removes the hold) or
+  18:15 at the latest. Root cause of the starvation: a pre-launched scare chunk won the 3 s poll race for the freed
+  lock against a bake job waiting since 14:19. assets.mjs now queues Blender jobs first come, first served too (#151b).
+  Result: the 7 release jobs ran 16:16–17:11 (55 min, back to back) (CHAIN DONE 17:11:42, all exit 0); the hold lifted itself 17:12.
+- (ay) 2026-10-19 17:25, CALM WINDOW (PERF2 #150b asked): Max real-time runs during Cycles chunks were invalid
+  (load / swap). When PERF2's final queue scratch/perf2/qb5.sh starts, scratch/lead/calmhold.sh holds EVERY Blender job
+  (`match: ".*"`; a running chunk finishes first) and lifts the hold when qb5 reaches its strict gates (gate-medium),
+  exits, or after 150 min. No fixed clock slot: the window opens when PERF2's final dist is ready.
 ## Then — NO new cutscenes (ruling (aw), 2026-10-19 09:55; the user: "remove more cutscenes to be made")
 - CANCELLED, not to be built: F1 "Tuesday, the 6:10", F2 "What the Water Keeps", C3b "When He Rang", C4b "The
   Twelfth Can", C3a "Six Thousand Nights", C2a "Eleven Names", the M-B memory-look infrastructure (grade cue, lmScale,
   DOM gate) and Escape Phase 2's "extra clips". None has voice lines in voice-script.json, so nothing to remove there.
 - KEPT (built, fix/polish only): C0, C1, C2, C2b, C2c, C3, C4, C4a, C4c, C5, C5b, C6, C6b, C7, CR end credits, death
   → jumpscare.
+- (az) 2026-10-19 19:25, FINISH TONIGHT (the user, angry: "ek mahine se kr rha hai", it has been a month). Scope cut:
+  1. No more per-lane ships: ONE release ship after the final round (saves three ship gates of machine time).
+  2. PERF2 stops after its budgets step (qb5: calm real-time Medium/Max + strict gates); its verify/fix rounds are cut.
+     Budget overruns that remain are logged, not chased.
+  3. JUMPSCARE and FINAL-BAKE finish their running chains (one review, at most one fix each).
+  4. FINAL round = list items 1 (C2c dip), 2 (systemic uniforms: only those seen stale on the played route) and 4
+     (jumpscare noise floor) by ONE builder, then the lead's 5-run release gate and a frame check of the cutscenes.
+     Item 3 (the look AD call) and the AD4 polish backlog are CUT (they need re-renders or are taste calls).
+  5. Voices start now, in parallel: the script is frozen at 51 lines / 90 takes / 6,869 credits (fits the free 10k).
+     The lead picks the previews (default preview 1); it needs the user's ELEVENLABS_API_KEY in .env.local.
+- (ba) 2026-10-19 23:05, ONE CALM PERF MEASUREMENT: PERF2's qb5 real-time runs on dist K were INVALID (1-min load
+  5–9, swap 4.5–7.4 GB, about 10 other lanes' headless-Chrome runs between them; the Blender hold alone is not calm).
+  No extra calm window for PERF2. The whole-route real-time table (scratch/smooth-perf/rtplay.mjs, Medium then Max) is
+  measured ONCE, on the release dist, inside the lead's release gate, when every lane has ended and nothing else
+  queues. Accepted without it: PERF2's torch cull, figure-shadow cull and setTrim cache (exact per-pixel A/B; less
+  work, not more). The portal cull is reverted (unsound: yard ground culled from the hall).
+- (bb) 2026-10-19 23:50: PERF2 ENDED (#150b; strict Medium + Max on dist K pass; real time unmeasured per (ba)). Kept:
+  torch cull, figure shadow cull, setTrim cache. Known, not chased: draw counts over 400 in C5 (415–448), C6 ≈ 656,
+  C7 ≈ 513, C1 60.6 ≈ 508, B05 466–500 (a sound cells-and-portals cull is the fix; WIP parked in
+  scratch/perf2/portal-cull-wip/). FINAL round launched now (wf_0f7e2a1f-1fa) instead of waiting for the last lanes. Its
+  builder adds item 0: P_BED collider mesh → box (lead-approved layout change; 5–8 ms per frame in U2). It touches the
+  jumpscare files only after the lead appends "JUMPSCARE LANE DONE" to docs/STATUS-jumpscare.md.
+- (bc) 2026-10-20 00:45, VOICES (the user gave the ElevenLabs key; free plan). API voice design is paid-only and the key
+  was restricted, so with the user's go-ahead the lead designed the voices on elevenlabs.io (Voice Design, our own
+  descriptions, preview 1 each) and enabled only Text to Speech + Voices Read on the key. src/shared/voices.json:
+  driver, harlan, ada (field `via` notes the web design). 48 of 51 lines generated (87 clips, 341 s, 5.8 MB, mp3 128k
+  mono, loaded per line, so the tier download budgets are unchanged). Rate check: no garbled or too-fast takes; the slow
+  ones are breath/panting takes and pause-heavy lines. traveler2 (3 lines, C7 sting) waits for a free voice slot (free
+  plan = 3): the user deletes Harlan's saved voice (his lines are already generated), then the lead designs her.
+  DONE 00:55: the user deleted Harlan's saved voice; traveler2 designed and spoken. All 51 lines / 90 takes exist.
+- (bd) 2026-10-20 01:25, FINAL-BAKE ENDED (#152/152b). The release lightmaps pass both reviews: leak lines gone, room
+  levels x0.97–1.09, sizes low 26.87 / medium 50.95 / max 101.82 MB. MEDIUM LIGHTMAPS SHIP 1024² (a 2x2 downsample of the
+  2048²/128 spp bake) — ACCEPTED: 2048² for all house atlases would be ≈ 70 MB, over the 60 MB cap, and the downsampled
+  release is cleaner than the old 1024 dev bake. Both reviews FAILED on RUNTIME findings (hide-exit x15 lift frame,
+  opaque cobweb cards in U4T, the unshadowed L_LAMP_U2 flicker light lighting U3 through the wall, U3 brass glow, warm
+  hide slats, dress-edge specks) plus stale probes.bin after the P_BED layout edit. They go to a side fixer
+  (wf_d6045efd-b72, docs/STATUS-final-b.md), which ends with a probes refresh. The lead appends "JUMPSCARE LANE DONE"
+  only after BOTH the JUMPSCARE lane and this fixer end, so the FINAL builder's gates and reviewers see the merged tree.
+  Never run a bare `npm run assets` (house/props/encode are stale on purpose; a re-run invalidates the release maps).
+- (be) 2026-10-20 01:35, VOICE BUDGET (JUMPSCARE #147n warned: --manifest listed 181 voice files in every tier and put Low
+  at 32.44 MB). Voice clips stream per line on every tier (src/audio/voice.ts fetches on demand; level.ts preloads only
+  level/prop/collision/lightmap kinds; the probe key ignores voice). So they stay OUT of the tier manifests and budgets:
+  pipeline.json `sharedAssetDirs: []` plus `streamedAssetBudgetsMB: { public/assets/voice: 8 }`, checked by
+  `assets --check` (#155). Now: low 26.96 / 27, medium 51.46 / 60, max 102.83 / 120, voice 5.48 / 8 MB (streamed).
+- (bf) 2026-10-20 04:32: the FINAL builder tried R1-5 / R2-2 under a 45 min time box (see docs/STATUS-final.md).
+- (bg) 2026-10-20 07:40, RELEASE NOW, POLISH AFTER. The FINAL round (wf_0f7e2a1f-1fa) ended with its re-review FAIL on
+  polish items, but every strict gate passes on every tier.
+  - Reverted #153g (Medium cutscene motion blur back OFF): it smeared small HDR highlights into dotted glitter on the
+    default tier. Medium now matches the live build. The Max jitterBlur (#153f) stays: the stacked copies are gone, and
+    sparse dots remain.
+  - Release gate on scratch/dist-release (the full working tree; index-D35-LAyd.js): rtplay Medium + Max on a calm
+    machine, on mains (ruling ba), then the five strict runs.
+  - KNOWN at release, for the polish round:
+    - motion-blur HDR highlight clamp, then Medium blur back on;
+    - C4 wardrobe visit still near-black (brighter than live: lift 15 → 40; needs a motivated moon/candle key, not more
+      lift);
+    - C2c 3.667 one black frame;
+    - R1-5 hem line;
+    - R2-2 brass glint;
+    - F3 hide-exit pink frame, F4 one black B06 frame, F5 locket toast over the subtitles;
+    - FLASH V2/V3 partial;
+    - Low whips unblurred;
+    - jumpscare face reads CG (needs a re-render; cut by (az)).
+- RELEASE GATE PASSED 2026-10-20 08:23 on scratch/dist-release (index-D35-LAyd.js, tree fingerprint unchanged
+  a5e7b16762e6). Real time, M1, mains, calm machine: Medium 59.9 fps avg, 0.12 % of frames over 20 ms, worst segment
+  C6b 57.4 fps; Max 57.3 fps avg, 4.30 % over 20 ms, worst segment C4c 46.4 fps (≥ 45 floor). Strict medium / max /
+  low / careless (1 death) / torch: all reach B13, 0 console errors, 0 stale-probe loads. typecheck, npm test 373/373
+  (one flaky run seen earlier: 1 fail, then 3 clean runs), assets --check, build + verify-boot, no key string in dist.
+- FINAL FIX / QA list, collected 2026-10-19 13:20 (owners after the running rounds end):
+  1. C2c 6.733: a one-frame dark dip on Medium/Max that is BLACK on Low (the beam pool below the frame mid-whip; FLASH
+     fixer r3 residual). Owner: c2c-up.ts / clips_escape.py stumble_catch.
+  2. SYSTEMIC (render): runtime-written globals still live in per-object uniform groups and can stay stale on some
+     draws on the played route (the torch-cookie V4 bug class). Move uLightning (lightmap-material.ts), uSkyFill,
+     materialUniforms (bind.ts), SKY_U (atmosphere.ts), uReflection / uReflLod / uCandleSpec / uSpecProxyLo/Hi /
+     uOpenSkyE to `.setGroup(renderGroup)` with initial values equal to the synced ones; check lightning on lightmapped
+     walls on the PLAYED route against a ?beat jump.
+  3. Look: the glove reads as a black silhouette; the torch's hot core is a smooth white disc on cloth; rooms outside
+     the hot core read darker since the physical spill (#146e) — AD call in the final review, keeping the 27–31 lm torch.
+  4. JUMPSCARE runtime: an additive sensor-noise floor on the jumpscare quad (the game's grain is multiplicative, so
+     0/255 stays a "digital void"); the AD4 polish backlog is scratch/jumpscare/ad4-r37-problems.md.
+  5. SHIP-3 (FLASH #146d/e + the G1 mirror hop fix + #151): the flashlight round's final independent re-verify was lost to
+     a usage limit; the lead's 5-run ship gate replaces it, and the final QA round re-checks V1–V5.
 - What remains, in order (the user also said "complete tasks fast"): finish the three running rounds (FLASH fix,
   PERF2 judder verify, JUMPSCARE) → one FINAL round (release bake alone on mains power, the PERF budgets moved out of
   PERF2, a whole-route QA + pacing pass on Low/Medium/Max) → ship → voices last with the user's key.

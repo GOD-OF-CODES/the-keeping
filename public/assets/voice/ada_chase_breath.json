@@ -1,0 +1,21 @@
+{
+  "id": "ada_chase_breath",
+  "durationSec": 4.32,
+  "words": [
+    {
+      "text": "Hah—",
+      "start": 0.313,
+      "end": 1.873
+    },
+    {
+      "text": "hhah—",
+      "start": 1.9,
+      "end": 3.633
+    },
+    {
+      "text": "hah—",
+      "start": 3.673,
+      "end": 4.353
+    }
+  ]
+}

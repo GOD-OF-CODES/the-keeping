@@ -106,7 +106,7 @@ def set_attr(me, name, vals, kind='FLOAT'):
 
 
 # ------------------------------------------------------------------------------------------------ head
-HEAD_LO = (-82.0, -62.0, -150.0)
+HEAD_LO = (-82.0, -62.0, -172.0)        # #147f: -150 -> -160; #147g -172 (the cut drops to ~-152 at the nape, strings to ~-166)
 HEAD_HI = (82.0, 152.0, 124.0)
 
 
@@ -126,6 +126,14 @@ def head_arrays(face, h, spasm_deg, rebuild=False):
     log(f'scare head: meshed {len(V)} verts {len(Q)} quads at h {h} mm in {time.perf_counter() - t0:.1f} s')
     Pr, w = face.to_rest(V)
     N = vertex_normals(V, Q)
+    # #147g: the surface-nets quads wind INWARD, so these normals pointed into the head for r1-r24 (nose-tip normal
+    # +y). Every `front` gate in scare_tex (ss(-N_y)) was 0 on the face: no scars, creases, colour zones, marbling, coarse
+    # nose pores, skin slippage on the face (they sat on the back of the head under the hair); the silt-occlusion probe
+    # stepped INTO the head (occ = 1 = the whole skin darkened/yellowed 34 %); disp moved inward. Blender's own render
+    # normals were fine (recalc_normals). Orient them outward here.
+    if float(np.mean(np.sum(N * (V - V.mean(0)), 1))) < 0.0:
+        N = -N
+        log('scare head: vertex normals flipped outward for the tex fields (#147g)')
     F = scare_tex.fields(face, Pr, N)
     V = V + N * F['disp'][:, None]                       # fine sculpt: creases, scars, swelling (mm along N)
     # shape key: the jaw spasm (the lower face rotates a further spasm_deg about the TMJ axis)
@@ -168,7 +176,8 @@ def build_teeth(face, spasm_deg, parent, rebuild=False):
         one = np.ones(len(Vl))
         VlO = face.rotate_jaw(Vl, one, face.jaw)
         VlS = face.rotate_jaw(VlO, one, spasm_deg)           # composed exactly like the head's spasm key
-        A = dict(Vu=Vu, Qu=Qu, Vl=VlO, Vls=VlS, Ql=Ql, zu=Vu[:, 2], zl=Vl[:, 2])
+        dent, pulp = face.fracture_masks(Vu)                 # #147j: the fracture face of her broken incisor
+        A = dict(Vu=Vu, Qu=Qu, Vl=VlO, Vls=VlS, Ql=Ql, zu=Vu[:, 2], zl=Vl[:, 2], dent=dent, pulp=pulp)
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(path, **A)
     up = make_mesh('scare_teeth_up', A['Vu'] * MM, A['Qu'])
@@ -176,6 +185,10 @@ def build_teeth(face, spasm_deg, parent, rebuild=False):
     # cervical stain: 0 at the incisal edge -> 1 at the gum line (crown heights ~10 mm)
     set_attr(up.data, 'cerv', np.clip((A['zu'] + 61.6) / 10.0, 0, 1))
     set_attr(lo.data, 'cerv', np.clip((-59.6 - A['zl']) / 9.0, 0, 1))
+    set_attr(up.data, 'dent', A['dent'])
+    set_attr(up.data, 'pulp', A['pulp'])
+    set_attr(lo.data, 'dent', np.zeros(len(A['Vl'])))
+    set_attr(lo.data, 'pulp', np.zeros(len(A['Vl'])))
     lo.shape_key_add(name='Basis', from_mix=False)
     k = lo.shape_key_add(name='spasm', from_mix=False)
     k.data.foreach_set('co', (A['Vls'] * MM).astype(np.float32).ravel())
@@ -353,7 +366,13 @@ def eye_texture(k, W=2048, H=1024, seed=71):
     P = D * 12.0
     n = len(D)
     # ---- sclera + conjunctiva
-    alb = np.array([0.28, 0.262, 0.222])[None, :] * (1.0 + 0.07 * noise.fbm(P / 3.0, 3, seed))[:, None]   # #147e: 0.37 glowed
+    # #147f: 0.205/0.185/0.150 — r18's 0.28 ivory made the globes the brightest flat things in the frame (eye +2.1 EV
+    # over the upper lip): a dead eye is dull, yellowed, congested; only its wet catchlight is bright
+    # #147h r32: dull ivory 0.44/0.42/0.36. r19-r31's 0.20/0.19/0.17 sat UNDER the skin's albedo, so the whites of the eyes
+    # read as flesh in a socket (the doll / mask read of r30-r31); the r9-r18 "white disc" was the double-lit cornea
+    # (refractive caustics, fixed in r21), not the sclera. A dead sclera is dull and yellowed, the tache noire bands and
+    # the haemorrhages stay dark / red on it; the clouded cornea (milk ~0.22 over a 0.046 iris) now sits darker than it.
+    alb = np.array([0.49, 0.465, 0.40])[None, :] * (1.0 + 0.07 * noise.fbm(P / 3.0, 3, seed))[:, None]   # #147e: 0.37 glowed; #147h r34 0.56 (ahead of the gained skin ~0.42) read as a glass doll eye round a dark disc; r35 0.49
     alb = alb * (1.0 + 0.05 * noise.fbm(P / 0.9, 2, seed + 20))[:, None]
     LIMBUS = sh.LIMBUS_ANG + 0.6
     conj = ss(LIMBUS, LIMBUS + 2.0, ang)
@@ -361,10 +380,12 @@ def eye_texture(k, W=2048, H=1024, seed=71):
     # r12: a soft grey-blue limbal band just outside the dome rim, so the milky cornea melts into the sclera (r10-r11:
     # the rim crease read as a crisp dark outline round a disc)
     lb = (1.0 - ss(0.0, 2.2, ang - sh.LIMBUS_ANG)) * ss(-0.4, 0.2, ang - sh.LIMBUS_ANG)
-    alb = alb + (np.array([0.40, 0.42, 0.44]) - alb) * (0.7 * lb)[:, None]
+    alb = alb + (np.array([0.33, 0.34, 0.35]) - alb) * (0.7 * lb)[:, None]     # #147f: 0.40-0.44 band was brighter than the sclera; #147h r32 0.19 -> 0.27 (between the brighter sclera and the milk)
     fornix = ss(35.0, 75.0, ang) * (0.55 + 0.45 * ss(8.0, 30.0, np.abs(el))) + 0.5 * ss(45.0, 75.0, np.abs(az)) * ss(30.0, 50.0, ang)
     inj = np.clip(fornix, 0, 1) * (0.65 + 0.35 * ss(-0.4, 0.4, noise.fbm(P / 2.2, 3, seed + 21)))
-    alb = alb + (np.array([0.46, 0.19, 0.16]) - alb) * (0.55 * inj * conj)[:, None]
+    inj = np.maximum(inj, 0.12 * ss(-0.3, 0.3, noise.fbm(P / 3.0, 2, seed + 24) + 0.15))   # #147f: diffuse injection everywhere (asphyxia); #147h 0.22 -> 0.12 (r30: a pink doll sclera; the haemorrhages carry the red)
+    # r19 gate: (0.36, 0.11, 0.09) x 0.7 over a yellowed base read ORANGE; congestion is crimson
+    alb = alb + (np.array([0.30, 0.07, 0.075]) - alb) * (0.60 * inj * conj)[:, None]
     # vessels (r9 texture look: thresholded ridged noise read as brush hatching): explicit tortuous random walks from
     # the fornices toward the limbus, branching, 0.15 -> 0.05 mm wide (0.7 -> 0.25 deg on the 12 mm globe), fading out
     # 2-10 deg before the limbus; drawn as soft lines in local texel windows
@@ -415,18 +436,21 @@ def eye_texture(k, W=2048, H=1024, seed=71):
     alb = alb + (np.array([0.36, 0.06, 0.05]) - alb) * (0.25 * v2 * vden * (0.4 + 0.6 * inj))[:, None]
     # petechiae: clusters (lower bulbar + canthi), irregular specks 0.05-0.25 mm (0.25-1.2 deg), some merging
     hgt = 0.08 * (v1 + 0.5 * v2) * vden
-    nc = 16
+    # #147j (AD round 3, rank 2f: "no asphyxial petechiae read anywhere"): r0 0.2-0.8 deg was 0.04-0.17 mm radius on the
+    # 12 mm globe = sub-pixel at 0.145 mm/px. Now 0.6-2.4 deg (0.25-1.0 mm across), red-purple, ~60 in 7 clusters,
+    # crowded in the lower bulbar conjunctiva and at the canthi
+    nc = 7
     pert = 1.0 + 0.35 * noise.perlin(P / 0.35, seed + 30)               # irregular speck outlines (one field, reused)
     alb2 = alb.reshape(H, W, 3)
     ok2 = (conj * (ang > LIMBUS + 1.5)).reshape(H, W)
     pert2 = pert.reshape(H, W)
     for i in range(nc):
-        a0 = float(rng.choice([-1.0, 1.0])) * rng.uniform(32.0, 72.0)
-        e0 = float(np.clip(rng.normal(-12.0, 11.0), -30.0, 18.0))
-        for _ in range(int(rng.integers(4, 16))):
-            ca = a0 + rng.normal(0.0, 2.6)
-            ce = e0 + rng.normal(0.0, 2.0)
-            r0 = rng.uniform(0.2, 0.8) * (1.0 + 1.4 * (rng.random() < 0.1))
+        a0 = float(rng.choice([-1.0, 1.0])) * rng.uniform(34.0, 62.0)
+        e0 = float(np.clip(rng.normal(-15.0, 6.0), -26.0, 4.0))
+        for _ in range(int(rng.integers(6, 12))):
+            ca = a0 + rng.normal(0.0, 4.5)
+            ce = e0 + rng.normal(0.0, 3.0)
+            r0 = rng.uniform(0.6, 1.6) * (1.0 + 0.5 * (rng.random() < 0.15))
             # local texel window only (the speck is < 3.5 deg)
             ia0 = int(max(0, (ca - 3 * r0 / max(math.cos(math.radians(ce)), 0.2) + 180.0) / 360.0 * W))
             ia1 = int(min(W, (ca + 3 * r0 / max(math.cos(math.radians(ce)), 0.2) + 180.0) / 360.0 * W + 2))
@@ -438,39 +462,57 @@ def eye_texture(k, W=2048, H=1024, seed=71):
             elw = (np.arange(ie0, ie1) + 0.5) / H * 180.0 - 90.0
             AZw, ELw = np.meshgrid(azw, elw)
             dd = np.sqrt(((AZw - ca) * np.cos(np.radians(ce))) ** 2 + (ELw - ce) ** 2) * pert2[ie0:ie1, ia0:ia1]
-            m = (1.0 - ss(r0 * 0.45, r0, dd)) * rng.uniform(0.45, 1.0) * ok2[ie0:ie1, ia0:ia1]
-            col = np.array([0.22, 0.014, 0.018]) * rng.uniform(0.55, 1.0)
+            m = (1.0 - ss(r0 * 0.55, r0, dd)) * rng.uniform(0.65, 1.0) * ok2[ie0:ie1, ia0:ia1]
+            col = np.array([0.33, 0.045, 0.075]) * rng.uniform(0.6, 1.0)
             win = alb2[ie0:ie1, ia0:ia1]
             alb2[ie0:ie1, ia0:ia1] = win + (col - win) * m[..., None]
     alb = alb2.reshape(-1, 3)
-    if k == 1:
-        # subconjunctival haemorrhage at her right lateral canthus: dense centre, feathered irregular edge, raised
-        # a flat, near-uniform bright-red sheet with an irregular but fairly crisp edge (blood under the conjunctiva),
-        # not a fuzzy cloud
-        dd = np.sqrt(((az - 63.0) / 17.0) ** 2 + ((el + 3.0) / 12.0) ** 2)
+    # subconjunctival haemorrhage: a flat, near-uniform bright-red sheet with an irregular but fairly crisp edge (blood
+    # under the conjunctiva), not a fuzzy cloud. #147h (ruling au): in BOTH eyes — her right at the lateral canthus
+    # (wider: 22 x 14 deg), her left on the other side of the cornea, reaching under it (asphyxia haemorrhages pool low)
+    for (a_c, e_c, a_r, e_r) in (((63.0, -3.0, 22.0, 14.0),) if k == 1 else ((-50.0, -9.0, 20.0, 15.0), (44.0, 6.0, 9.0, 7.0))):
+        dd = np.sqrt(((az - a_c) / a_r) ** 2 + ((el - e_c) / e_r) ** 2)
         dd = dd * (1.0 + 0.40 * noise.fbm(P / 1.8, 3, seed + 5)) + 0.06 * noise.fbm(P / 0.4, 2, seed + 6)
-        m = (1.0 - ss(0.88, 1.0, dd)) * conj
-        alb = alb + (np.array([0.27, 0.014, 0.016]) * (0.9 + 0.1 * noise.fbm(P / 0.8, 2, seed + 7))[:, None] - alb) * m[:, None]
-        hgt = hgt + 0.6 * (1.0 - ss(0.5, 1.0, dd)) * conj
+        # #147j (AD round 3, rank 2e: "a hard-edged saturated decal"): the edge feathered over ~0.3-0.8 mm (ss 0.88 -> 0.68),
+        # chroma -20 % (0.27/0.014/0.016 -> 0.23/0.025/0.027), mottled density inside, FLAT under the glossy conjunctiva
+        m = (1.0 - ss(0.68, 1.0, dd)) * conj * (0.82 + 0.18 * ss(-0.3, 0.3, noise.fbm(P / 1.1, 2, seed + 8)))
+        alb = alb + (np.array([0.23, 0.025, 0.027]) * (0.9 + 0.1 * noise.fbm(P / 0.8, 2, seed + 7))[:, None] - alb) * m[:, None]
+        hgt = hgt + 0.08 * (1.0 - ss(0.5, 1.0, dd)) * conj
     # tache noire: the sclera left exposed between the open lids dries brown-black, either side of the cornea
-    tn = ss(LIMBUS + 2.0, LIMBUS + 7.0, ang) * ss(80.0, 62.0, np.abs(az)) * (1.0 - ss(5.0, 11.0, np.abs(el + 2.5)))
+    tn = ss(LIMBUS + 2.0, LIMBUS + 7.0, ang) * ss(80.0, 62.0, np.abs(az)) * (1.0 - ss(7.0, 14.0, np.abs(el + 2.5)))
     tn = tn * ss(-0.35, 0.35, noise.fbm(P / 2.0, 3, seed + 9))
-    alb = alb + (np.array([0.17, 0.11, 0.075]) - alb) * (0.55 * tn)[:, None]
+    alb = alb + (np.array([0.13, 0.08, 0.05]) - alb) * (0.72 * tn)[:, None]        # #147f: darker, wider band
     coat = np.clip(1.0 - 0.75 * tn, 0.0, 1.0) * conj
     if not EYE_RECESS:
         # #147e: post-mortem corneal clouding painted on the sphere (the clear dome above carries the gloss): grey-blue
         # milk, patchy (1-3 mm), fading across the limbus over ~1.4 mm into the grey limbal band; under it only a faint
         # blurred shadow of the pupil and iris (the brief: iris-less) — no ring, no centre dot, no crisp edge
         rho_g = 12.0 * np.sin(np.radians(np.minimum(ang, 90.0)))
-        mk = 1.0 - ss(sh.LIMBUS_ANG - 3.5, sh.LIMBUS_ANG + 3.5, ang + 1.2 * noise.fbm(P / 1.2, 2, seed + 50))
+        mk = 1.0 - ss(sh.LIMBUS_ANG - 4.5, sh.LIMBUS_ANG + 3.5, ang + 1.4 * noise.fbm(P / 1.2, 2, seed + 50))   # #147j: 3.5 -> 4.5 inside (a softer limbus)
         # r16: r15's milk (0.40-0.45, density 0.8-1) glowed as blank white discs brighter than the sclera; a dead
         # clouded cornea is a grey translucent film with the dark iris/pupil still dimly behind it
-        dens = np.clip(0.62 + 0.26 * noise.fbm(P / 1.6, 3, seed + 51) + 0.06 * noise.fbm(P / 0.35, 2, seed + 52), 0.40, 0.92)
-        milk = np.array([0.27, 0.29, 0.31])[None, :] * (1.0 + 0.05 * noise.fbm(P / 0.6, 2, seed + 53))[:, None]
-        under = np.array([0.10, 0.10, 0.105])[None, :] * (1.0 - 0.5 * (1.0 - ss(1.6, 3.4, rho_g + 0.5 * noise.fbm(P / 1.0, 2, seed + 54))))[:, None]
+        # #147f: the brightness hierarchy — r18's cornea (0.10 under, milk 0.27-0.31 at density 0.40-0.92 ~ 0.22) was as
+        # pale as the sclera = two blank discs. Thinner grey-blue milk (density ~0.2-0.7, patchy, a few denser opacities)
+        # over a dark dead iris (0.045) and a darker pupil (0.014): the clouded cornea sits ~0.7 EV UNDER the sclera and
+        # the lit skin; the gloss and the catchlight come from the clear dome above.
+        dens = np.clip(0.52 + 0.22 * noise.fbm(P / 1.6, 3, seed + 51) + 0.06 * noise.fbm(P / 0.35, 2, seed + 52), 0.30, 0.80)   # #147h r35: 0.40 -> 0.52
+        dens = np.clip(dens + 0.22 * ss(0.15, 0.45, noise.fbm(P / 2.4, 2, seed + 55)), 0.0, 0.85)
+        # #147j (AD round 3, rank 2b: "a crisp uniform grey disc = a zombie contact lens, no depth"): the clouding is
+        # densest centrally and thins toward the limbus (the dark dead iris shows through the periphery = depth), with
+        # faint radial stromal striae (~40 per turn) and patchy opacities
+        dens = dens * (0.84 + 0.26 * (1.0 - ss(1.5, 5.2, rho_g))) + 0.07 * ss(0.55, 0.9, noise.fbm(np.stack([psi * 6.4, rho_g * 0.25, np.full(n, 2.0)], 1), 2, seed + 56)) - 0.035
+        dens = np.clip(dens, 0.15, 0.9)
+        # #147h r35: milkier (the brief: 'iris-less, milky clouded eyes'). With the sclera at 0.49 the r34 cornea (~0.12)
+        # was a crisp dark disc = a glass doll eye; the r9-r18 'blank white disc' was the double-lit caustic, fixed in r21
+        milk = np.array([0.27, 0.283, 0.297])[None, :] * (1.0 + 0.08 * noise.fbm(P / 0.6, 2, seed + 53))[:, None]
+        # #147j: an IRREGULAR ~3 mm pupil ghost (r35: a soft 5 mm shadow) — darker, and the milk thinner over it
+        pg = 1.0 - ss(1.2, 1.9, rho_g + 0.45 * noise.fbm(P / 0.8, 2, seed + 54) + 0.15 * np.cos(2.0 * psi + 0.7))
+        under = np.array([0.046, 0.042, 0.040])[None, :] * (1.0 - 0.75 * pg)[:, None]
+        dens = dens * (1.0 - 0.24 * pg)
         corn = under + (milk - under) * dens[:, None]
         alb = alb + (corn - alb) * mk[:, None]
-        aux = np.stack([coat * (1.0 - mk), np.clip(hgt, 0, 1) * (1.0 - mk), np.zeros(n)], 1)
+        # #147f: aux B = the cornea mask (eye_material switches the globe's own specular off under the clear dome)
+        aux = np.stack([coat * (1.0 - mk), np.clip(hgt, 0, 1) * (1.0 - mk), mk], 1)
         return np.clip(alb.reshape(H, W, 3), 0.0, 1.0), aux.reshape(H, W, 3)
     # ---- iris on the recessed plane (rho = IRIS_Y tan(ang)); dead grey-brown, radial stroma, crypts, oval pupil
     rho = sh.IRIS_Y * np.tan(np.radians(np.minimum(ang, 60.0)))
@@ -523,21 +565,61 @@ def hair_object(name, S, R, mat, parent):
     return ob
 
 
+def head_src_no_neck():
+    """#147g: scare_head.py WITHOUT the cut-neck section (the hair never touches it): a neck-only change no longer
+    re-integrates the hair (r26: 1181 s)."""
+    t = (SCARE_DIR / 'scare_head.py').read_text()
+    a = t.find('    # ---------------------------------------------------------------- the cut neck')
+    b = t.find('    def __call__(self, X):')
+    return t[:a] + t[b:] if 0 <= a < b else t
+
+
+def _hair_src(strip_face=False):
+    t = (SCARE_DIR / 'scare_hair.py').read_text()
+    if strip_face:
+        a = t.find('FACE_CLUMPS = [')
+        b = t.find('\ndef face_strands')
+        t = t[:a] + t[b:] if 0 <= a < b else t
+    return t
+
+
 def hair_arrays(face, g, n_guides, children, rebuild=False):
-    key = src_hash('scare_head.py', 'scare_hair.py', extra=f'{n_guides}-{children}-{np.round(g, 4).tolist()}-{face.jaw}')
-    path = CACHE_DIR / f'hair_{key}.npz'
-    if path.exists() and not rebuild:
-        z = np.load(path)
-        return {k: z[k] for k in z.files}
-    t0 = time.perf_counter()
-    S1, R1 = scare_hair.scalp(face, g, n_guides, children)
-    S2, R2 = scare_hair.face_strands(face, g)
-    S3, R3 = scare_hair.lashes(face)
-    S4, R4 = scare_hair.brows(face)
-    A = dict(S1=S1, R1=R1, S2=S2, R2=R2, S3=S3, R3=R3, S4=S4, R4=R4)
+    """#147g: two caches — the SCALP (S1, ~20 min to integrate) keyed on scare_head without the neck + scare_hair
+    without FACE_CLUMPS, and the face strands / lashes / brows (seconds) keyed on everything: re-routing a face clump
+    no longer re-integrates 24 000 scalp strands (r26: 1181 s)."""
+    base = f'{n_guides}-{children}-{np.round(g, 4).tolist()}-{face.jaw}'
+    head = head_src_no_neck()
+    hs = hashlib.sha256(base.encode())
+    hs.update(head.encode())
+    hs.update(_hair_src(True).encode())
+    hf = hashlib.sha256(base.encode())
+    hf.update(head.encode())
+    hf.update(_hair_src(False).encode())
+    ps = CACHE_DIR / f'hair_v3s{hs.hexdigest()[:12]}.npz'
+    pf = CACHE_DIR / f'hair_v3f{hf.hexdigest()[:12]}.npz'
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(path, **A)
-    log(f'scare hair: {len(S1)} scalp + {len(S2)} face + {len(S3)} lashes + {len(S4)} brows in {time.perf_counter() - t0:.1f} s')
+    A = {}
+    t0 = time.perf_counter()
+    if ps.exists() and not rebuild:
+        z = np.load(ps)
+        A.update({k: z[k] for k in z.files})
+    else:
+        S1, R1 = scare_hair.scalp(face, g, n_guides, children)
+        A.update(S1=S1, R1=R1)
+        np.savez_compressed(ps, S1=S1, R1=R1)
+        log(f'scare hair: {len(S1)} scalp strands in {time.perf_counter() - t0:.1f} s')
+    t0 = time.perf_counter()
+    if pf.exists() and not rebuild:
+        z = np.load(pf)
+        A.update({k: z[k] for k in z.files})
+    else:
+        S2, R2 = scare_hair.face_strands(face, g)
+        S3, R3 = scare_hair.lashes(face)
+        S4, R4 = scare_hair.brows(face)
+        F = dict(S2=S2, R2=R2, S3=S3, R3=R3, S4=S4, R4=R4)
+        A.update(F)
+        np.savez_compressed(pf, **F)
+        log(f'scare hair: {len(S2)} face + {len(S3)} lashes + {len(S4)} brows in {time.perf_counter() - t0:.1f} s')
     return A
 
 
@@ -612,6 +694,17 @@ def _noise(N, L, coord, scale, detail=2.0, rough=0.5, offset=None, x=0, y=0):
     return nz.outputs['Fac']
 
 
+# #147f: Blender's normalized Noise 'Fac' sits at 0.5 with a std of only ~0.08 (detail 1-4), so every term written as
+# `noise * 0.24 + 0.88` ("+-12 %") was really +-2 %: the albedo grain, hue noise, roughness spots and film undulation of
+# r9-r18 were near-flat (the r16/r19 albedo passes read as an airbrush). _zn returns a zero-mean, ~unit-std noise.
+NZ_STD = 0.08
+
+
+def _zn(N, L, coord, scale, detail=2.0, rough=0.5, offset=None):
+    z = _math(N, L, 'DIVIDE', _math(N, L, 'SUBTRACT', _noise(N, L, coord, scale, detail, rough, offset=offset), 0.5), NZ_STD)
+    return _math(N, L, 'MINIMUM', _math(N, L, 'MAXIMUM', z, -3.0), 3.0)
+
+
 def _mrange(N, L, val, a, b, c=0.0, d=1.0, smooth=True):
     m = N.new('ShaderNodeMapRange')
     m.interpolation_type = 'SMOOTHSTEP' if smooth else 'LINEAR'
@@ -664,7 +757,31 @@ def _pores(N, L, coord, scale, dens, rmin, rspan, depth):
 # #147e: skin shader tunables (the skin LAB, scratchpad fx2/lab_skin.py, overrides them per variant)
 # r16: coarse pores 0.17-0.38 mm across on the nose / medial cheeks / chin (macerated, waterlogged skin swells the
 # follicle mouths; r9-r15 0.13-0.27 mm were sub-pixel), deeper, + spotty specular roughness (+-0.1 at 1.4 mm)
-SKIN = dict(pc_rmin=0.16, pc_rspan=0.20, pc_dens=0.85, pore_k=1.5, bump_mm=0.13, spot=0.10)
+SKIN = dict(pc_rmin=0.16, pc_rspan=0.20, pc_dens=0.85, pore_k=1.5, bump_mm=0.13, spot=0.10,
+            # #147f: the water film's own relief (coat normal): bump distance, term weights, coat weight/roughness range,
+            # base Specular IOR Level under the film
+            # #147h (ruling au + AD r2 (a): the film is SMOOTHER than the skin): c_under/c_thin 0 = NO pore / furrow / dome
+            # terms in the coat normal anywhere; film undulation 0.30 -> 0.06 (1-3 deg slope > the ~2.5 deg mirror tolerance of
+            # a 5 cm torch at 0.25 m broke every sheet); wet coat roughness 0.07 -> 0.14 (a thin film over rough skin, not
+            # glass). Skin LAB (scare_lab.py, scratch/jumpscare/lab a0-a5): fewer point glints, broader sheets on the convex forms
+            coat_bump_mm=0.10, c_pore=1.0, c_line=0.55, c_dome=1.2, dome_scale=1700.0, c_film=0.06,
+            coat_min=0.30, coat_r_wet=0.14, coat_r_dry=0.24, spec_wet=0.05,   # #147h r32: coat_min 0.6 -> 0.3 (lab b0-b3: the drying patches drain; less lacquer)      # #147g r29: wet 0.035 -> 0.07 (sheets, not pin glints)
+            # #147f r20: real noise amplitudes (std, see _zn): 1.5 mm luminance, 4 mm hue (x the per-channel base),
+            # 0.3 / 0.7 mm grain; c_film now multiplies a unit-std field
+            a_var=0.05, a_hue=0.4, a_gr1=0.06, a_gr2=0.05,        # #147h: 1.5 mm var 0.07 -> 0.05, 4 mm hue x0.4 (r30: pastel terrazzo)
+            # #147g (AD round 2, glitter -> sheets): fine coat terms x c_under under a thick film; film undulation scales
+            # (per metre); wet-island thresholds; micro-droplet density x wet
+            c_under=0.0, film_s1=220.0, film_s2=520.0, wp_a0=0.36, wp_a1=0.50, micro=0.01, bead=0.05,   # r29: 0.12 / 0.025 / 0.10; #147h c_under 0
+            c_thin=0.0,          # r30: r29's sparkle clusters sat in the drying patches (fine terms at full strength there)
+            lip_dry=0.92,        # #147h: the vermilion's film weight / smoothness x (1 - lip_dry x lip); #147j r37 0.75 -> 0.92
+            # #147j r37: the DRY vermilion's base specular level x (1 - lip_spec x lip): dried desquamated keratin, F0 ~0.01.
+            # r36: coat residue + a 0.47-level lobe at the under-torch's mirror angle = 1.6x the lip's diffuse (a pale tube)
+            lip_spec=0.70,
+            # #147h lab hooks: a gain on the per-vertex albedo (Cycles random-walk SSS takes Base Color as the scattering
+            # albedo: 0.25 = ~75 % absorbed per event, paths die early = clay), the SSS scale (mm), a ~1 mm film
+            # undulation (orange peel, not pore pits)
+            # r34 (lab r34a c0-c4): gain (1.7, 1.55, 1.35) = pale dead skin ~0.42/0.38/0.33 instead of 0.25 grey clay; SSS 2.0 mm
+            alb_gain=(1.7, 1.55, 1.35), sss_mm=2.0, c_film3=0.0, film_s3=1000.0)
 
 
 def skin_material(face=None):
@@ -686,6 +803,8 @@ def skin_material(face=None):
     L.new(b.outputs[0], out.inputs['Surface'])
     obj = _attr(N, 'rp', -1600, -400).outputs['Vector']
     alb = _attr(N, 'alb', -1200, 400).outputs['Color']
+    if tuple(SKIN['alb_gain']) != (1.0, 1.0, 1.0):
+        alb = _mixc(N, L, alb, tuple(SKIN['alb_gain']), 1.0, 'MULTIPLY')
     rough = _attr(N, 'rough', -1200, 250).outputs['Fac']
     wet = _attr(N, 'wet', -1200, 100).outputs['Fac']
     sssm = _attr(N, 'sss', -1200, -50).outputs['Fac']
@@ -702,7 +821,11 @@ def skin_material(face=None):
     # ---- pores: fine everywhere (0.29 mm cells, 45 % of cells at full density), coarse on nose / medial cheeks / chin
     pf = _pores(N, L, obj, 3400.0, _math(N, L, 'MULTIPLY', pore, 0.45), 0.10, 0.16, 1.0)
     pc = _pores(N, L, obj, 1900.0, _math(N, L, 'MULTIPLY', _math(N, L, 'MULTIPLY', pore, pbig), SKIN['pc_dens']), SKIN['pc_rmin'], SKIN['pc_rspan'], 1.4)
-    pdt = _math(N, L, 'ADD', pf, pc)
+    # #147f: a MID population everywhere on the skin (0.42 mm cells, 35 % x pore, 0.15-0.25 mm across = 1-2 px): the
+    # fine pores (0.06-0.15 mm) are sub-pixel and the coarse ones only cover nose / medial cheeks / chin — the lateral
+    # cheeks, forehead and lids had no resolvable pore stipple at all
+    pmid = _pores(N, L, obj, 2400.0, _math(N, L, 'MULTIPLY', pore, 0.35), 0.18, 0.12, 1.0)
+    pdt = _math(N, L, 'ADD', _math(N, L, 'ADD', pf, pc), pmid)
     # ---- Langer-line phase fields (mm) from the basis position
     sx = N.new('ShaderNodeSeparateXYZ')
     L.new(obj, sx.inputs[0])
@@ -732,14 +855,11 @@ def skin_material(face=None):
     nz.inputs['Scale'].default_value = 3200.0
     nz.inputs['Detail'].default_value = 3.0
     L.new(obj, nz.inputs['Vector'])
-    wv = N.new('ShaderNodeTexWave')
-    wv.wave_type = 'BANDS'
-    wv.bands_direction = 'X'
-    wv.inputs['Scale'].default_value = 900.0
-    wv.inputs['Distortion'].default_value = 6.0
-    wv.inputs['Detail'].default_value = 2.0
-    L.new(obj, wv.inputs['Vector'])
-    lf = _math(N, L, 'POWER', wv.outputs['Fac'], 6.0)
+    # #147j (AD round 3: "fine vertical striations read as corrugated rubber"): r9-r35 used one Wave BANDS field (an
+    # even 1.1 mm pitch). Dead, dry vermilion cracks IRREGULARLY: fine broken fissures (0.6-1 mm pitch, wobbling, in
+    # 1-3 mm segments, varying depth) + a sparse family of deeper cracks (~2.4 mm pitch, long segments)
+    lf = _math(N, L, 'ADD', _math(N, L, 'MULTIPLY', _lines(N, L, xmm, 0.78, obj, 21, width=0.11, distort=2.4, seg=800.0), 0.75),
+               _math(N, L, 'MULTIPLY', _lines(N, L, xmm, 2.4, obj, 22, width=0.075, distort=1.3, seg=260.0), 1.25))
     lf = _math(N, L, 'MULTIPLY', lf, lip)
     # ---- water beads (2.9 mm cells, a fraction of the wet skin)
     vd = N.new('ShaderNodeTexVoronoi')
@@ -751,7 +871,7 @@ def skin_material(face=None):
     r0 = _math(N, L, 'MULTIPLY_ADD', sepd.outputs['Green'], 0.10, 0.06)
     cap_ = _math(N, L, 'SUBTRACT', 1.0, _math(N, L, 'DIVIDE', vd.outputs['Distance'], r0), clamp=True)
     cap_ = _math(N, L, 'SQRT', cap_)
-    beadsel = _math(N, L, 'LESS_THAN', sepd.outputs['Red'], _math(N, L, 'MULTIPLY', wet, 0.30))
+    beadsel = _math(N, L, 'LESS_THAN', sepd.outputs['Red'], _math(N, L, 'MULTIPLY', wet, SKIN['bead']))   # #147f: 0.30 -> 0.18 -> 0.10; #147g 0.05
     bead = _math(N, L, 'MULTIPLY', cap_, _math(N, L, 'MULTIPLY', beadsel, skin_mask))
     # #147e: micro-droplets (1.1 mm cells, 0.07-0.16 mm caps) over most of the wet skin: under a point torch a wet face
     # sparkles; r9-r13's continuous coat islands gave broad smooth vinyl sheens
@@ -763,7 +883,9 @@ def skin_material(face=None):
     L.new(vd2.outputs['Color'], sepd2.inputs['Color'])
     r02 = _math(N, L, 'MULTIPLY_ADD', sepd2.outputs['Green'], 0.08, 0.06)
     cap2 = _math(N, L, 'SQRT', _math(N, L, 'SUBTRACT', 1.0, _math(N, L, 'DIVIDE', vd2.outputs['Distance'], r02), clamp=True))
-    sel2 = _math(N, L, 'LESS_THAN', sepd2.outputs['Red'], _math(N, L, 'MULTIPLY', wet, 0.55))
+    # #147f: 0.55 -> 0.15. With the full film each micro-droplet throws a point glint: at 55 % of 1.1 mm cells the
+    # r19 gate read as GLITTER; a macerated face holds a film, the breakup comes from domes / furrows / pores
+    sel2 = _math(N, L, 'LESS_THAN', sepd2.outputs['Red'], _math(N, L, 'MULTIPLY', wet, SKIN['micro']))   # r20: 0.15 still glitter; #147g 0.06 -> 0.025
     bead2 = _math(N, L, 'MULTIPLY', cap2, _math(N, L, 'MULTIPLY', sel2, skin_mask))
     # ---- height (1 unit = 0.08 mm along the normal)
     hgt = _math(N, L, 'MULTIPLY', _math(N, L, 'MULTIPLY', pdt, -SKIN['pore_k']), pore)
@@ -781,25 +903,73 @@ def skin_material(face=None):
     bump.inputs['Distance'].default_value = SKIN['bump_mm'] * 0.001     # r10: 0.08 -> 0.11 mm (r9: pores invisible at 100 %)
     L.new(hgt, bump.inputs['Height'])
     L.new(bump.outputs['Normal'], b.inputs['Normal'])
+    # ---- #147f: the WATER FILM's own relief (the coat normal) — STRUCTURED 0.3-1 mm terms only. r9-r18 fed the coat the
+    #      base height incl. the 0.12 mm stipple and the 0.3 mm noise: sub-pixel slopes under a sharp lobe only widen it
+    #      (= the broad vinyl sheen), while the film weight fell to ~0.03 off the wet islands -> 195 glints on 686 k face
+    #      px in r18 (f3/glint.py). Now every term is >= 2 px at 0.13 mm/px, so each pore rim, furrow edge, domed
+    #      plateau and droplet throws its own discrete glint: pore pits, Langer furrows, lip fissures, smooth domed
+    #      plateaus (0.6 mm Voronoi smooth-F1, irregular, amplitude broken by 7 mm noise — no cell edges, no lattice), a
+    #      0.8 / 0.4 mm film undulation, the droplets; glistening lumpy tissue on the cut.
+    # ---- the water film: wet islands (5-20 mm, broken by 2-4 mm holes) vs drying patches. #147g: computed BEFORE the coat
+    #      normal (it gates the fine film relief) and wetter: ~60 % of the skin under a glassy film (r24: Fac ~0.5 +- 0.08
+    #      put wp ~0.4 almost everywhere -> coat roughness ~0.12 = a semi-rough film over the whole face)
+    wp = _math(N, L, 'MULTIPLY', _mrange(N, L, _noise(N, L, obj, 90.0, 4.0, 0.6, offset=(3.0, 1.0, 7.0)), SKIN['wp_a0'], SKIN['wp_a1']),
+               _mrange(N, L, _noise(N, L, obj, 260.0, 3.0, 0.6, offset=(9.0, 4.0, 2.0)), 0.30, 0.48))
+    dry = _math(N, L, 'SUBTRACT', 1.0, wp, clamp=True)
+    # #147g: where the film is THICK it fills pores and furrows: its surface is SMOOTHER than the skin under it (AD round 2:
+    # r19-r24 fed the coat normal pore pits / Langer furrows / smooth-F1 domes at full strength = every pore rim a point
+    # glint = GLITTER, 577 of 687 glint components <= 8 px). The fine terms act at c_under where the film is thick and at
+    # full strength only where it is thin (the drying patches); the pores stay in the BASE normal + albedo, so they read
+    # as dark stipple INSIDE the coherent highlight sheet.
+    thin = _mrange(N, L, dry, 0.45, 0.80)
+    kfine = _math(N, L, 'MULTIPLY_ADD', thin, SKIN['c_thin'] - SKIN['c_under'], SKIN['c_under'])   # r30: thin-film max c_thin
+    dome = N.new('ShaderNodeTexVoronoi')
+    dome.voronoi_dimensions = '3D'
+    dome.feature = 'SMOOTH_F1'
+    dome.inputs['Scale'].default_value = SKIN['dome_scale']
+    dome.inputs['Randomness'].default_value = 1.0
+    try:
+        dome.inputs['Smoothness'].default_value = 0.6
+    except KeyError:
+        pass
+    L.new(obj, dome.inputs['Vector'])
+    domeamp = _mrange(N, L, _noise(N, L, obj, 140.0, 2.0, 0.5, offset=(6.0, 3.0, 1.0)), 0.30, 0.70, 0.25, 1.0)
+    # #147g: the film's own undulation at 2-8 mm (scale ~220 / 520 per metre = 4.5 / 1.9 mm features, ~1-3 deg slope):
+    # r19-r24 used 0.8 / 0.4 mm (scale 1250 / 2600) = more sub-mm glitter
+    film = _math(N, L, 'ADD', _zn(N, L, obj, SKIN['film_s1'], 2.0, 0.5, offset=(2.5, 8.5, 4.5)),
+                 _math(N, L, 'MULTIPLY', _zn(N, L, obj, SKIN['film_s2'], 1.0, 0.5, offset=(7.5, 1.5, 9.5)), 0.35))
+    h2 = _math(N, L, 'MULTIPLY', _math(N, L, 'MULTIPLY', pdt, -SKIN['c_pore']), pore)
+    h2 = _math(N, L, 'SUBTRACT', h2, _math(N, L, 'MULTIPLY', hl, SKIN['c_line']))
+    h2 = _math(N, L, 'SUBTRACT', h2, lf)
+    h2 = _math(N, L, 'SUBTRACT', h2, _math(N, L, 'MULTIPLY', dome.outputs['Distance'], _math(N, L, 'MULTIPLY', domeamp, SKIN['c_dome'])))
+    h2 = _math(N, L, 'MULTIPLY', h2, _math(N, L, 'MULTIPLY', skin_mask, kfine))
+    h2 = _math(N, L, 'ADD', h2, _math(N, L, 'MULTIPLY', film, SKIN['c_film']))
+    if SKIN['c_film3']:
+        h2 = _math(N, L, 'ADD', h2, _math(N, L, 'MULTIPLY', _zn(N, L, obj, SKIN['film_s3'], 1.0, 0.5, offset=(4.5, 9.5, 1.5)), SKIN['c_film3']))
+    h2 = _math(N, L, 'ADD', h2, _math(N, L, 'MULTIPLY', bead, 3.2))
+    h2 = _math(N, L, 'ADD', h2, _math(N, L, 'MULTIPLY', bead2, 1.4))
+    h2 = _math(N, L, 'ADD', h2, _math(N, L, 'MULTIPLY', _noise(N, L, obj, 600.0, 2.0, 0.6, offset=(3.3, 6.6, 9.9)), _math(N, L, 'MULTIPLY', tissue, 1.6)))
     bump2 = N.new('ShaderNodeBump')
     bump2.location = (300, -700)
-    bump2.inputs['Strength'].default_value = 0.9            # r11: the film follows the relief (0.6 = a smooth varnish)
-    bump2.inputs['Distance'].default_value = 0.00007
-    L.new(hgt, bump2.inputs['Height'])
+    bump2.inputs['Strength'].default_value = 1.0
+    bump2.inputs['Distance'].default_value = SKIN['coat_bump_mm'] * 0.001
+    L.new(h2, bump2.inputs['Height'])
     L.new(bump2.outputs['Normal'], b.inputs['Coat Normal'])
     # ---- albedo: per-vertex x (1.5 mm luminance + 4 mm hue micro-variation); pores/lines hold a little silt
-    var = _math(N, L, 'MULTIPLY_ADD', _noise(N, L, obj, 650.0, 4.0, 0.5), 0.24, 0.88)
+    var = _math(N, L, 'MULTIPLY_ADD', _zn(N, L, obj, 650.0, 4.0, 0.5), SKIN['a_var'], 1.0)          # #147f: real +-7 % (1.5 mm)
     comb = N.new('ShaderNodeCombineColor')
-    for c, (off, amp) in zip(('Red', 'Green', 'Blue'), (((1.0, 2.0, 3.0), 0.10), ((4.0, 5.0, 6.0), 0.05), ((7.0, 8.0, 9.0), 0.10))):
-        hn = _noise(N, L, obj, 250.0, 2.0, 0.5, offset=off)
-        L.new(_math(N, L, 'MULTIPLY', var, _math(N, L, 'MULTIPLY_ADD', _math(N, L, 'SUBTRACT', hn, 0.5), 2.0 * amp, 1.0)), comb.inputs[c])
+    # r21: R/B 3 %, G 1.5 %, one octave (r20's detail-2 hue noise put green/pink CHROMA speckle at 1-2 mm = terrazzo;
+    # skin's fine variation is luminance, its chroma lives in the larger blotches)
+    for c, (off, amp) in zip(('Red', 'Green', 'Blue'), (((1.0, 2.0, 3.0), 0.03), ((4.0, 5.0, 6.0), 0.015), ((7.0, 8.0, 9.0), 0.03))):
+        hn = _zn(N, L, obj, 250.0, 0.0, 0.5, offset=off)                                             # 4 mm hue drift
+        L.new(_math(N, L, 'MULTIPLY', var, _math(N, L, 'MULTIPLY_ADD', hn, amp * SKIN['a_hue'], 1.0)), comb.inputs[c])
     mulr = _mixc(N, L, alb, comb.outputs['Color'], 1.0, 'MULTIPLY')
     # ---- #147e r18: GRANULAR albedo below 1 mm. The r16 diffuse-colour pass (fx2/alb16.png) read as a pastel
     #      airbrush: per-vertex fields resolve ~1.2 mm and the shader added only 1.5 mm / 4 mm noise. Real skin albedo is
     #      grainy: 0.3 mm and 0.7 mm luminance grain (+-12 / +-10 %), scattered 0.25-0.6 mm pigment/capillary spots, and
     #      bruises are mottled (darker 1-3 mm clots of blood inside the patch), not a flat stain.
-    gr = _math(N, L, 'MULTIPLY', _math(N, L, 'MULTIPLY_ADD', _noise(N, L, obj, 3300.0, 2.0, 0.6, offset=(1.5, 7.0, 3.0)), 0.24, 0.88),
-               _math(N, L, 'MULTIPLY_ADD', _noise(N, L, obj, 1400.0, 2.0, 0.6, offset=(8.0, 2.5, 6.0)), 0.20, 0.90))
+    gr = _math(N, L, 'MULTIPLY', _math(N, L, 'MULTIPLY_ADD', _zn(N, L, obj, 3300.0, 2.0, 0.6, offset=(1.5, 7.0, 3.0)), SKIN['a_gr1'], 1.0),
+               _math(N, L, 'MULTIPLY_ADD', _zn(N, L, obj, 1400.0, 2.0, 0.6, offset=(8.0, 2.5, 6.0)), SKIN['a_gr2'], 1.0))   # #147f: real std
     bru = _attr(N, 'bru', -1200, -2050).outputs['Fac']
     bm = _mrange(N, L, _noise(N, L, obj, 420.0, 3.0, 0.65, offset=(4.0, 4.0, 9.0)), 0.42, 0.68, 1.0, 0.62)   # 1-3 mm clotted mottle
     gr = _math(N, L, 'MULTIPLY', gr, _math(N, L, 'ADD', _math(N, L, 'SUBTRACT', 1.0, bru, clamp=True), _math(N, L, 'MULTIPLY', bru, bm)))
@@ -819,17 +989,28 @@ def skin_material(face=None):
     mulr = _mixc(N, L, mulr, (0.075, 0.045, 0.045), spot)
     pdirt = _math(N, L, 'MULTIPLY', _math(N, L, 'ADD', _math(N, L, 'MULTIPLY', pdt, 0.55), _math(N, L, 'MULTIPLY', hl, 0.14)), skin_mask)
     mulr = _mixc(N, L, mulr, (0.06, 0.055, 0.048), _math(N, L, 'MINIMUM', pdirt, 0.6))
+    # #147j: the lip cracks are DARK (dried blood / silt in the fissures), not only relief
+    mulr = _mixc(N, L, mulr, (0.035, 0.012, 0.016), _math(N, L, 'MINIMUM', _math(N, L, 'MULTIPLY', lf, 0.55), 0.6))
+    # #147j r37 (AD r3 rank 1, "a smooth thick tube"): the dead vermilion PEELS — pale macerated keratin flakes 0.5-1.5 mm
+    # (~5-18 % of the dry lip), dull and rough, lifting at the cracks. 5-15 px at ~10 px/mm: the band becomes a lip surface
+    flk = _math(N, L, 'MULTIPLY', _mrange(N, L, _zn(N, L, obj, 1100.0, 2.0, 0.6, offset=(5.0, 3.0, 7.0)), 0.9, 1.6), lip)
+    mulr = _mixc(N, L, mulr, (0.30, 0.27, 0.27), _math(N, L, 'MULTIPLY', flk, 0.6))
     vp = N.new('ShaderNodeTexVoronoi')
     vp.feature = 'F1'
     vp.inputs['Scale'].default_value = 650.0             # 1.5 mm cells
     L.new(obj, vp.inputs['Vector'])
     sep = N.new('ShaderNodeSeparateColor')
     L.new(vp.outputs['Color'], sep.inputs['Color'])
-    dens = _math(N, L, 'MULTIPLY', pet, 0.38)          # r8: sparser (r7 read as a rash of paint dots)
+    dens = _math(N, L, 'MULTIPLY', pet, 0.45)          # r8: sparser (r7 read as a rash of paint dots); #147g 0.38 -> 0.45
     chosen = _math(N, L, 'LESS_THAN', sep.outputs['Red'], dens)
-    dot = _math(N, L, 'LESS_THAN', vp.outputs['Distance'], _math(N, L, 'MULTIPLY_ADD', sep.outputs['Green'], 0.09, 0.045))   # r8: 0.13-0.4 mm
-    pm = _math(N, L, 'MULTIPLY', _math(N, L, 'MULTIPLY', chosen, dot), _math(N, L, 'MULTIPLY_ADD', sep.outputs['Blue'], 0.6, 0.4))
-    base = _mixc(N, L, mulr, (0.105, 0.022, 0.032), pm)
+    # #147g (AD r2: "no lid petechiae read"): 0.2-0.55 mm across (r8: 0.13-0.4 mm = 1-3 px, lost at frame scale)
+    # #147j (AD r3: "the dark specks on the upper lid read as BROWN DIRT"): 0.105/0.022/0.032 was not alb-gained, so on
+    # ~0.42 skin it was a near-black brown speck. Petechiae are pinpoint RED-PURPLE haemorrhages: 0.30/0.045/0.075,
+    # 0.25-0.6 mm across (soft-edged), a few confluent
+    dsz = _math(N, L, 'MULTIPLY_ADD', sep.outputs['Green'], 0.13, 0.08)
+    dot = _mrange(N, L, _math(N, L, 'DIVIDE', vp.outputs['Distance'], dsz), 0.7, 1.0, 1.0, 0.0)
+    pm = _math(N, L, 'MULTIPLY', _math(N, L, 'MULTIPLY', chosen, dot), _math(N, L, 'MULTIPLY_ADD', sep.outputs['Blue'], 0.4, 0.6))
+    base = _mixc(N, L, mulr, (0.30, 0.045, 0.075), pm)
     # ---- lid margins, resolution-free (#147d): r = distance to the nearer globe centre. Posterior 0.6 mm wet pink
     # mucosa (mucocutaneous junction), the grey line, anterior skin with the lash roots — r1-r8 shaded the whole
     # 2 mm margin face one pink from 0.8 mm vertex colours = "a gasket"
@@ -845,41 +1026,55 @@ def skin_material(face=None):
     rmm = _math(N, L, 'MULTIPLY', _math(N, L, 'MINIMUM', dists[0], dists[1]), 1000.0)
     post = _math(N, L, 'MULTIPLY', _mrange(N, L, rmm, sh.R_LID_IN + 0.45, sh.R_LID_IN + 0.95, 1.0, 0.0), marm)
     gline = _math(N, L, 'MULTIPLY', _mrange(N, L, _math(N, L, 'ABSOLUTE', _math(N, L, 'SUBTRACT', rmm, sh.R_LID_IN + 1.15)), 0.0, 0.22, 1.0, 0.0), marm)
-    base = _mixc(N, L, base, (0.27, 0.13, 0.125), post)          # #147e: dead, less saturated (0.34/0.12/0.115 = orange rubber)
+    base = _mixc(N, L, base, (0.17, 0.085, 0.085), post)        # #147e: dead, less saturated (0.34/0.12/0.115 = orange rubber); #147h 0.27/0.13/0.125 still read as a pink doll rim (r30 100 % crop)
     base = _mixc(N, L, base, (0.02, 0.015, 0.015), _math(N, L, 'MULTIPLY', gline, 0.35))
     # r12: the lash line — the anterior margin is dark with lash roots (r11: a pale bare rim under a sparse fan)
     lline = _math(N, L, 'MULTIPLY', _mrange(N, L, rmm, sh.R_LID_IN + 1.25, sh.R_LID_IN + 1.75, 0.0, 1.0), marm)
     base = _mixc(N, L, base, (0.03, 0.025, 0.025), _math(N, L, 'MULTIPLY', lline, 0.65))
     L.new(base, b.inputs['Base Color'])
-    # ---- the water film: wet islands (5-20 mm, broken by 2-4 mm holes) vs drying patches
-    wp = _math(N, L, 'MULTIPLY', _mrange(N, L, _noise(N, L, obj, 90.0, 4.0, 0.6, offset=(3.0, 1.0, 7.0)), 0.50, 0.62),   # #147e: fewer
-               _mrange(N, L, _noise(N, L, obj, 260.0, 3.0, 0.6, offset=(9.0, 4.0, 2.0)), 0.33, 0.52))
-    dry = _math(N, L, 'SUBTRACT', 1.0, wp, clamp=True)
-    rr = _math(N, L, 'MULTIPLY_ADD', nz.outputs['Fac'], 0.16, -0.08)
+    rr = _math(N, L, 'MULTIPLY', _zn(N, L, obj, 3200.0, 3.0, 0.5), 0.04)                             # #147f: real +-0.04
     rgh = _math(N, L, 'ADD', _math(N, L, 'ADD', rough, rr), _math(N, L, 'MULTIPLY', _math(N, L, 'MULTIPLY', dry, 0.12), skin_mask), clamp=True)
+    rgh = _math(N, L, 'ADD', rgh, _math(N, L, 'MULTIPLY', flk, 0.12), clamp=True)          # #147j r37: dry flakes
     if SKIN['spot']:          # #147e: spotty specular (sebum/water vs dry, 1-2 mm): the highlight breaks into a pebbled patch
-        rgh = _math(N, L, 'ADD', rgh, _math(N, L, 'MULTIPLY', _math(N, L, 'SUBTRACT', _noise(N, L, obj, 700.0, 3.0, 0.6, offset=(2.0, 9.0, 4.0)), 0.5),
-                                         _math(N, L, 'MULTIPLY', skin_mask, 2.0 * SKIN['spot'])), clamp=True)
+        rgh = _math(N, L, 'ADD', rgh, _math(N, L, 'MULTIPLY', _zn(N, L, obj, 700.0, 3.0, 0.6, offset=(2.0, 9.0, 4.0)),
+                                         _math(N, L, 'MULTIPLY', skin_mask, 0.6 * SKIN['spot'])), clamp=True)
     L.new(_mrange_mix(N, L, rgh, 0.07, post), b.inputs['Roughness'])
     b.inputs['Subsurface Weight'].default_value = 1.0
     # r16: some red back in the dermis (settled, deoxygenated blood + collagen): a warmer, softer terminator — r13-r15's
     # near-neutral 0.6 mm scatter gave the hard grey terminator of plaster
     b.inputs['Subsurface Radius'].default_value = (0.95, 0.52, 0.38)
-    L.new(_math(N, L, 'MULTIPLY', sssm, 0.0012), b.inputs['Subsurface Scale'])     # r11: 1.6 -> 1.1 mm (wax); r16 1.2
+    L.new(_math(N, L, 'MULTIPLY', sssm, SKIN['sss_mm'] * 0.001), b.inputs['Subsurface Scale'])     # r11: 1.6 -> 1.1 mm (wax); r16 1.2; #147h SKIN['sss_mm']
     b.inputs['Subsurface Anisotropy'].default_value = 0.8
     b.inputs['IOR'].default_value = 1.4
-    try:
-        b.inputs['Specular IOR Level'].default_value = 0.5
-    except KeyError:
-        pass
-    wpt = _math(N, L, 'MAXIMUM', wp, tissue)                                 # tissue / clots / blood stay wet
-    cw = _math(N, L, 'MULTIPLY', wet, _math(N, L, 'MULTIPLY_ADD', wpt, 0.62, 0.03))    # r11: damp, not lacquered
+    # tissue / clots / blood stay wet; #147g: their film smoothness follows `wet` (scare_tex sets 0.25-1 on the cut):
+    # currant-jelly clots run from glossy to a matte drying skin (r20-r24: one glassy coat over the whole stump)
+    wpt = _math(N, L, 'MAXIMUM', wp, _math(N, L, 'MULTIPLY', tissue, wet))
+    # #147f: WATERLOGGED — the film covers all exposed skin (coat_min..1 by the wet field) and tissue/blood fully;
+    # 'drying' is expressed as coat ROUGHNESS (coat_r_wet -> coat_r_dry), not as the weight falling to ~0.03 (r11-r18)
+    blood = _attr(N, 'blood', -1200, -2200).outputs['Fac']
+    cw = _math(N, L, 'MULTIPLY_ADD', wet, 1.0 - SKIN['coat_min'], SKIN['coat_min'], clamp=True)
+    # #147h: dead lips dry first — macerated, cracked, matte (r30 100 % crop: the coat_min film turned the vermilion
+    # into an inflated latex pillow with long specular streaks)
+    cw = _math(N, L, 'MULTIPLY', cw, _math(N, L, 'SUBTRACT', 1.0, _math(N, L, 'MULTIPLY', lip, SKIN['lip_dry']), clamp=True))
+    cw = _math(N, L, 'MAXIMUM', cw, _math(N, L, 'MAXIMUM', tissue, blood))
     cw = _math(N, L, 'MAXIMUM', cw, _math(N, L, 'MULTIPLY', _math(N, L, 'MAXIMUM', bead, bead2), 4.0), clamp=True)
     cw = _math(N, L, 'MAXIMUM', cw, post)
     L.new(cw, b.inputs['Coat Weight'])
     wcr = _math(N, L, 'MAXIMUM', wpt, _math(N, L, 'MINIMUM', _math(N, L, 'MULTIPLY', _math(N, L, 'MAXIMUM', bead, bead2), 3.0), 1.0))
-    L.new(_math(N, L, 'MULTIPLY_ADD', _math(N, L, 'SUBTRACT', 1.0, wcr, clamp=True), 0.33, 0.05), b.inputs['Coat Roughness'])   # beads glassy
+    wcr = _math(N, L, 'MAXIMUM', wcr, _math(N, L, 'MULTIPLY', blood, wet))
+    wcr = _math(N, L, 'MULTIPLY', wcr, _math(N, L, 'SUBTRACT', 1.0, _math(N, L, 'MULTIPLY', lip, SKIN['lip_dry']), clamp=True))   # #147h
+    L.new(_math(N, L, 'MULTIPLY_ADD', _math(N, L, 'SUBTRACT', 1.0, wcr, clamp=True), SKIN['coat_r_dry'] - SKIN['coat_r_wet'], SKIN['coat_r_wet']),
+           b.inputs['Coat Roughness'])
     b.inputs['Coat IOR'].default_value = 1.33
+    # #147f: under the film the skin's own reflection is the skin/water interface (n 1.4 / 1.33, F0 ~0.0006), not
+    # skin/air (0.028, what Blender computes from IOR 1.4): level 0.5 (dry) -> spec_wet x the film weight. The 40x
+    # over-bright base specular under a wet film was the medium-rough latex sheen on the lips and cheeks.
+    try:
+        sil = _math(N, L, 'MULTIPLY_ADD', cw, -(0.5 - SKIN['spec_wet']), 0.5, clamp=True)
+        sil = _math(N, L, 'MULTIPLY', sil, _math(N, L, 'SUBTRACT', 1.0, _math(N, L, 'MULTIPLY', lip, SKIN['lip_spec']), clamp=True))   # #147j r37
+        L.new(sil, b.inputs['Specular IOR Level'])
+    except KeyError:
+        pass
     return mat
 
 
@@ -932,6 +1127,12 @@ def eye_material(k):
     b.inputs['Subsurface Radius'].default_value = (1.0, 0.6, 0.45)
     b.inputs['Subsurface Scale'].default_value = 0.0008
     L.new(_math(N, L, 'MULTIPLY_ADD', sp.outputs['Red'], -0.12, 0.42), b.inputs['Roughness'])   # dull dry sclera 0.42
+    # #147f: the globe's OWN specular. r1-r19 left it at Principled defaults (IOR 1.5 -> F0 0.04, roughness 0.42): under
+    # the clear dome that broad sheen (~2.6x the diffuse of a 0.12 albedo at the torch's half-vector) turned the clouded
+    # cornea into a pale disc (r19: cornea ring 175-260 vs the lit skin round it 20-90). The painted globe under the
+    # dome is the iris / clouded stroma behind index-matched aqueous: no interface, no specular. The exposed sclera's
+    # gloss is the tear-film coat; its base layer only a faint conjunctival sheen.
+    L.new(_math(N, L, 'MULTIPLY', _math(N, L, 'SUBTRACT', 1.0, sp.outputs['Blue'], clamp=True), 0.15), b.inputs['Specular IOR Level'])
     L.new(sp.outputs['Red'], b.inputs['Coat Weight'])                   # tear film over the conjunctiva
     b.inputs['Coat Roughness'].default_value = 0.015
     b.inputs['Coat IOR'].default_value = 1.336
@@ -1059,7 +1260,8 @@ def meniscus_curves(face):
         s = 1.0 if k == 0 else -1.0
         az = np.linspace(-74.0, 74.0, 90)
         up, lo = sh.margins(az, k)
-        for el, rad, rr in ((lo + 1.1, 0.30, 12.28), (up - 0.9, 0.18, 12.26)):
+        # #147f r23: lower meniscus 0.30 -> 0.45 mm (the lower lid still read as a smooth rim over a dark crevice)
+        for el, rad, rr in ((lo + 1.2, 0.45, 12.32), (up - 0.9, 0.18, 12.26)):
             a, e = np.radians(az), np.radians(el)
             d = np.stack([s * np.sin(a) * np.cos(e), -np.cos(a) * np.cos(e), np.sin(e)], 1)
             # r11: where the lid rests on the cornea dome the meniscus sits on the dome, not inside it
@@ -1071,6 +1273,34 @@ def meniscus_curves(face):
     return np.array(S), np.array(R)
 
 
+def saliva_curves(face, seed=23):
+    """#147j (AD round 3: "1-2 saliva/water strings across the gap"): watery strings across the open mouth, in DEFORMED
+    head space — each from the underside of the upper lip / teeth to the drooped lower lip, sagging toward the camera
+    and thinning to a bead-and-thread in the middle (r 0.20 mm at the ends -> 0.06 mm). Returns (S, R) mm."""
+    from scare import scare_hair
+    fn = scare_hair.stick_fn(face, globes=False)
+    rng = np.random.default_rng(seed)
+    S, R = [], []
+    for x0, y0, sag, x1 in ((7.5, -25.5, 1.6, 8.6), (-14.0, -25.0, 1.1, -13.2)):
+        o = np.array([[x0, y0, -66.0]])
+        tu, hu = sh.ray_hit(fn, o, np.array([[0.0, 0.0, 1.0]]), tmax=20.0, eps=0.02, step=0.6)
+        o2 = np.array([[x1, y0 - 1.5, -66.0]])
+        tl, hl = sh.ray_hit(fn, o2, np.array([[0.0, 0.0, -1.0]]), tmax=25.0, eps=0.02, step=0.6)
+        if not (hu[0] and hl[0]) or tu[0] < 1.0 or tl[0] < 1.0:
+            log(f'scare saliva: string at x {x0} found no lips (up {bool(hu[0])} lo {bool(hl[0])})')
+            continue
+        a = o[0] + np.array([0.0, 0.0, tu[0] - 0.15])
+        b = o2[0] + np.array([0.0, 0.0, -(tl[0] - 0.15)])
+        tt = np.linspace(0.0, 1.0, 24)
+        P = a[None] + (b - a)[None] * tt[:, None]
+        bow = np.sin(np.pi * tt)
+        P = P + np.array([0.0, -sag, 0.0])[None] * bow[:, None] + np.array([rng.uniform(-0.4, 0.4), 0.0, -0.3])[None] * bow[:, None] ** 2
+        r = 0.20 - 0.14 * bow ** 0.6 + 0.05 * np.exp(-((tt - rng.uniform(0.35, 0.65)) / 0.06) ** 2)
+        S.append(P)
+        R.append(r)
+    return np.array(S), np.array(R)
+
+
 def teeth_material():
     mat = bpy.data.materials.new('scare_teeth')
     nt, N, L = _nodes(mat)
@@ -1079,19 +1309,36 @@ def teeth_material():
     L.new(b.outputs[0], out.inputs['Surface'])
     cerv = _attr(N, 'cerv').outputs['Fac']
     # yellowed enamel (linear) -> stained cervical third / tartar
-    L.new(_mixc(N, L, (0.37, 0.33, 0.24), (0.21, 0.14, 0.085), _math(N, L, 'POWER', cerv, 1.4)), b.inputs['Base Color'])   # r11: greyer, dead
+    # #147h r34: r33 bared the incisors and they read as a clean DENTURE (0.37/0.33/0.24 enamel, the brightest flat thing
+    # under the torch). Dead, water-stained teeth: grey-yellow enamel with grey translucent incisal edges, a blood-brown
+    # cervical third (the split lip and the nosebleed run into the mouth), mottled; drier than the lips (less coat)
+    obj = N.new('ShaderNodeTexCoord').outputs['Object']
+    mot = _mrange(N, L, _noise(N, L, obj, 900.0, 3.0, 0.6), 0.35, 0.65, 0.85, 1.12)
+    enamel = _mixc(N, L, (0.30, 0.26, 0.18), (0.22, 0.21, 0.19), _mrange(N, L, cerv, 0.25, 0.0))       # grey translucent edge
+    col = _mixc(N, L, enamel, (0.11, 0.035, 0.028), _math(N, L, 'POWER', cerv, 1.2))                   # blood-brown cervix
+    gcol = N.new('ShaderNodeCombineColor')
+    for c in ('Red', 'Green', 'Blue'):
+        L.new(mot, gcol.inputs[c])
+    col = _mixc(N, L, col, gcol.outputs['Color'], 1.0, 'MULTIPLY')
+    # #147j (AD round 3: "a clean black notch = a missing tooth"): the fracture face shows yellowish DENTIN inside a thin
+    # enamel rim, and a 1 mm pink-dark dot where the pulp horn is exposed (dead: congested, dark)
+    dent = _attr(N, 'dent').outputs['Fac']
+    pulp = _attr(N, 'pulp').outputs['Fac']
+    col = _mixc(N, L, col, (0.45, 0.38, 0.25), dent)
+    col = _mixc(N, L, col, (0.20, 0.05, 0.05), pulp)
+    L.new(col, b.inputs['Base Color'])
     b.subsurface_method = 'RANDOM_WALK'
     b.inputs['Subsurface Weight'].default_value = 0.6
     b.inputs['Subsurface Radius'].default_value = (1.0, 0.75, 0.5)
     b.inputs['Subsurface Scale'].default_value = 0.0012
-    b.inputs['Roughness'].default_value = 0.22
-    b.inputs['Coat Weight'].default_value = 0.6
-    b.inputs['Coat Roughness'].default_value = 0.05
+    L.new(_math(N, L, 'MULTIPLY_ADD', dent, 0.18, 0.34), b.inputs['Roughness'])     # the fracture face duller (dentin)
+    b.inputs['Coat Weight'].default_value = 0.35
+    b.inputs['Coat Roughness'].default_value = 0.08
     b.inputs['Coat IOR'].default_value = 1.33
     return mat
 
 
-def hair_material(melanin=0.97, rough=0.14):
+def hair_material(melanin=0.94, rough=0.14):          # #147f: 0.97 -> 0.94 (wet black-brown, a little translucency at the edges)
     mat = bpy.data.materials.new('scare_hair')
     nt, N, L = _nodes(mat)
     out = N.new('ShaderNodeOutputMaterial')
@@ -1207,10 +1454,16 @@ def fit_torch(d, halves_deg=(2.5, 4.0, 6.0, 8.5, 12.0, 17.0, 24.0, 34.0, 46.0)):
 IES_K = 0.0705
 
 
-def torch_ies_text():
-    """LM-63 text of the game torch's far-field beam (type C, 0 deg = the beam axis = the spot's -Z), project cd."""
+def torch_ies_text(ring=None):
+    """LM-63 text of the game torch's far-field beam (type C, 0 deg = the beam axis = the spot's -Z), project cd.
+    ring = (cd, a0, a1): #147l LEAD STAGING DECISION (AD4-r37 rank 2b): the krypton reflector's soft spill RING, a
+    second cone of `cd` candela flat to a0 deg and smoothstepped to zero at a1 deg (half power at ~(a0+a1)/2), added to
+    the far-field beam. Broad, so the Cycles disc convolution (+-6 deg at 0.24 m) leaves it unchanged."""
     v = np.concatenate([np.arange(0.0, 20.0, 0.25), np.arange(20.0, 60.0, 1.0), [60.0, 90.0, 180.0]])
     c = torch_profile(np.radians(np.minimum(v, 89.0)), None)
+    if ring is not None:
+        rcd, a0, a1 = ring
+        c = c + rcd * (1.0 - _ss(a0, a1, v))
     c[v >= 60.0] = 0.0                                   # past the 45 deg cone: dark
     lines = ['IESNA:LM-63-2002', '[TEST] THE KEEPING scare torch (2-cell D krypton, far field)', 'TILT=NONE',
              f'1 -1 1 {len(v)} 1 1 2 0 0 0', '1.0 1.0 2.4',
@@ -1230,10 +1483,14 @@ def camera_basis(dist=0.27, cam_up=0.0):
 
 
 def setup_camera_and_torch(M, R, dist=0.27, fstop=5.6, focus_head_mm=None, aim_head_mm=None, torch_off=(0.06, 0.04, -0.27),
-                           cam_up=0.0):
+                           cam_up=0.0, lens=35.0, shift=(0.0, 0.0), ring_frac=None):
+    """#147l: lens (mm) + shift (Blender lens shift, units of the frame WIDTH for sensor_fit HORIZONTAL) = a CROP of the
+    35 mm view from the same eye: perspective, torch and lighting unchanged. ring_frac = (frac, a0, a1): the spill ring
+    at frac x the near-field peak at the aim distance (see torch_ies_text)."""
     sc = bpy.context.scene
     cd = bpy.data.cameras.new('scare_cam')
-    cd.lens = 35.0
+    cd.lens = float(lens)
+    cd.shift_x, cd.shift_y = float(shift[0]), float(shift[1])
     cd.sensor_fit = 'HORIZONTAL'
     cd.sensor_width = 36.0
     cd.clip_start = 0.01
@@ -1258,6 +1515,9 @@ def setup_camera_and_torch(M, R, dist=0.27, fstop=5.6, focus_head_mm=None, aim_h
     tp = C + np.array([torch_off[0], torch_off[1], torch_off[2]])                      # world offsets from the eye
     aim = to_world(aim_head_mm if aim_head_mm is not None else HERO_T)
     dd = float(np.linalg.norm(aim - tp))
+    ring = None
+    if ring_frac is not None:
+        ring = (float(ring_frac[0]) * float(torch_profile(np.array([0.0]), dd)[0]), float(ring_frac[1]), float(ring_frac[2]))
     # #147e: ONE spot light carrying the whole beam as an IES profile. r1-r13 stacked 7 COINCIDENT spots (NNLS fit):
     # Cycles credits a BSDF-sampled ray that hits overlapping light spheres to ONE light only (the first created, the
     # 2.5 deg core) — measured (fx2/lt_test.py): a glossy catchlight 856 -> 7.7 when a narrow coincident spot aimed
@@ -1274,7 +1534,7 @@ def setup_camera_and_torch(M, R, dist=0.27, fstop=5.6, focus_head_mm=None, aim_h
     nt = ld.node_tree
     em = next(n for n in nt.nodes if n.type == 'EMISSION')
     tx = bpy.data.texts.new('scare_torch.ies')
-    tx.from_string(torch_ies_text())
+    tx.from_string(torch_ies_text(ring))
     ies = nt.nodes.new('ShaderNodeTexIES')
     ies.mode = 'INTERNAL'
     ies.ies = tx
@@ -1286,5 +1546,9 @@ def setup_camera_and_torch(M, R, dist=0.27, fstop=5.6, focus_head_mm=None, aim_h
     lights = [o]
     peak = float(torch_profile(np.array([0.0]), dd)[0])
     log(f'scare torch: {dd:.3f} m to the aim point, E {torch_E(dd):.0f} lx, near-field peak {peak:.0f} cd, one IES '
-        f'spot (far-field {float(torch_profile(np.array([0.0]), None)[0]):.0f} cd x the 5 cm mouth)')
-    return cam, lights, dict(torch_dist=dd, E=torch_E(dd), I_peak=peak, ies=True)
+        f'spot (far-field {float(torch_profile(np.array([0.0]), None)[0]):.0f} cd x the 5 cm mouth)'
+        + (f', spill ring {ring[0]:.1f} cd flat to {ring[1]:.0f} deg, 0 at {ring[2]:.0f} deg' if ring else '')
+        + f'; camera lens {cd.lens:.1f} mm shift ({cd.shift_x:.4f}, {cd.shift_y:.4f})')
+    return cam, lights, dict(torch_dist=dd, E=torch_E(dd), I_peak=peak, ies=True,
+                             ring_cd=None if ring is None else ring[0], ring_deg=None if ring is None else ring[1:],
+                             lens=float(cd.lens), shift=[float(cd.shift_x), float(cd.shift_y)])

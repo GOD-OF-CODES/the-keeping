@@ -1,0 +1,16 @@
+{
+  "id": "c2b_my_dress",
+  "durationSec": 1.12,
+  "words": [
+    {
+      "text": "...my",
+      "start": 0.172,
+      "end": 0.265
+    },
+    {
+      "text": "dress...",
+      "start": 0.358,
+      "end": 1.145
+    }
+  ]
+}

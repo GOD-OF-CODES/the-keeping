@@ -883,6 +883,11 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
 
   // ---- car trim (the sting's maroon interior)
   const trimSaved = new Map<any, any>();
+  // PERF round 2 BUDGETS (#150b, surgical): the maroon clone is made ONCE per mesh (per original material) and reused on
+  // every later 'maroon' — before, each call cloned anew and 'tan' forgot the clone, so C7's t = 0 node-built and
+  // buffered fresh clones although the load warm-up (main.ts cs-shots, car_trim maroon → tan) had just drawn identical
+  // ones (C7's first frame: 3 material builds, ≈ 132 ms JS on Max). Same colour math, same material state.
+  const trimClones = new Map<any, { from: any; clone: any }>();
   const setTrim = (style: string) => {
     const root = level.prop('P_CAR_INTERIOR');
     if (!root) return;
@@ -892,11 +897,16 @@ export function createCutsceneFx(d: CutsceneFxDeps) {
       if (style === 'maroon') {
         if (m?.userData?.material_id !== 'car_interior_tan' || trimSaved.has(n)) return;
         trimSaved.set(n, m);
-        const c = m.clone();
-        c.userData = { ...m.userData };
-        if (c.colorNode) c.colorNode = c.colorNode.mul(vec4(1.35, 0.42, 0.44, 1).rgb);
-        else c.color?.multiply?.(new THREE.Color(1.35, 0.42, 0.44));
-        n.material = c;
+        let k = trimClones.get(n);
+        if (!k || k.from !== m) {
+          const c = m.clone();
+          c.userData = { ...m.userData };
+          if (c.colorNode) c.colorNode = c.colorNode.mul(vec4(1.35, 0.42, 0.44, 1).rgb);
+          else c.color?.multiply?.(new THREE.Color(1.35, 0.42, 0.44));
+          k = { from: m, clone: c };
+          trimClones.set(n, k);
+        }
+        n.material = k.clone;
       } else if (trimSaved.has(n)) {
         n.material = trimSaved.get(n);
         trimSaved.delete(n);

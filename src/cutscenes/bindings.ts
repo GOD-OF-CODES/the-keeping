@@ -12,6 +12,7 @@ import { CutscenePlayer, localSeenStore, type CharacterDirector, type CutsceneDe
 import { C4_HIDE_LM_TAU_IN, C4_HIDE_LM_TAU_OUT, HemOverlay } from './c4-hem.ts';
 import { GRADE } from '../render/grade.ts'; // SMOOTH-FIX (#145b): the C4 hide view's night-light lift (tickHideLm)
 import { setCandleShadow } from '../world/lights.ts';
+import { uHideDim } from '../world/hide-dim.ts'; // FINAL-B (#154, R1-4): the wardrobe's own parts stay un-lifted
 import { hasRecipe } from '../audio/synth/index.ts';
 
 /** C2-ESCAPE: stand-ins for NEW sound ids (§2.3) until their recipes exist. */
@@ -54,7 +55,13 @@ export interface CutsceneHooks {
 }
 
 export interface CutsceneGame {
-  ctx: { settings: { fovDeg: number; reducedFlash?: boolean }; flags: Map<string, boolean>; events: { emit(type: string, payload: unknown): void }; presetId?: string; time?: { now: number } };
+  ctx: {
+    settings: { fovDeg: number; reducedFlash?: boolean };
+    flags: Map<string, boolean>;
+    events: { emit(type: string, payload: unknown): void; on?(type: string, fn: (payload: any) => void): () => void };
+    presetId?: string;
+    time?: { now: number };
+  };
   camera: any;
   /** Lazy: the pipeline is created after the level in main.ts. */
   pipeline?: () => { setCutscene(fx: { dof?: DofSettings; motionBlur?: number } | null): void; setBlurAmount?(v: number): void; blurAvailable?: boolean; uniforms?: { exposure?: { value: number } } } | null;
@@ -89,13 +96,18 @@ const POUR_HOLD_S = 1.2;
 /** PERF review (contract 115): interior cutscene cameras keep room/window culling; `?cscull=0` restores render-all. */
 const CS_CULL = typeof location === 'undefined' || new URLSearchParams(location.search).get('cscull') !== '0';
 /**
- * Cutscenes verified with interior culling (same-build A/B, docs/STATUS-perf-g.md R8/R34). Not C5: the camera-feet
- * room changes which flicker lamps its `seen` set lights (C5 shadowplay rendered brighter, R34) — opt others in only
- * after an A/B of their stills.
+ * Cutscenes verified with interior culling (same-build A/B, docs/STATUS-perf-g.md R8/R34; C5: docs/STATUS-perf2.md).
+ * Opt others in only after a same-state A/B of their stills.
  */
 // M-A (infra, surgical): + C4a, C4c, C2b — interior cameras; without it they rendered the whole house (C4a POV at the
 // door 562–661 draws / 1.82–1.94 M on Medium, over 400 / 1.5 M)
-export const CS_CULL_IDS = new Set(['C2', 'C2c', 'C4a', 'C4c', 'C2b', 'C5b', 'C6b', 'CR']);
+// PERF round 2 (#150, ruling (aq) "C5 cutscene culling"): + C5. The R34 caveat cannot apply to it: over C5's whole
+// timeline the room (and PVS) at the camera's feet equals the room at the camera xy + the player's feet, the
+// render-all path's lookup (scratch/perf2/c5rooms.ts: G1 / G2 at every 0.1 s), so RuntimeLights gets the same `seen`
+// set and viewer room in both paths; the R34 / G5 luminance "modes" were playthrough timing noise (STATUS-perf-g G5).
+// Same-state A/B (cull vs render-all, light state + stills + ms at the frozen frame): docs/STATUS-perf2.md.
+// QA: `__game.csCull()` returns this Set (delete / add an id for a same-frame A/B).
+export const CS_CULL_IDS = new Set(['C2', 'C2c', 'C4a', 'C4c', 'C2b', 'C5', 'C5b', 'C6b', 'CR']);
 /** M-A (SCENES, surgical): yard / gate cameras that keep the GAMEPLAY exterior culling (the player's own PVS from an
  *  exterior room) instead of render-all — CR at the gate drew 627 / 1.49 M, C5b's crane 1045 / 2.24 M on Medium. */
 export const CS_CULL_EXT_IDS = new Set(['C5b', 'C6b', 'CR']);
@@ -105,7 +117,10 @@ const C5B_SHUTTER_ROOMS: readonly string[] = ['G2'];
  *  each caster's shadow volume rather than the caster (it changed the C5 still for an unknown reason); add 'C2c' to re-enable.
  *  PERF fix round 3 (ruling q, contract 121): re-enabled for C2c with the shadow-cone test — same-state per-frame A/B over
  *  all 834 C2c frames 0 px; the C5 change was playthrough run noise (docs/STATUS-perf-g.md G4–G5). */
-const TORCH_CULL_IDS = new Set<string>(['C2c', 'C4a', 'C4c']); // M-A: + C4a, C4c (torch-lit POV shots)
+// PERF2 BUDGETS (#150b): + C5 (the torch is lit in its hall / parlor shots 0–15.6 s and 21.3–33 s: 112–168 torch-map
+// draws per frame, the biggest pass after the view; exact same-state per-pixel A/B: docs/STATUS-perf2.md B-log).
+// Exported for the QA hook `__game.torchCull()` (same-frame A/B: delete / add an id).
+export const TORCH_CULL_IDS = new Set<string>(['C2c', 'C4a', 'C4c', 'C5']); // M-A: + C4a, C4c (torch-lit POV shots)
 
 // ------------------------------------------------------------------ overlay (DOM, system fonts)
 
@@ -727,15 +742,34 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
     hideLmPrev = want;
     if (left) {
       GRADE.lm = 1;
+      uHideDim.value = 1;
       return;
     }
     const cur = Math.max(1e-3, GRADE.lm);
-    if (cur === want || !(dt > 0)) return;
-    const tau = want > cur ? C4_HIDE_LM_TAU_IN : C4_HIDE_LM_TAU_OUT;
-    let next = Math.exp(Math.log(cur) + (Math.log(want) - Math.log(cur)) * (1 - Math.exp(-dt / tau)));
-    if (Math.abs(Math.log(next / want)) < 0.004) next = want;
-    GRADE.lm = next;
+    if (cur !== want && dt > 0) {
+      const tau = want > cur ? C4_HIDE_LM_TAU_IN : C4_HIDE_LM_TAU_OUT;
+      let next = Math.exp(Math.log(cur) + (Math.log(want) - Math.log(cur)) * (1 - Math.exp(-dt / tau)));
+      if (Math.abs(Math.log(next / want)) < 0.004) next = want;
+      GRADE.lm = next;
+    }
+    // FINAL-B (#154, R1-4): inside the wardrobe its own slats keep the un-lifted light (src/world/hide-dim.ts)
+    uHideDim.value = want > 1 ? 1 / Math.max(1, GRADE.lm) : 1;
   };
+  // FINAL-B (#154, R1-1): the exit cut itself. tickHideLm runs inside update() BEFORE the frame's exits happen — the
+  // wardrobe-back push (m2-world, after this update) and hem.update(…, hides.active) — so it saw the hide a frame late
+  // and the exit frame + the one after rendered U4T × C4_HIDE_LM (exit+0 13.9, exit+2 0.9 at e 24, R1/R2 reviews).
+  // hides.exit() emits `player:hide` synchronously, before cutscene-fx copies GRADE.lm into the lightmap / probe-grid
+  // scale (story-runtime fxw.update, later in the same frame): end the lift right there, and keep hem in step.
+  const offHide = g.ctx.events.on?.('player:hide', (p: { hideId?: string; inside?: boolean }) => {
+    if (p?.hideId !== hem.hide) return;
+    hem.setHidden(p.inside ? p.hideId : null);
+    if (p.inside) return;
+    hideLmPrev = 1;
+    uHideDim.value = 1;
+    const act = player.active;
+    if (act && !act.startsWith('C4_')) return; // a Director cutscene owns the grade (its teardown resets it)
+    GRADE.lm = 1;
+  });
 
   return {
     player,
@@ -790,6 +824,7 @@ export function createCutsceneSystem(g: CutsceneGame): CutsceneSystem {
       cam.getWorldDirection(renderedDir);
     },
     dispose() {
+      offHide?.();
       endTorchFade(false);
       player.cancel();
       overlay?.dispose();

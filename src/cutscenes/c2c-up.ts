@@ -243,7 +243,15 @@ export const c2cUp: TimelineFactory = (ctx) => {
     { t: 4.55, type: 'sfx', id: 'gasp', gain: 0.5 },
     // 6.46 the stumble on the creaker 12
     { t: 6.46, type: 'sfx', id: 'step_creaker', pos: treadNosing(12), room, gain: 1.2 },
-    { t: 6.46, type: 'clip', char: 'arms', clip: 'arms_stumble_catch', fade: 0.05, fallback: ['arms_idle'] },
+    // FINAL #153c (the C2c 6.733 one-frame dark dip, BLACK on Low; STATUS-flash fixer r3 item 2): the catch clip starts
+    // 40 ms after the creak (was 6.46, with it). At clip 0.273 s the fist with the torch is jammed in the corner of
+    // tread 13 and riser 14 — the lens 7 cm in front of the riser, below its nosing (plan (0.42, 7.17, 3.60); the
+    // render treads per blender/house/plan.py StairGeo) — so nothing above the nosing can be lit from it, and at 6.733 the
+    // camera's whip was passing straight up the flight: every surface in frame was hidden from the lens (pre-exposure
+    // HDR 13.3 → 0.02 → 10.5; the aim was on the gaze hit, the light on). Now that pose meets the whip at 6.773, past
+    // north, looking east over tread 13 at the rail, which the lens does see; 6.733 shows the 6.69 pose (lens 0.26 m
+    // above the tread). The slap still lands with the 6.62 impact / 6.64 knock (≤ 40 ms, under the A/V lead threshold).
+    { t: 6.5, type: 'clip', char: 'arms', clip: 'arms_stumble_catch', fade: 0.05, fallback: ['arms_idle'] },
     { t: 6.62, type: 'sfx', id: 'body_fall_stairs', pos: treadNosing(13), room, sched: true },
     // fix round 4 (audio lane, ruling x; contract #132): measured in the real mix (scratch/listen) this stumble was the
     // LOUDEST moment of the escape (−11.1 LUFS momentary vs the strike's −13.7) — the knock 0.8 → 0.5, the gasp

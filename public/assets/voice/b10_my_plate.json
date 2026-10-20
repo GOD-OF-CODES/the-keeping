@@ -1,0 +1,26 @@
+{
+  "id": "b10_my_plate",
+  "durationSec": 3.68,
+  "words": [
+    {
+      "text": "R-V-X...",
+      "start": 0.28,
+      "end": 2.08
+    },
+    {
+      "text": "that's",
+      "start": 2.576,
+      "end": 2.88
+    },
+    {
+      "text": "my",
+      "start": 2.96,
+      "end": 3.12
+    },
+    {
+      "text": "plate.",
+      "start": 3.187,
+      "end": 3.68
+    }
+  ]
+}

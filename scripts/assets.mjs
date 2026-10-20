@@ -30,6 +30,8 @@ const CACHE = path.join(ROOT, '.cache');
 const LOCK = path.join(CACHE, 'blender.lock');
 const CHROME_LOCK = path.join(CACHE, 'chrome.lock'); // held by scripts/shot.mjs (headless-Chrome QA)
 const CHROME_QUEUE = path.join(CACHE, 'chrome.queue'); // shot.mjs waiters' tickets: <ms since epoch, 15 digits>-<pid>
+const BLENDER_QUEUE = path.join(CACHE, 'blender.queue'); // our own waiters' tickets, same format (#151b)
+const HOLD = path.join(CACHE, 'blender.hold.json'); // lead priority hold: { match: '<regex on job id>', until: '<ISO>', why } (#151b)
 const LOGS = path.join(CACHE, 'logs');
 const STATE = path.join(CACHE, 'assets-state.json');
 const PUBLIC = path.join(ROOT, 'public');
@@ -243,9 +245,13 @@ function pidAlive(pid) {
     return e.code === 'EPERM';
   }
 }
+// FINAL-BAKE (review R1 request): anchored at the EXECUTABLE (start of the command line, POSIX ERE — pgrep has no \s).
+// The unanchored pattern also matched any process whose ARGUMENTS held the path (a waiting shell script, a tail of a
+// log line, an editor), and every such false positive held the Blender queue.
+const BLENDER_PGREP = '^[^ ]*Blender\\.app/Contents/MacOS/Blender( |$)';
 function foreignBlender() {
   try {
-    const out = execFileSync('pgrep', ['-f', 'Blender.app/Contents/MacOS/Blender'], { encoding: 'utf8' });
+    const out = execFileSync('pgrep', ['-f', BLENDER_PGREP], { encoding: 'utf8' });
     return out.split('\n').filter(Boolean).map(Number);
   } catch {
     return [];
@@ -253,24 +259,53 @@ function foreignBlender() {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function acquireLock(timeoutMs = 60 * 60 * 1000) {
+let ticketPath = null;
+function dropTicket() {
+  if (ticketPath) fs.rmSync(ticketPath, { force: true }), (ticketPath = null);
+}
+process.on('exit', dropTicket);
+async function acquireLock(id, timeoutMs = 60 * 60 * 1000) {
   fs.mkdirSync(CACHE, { recursive: true });
-  const t0 = Date.now();
   let told = false;
+  // Lead priority hold (#151b): a job whose id matches hold.match waits until hold.until, or until the lead deletes the
+  // file. It holds nothing while it waits, and the wait doesn't count toward the timeout.
+  for (;;) {
+    const hold = readJSON(HOLD, null);
+    if (!hold || !(Date.parse(hold.until) > Date.now()) || !new RegExp(hold.match).test(id)) break;
+    if (!told) {
+      log(`HELD by the lead until ${hold.until} at the latest: ${hold.why}`);
+      log('this is intentional: keep waiting, the job starts by itself. Do not delete the hold file or run Blender around it');
+      told = true;
+    }
+    await sleep(10_000);
+  }
+  const t0 = Date.now();
+  // First come, first served among Blender jobs too (#151b: a pre-launched next Cycles chunk polled the freed lock
+  // ahead of a bake job that had waited 50 min). Our ticket is dropped once we hold the lock, or on exit.
+  fs.mkdirSync(BLENDER_QUEUE, { recursive: true });
+  const ticket = `${String(t0).padStart(15, '0')}-${process.pid}`;
+  ticketPath = path.join(BLENDER_QUEUE, ticket);
+  fs.writeFileSync(ticketPath, '');
+  told = false;
   // First come, first served with scripts/shot.mjs too (lead 2026-10-18: back-to-back Cycles rounds re-took the Blender
   // lock within seconds of the last, and shot.mjs runs queued since 21:52 never got a window). Before taking our lock,
   // wait out every live headless-Chrome ticket filed before we started. We hold nothing while waiting, so no deadlock.
   for (;;) {
-    let ahead = [];
-    try {
-      ahead = fs.readdirSync(CHROME_QUEUE).filter((n) => {
-        const [ms, pid] = n.split('-').map(Number);
-        return ms < t0 && pid && pidAlive(pid);
-      });
-    } catch {}
-    if (!ahead.length) break;
-    if (!told) log(`waiting: ${ahead.length} headless-Chrome run(s) queued before this job …`), (told = true);
-    if (Date.now() - t0 > timeoutMs) throw new Error('timed out waiting for queued headless-Chrome runs');
+    const older = (dir, isOlder) => {
+      try {
+        return fs.readdirSync(dir).filter((n) => {
+          const [ms, pid] = n.split('-').map(Number);
+          return isOlder(n, ms) && pid && pid !== process.pid && pidAlive(pid);
+        });
+      } catch {
+        return [];
+      }
+    };
+    const chrome = older(CHROME_QUEUE, (n, ms) => ms < t0);
+    const blender = older(BLENDER_QUEUE, (n) => n < ticket);
+    if (!chrome.length && !blender.length) break;
+    if (!told) log(`waiting: ${chrome.length} headless-Chrome run(s) and ${blender.length} Blender job(s) queued before this job …`), (told = true);
+    if (Date.now() - t0 > timeoutMs) throw new Error('timed out waiting for queued headless-Chrome runs / Blender jobs');
     await sleep(3000);
   }
   told = false;
@@ -278,6 +313,7 @@ async function acquireLock(timeoutMs = 60 * 60 * 1000) {
     try {
       fs.mkdirSync(LOCK);
       writeJSON(path.join(LOCK, 'owner.json'), { pid: process.pid, startedAt: new Date().toISOString(), argv });
+      dropTicket();
       break;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
@@ -363,7 +399,7 @@ async function runJob(job, hash) {
   const extra = opt('job-args') ? String(opt('job-args')).split(/\s+/).filter(Boolean) : [];
   bargs.push('--python', path.join(ROOT, 'blender/lib/cli.py'), '--', job.script, ...(job.args ?? []), ...extra);
   const t0 = Date.now();
-  await acquireLock();
+  await acquireLock(job.id);
   let res;
   try {
     res = await runProcess('/usr/bin/time', ['-l', blender, ...bargs], logFile, job.env);
@@ -552,6 +588,13 @@ function check() {
     const mb = m.totalBytes / 1048576;
     log(`${tier}: ${m.files.length} files, ${mb.toFixed(2)} MB${budget ? ` (budget ${budget} MB)` : ''}`);
     if (budget && mb > budget) fail(`${tier}: ${mb.toFixed(1)} MB over budget ${budget} MB`);
+  }
+  // Streamed assets (#155, ruling (be)): voice clips load per line on every tier, never up front, so they stay out of the
+  // tier manifests and budgets above and get their own cap here.
+  for (const [dir, capMB] of Object.entries(pipeline.streamedAssetBudgetsMB ?? {})) {
+    const mb = walk(path.join(ROOT, dir)).reduce((s, f) => s + fs.statSync(f).size, 0) / 1048576;
+    log(`${dir} (streamed): ${mb.toFixed(2)} MB (budget ${capMB} MB)`);
+    if (mb > capMB) fail(`${dir}: ${mb.toFixed(1)} MB over its streamed budget ${capMB} MB`);
   }
   for (const j of pipeline.jobs) {
     const s = state.jobs[j.id];

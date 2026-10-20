@@ -1,0 +1,21 @@
+{
+  "id": "b03_go_on",
+  "durationSec": 1.6,
+  "words": [
+    {
+      "text": "Go",
+      "start": 0.349,
+      "end": 0.356
+    },
+    {
+      "text": "on,",
+      "start": 0.489,
+      "end": 0.956
+    },
+    {
+      "text": "then.",
+      "start": 0.996,
+      "end": 1.636
+    }
+  ]
+}

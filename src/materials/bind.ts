@@ -16,7 +16,7 @@
 //  - albedo gain from the baker's measurement (matches spec.avgAlbedo, the Blender bounce colour).
 
 import * as THREE from 'three/webgpu';
-import { BRDF_Lambert, diffuseColor, float, mix, mx_fractal_noise_float, mx_noise_float, normalMap, normalView, normalWorld, positionLocal, positionWorld, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';
+import { BRDF_Lambert, diffuseColor, float, mix, mx_fractal_noise_float, mx_noise_float, normalMap, normalView, normalWorld, positionLocal, positionWorld, renderGroup, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';
 import type { MaterialSpec } from '../shared/material-types.ts';
 import type { PresetConfig } from '../render/presets.ts';
 import { LightmapMaterial, type LightmapOptions } from '../render/lightmap-material.ts';
@@ -24,6 +24,7 @@ import { MaterialBaker, textureSizeFor, type BakedMaterial, type BakeProgress } 
 import { generatorFor, superTileFor } from './library/index.ts';
 import { MATERIAL_SPECS, specById } from './spec-index.ts';
 import { applyWear } from './wear.ts';
+import { runtimeAlbedo } from './albedo-check.ts';
 import { wearRuleFor } from './wear-math.ts';
 
 /** `?nowear` (debug A/B, PROPS-FINISH R4): prop wear masks are ignored (no masked shader variants at all). */
@@ -33,14 +34,15 @@ type N = any;
 
 export { MATERIAL_SPECS, specById };
 
-/** Global runtime material uniforms. */
+/** Global runtime material uniforms (FINAL #153b: in the shared render group — the per-object-group stale-uniform
+ *  class, see lightmap-material.ts). */
 export const materialUniforms = {
   /** Extra dynamic wetness 0..1 (rain events, drips) on top of the baked spec wetness. */
-  wet: uniform(0),
+  wet: uniform(0).setGroup(renderGroup),
   /** Global dust multiplier (1 = spec). */
-  dust: uniform(1),
+  dust: uniform(1).setGroup(renderGroup),
   /** Macro variation strength (anti-tiling). */
-  macro: uniform(1),
+  macro: uniform(1).setGroup(renderGroup),
 };
 
 const FABRIC = new Set(['rug', 'fabric', 'crepe', 'burlap', 'flannel', 'nightgown']);
@@ -153,7 +155,10 @@ export function createSurfaceMaterial(spec: MaterialSpec, baked: BakedMaterial |
     const tuv = flipV ? vec2(uv().x, uv().y.oneMinus()).mul(uRep) : uv().mul(uRep);
     const A = texture(baked.mapA, tuv);
     const B = texture(baked.mapB, tuv);
-    albedo = A.rgb.mul(u3(baked.gain));
+    // FINAL #153d: the gain maps the measured mean onto the RUNTIME colour target (= avgAlbedo except the
+    // RUNTIME_BLUE_RED specs, e.g. brass_tarnished's de-saturated F0); a per-channel factor, same program
+    const tgt = runtimeAlbedo(spec.id, spec.avgAlbedo);
+    albedo = A.rgb.mul(u3(baked.gain.map((g, i) => g * (tgt[i] / Math.max(spec.avgAlbedo[i], 1e-4)))));
     rough = A.a;
     // a mirrored V mirrors the tangent frame: flip the normal's green channel with it
     const nm = o.vertexTangents || flipV ? normalMap(B, vec2(1, -1)) : normalMap(B);
@@ -163,7 +168,7 @@ export function createSurfaceMaterial(spec: MaterialSpec, baked: BakedMaterial |
     if (baked.extraKind === 'metal') metal = B.w; // generators write metalness itself (spec.metalness = its mean)
     if (baked.extraKind === 'opacity') opacity = B.w;
   } else {
-    albedo = u3(spec.avgAlbedo);
+    albedo = u3(runtimeAlbedo(spec.id, spec.avgAlbedo));
     rough = uf(spec.roughness);
   }
 

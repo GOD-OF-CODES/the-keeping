@@ -1,0 +1,11 @@
+{
+  "id": "drv_breath_release",
+  "durationSec": 0.88,
+  "words": [
+    {
+      "text": "Hhhhh...",
+      "start": 0.312,
+      "end": 0.8
+    }
+  ]
+}

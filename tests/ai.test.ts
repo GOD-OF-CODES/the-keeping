@@ -719,6 +719,19 @@ test('difficulty (gameplay review): an unaware bump is a tell first — she stop
   assert.ok(!r2.events.some((e) => e.type === 'catch'), 'stepping away during the wind-up survives');
 });
 
+test('JUMPSCARE #147n (final review): walking INTO her body during the bump wind-up is the grab — no standing inside her', () => {
+  const b = new AdaBrain(layout, world(), { seed: 9 });
+  b.update(0.05, FAR_PLAYER());
+  const at = b.pos;
+  // the bump at 0.5 m: the tell (a LOOK wind-up), no catch yet
+  const r0 = run(b, () => player([at[0] + 0.5, at[1], at[2]]), 0.1);
+  assert.ok(!r0.events.some((e) => e.type === 'catch') && b.look?.phase === 'windup', 'the bump is a tell first');
+  // keep walking into her: pressed into her body (≤ bodyOverlapM) → caught at once, still inside the wind-up
+  const r1 = run(b, () => player([at[0] + TUNING.bodyOverlapM - 0.05, at[1], at[2]]), 0.1);
+  assert.ok(r1.events.some((e) => e.type === 'catch'), 'body contact during the wind-up catches');
+  assert.ok(TUNING.bodyOverlapM < 0.3, 'the 0.3 m "stay" of the tell test above is not body contact');
+});
+
 // ------------------------------------------------------------------ respawn fairness (round E ruling b)
 
 test('grace away rule: an idle torch-off player at each upper/ground checkpoint survives 60 s; she resumes after awayS; walking into her still kills', () => {

@@ -45,14 +45,25 @@ export const HITCH_MS = 250;
 /** Reference drawing-buffer size the caps were measured at (scripts/shot.mjs default viewport, DPR 1). */
 export const CAP_REF_PIXELS = 1280 * 800;
 /**
- * Per-cutscene caps (scale at CAP_REF_PIXELS), measured on the M1 7-core on mains power — docs/STATUS-perf2.md item 3
- * (fenced GPU ms at the cutscene's heaviest real-route states, then the real-time run). Missing = not measured: the
- * hold is the gameplay scale.
+ * Per-cutscene caps (scale at CAP_REF_PIXELS), measured on the M1 7-core on mains power — docs/STATUS-perf2.md item 3:
+ * on the real route (playthrough bot) every 2 s of each cutscene's clock the frame was frozen and its fenced GPU ms
+ * measured at 3 scales (scratch/perf2/cscost.mjs, after the #150 character-light pool); per state ms(s) = a + b·s²
+ * gives the largest scale ≤ 17.5 ms fenced (the real-time C2 runs: states ≤ 18.2 ms held 60 fps), the cap is the
+ * minimum over the cutscene's states rounded down to the dynres grid (0.025) (scratch/perf2/capfit.mjs: states whose
+ * cost does not fall with the scale — CPU-bound, or a stall in the sample — set no cap). Missing = no state was over
+ * budget at the highest measured scale (Medium 0.85, Max 1.0) — no measured limit, the hold is the gameplay scale.
+ * Low has no dynamic resolution (no hold). Max's caps at 0.85 are its floor: C4c (raw 0.83) and C6 (raw 0.75, 20.5 ms
+ * at 0.85) cannot hold 60 fps there on the M1 at any allowed scale — efficiency work, not scale (STATUS-perf2 handoff).
  */
 export const CUTSCENE_CAP: Record<PresetId, Readonly<Record<string, number>>> = {
   low: {},
-  medium: {},
-  max: {},
+  // C6 worst @6.37 20.3 / 18.6 / 16.2 ms at 0.85 / 0.75 / 0.65 → 0.711; C6b @2.3 22.1 / 17.0 / 14.0 → 0.75;
+  // C7 @24.5 19.9 / 20.0 / 16.1 → 0.689 (v4/cost-medium.json)
+  medium: { C6: 0.7, C6b: 0.725, C7: 0.675 },
+  // C2 @8.4 19.9 / 18.1 / 16.7 ms at 1 / 0.925 / 0.85 → 0.894; C4c @10.43 → 0.831 (floor); C5b @8.4 → 0.968;
+  // C6 @4.33 25.6 / 23.0 / 20.5 → 0.747 (floor); C6b @4.33 → 0.896; C7 @4.33 → 0.909 (v4/cost-max.json);
+  // C5 (culled since #150) @0.3 18.2 / 18.1 / 16.6 → 0.915 (v8/c5-max.json; 0–15 s is CPU-bound at 16.6–19.6 ms)
+  max: { C2: 0.875, C4c: 0.85, C5: 0.9, C5b: 0.95, C6: 0.85, C6b: 0.875, C7: 0.9 },
 };
 
 /** The cap of cutscene `id` as a scale of a drawing buffer of `outputPixels` (null = no cap). Pure. */

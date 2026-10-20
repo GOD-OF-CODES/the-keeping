@@ -14,7 +14,7 @@
 //    very surfaces — does not add indirect light a second time.
 
 import * as THREE from 'three/webgpu';
-import { luminance, normalView, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';
+import { luminance, normalView, renderGroup, smoothstep, texture, uniform, uv, vec2, vec3 } from 'three/tsl';
 import { decodeKlm, type KlmImage } from './klm.ts';
 
 /** Lightmap texel → irradiance multiplier. Confirmed by docs/SMOKE.md S3 (k = π ± 0.013 %). */
@@ -23,7 +23,10 @@ export const LIGHTMAP_MULTIPLIER = Math.PI;
 export const LIGHTMAP_FLIP_V = true;
 
 /** 0..1 lightning flash level, driven by the lightning system (scaled down by "Reduced flash"). */
-export const uLightning = uniform(0);
+// FINAL #153b: every runtime-written global of this file lives in the shared render group (one buffer per render
+// call), not in per-object uniform groups — the torch-cookie V4 bug class (FLASH #146e: a per-draw object-group copy
+// stayed stale on some draws of the played route). Initial values = the values the per-frame sync writes.
+export const uLightning = uniform(0).setGroup(renderGroup);
 
 export interface LightmapOptions {
   base: any; // THREE.Texture (linear irradiance, uv1)
@@ -79,10 +82,10 @@ export async function loadKlmLightmap(url: string, signal?: AbortSignal): Promis
  * proxy = smoothstep(0.3, 0.85, E_lightmap / E_expected) shuts the specular there.
  * Lights without the tag (flashlight, lightning, cutscene lamps) go through the stock PhysicalLightingModel path.
  */
-export const uCandleSpec = uniform(1);
+export const uCandleSpec = uniform(1).setGroup(renderGroup); // = LOOK.candleSpec
 /** Shadow-proxy ramp (ratio of baked irradiance to the candle's own unoccluded irradiance): [lo, hi]. */
-export const uSpecProxyLo = uniform(0.3);
-export const uSpecProxyHi = uniform(0.85);
+export const uSpecProxyLo = uniform(0.3).setGroup(renderGroup); // = LOOK.specProxyLo
+export const uSpecProxyHi = uniform(0.85).setGroup(renderGroup); // = LOOK.specProxyHi
 
 /**
  * LIGHTING lane (REALISM-BACKLOG item 19) — civil-twilight sky fill on the EXTERIOR / CAR lightmaps (C6, B12).
@@ -91,19 +94,19 @@ export const uSpecProxyHi = uniform(0.85);
  * (open ground = 1, under the porch roof ≈ its baked fraction, lantern pools saturate at 1 — never multiplied).
  * uSkyFill = twilight colour × twilightE × tint (0 at night: no cost beyond one multiply-add).
  */
-export const uSkyFill = uniform(new THREE.Color(0, 0, 0));
-export const uOpenSkyE = uniform(0.027);
+export const uSkyFill = uniform(new THREE.Color(0, 0, 0)).setGroup(renderGroup); // 0 at night (skyTint 0)
+export const uOpenSkyE = uniform(0.027).setGroup(renderGroup); // = LOOK.openSkyE
 const SKY_FILL_ATLAS = /^lm_(exterior|car)/i;
 /**
  * AD review — scale of the PARLOR bake (LM_PARLOR only; 1 = as baked). The C5 shadow-play sets it to LOOK.c5Bake
  * while the guttered candles are out (src/world/cutscene-fx.ts silhouetteOn/Off). Flash light (lmFlash) is unscaled.
  */
-export const uParlorBake = uniform(1);
+export const uParlorBake = uniform(1).setGroup(renderGroup);
 /**
  * M-A `lmScale` cue (CUTSCENES-PLAN §5): every baked atlas × this (1 = as baked; the × π irradiance stays in
  * lmMultiplier). Written each frame from src/render/grade.ts GRADE.lm by cutscene-fx; the lightning flash map is unscaled.
  */
-export const uLmScale = uniform(1);
+export const uLmScale = uniform(1).setGroup(renderGroup);
 const PARLOR_ATLAS = /^lm_parlor/i;
 
 export class LightmapLightingModel extends THREE.PhysicalLightingModel {

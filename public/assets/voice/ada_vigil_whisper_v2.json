@@ -1,0 +1,16 @@
+{
+  "id": "ada_vigil_whisper",
+  "durationSec": 1.44,
+  "words": [
+    {
+      "text": "...my",
+      "start": 0.17,
+      "end": 0.36
+    },
+    {
+      "text": "room...",
+      "start": 0.472,
+      "end": 1.48
+    }
+  ]
+}

@@ -31,8 +31,10 @@ ROW_ORDER = 'bottom-up'
 UV_DECODE = 'vec2(uv1.x, 1 - uv1.y)'
 
 
-def downsample(rgba, factor):
-    """Coverage-weighted box downsample (gutter texels never darken island borders), then re-dilate."""
+def downsample(rgba, factor, label=None):
+    """Coverage-weighted box downsample (gutter texels never darken island borders), then re-dilate.
+    `label` (H, W) int island map from lib.islands.fill (FINAL-BAKE #152): the gutters of the smaller tier are then
+    grown from ONE island each instead of averaging the neighbours of every island (the Low leak of shelf-packing)."""
     if factor == 1:
         return rgba.copy()
     h, w = rgba.shape[:2]
@@ -47,7 +49,19 @@ def downsample(rgba, factor):
     covered = msum[..., 0] > 0
     out[..., :3] = np.where(covered[..., None], wsum / np.maximum(msum, 1e-8), plain)
     out[..., 3] = covered.astype(np.float32)
-    return dilate(out, covered, iterations=4)
+    if label is None:
+        return dilate(out, covered, iterations=4)
+    from . import islands
+    lab = islands.downsample_labels(np.where(m[..., 0] > 0.5, label, -1).astype(np.int32), factor)
+    lab[~covered] = -1
+    rgbf = out[..., :3].reshape(-1, 3).copy()
+    rgbf[~covered.ravel()] = 0.0
+    rgbf, lab, has = islands.island_dilate(rgbf, lab.ravel().copy(), None, iterations=4)
+    out[..., :3] = rgbf.reshape(hh, ww, 3)
+    empty = ~has.reshape(hh, ww)
+    if empty.any():
+        out[..., :3][empty] = plain[empty]
+    return out
 
 
 def _image(rgba, name='__encode'):
@@ -232,7 +246,10 @@ def sidecar(path, **fields):
 # The encode job fails if any file reaches 0.5 code (the point where a pixel can round to a different 8-bit value).
 TIER_POLICY = {
     'max': {'size': 2048, 'container': 'klm', 'mantissa_bits': 10, 'floor_exp': 8},
-    'medium': {'size': 2048, 'container': 'klm', 'mantissa_bits': 7, 'floor_exp': 8},
+    # FINAL-BAKE (2026-10-19): Medium ships 1024^2 = a 2x2 coverage-weighted downsample of the 2048^2 / 128 spp
+    # release bake. 2048^2 m7 would be ~28 MB of lightmaps and put Medium at ~69 MB (budget 60, other assets grew
+    # since 2026-09-30); 1024 from 2048/128 is cleaner than the 1024/64 dev bake it replaces (lead ruling requested).
+    'medium': {'size': 1024, 'container': 'klm', 'mantissa_bits': 7, 'floor_exp': 8},
     # Low (25 MB budget for EVERYTHING): 512^2 m6 (<= 0.78 % rel. error). UV2 gutters are 4 texels at 1024 =
     # 2 texels at 512, and the coverage-weighted downsample never mixes islands.
     'low': {'size': 512, 'container': 'klm', 'mantissa_bits': 6, 'floor_exp': 8},
@@ -241,9 +258,16 @@ TIER_POLICY = {
 # ~0.003-0.03 lux) the floor_exp 8 absolute step (2^-14..2^-18 ~ 6e-5..4e-6) bands once eye adaptation lifts them
 # by +4 EV. floor_exp 13 = steps of 2^-(13+N) (1.2e-6 at m6, 1.5e-8 at m10); cost < 3 % in size.
 FLOOR_EXP_DARK = {'upper_hall': 13, 'upper_rooms': 13, 'car': 13, 'exterior': 13}
+# Lightning flash maps (additive, Max only): 1024^2 — what has shipped since the dev bakes; 2048^2 for both would put
+# Max at ~124 MB (budget 120). FINAL-BAKE 2026-10-19.
+FLASH_POLICY = {'max': {**TIER_POLICY['max'], 'size': 1024}}
+# Per-atlas tier sizes (before the maxResolution scale): LM_CAR (maxResolution 1024) keeps Medium = Max = 1024^2 — the
+# C1 cabin is a hero set and it shipped at 1024 on Medium before the Medium policy dropped to 1024 for the house.
+ATLAS_TIER_SIZE = {'car': {'medium': 2048}}
 
 
-def encode_tiers(rgba, atlas_id, out_root, policy=None, intensity=None, max_resolution=2048, on_written=None):
+def encode_tiers(rgba, atlas_id, out_root, policy=None, intensity=None, max_resolution=2048, on_written=None,
+                 label=None):
     """Write <out_root>/<tier>/lm_<atlas_id>.<klm|exr> + lm_<atlas_id>.json sidecar per tier.
 
     Returns [{tier, path, bytes}]. `intensity` is the runtime lightMapIntensity (S3: pi).
@@ -259,9 +283,9 @@ def encode_tiers(rgba, atlas_id, out_root, policy=None, intensity=None, max_reso
     written = []
     cache = {}
     for tier, p in policy.items():
-        size = min(max(64, int(p['size'] * scale)), base)
+        size = min(max(64, int(ATLAS_TIER_SIZE.get(atlas_id, {}).get(tier, p['size']) * scale)), base)
         if size not in cache:
-            cache[size] = downsample(rgba, base // size)
+            cache[size] = downsample(rgba, base // size, label)
         img = cache[size]
         d = Path(out_root) / tier
         if p['container'] == 'exr':

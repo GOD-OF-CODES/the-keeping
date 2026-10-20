@@ -1,0 +1,36 @@
+{
+  "id": "b12_catches",
+  "durationSec": 6.8,
+  "words": [
+    {
+      "text": "Come",
+      "start": 0.544,
+      "end": 0.64
+    },
+    {
+      "text": "on...",
+      "start": 0.773,
+      "end": 2.16
+    },
+    {
+      "text": "come",
+      "start": 2.208,
+      "end": 2.4
+    },
+    {
+      "text": "on—",
+      "start": 2.533,
+      "end": 3.2
+    },
+    {
+      "text": "yes.",
+      "start": 5.1,
+      "end": 5.92
+    },
+    {
+      "text": "Yes.",
+      "start": 6.12,
+      "end": 6.8
+    }
+  ]
+}

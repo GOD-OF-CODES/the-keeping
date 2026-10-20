@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.02122,
-    "p99": 0.14043,
-    "max": 9.7757,
-    "coverage": 0.557
+    "mean": 0.02017,
+    "p99": 0.13795,
+    "max": 8.58315,
+    "coverage": 0.6403
   },
   "file": "lm_upper_hall.klm"
 }

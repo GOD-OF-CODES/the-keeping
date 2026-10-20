@@ -131,7 +131,11 @@ AZ_CANTH = 78.0         # the canthi wrap round the globe (en-ex 30 mm on a 24 m
 # (a little scleral show). r5-r8 had the margins at +26.5 / -27 deg: sclera above AND below a painted disc = a doll.
 # At 21.5 deg the upper margin rests on the dome (cornea surface r 12.35 there = R_LID_IN). Her LEFT eye (0) a touch
 # narrower (under the hair, older swelling).
-EYE_UP = (17.5, 18.5)          # r11: the 1.0 mm margin fillet erodes ~0.6 mm, so 21.5 (r9-r10) still showed sclera
+# #147j (AD round 3, rank 2a: "360 deg scleral show = a startled doll stare"): the ANTERIOR lid edge sits ~14.3 mm from
+# the globe centre, so it projects ~1.3 mm above the margin elevation; at 17.5 / 18.5 the visible edge crossed the
+# limbus only ~0.6 mm at 12 o'clock and sclera showed at 10-11 / 1-2 o'clock (scratchpad j/base_eyes.png). A dead,
+# relaxed upper lid covers 1-2 mm of the cornea; her right (the beaten side) ~1 mm more closed.
+EYE_UP = (12.5, 9.0)           # r11: the 1.0 mm margin fillet erodes ~0.6 mm, so 21.5 (r9-r10) still showed sclera
 EYE_LO = (-26.5, -27.0)        # above the cornea; the lid shell is re-carved round the dome (rests ON the cornea)
 MEDIAL_NOTCH = 3.4      # mm the fissure continues medially past the globe (lacrimal lake + caruncle): ex-en ~28 mm
 
@@ -291,7 +295,9 @@ NOSE_P = [(10.0, 2.0), (0.0, 1.9), (-10.0, 1.6), (-20.0, 1.2), (-27.0, 0.9), (-3
 
 # split lower lip (her LEFT, x +6): a vertical laceration across the vermilion, its axis 0.6 mm under the lip surface
 # (measured: lower lip y -31.6 / -32.8 / -29.6 at z -61 / -63.5 / -68 for x 6)
-LACERATION = [V(6.0, -31.7, -60.8), V(6.3, -32.9, -63.0), V(6.4, -32.6, -64.6)]   # axis ON the skin (0.6 mm under
+# #147f r23: moved to HER RIGHT half (x -> -x): the mirrored hero pose turns her left half away from the torch (split
+# lip -5.6 EV in r22); the same kind of lane-internal side swap as #147d's grip hand
+LACERATION = [V(-6.0, -31.8, -64.4), V(-6.3, -32.5, -66.6), V(-6.4, -31.2, -69.0)]   # #147j: on the drooped lower lip; axis ON the skin (0.6 mm under
 # it left a 0.1 mm membrane in front of the cut = a hanging flap)
 
 
@@ -301,9 +307,48 @@ def lip_lines(u):
     a = np.clip(np.abs(u) / 24.5, 0.0, 1.0)
     drop = -1.4 * a * a                                            # slack, down-turned corners (r4 read as a grin)
     st = -59.6 - 0.35 * (1.0 - a * a) + drop
-    up = -59.4 + drop + 7.0 * np.power(1.0 - a * a, 0.6) + 0.7 * np.exp(-((np.abs(u) - 5.0) / 2.6) ** 2) - 0.9 * np.exp(-(u / 2.0) ** 2)
-    lo = -59.6 + drop - 9.6 * np.power(1.0 - a * a, 0.7) - 1.6 * np.exp(-((u - 8.0) / 6.5) ** 2)
+    # #147j (AD round 3, rank 1: "no Cupid's bow"): bow peaks +1.0 at |u| 5, the philtral dip -1.4 (a 2.4 mm bow; r1-r35
+    # 1.6 mm read as one smooth arc)
+    up = -59.4 + drop + 7.0 * np.power(1.0 - a * a, 0.6) + 1.0 * np.exp(-((np.abs(u) - 5.0) / 2.4) ** 2) - 1.4 * np.exp(-(u / 2.2) ** 2)
+    lo = -59.6 + drop - 9.6 * np.power(1.0 - a * a, 0.7) - 1.6 * np.exp(-((u + 8.0) / 6.5) ** 2)   # r23: swollen RIGHT half
     return up, st, lo
+
+
+# #147j (AD round 3, rank 1: "no lower teeth, no tongue, the lower lip merges into the chin"): the slack dead lower lip
+# DROOPS and everts — its free edge sits LIP_SAG mm under the stomion at the midline, so ~3-4 mm of the lower incisors
+# stand above it (and catch the under-torch over the lip), the wet inner mucosa rolls out on top and the vermilion
+# border moves down a little (eversion shows more vermilion).
+LIP_SAG = 3.6
+
+
+def lip_sag(x):
+    """mm the lower lip's free edge sits under the stomion, vs x (mm across): 3.6 at the midline -> 0 at the corners."""
+    return LIP_SAG * np.power(np.clip(1.0 - (np.asarray(x, float) / 23.0) ** 2, 0.0, 1.0), 1.3)
+
+
+def lower_lines(u):
+    """(free edge z, vermilion border z) of the drooped, everted lower lip vs u."""
+    up, st, lo = lip_lines(u)
+    sg = lip_sag(u)
+    return st - sg, lo - 0.45 * sg
+
+
+# #147h r33: the dead upper lip RETRACTS (drying, tissue shrinkage) and bares the upper incisors — her broken right
+# central incisor included. r1-r32 showed a 1.6 mm sliver of enamel under a full rubbery roll over a red hole: the
+# "puppet mouth". The slit is widened UPWARD only (the jaw warp's split stays at the old stomion) and the upper
+# vermilion's relief rolls back at the retracted edge.
+LIP_RETRACT = 2.6
+# #147j: the tongue (rest space, rides the jaw): swollen and HIGH (asphyxia), its dorsum ~1 mm over the lower incisal
+# edges behind them, so the beam over the drooped lower lip reaches it (r1-r35: (0, 5, -67) r (18.5, 25, 7))
+TONGUE_C = (0.0, 6.0, -64.3)
+TONGUE_R = (19.0, 25.0, 7.4)
+
+
+def lip_retract(x):
+    """mm the upper lip's lower edge sits above the stomion, vs x (mm across): 2.6 at the midline -> 0 at the corners.
+    #147j: decays to the commissure (|x| 24; r33-r35 by |x| 19): the unretracted lateral upper lip hung down beside the
+    opening as a pale pointed lobe = the AD's "fang at the commissure"."""
+    return LIP_RETRACT * np.power(np.clip(1.0 - (np.asarray(x, float) / 24.0) ** 2, 0.0, 1.0), 1.1)
 
 
 def lip_relief(u, v):
@@ -312,15 +357,25 @@ def lip_relief(u, v):
     up, st, lo = lip_lines(u)
     a = np.clip(np.abs(u) / 24.5, 0.0, 1.0)
     side = np.power(np.clip(1.0 - a * a, 0.0, 1.0), 0.45)
-    tu = (up - v) / np.maximum(up - st, 0.3)                       # 0 at the border, 1 at the stomion
+    edge = st + lip_retract(u)
+    tu = (up - v) / np.maximum(up - edge, 0.3)                     # 0 at the border, 1 at the (retracted) lip edge
     # upper-lip skin ramps forward from subnasale (0) to 0.5 at the border; the vermilion carries on to 1 and rolls back
     gu = (0.5 * ss(-1.25, 0.0, tu) + 0.5 * ss(-0.02, 0.35, tu)) * (1.0 - 0.4 * ss(0.5, 1.0, tu)) * (tu <= 1.15)
-    Au = 2.4 * side + 0.6 * np.exp(-(u / 4.0) ** 2)                # + the tubercle
-    roll = 0.35 * np.exp(-((v - (up + 0.55)) / 0.5) ** 2) * side   # white roll just above the border
-    tl = (st - v) / np.maximum(st - lo, 0.3)                       # 0 at the stomion, 1 at the lower border
-    gl = ss(-0.35, 0.38, tl) * (1.0 - ss(0.5, 1.2, tl)) * (tl >= -0.15)
-    Al = 4.8 * side + 2.2 * np.exp(-((u - 8.0) / 6.5) ** 2)
-    return np.where(v > st, Au * gu + roll, Al * gl)
+    # #147j (AD round 3: "a smooth thick tube"): a thinner lateral vermilion and a distinct central TUBERCLE bulging at the
+    # free edge (r22-r35: one even 1.5 mm roll); the WHITE ROLL a 0.7 mm ridge just above the border, catching the
+    # under-torch as a thin highlight line (r35 0.35 mm, invisible)
+    Au = 1.15 * side + 0.35 * np.exp(-(u / 4.0) ** 2)
+    tub = 1.0 * np.exp(-(u / 4.2) ** 2) * ss(0.35, 0.85, tu) * (1.0 - ss(1.0, 1.15, tu))
+    roll = 0.70 * np.exp(-((v - (up + 0.45)) / 0.42) ** 2) * side
+    st_l, lo_l = lower_lines(u)
+    tl = (st_l - v) / np.maximum(st_l - lo_l, 0.3)                 # 0 at the (drooped) free edge, 1 at the lower border
+    # #147j: everted — the forward peak rides HIGH (the wet inner face rolls out on top), then a sharper fall at the
+    # vermilion border into the mentolabial sulcus (r35's soft 0.5-1.2 fall merged the lip into the chin)
+    gl = ss(-0.30, 0.30, tl) * (1.0 - ss(0.62, 1.08, tl)) * (tl >= -0.15)
+    Al = 4.4 * side + 2.2 * np.exp(-((u + 8.0) / 6.5) ** 2)                # r23: her right half swollen; #147h 4.8 -> 3.9 (an inflated pillow); #147j 4.4 everted
+    # a faint lower-lip border ridge (the lower lip's own white roll), a step at the colour border
+    lroll = 0.30 * np.exp(-((v - (lo_l - 0.35)) / 0.45) ** 2) * side
+    return np.where(v > st, Au * gu + tub + roll, Al * gl + lroll)
 
 
 def relief(u, v, asym=1.0):
@@ -354,12 +409,14 @@ def relief(u, v, asym=1.0):
         R += k * _bump(su, v, 13.0, -35.2, 4.6, 4.2, 2.2)                                       # alar lobule fullness
         R += k * _ring(su, v, 12.4, -35.0, 6.4, 5.6, 1.4, -1.3, rot=10.0, arc=(-25.0, 95.0), soft=35.0)   # alar-facial crease
         R += k * _bump(su, v, 4.2, -33.0, 5.5, 6.0, 1.8)                                        # tip lobule (domes)
-        R += k * _ridge(su, v, [(3.4, -43.0), (5.4, -51.8)], 2.3, 0.35, taper=(0.5, 1.0))        # philtral column
+        # philtral column — #147j (AD round 3: "no philtrum"): +1.2 mm (r35 0.35), 7-10 mm apart, ending on the bow peaks
+        R += k * _ridge(su, v, [(3.5, -42.6), (4.3, -47.0), (5.0, -51.6)], 2.5, 1.2, taper=(0.55, 1.0))
     # ---- midline
     R += _bump(u, v, 0.0, 15.5, 12.0, 9.0, 1.4)                                                 # glabella
     R += _ridge(u, v, [(0.0, -37.0), (0.0, -41.5)], 3.4, 2.0, taper=(0.5, 1.0))                 # columella
-    R += _bump(u, v, 0.0, -58.0, 27.0, 16.0, 2.4)                                               # muzzle (orbicularis)
+    R += _bump(u, v, 0.0, -58.0, 27.0, 16.0, 1.8)                                               # muzzle (orbicularis; r22 2.4 -> 1.8)
     R += _bump(u, v, 0.0, -47.0, 9.0, 3.5, -0.5)                                                # upper-lip skin concavity
+    R += _ridge(u, v, [(0.0, -43.2), (0.0, -51.8)], 3.0, -0.9, taper=(0.6, 1.0))               # #147j philtral dimple (groove)
     R += _ridge(u, v, [(-11.0, -79.5), (0.0, -80.5), (11.0, -79.5)], 5.5, -1.6)                 # mentolabial sulcus
     R += _bump(u, v, 0.0, -95.0, 16.0, 11.0, 3.4)                                               # chin pad
     nh = _tab(v, NOSE_H)
@@ -367,6 +424,15 @@ def relief(u, v, asym=1.0):
     t = np.abs(u) / nw
     R += nh * np.power(np.clip(1.0 - t * t, 0.0, 1.0), _tab(v, NOSE_P))
     R += lip_relief(u, v)
+    # ---- #147h (AD round 2 (b): "the macro forms are sculpt-smooth and inflated"): the soft tissue of a beaten,
+    #      waterlogged face — a swollen bag under the black eye (HER RIGHT, u < 0) and the cheek oedema round it; the
+    #      BROKEN nose (a dorsal fracture callus, the tip pushed ~1 mm toward her left); jowls sagging lateral to the
+    #      marionette lines (a dead face sags)
+    R += _bump(u, v, -31.0, -15.5, 12.5, 5.5, 1.8)
+    R += _bump(u, v, -36.0, -22.0, 13.0, 9.0, 1.0, rot=-20.0)
+    R += _bump(u, v, 0.6, -15.0, 5.0, 4.0, 0.8)
+    R += _bump(u, v, 3.4, -31.5, 4.5, 5.0, 0.9) - _bump(u, v, -3.6, -31.5, 4.0, 5.0, 0.7)
+    R += asym * _bump(u, v, 33.0, -82.0, 9.0, 8.0, 1.2) + _bump(-u, v, 33.0, -82.0, 9.0, 8.0, 1.3)
     return R
 
 
@@ -390,7 +456,8 @@ class Face:
         self.nb = V(0.0, t[2], -t[1])
         # cleaver cut (C4-C5, rising toward the nape: a blow from behind and above, sever.py TILT 20 deg)
         self.cut_c = V(0.0, 12.0, -128.0)
-        self.cut_n = _n(V(0.0, -0.36, 1.0))
+        self.cut_n = _n(V(0.0, self.CUT_TILT, 1.0))           # #147g: rising toward the face (was -0.36, toward the nape)
+        self.cut_n2 = _n(V(0.0, self.CUT_TILT + 0.11, 1.0))   # the second stroke, 6 deg steeper
         # dental arches (mm): labial surface of the incisors, y = y0 + k x^2
         self.arch_up = (-21.5, 0.034)      # incisor labial surface ~11 mm behind labrale superius (#147b r1)
         self.arch_lo = (-19.5, 0.036)
@@ -481,6 +548,21 @@ class Face:
         slot = np.maximum(ang * (math.pi / 180.0) * np.maximum(r, R_LID_IN), np.maximum(r - (R_LID_IN + 5.0), (R_LID_IN - 3.0) - r))
         return shell, slot
 
+    def plica_pts(self, k):
+        """#147j: the plica semilunaris of eye k — a crescent (concave laterally) on the globe at ~64 deg medial,
+        elevation -8 .. +8 deg, 0.2 mm proud of the tear film."""
+        s = 1.0 if k == 0 else -1.0
+        out = []
+        for el in np.linspace(-8.5, 8.5, 7):
+            az = -63.5 - 2.2 * (1.0 - (el / 8.5) ** 2)                 # bows medially at the middle
+            a, e = math.radians(az), math.radians(el - 0.6)
+            out.append(self.E[k] + V(s * math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e)) * (R_LID_IN - 0.05))
+        return out
+
+    def plica(self, X, k):
+        pts = self.plica_pts(k)
+        return chain(X, pts, [0.25, 0.42, 0.5, 0.52, 0.5, 0.42, 0.25])
+
     # ---------------------------------------------------------------- the rest model
     def _build_base(self):
         """R(theta, z) on the grid: cross-sections (C1 in z) + relief; and the slope terms for the SDF normalisation."""
@@ -495,6 +577,12 @@ class Face:
         # 1-2 mm of irregularity at 10-30 mm (no CG symmetry): fbm on the unwrapped surface
         P2 = np.stack([U.ravel() / 22.0, ZZ.ravel() / 22.0, np.full(U.size, 0.37)], 1)
         R += (0.55 * noise.fbm(P2, 3, self.seed + 7)).reshape(R0.shape)
+        # #147h: fbm's std is ~0.2, so the line above is only +-0.11 mm. Real soft tissue undulates +-0.3-0.5 mm at
+        # 15-25 mm and ~0.2 mm at 6-10 mm (fat pads, oedema, sag): stronger on the lower face, cheeks, chin and nose
+        # (the AD's wax-knob tip, latex lip roll, smooth chin dome), none on the lids
+        lowf = (ss(-12.0, -24.0, ZZ.ravel()) + 0.6 * ss(30.0, 50.0, np.abs(U.ravel()))) * ss(130.0, 95.0, np.abs(U.ravel()))
+        R += (np.clip(lowf, 0.0, 1.0) * (1.3 * noise.fbm(P2 * 1.15 + 3.1, 3, self.seed + 8)
+                                         + 0.9 * noise.fbm(P2 * 2.9 + 7.7, 2, self.seed + 9))).reshape(R0.shape)
         self.R_th, self.R_z, self.R = th, zq, R
         dRz = np.gradient(R, Z_STEP, axis=0)
         dRt = np.gradient(R, math.radians(TH_STEP), axis=1)             # per radian
@@ -558,10 +646,11 @@ class Face:
         the face front (y < -18)."""
         x, z = X[:, 0], X[:, 2]
         up, st, lo = lip_lines(x)
+        st_l, lo_l = lower_lines(x)                     # #147j: the drooped, everted lower lip
         side = np.abs(x) - 24.6
         front = np.where(X[:, 1] < -18.0, 0.0, 50.0)
         du = np.maximum(np.maximum(z - up, st - z), side) + front
-        dl = np.maximum(np.maximum(z - st, lo - z), side) + front
+        dl = np.maximum(np.maximum(z - st, lo_l - z), side) + front
         return du, dl
 
     def nostrils(self, X, d):
@@ -604,7 +693,12 @@ class Face:
             dm = smax(dm, -slot, 1.0)
             # caruncle + plica: the floor of the lake, added AFTER the slot (r1-r8 placed it inside the slot's window,
             # which carved it away: the medial canthus was an empty corner)
-            dm = smin(dm, ell(Xm, E + V(-s * 14.3, -4.0, -0.9), (1.6, 1.7, 1.1)) + 0.25 * noise.fbm(Xm / 0.8, 2, self.seed + 9), 0.6)   # r13: lumpy, deeper
+            # #147j (AD round 3, rank 2c: "smooth pink pearls sitting outside the eye"): a flatter 3.5 x 3 mm LUMPY mound
+            # set back into the lake (lobules 0.5-1 mm), + the plica semilunaris: a thin vertical crescent fold of
+            # conjunctiva lying on the globe just lateral to it
+            dm = smin(dm, ell(Xm, E + V(-s * 14.6, -3.3, -1.0), (1.9, 1.3, 1.6)) + 0.32 * noise.fbm(Xm / 0.55, 2, self.seed + 9)
+                      + 0.12 * noise.fbm(Xm / 0.25, 1, self.seed + 19), 0.5)
+            dm = smin(dm, self.plica(Xm, k), 0.35)
             d[m] = dm
         m = (np.abs(x) < 40) & (y > -55) & (y < 45) & (z > -90) & (z < -36)
         if m.any():
@@ -613,11 +707,14 @@ class Face:
             dm = smax(dm, -chain(Xm, LACERATION, [0.8, 0.95, 0.7]), 0.3)                      # lip laceration
             up, st, lo = lip_lines(Xm[:, 0])
             cx = np.clip(1.0 - (Xm[:, 0] / 25.0) ** 2, 0.0, 1.0) ** 1.2          # #147d: almond, pinched corners
-            slot = np.maximum(np.abs(Xm[:, 2] - st) - (0.25 + 1.1 * cx), np.maximum(np.abs(Xm[:, 1] + 31.0) - 11.0, np.abs(Xm[:, 0]) - 24.8))
+            ret = lip_retract(Xm[:, 0])                                          # #147h r33: widened upward only
+            sg = lip_sag(Xm[:, 0])                                               # #147j: and DOWNWARD (the drooped lower lip)
+            slot = np.maximum(np.abs(Xm[:, 2] - (st + 0.5 * ret - 0.5 * sg)) - (0.25 + 1.1 * cx + 0.5 * ret + 0.5 * sg),
+                              np.maximum(np.abs(Xm[:, 1] + 31.0) - 11.0, np.abs(Xm[:, 0]) - 24.8))
             # oral cavity between the gum lines (z -67.5 .. -50.5)
             cav = self.cavity(Xm)
             dm = smax(dm, -smin(slot, cav, 2.0), 0.8)
-            dm = smin(dm, ell(Xm, V(0.0, 5.0, -67.0), (18.5, 25.0, 7.0)), 2.5)               # tongue (swollen, high)
+            dm = smin(dm, ell(Xm, V(*TONGUE_C), TONGUE_R) + 0.35 * noise.fbm(Xm / 3.0, 2, self.seed + 60), 2.5)   # tongue (swollen, high; #147j lumpy)
             xs = np.linspace(-22.0, 22.0, 9)
             y0, kk = self.arch_up
             dm = smin(dm, chain(Xm, [V(xx, y0 + kk * xx * xx + 2.6, -49.6) for xx in xs], [2.5] * len(xs)), 1.6)
@@ -634,91 +731,217 @@ class Face:
                                        ec + V(s * 3.5, 11.0, -14.0), ec + V(s * 2.5, 2.0, -24.0)], [2.4] * 5), 1.8)
                 d[m] = smin(d[m], e, 4.0)
         d = d + 0.25 * noise.fbm(X / 9.0, 2, self.seed + 1)
-        cutd = self.cut_dist(X)
         m = z < -95.0
         if m.any():
-            # #147d: the cut must read FROM THE FRONT (r1-r8: a smooth rounded edge under the chin, invisible). Cut skin
-            # retracts: it ends 4-12 mm above the cleaver plane in a ragged torn line, over an exposed band of fat and
-            # muscle 1.2-2 mm inside the skin surface that bulges in bundles; the trachea stump hangs out of the cut.
+            # #147d/#147g: cut skin retracts 5-10 mm above the cleaver surface over an exposed band of subcutaneous fat
+            # 1.2-2 mm inside the skin surface (lobulated); the cut face carries the section anatomy in relief (section())
             Xm = X[m]
-            band = self.tissue_band(Xm, cutd[m])
-            bul = ss(-0.15, 0.55, noise.fbm(Xm * np.array([1.0 / 3.2, 1.0 / 3.2, 1.0 / 7.0]), 3, self.seed + 40))
-            d[m] = d[m] + band * (1.9 - 1.5 * bul)
-        d = smax(d, cutd, 0.6)
-        if m.any():
-            d[m] = smin(d[m], self.neck_extras(X[m]), 1.2)
+            cutp = self.cut_plane(Xm)
+            near = cutp > -25.0
+            band = self.tissue_band(Xm, cutp)
+            bul = ss(-0.15, 0.55, noise.fbm(Xm * np.array([1.0 / 2.2, 1.0 / 2.2, 1.0 / 4.0]), 3, self.seed + 40))
+            dm = d[m] + band * (1.9 - self.BAND_LUMP * bul)
+            cutd = cutp.copy()
+            if near.any():
+                cutd[near] = self.cut_dist(Xm[near])
+            dm = smax(dm, cutd, 0.5)
+            if near.any():
+                dm[near] = smax(dm[near], -self.holes(Xm[near]), 0.35)
+            d[m] = smin(dm, self.neck_extras(Xm), 0.9)
         return d
 
-    # ---------------------------------------------------------------- the cut neck (#147d)
-    def cut_dist(self, X):
-        """Signed distance-ish to the cleaver plane (> 0 = cut away), with a 2.2 mm irregular hack."""
-        return -((X - self.cut_c) @ self.cut_n) + 2.2 * noise.fbm(X / 11.0, 3, self.seed + 2)
+    # ---------------------------------------------------------------- the cut neck (#147d; rebuilt #147g)
+    # #147g (AD round 2, rank 1): a CLEAVER CHOP, not a tear. Two hog-cleaver strokes (DESIGN: he struck twice, she lay on
+    # the sawbuck table): the main plane + a second stroke 3.2 mm higher over the front ~45 % of the section, 6 deg
+    # steeper, meeting at a ledge; two V-shaped chop notches where the blade bit in and was wrenched out; a near-planar
+    # face (1 mm hack, 0.25 mm blade chatter) carrying the SECTION ANATOMY of the neck at C4 in relief (soft tissue
+    # retracts 1-3 mm, cut muscles bulge, bone and cartilage stand proud): yellow subcutaneous fat ring, SCM / strap /
+    # scalene / longus / posterior muscle faces, the trachea C-ring (pale cartilage, flat posterior membrane, DARK OPEN
+    # LUMEN 14 mm deep), the collapsed oesophagus slit behind it, carotid stubs (empty, clot-plugged) and collapsed
+    # jugulars, the C4 vertebral body (cortical rim + cancellous face), lateral masses, laminae, the spinal cord in its
+    # canal. The skin edge retracts 5-10 mm above the cut over an exposed band of fat. Three IRREGULAR fibrin-clot
+    # strings (9 / 21 / 34 mm, beaded) replace r20-r24's even fringe of five drips + four tags (read as candle wax).
+    # The plane rises toward the FACE (tilt +0.25, the stump faces down-forward; r1-r24: rising toward the nape, the
+    # stump faced down-BACK and was invisible from any camera in front of the face — scratchpad g/cutstudy.py).
+    CUT_TILT = 0.25
+    BAND_LUMP = 0.5                          # mm of lobule bulge on the exposed fat band (r29: 1.0 = a pie-crust rim)
+    LEDGE = 3.2                              # mm: the second stroke over the front of the section
+    NOTCHES = (((-27.0, 47.0), (16.0, 41.0), 2.8, 1.5), ((4.0, 78.0), (30.0, 70.0), 2.2, 1.2))   # (a, b) xy, depth, half-width
+
+    def cut_plane(self, X):
+        """Signed distance-ish to the two-stroke cleaver surface WITHOUT the tissue relief (> 0 = cut away)."""
+        x, y = X[:, 0], X[:, 1]
+        d1 = -((X - self.cut_c) @ self.cut_n)
+        d2 = -((X - (self.cut_c + V(0.0, 0.0, self.LEDGE))) @ self.cut_n2)
+        ystep = 47.0 + 5.0 * np.sin(x / 17.0 + 0.6) + 1.5 * noise.fbm(X / 6.0, 2, self.seed + 3)
+        w = ss(ystep - 0.7, ystep + 0.7, y)                                   # 0 front (stroke 2), 1 back (stroke 1)
+        d = d2 * (1.0 - w) + d1 * w
+        return d + 1.0 * noise.fbm(X / 11.0, 3, self.seed + 2) + 0.25 * noise.fbm(X / 1.4, 2, self.seed + 4)
+
+    def cut_dist(self, X, sec=None):
+        """The cut face (> 0 = cut away): cut_plane + the section relief (recessed > 0) + chop notches."""
+        if sec is None:
+            sec = self.section(X)
+        d = self.cut_plane(X) + sec['rel']
+        x, y = X[:, 0], X[:, 1]
+        for (a, b, dep, hw) in self.NOTCHES:
+            a, b = np.asarray(a, float), np.asarray(b, float)
+            ab = b - a
+            t = np.clip(((x - a[0]) * ab[0] + (y - a[1]) * ab[1]) / (ab @ ab), 0.0, 1.0)
+            dd = np.hypot(x - (a[0] + t * ab[0]), y - (a[1] + t * ab[1]))
+            taper = np.sin(np.pi * t) ** 0.5
+            d = d + dep * taper * np.clip(1.0 - dd / hw, 0.0, 1.0)          # V-groove: more removed = recessed
+        return d
+
+    @staticmethod
+    def _ell2(x, y, c, ab, rot=0.0, soft=0.12):
+        """Soft 2-D elliptical mask (1 inside) and its normalised radius."""
+        dx, dy = x - c[0], y - c[1]
+        if rot:
+            cr, sr = math.cos(math.radians(rot)), math.sin(math.radians(rot))
+            dx, dy = dx * cr + dy * sr, -dx * sr + dy * cr
+        rho = np.sqrt((dx / ab[0]) ** 2 + (dy / ab[1]) ** 2)
+        return 1.0 - ss(1.0 - soft, 1.0 + soft, rho), rho
+
+    def section(self, X):
+        """Neck cross-section at the cut (C4, adult woman; head space x, y mm; Gray's / Netter proportions scaled to this
+        neck: front skin at y 12, back at 104, +-50 mm wide). Returns masks (0..1) and `rel` (mm the cut face of each
+        tissue sits RECESSED from the cleaver surface; < 0 = proud)."""
+        x, y = X[:, 0], X[:, 1]
+        ax = np.abs(x)
+        n = len(X)
+        dep = np.maximum(-self.base(X), 0.0)                                  # mm under the base skin
+        fat_t = 2.0 + 3.0 * ss(30.0, 90.0, y)                                 # subcutaneous fat 2 mm front -> 5 mm nape
+        nz = noise.fbm(X / 2.2, 2, self.seed + 60)
+        nzb = noise.fbm(X / 4.5, 2, self.seed + 61)
+        M = {}
+        rel = 0.9 + 0.45 * nz                                                 # fat: lobulated, ~1 mm recessed
+        kind_order = []
+
+        def put(name, m, r):
+            nonlocal rel
+            M[name] = np.maximum(M.get(name, np.zeros(n)), m)
+            rel = rel * (1.0 - m) + r * m
+            kind_order.append(name)
+        inner = ss(fat_t - 0.6, fat_t + 0.6, dep)
+        # everything under the fat ring is muscle / connective tissue with thin fat septa (the numpy preview with fat as
+        # the default fill read as a 'pizza': a flat yellow disc with red spots)
+        septa = 1.0 - ss(0.0, 0.06, np.abs(nzb))
+        put('muscle', inner * (1.0 - 0.8 * septa), 2.0 + 0.8 * nz)
+        for s in (1.0, -1.0):
+            m, rho = self._ell2(x, y, (s * 33.5, 28.0), (12.5, 6.2), rot=s * 32.0)                     # sternocleidomastoid
+            put('muscle', m * inner, 2.7 - 1.5 * np.clip(1.0 - rho * rho, 0, 1) + 0.4 * nz)
+            m, rho = self._ell2(x, y, (s * 8.0, 17.3), (7.5, 2.3), rot=s * -8.0)                       # strap muscles
+            put('muscle', m, 1.7 - 0.8 * np.clip(1.0 - rho * rho, 0, 1))
+            m, rho = self._ell2(x, y, (s * 31.0, 54.0), (7.5, 9.5), rot=s * 20.0)                      # scalenes / levator
+            put('muscle', m * inner, 2.4 - 1.0 * np.clip(1.0 - rho * rho, 0, 1) + 0.5 * nz)
+            m, rho = self._ell2(x, y, (s * 7.5, 47.5), (5.5, 2.8))                                    # longus colli
+            put('muscle', m, 1.9 - 0.7 * np.clip(1.0 - rho * rho, 0, 1))
+            m, _ = self._ell2(x, y, (s * 12.5, 31.0), (4.6, 6.5), rot=s * 15.0)                        # thyroid lobe
+            put('thyroid', m, 1.3 + 0.3 * nz)
+            m, _ = self._ell2(x, y, (s * 28.5, 35.5), (5.0, 2.4), rot=s * 25.0)                        # internal jugular (collapsed, clotted)
+            put('vein', m, 0.4 + 0.3 * nz)
+            m, rho = self._ell2(x, y, (s * 21.0, 37.0), (3.7, 3.7), soft=0.08)                         # common carotid stub
+            put('artery', m, 0.4 + 0.3 * nz)                       # r27: proud stubs read as white PVC pipes; arteries retract
+            m, _ = self._ell2(x, y, (s * 17.5, 62.0), (6.0, 5.0))                                     # lateral mass (bone)
+            put('bone', m, -0.7)
+        m, rho = self._ell2(x, y, (-2.5, 38.8), (9.5, 3.5), rot=-6.0)                                  # oesophagus (collapsed)
+        put('oeso', m, 0.9)
+        # trachea: a C of hyaline cartilage open at the back, the flat trachealis membrane closing it
+        mt, rt = self._ell2(x, y, (0.0, 25.5), (8.6, 7.6), soft=0.06)
+        back = ss(31.0, 32.0, y)
+        put('membrane', mt * back, 0.5)
+        put('cartilage', mt * (1.0 - back) * ss(0.70, 0.80, rt), -0.6)   # r27: -1.6 proud = a pipe
+        # C4 vertebral body (cortical rim proud, cancellous face), the canal, the cord, the laminae + spinous process
+        mv, rv = self._ell2(x, y, (0.0, 58.0), (10.5, 8.0), soft=0.06)
+        put('bone', mv, -1.0 + 0.25 * ss(0.85, 0.6, rv))
+        M['cancel'] = mv * ss(0.86, 0.80, rv)
+        mc, rc = self._ell2(x, y, (0.0, 73.0), (10.5, 6.5), soft=0.08)
+        put('canal', mc, 2.2)
+        mcord, rcord = self._ell2(x, y, (0.0, 72.6), (6.4, 4.1), soft=0.10)
+        put('cord', mcord, 0.7)
+        M['dura'] = mc * ss(0.75, 0.92, rc) * (1.0 - mcord)
+        # grey-matter butterfly (H): two crescents of the cord
+        gx = np.abs(x) - 2.6
+        M['grey'] = mcord * (1.0 - ss(0.8, 1.3, np.sqrt((gx / 1.6) ** 2 + ((y - 72.6) / 3.0) ** 2))) + mcord * (1.0 - ss(0.5, 0.9, np.hypot(x / 2.6, (y - 72.4) / 0.7)))
+        lam = np.zeros(n)
+        for s in (1.0, -1.0):
+            a2, b2 = V(s * 11.0, 77.5, 0.0)[:2], V(s * 1.0, 87.5, 0.0)[:2]
+            ab = b2 - a2
+            t = np.clip(((x - a2[0]) * ab[0] + (y - a2[1]) * ab[1]) / (ab @ ab), 0, 1)
+            lam = np.maximum(lam, 1.0 - ss(1.2, 1.8, np.hypot(x - a2[0] - t * ab[0], y - a2[1] - t * ab[1])))
+        lam = np.maximum(lam, 1.0 - ss(1.0, 1.6, np.hypot(np.abs(x) - 1.6, np.clip(y - 87.5, 0, None) * 0.0 + np.maximum(np.abs(y - 90.5) - 3.0, 0))))
+        put('bone', lam, -0.6)
+        M['fat'] = np.clip(1.0 - sum(M.get(k, 0.0) for k in ('muscle', 'thyroid', 'vein', 'artery', 'bone', 'oeso', 'membrane',
+                                                             'cartilage', 'canal')), 0.0, 1.0)
+        M['dep'] = dep
+        M['rel'] = rel
+        return M
+
+    def holes(self, X):
+        """SDF of the open lumens cut into the face (trachea 14 mm deep, oesophagus slit 5 mm, carotids 2.5 mm), > 0
+        outside; measured along the stump normal from the cleaver surface."""
+        x, y = X[:, 0], X[:, 1]
+        up = -self.cut_plane(X)                                                # mm above (inside) the cut surface
+        out = np.full(len(X), 1e3)
+        lum = np.hypot(x / 6.6, (y - 25.0) / 5.4)
+        out = np.minimum(out, np.maximum((lum - 1.0) * 5.4, up - 14.0))
+        oe = np.hypot((x + 2.5) / 7.0, (y - 38.8) / 0.9)
+        out = np.minimum(out, np.maximum((oe - 1.0) * 0.9, up - 5.0))
+        for s in (1.0, -1.0):
+            ca = np.hypot(x - s * 21.0, y - 37.0) - 2.4
+            out = np.minimum(out, np.maximum(ca, up - (2.5 if s > 0 else 1.6)))  # clot plug 1.6-2.5 mm down
+        return out
 
     def skin_line(self, X):
-        """Height (mm above the cut) of the retracted, torn skin edge: 4-12 mm, ragged (tears + 1 mm saw teeth)."""
-        return (7.5 + 3.2 * noise.fbm(X / 13.0, 2, self.seed + 41) + 1.3 * noise.fbm(X / 2.4, 2, self.seed + 42)
-                + 0.6 * np.abs(noise.perlin(X / 0.9, self.seed + 43)))
+        """Height (mm above the cut) of the retracted skin edge: 5-10 mm (AD round 2), ragged (tears + 1 mm saw teeth)."""
+        # r27: the even 7.5 +- 2 mm band read as a cake layer: uneven retraction (3.5-11 mm, jagged)
+        return (7.0 + 3.6 * noise.fbm(X / 9.0, 2, self.seed + 41) + 1.2 * noise.fbm(X / 2.4, 2, self.seed + 42)
+                + 0.5 * np.abs(noise.perlin(X / 0.9, self.seed + 43)))
 
-    def tissue_band(self, X, cutd=None):
-        """1 on the exposed tissue between the torn skin edge and the cut plane, 0 on skin (0.5 mm transition)."""
-        if cutd is None:
-            cutd = self.cut_dist(X)
-        return ss(-self.skin_line(X) - 0.25, -self.skin_line(X) + 0.25, cutd)
+    def tissue_band(self, X, cutp=None):
+        """1 on the exposed tissue between the retracted skin edge and the cut, 0 on skin (0.5 mm transition)."""
+        if cutp is None:
+            cutp = self.cut_plane(X)
+        return ss(-self.skin_line(X) - 0.25, -self.skin_line(X) + 0.25, cutp)
 
-    TRACH_A = V(0.0, 25.0, -112.0)          # trachea axis (rest/deformed: the neck does not move with the jaw)
-    TRACH_B = V(0.0, 20.5, -139.0)          # #147e: its torn end hangs ~15 mm below the front of the cut (r9-r14: 9 mm,
-    #                                         hidden behind the chin from the hero camera)
-    TRACH_R = 8.3                           # adult female trachea ~16-17 mm outer diameter, 2 mm wall
+    def cut_z(self, x, y):
+        """z (mm) of the cleaver surface (no relief) at (x, y), by bisection."""
+        lo, hi = -190.0, -60.0
+        for _ in range(40):
+            mid = 0.5 * (lo + hi)
+            if self.cut_plane(V(x, y, mid)[None, :])[0] > 0:
+                lo = mid
+            else:
+                hi = mid
+        return 0.5 * (lo + hi)
 
-    def trachea(self, X):
-        """(outer SDF of the protruding trachea stump with cartilage rings + a ragged torn end, lumen SDF)."""
-        A, B = self.TRACH_A, self.TRACH_B
-        ab = B - A
-        L = np.linalg.norm(ab)
-        u = ab / L
-        q = X - A
-        t = q @ u
-        rad = np.linalg.norm(q - t[:, None] * u[None], axis=1)
-        # C-rings, 3.9 mm pitch, irregular (r9: 0.32 mm regular rings read as a plastic bottle's screw thread)
-        ring = (0.16 + 0.08 * noise.perlin(X / 3.0, self.seed + 46)) * np.cos(2.0 * math.pi * (t + 0.6 * noise.perlin(X / 6.0, self.seed + 47)) / 3.9) * ss(0.0, 3.0, t)
-        back = (X[:, 1] - (A[1] + 6.2 + 0.0 * t))                                      # flat membranous back wall
-        side = np.maximum(rad - (self.TRACH_R + ring), back)
-        end = t - (L + 1.8 * noise.fbm(X / 2.2, 2, self.seed + 44))                     # torn end
-        outer = np.maximum(side, np.maximum(end, -t))
-        lumen = rad - 6.1
-        return outer, lumen
+    # fibrin-clot strings: (anchor x, y on the cut face, length mm, sway mm, seed) — irregular lengths and beading
+    STRINGS = ((-5.5, 19.0, 34.0, 2.2, 1), (13.0, 33.5, 21.0, 1.4, 2), (-24.0, 27.0, 9.0, 0.8, 3))
+    STRING_DOWN = (0.0, -0.30, -1.0)        # head space; the chin-up hold leans 'down' toward the face
 
-    def neck_anchor(self, x, inset):
-        """A point `inset` mm inside the front neck skin at lateral x, 1 mm above the cleaver plane there."""
-        key = (round(float(x), 2), round(float(inset), 2))
-        cache = self.__dict__.setdefault('_anchors', {})
-        if key not in cache:
-            z = -126.0
-            for _ in range(3):                                     # the plane rises 0.36 mm per mm toward the back
-                y = float(self.surface_y(x, z)[0])
-                z = float(self.cut_c[2] + 0.36 * (y - self.cut_c[1]) / 1.0) + 1.0
-            n = _n(V(x, y - AY, 0.0))                              # outward (radial from the axis)
-            cache[key] = V(x, y, z) - n * inset
-        return cache[key]
-
-    # torn muscle tags (x, radius, hang length) and clotted drips (x, length): strap muscles and the sternocleidomastoid
-    # ends retract unevenly and hang out of the cut; blood beads at the lowest front points
-    TAGS = ((-21.0, 3.0, 8.0), (16.0, 2.4, 5.5))      # #147d look: 3 tags + 3 drips read as a row of icicles
-    DRIPS = ((6.0, 8.0), (-12.5, 4.5), (-3.0, 6.0))   # #147e: longer (they hung inside the bottom edge's dark)
+    def string_pts(self, i):
+        x0, y0, ln, sw, sd = self.STRINGS[i]
+        a = V(x0, y0, self.cut_z(x0, y0) + 0.8)
+        dn = _n(self.STRING_DOWN)
+        side = _n(np.cross(dn, V(0.0, 1.0, 0.0)))
+        k = 7
+        pts, rads = [], []
+        rng = np.random.default_rng(470 + sd)
+        for j in range(k):
+            t = j / (k - 1)
+            pts.append(a + dn * (ln * t) + side * (sw * math.sin(2.6 * t * math.pi + sd)) + V(0.0, 0.4 * sd * t, 0.0))
+            rads.append((1.25 - 0.55 * t) * (0.75 + 0.5 * rng.random()))     # beaded, thinning
+        return pts, rads, ln
 
     def neck_extras(self, X):
-        """Trachea stump (hollow) + torn muscle tags + clotted drips, unioned under the cut."""
-        outer, lumen = self.trachea(X)
-        d = smax(outer, -lumen, 0.5)
-        for x, r, ln in self.TAGS:
-            c = self.neck_anchor(x, r * 0.8)
-            # a torn flap, not a stalactite: flattened front-back, lumpy
-            q = (X - c) * np.array([1.0, 1.7, 1.0])
-            dt = sdf.round_cone(q, V(0.0, 0.0, 0.0), V(0.0, -1.0, -ln), r, r * 0.6) + 0.7 * noise.fbm(X / 2.0, 2, self.seed + 45)
-            d = smin(d, dt, 1.0)
-        for x, ln in self.DRIPS:
-            c = self.neck_anchor(x, 0.6)
-            d = smin(d, sdf.round_cone(X, c + V(0.0, 0.0, 1.5), c + V(0.0, 0.2, -ln), 0.7, 1.55), 0.6)   # r18: rounder drop bulbs (glints)
+        """Three fibrin-clot strings ending in drops (unioned under the cut)."""
+        d = np.full(len(X), 1e3)
+        for i in range(len(self.STRINGS)):
+            pts, rads, ln = self.string_pts(i)
+            th = chain(X, pts, rads)
+            drop = sdf.ellipsoid(X, pts[-1] + V(0.0, 0.0, -0.5), (1.0 + 0.03 * ln, 1.0 + 0.03 * ln, 1.3 + 0.04 * ln))
+            d = smin(d, smin(th, drop, 0.6), 0.5)
         return d
 
 
@@ -748,8 +971,14 @@ class Face:
                 tang = _n((1.0, 2.0 * kk * xc, 0.0))
                 out = _n((-2.0 * kk * xc, 1.0, 0.0)) * -1.0       # labial normal (toward the lips, -y at the midline)
                 up = V(0.0, 0.0, -1.0 if lower else 1.0)           # crown -> root
+                # #147j (AD round 3: "the teeth are a flat even strip"): a real adult arch is not CAD — per tooth a
+                # little crowding / rotation (+-4 deg about the long axis), labial-lingual offset and uneven incisal wear
+                jr = np.random.default_rng(int(1000 * (2 if lower else 1) + 10 * (s + 1) + i))
+                rot = math.radians(jr.uniform(-4.0, 4.0))
+                tang, out = (tang * math.cos(rot) + out * math.sin(rot)), (out * math.cos(rot) - tang * math.sin(rot))
                 R = np.stack([tang, -out, up])                      # rows: mesiodistal, lingual, rootward
                 c = V(xc, yc, 0.0) - out * (t * 0.5) + up * (h * 0.5) + V(0, 0, zedge)
+                c = c + out * jr.uniform(-0.35, 0.35) + up * jr.uniform(-0.15, 0.45)
                 if i >= 3:
                     c = c + up * (-0.6 if lower else 0.4)
                 q = (X - c) @ R.T
@@ -765,13 +994,55 @@ class Face:
                     lin = q[:, 1] - (-t * 0.5 + 1.2 + (t - 1.2) * np.clip((q[:, 2] + h * 0.5) / 5.0, 0, 1))
                     td = smax(td, lin, 0.6)
                 elif i == 2:
-                    # canine cusp: two slopes meeting at the cusp tip
-                    td = smax(td, -(q[:, 2] + h * 0.5) + 0.35 * np.abs(q[:, 0]) - 1.2, 0.7)
+                    # canine cusp: two slopes meeting at the cusp tip. #147j: a 45-year-old's canines are WORN — the tip
+                    # 0.3 mm above the incisal plane, flatter slopes (r1-r35: 1.2 mm proud, 0.35 slope = the AD's fang)
+                    td = smax(td, -(q[:, 2] + h * 0.5) + 0.22 * np.abs(q[:, 0]) + 0.3, 0.6)
                 td = td + 0.08 * noise.fbm(q * 0.9 + i * 7.1, 2, 31)                 # cast-free, not CAD-perfect
                 if (not lower) and i == 0 and s < 0:
-                    td = smax(td, -sdf.round_box(q, V(-w * 0.45, 0.0, -h * 0.5), (3.0, 6.0, 2.6), 0.4), 0.3)
+                    td = smax(td, self.fracture_cut(q, w, h), 0.12)
                 d = np.minimum(d, td)
         return d
+
+    @staticmethod
+    def fracture_cut(q, w, h):
+        """#147j (AD round 3: "the broken incisor is a clean black rectangular notch = a missing tooth"): her upper right
+        central incisor fractured OBLIQUELY — an enamel-dentin fracture running ~37 deg from 4.4 mm up the distal edge to
+        the incisal edge 2/3 across, conchoidal (a lingual bevel) and jagged (0.3 mm). > 0 = broken away. q is the
+        tooth frame (mesiodistal, lingual, rootward); e = height above the incisal edge."""
+        e = q[:, 2] + h * 0.5
+        f = 4.4 - 0.75 * (q[:, 0] + w * 0.5) + 0.9 * np.clip(q[:, 1] / 3.0, -1.0, 1.0)     # higher on the lingual side
+        jag = 0.30 * noise.fbm(q * np.array([1.6, 1.6, 2.4]) + 3.3, 2, 47) + 0.10 * noise.fbm(q * 5.0, 1, 48)
+        return f + jag - e
+
+    def fracture_masks(self, X):
+        """(dentin, pulp) 0..1 on the fracture face of her broken incisor, for upper-teeth points X (rest mm): points
+        near the cut surface and deep enough inside the original crown (enamel ~0.8 mm thick at the incisal third)."""
+        y0, kk = self.arch_up
+        w, h, t = 8.5, 10.5, 7.0
+        s, i = -1.0, 0
+        xc = s * (w * 0.5 + 0.15)
+        yc = y0 + kk * xc * xc
+        tang = _n((1.0, 2.0 * kk * xc, 0.0))
+        out = _n((-2.0 * kk * xc, 1.0, 0.0)) * -1.0
+        up = V(0.0, 0.0, 1.0)
+        jr = np.random.default_rng(int(1000 + 10 * (s + 1) + i))
+        rot = math.radians(jr.uniform(-4.0, 4.0))
+        tang, out = (tang * math.cos(rot) + out * math.sin(rot)), (out * math.cos(rot) - tang * math.sin(rot))
+        R = np.stack([tang, -out, up])
+        c = V(xc, yc, 0.0) - out * (t * 0.5) + up * (h * 0.5) + V(0, 0, -61.6)
+        c = c + out * jr.uniform(-0.35, 0.35) + up * jr.uniform(-0.15, 0.45)
+        q = (X - c) @ R.T
+        cut = self.fracture_cut(q, w, h)
+        taper = 1.0 - 0.18 * np.clip(q[:, 2] / (h * 0.5), -1, 1)
+        qq = q.copy()
+        qq[:, 0] = q[:, 0] / taper
+        crown = sdf.round_box(qq, V(0, 0, 0), (w * 0.5, t * 0.5, h * 0.5 + 6.0), 1.1)
+        lin = q[:, 1] - (-t * 0.5 + 1.2 + (t - 1.2) * np.clip((q[:, 2] + h * 0.5) / 5.0, 0, 1))
+        crown = smax(crown, lin, 0.6)
+        onface = 1.0 - ss(0.15, 0.45, np.abs(cut))
+        dentin = onface * ss(0.55, 0.95, -crown)
+        pulp = onface * (1.0 - ss(0.35, 0.7, np.hypot(q[:, 0] + 2.2, q[:, 1] + 1.0)))
+        return np.clip(dentin, 0, 1), np.clip(pulp * ss(0.2, 0.6, -crown), 0, 1)
 
 
 # ------------------------------------------------------------------------------------------------ surface helpers

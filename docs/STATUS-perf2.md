@@ -28,10 +28,13 @@ surgical, every edit logged here), tests/perf-*.test.ts.
    13.9 / 19 / 25) inside the cross-session noise floor (SSIM 0.982–0.9985; 100 % crops: face, hair, boards, blood
    identical to the eye); nothing since dist A changes a C2 pixel (S25: load-time warm only).
    C2 entry frame (S25–S27): the only pipeline built in it (the lamp flag's DoubleSide shadow pipeline) now builds at
-   load; per-pass cost of what remains: q14 (c2entry.mjs).
-5. Gate — DONE on dist C (the final tree): typecheck clean, npm test 349 / 349, vite build + verify-boot OK (S25);
-   strict playthroughs (QA_STRICT=1, scripts/qa/playthrough.mjs) Medium (09:28–09:36) and Max (09:36–09:48): both
-   ended=true at B13 (C7 → title), 0 deaths, console errors 0, exceptions 0 (S30).
+   load; what remains is NAMED by a CPU profile (S35): the cutscene start path (other lanes' files) → For LEAD.
+5. Gate — DONE on dist C (S30: Medium + Max strict, ended B13, 0 deaths, 0 console errors). FINAL TREE = dist E (S34:
+   dist C + the mist prewarm + the C7 headlamp / cabin warm + FLASH's later edits): typecheck clean, npm test 349 / 349,
+   vite build + verify-boot OK, Medium whole route real time (S36: 0.22 %, C2 0 / 1740, the C7 1.78 stall gone),
+   strict gates Medium (S38) AND Max (S39): both ended B13 (C7 → title), 0 deaths, 0 console errors, 0 exceptions.
+   Still open on E: c2rt (q20; C2's code is unchanged since dist C) and a VALID Max whole route (S37: attempt 1 INVALID
+   for machine state, attempt 2 died in the harness; q21 re-runs it).
 
 ## Log
 - S0 2026-10-13 03:4x start. AC power (charging 96 %). A JUMPSCARE Cycles render holds the Blender lock (scare-look
@@ -565,6 +568,48 @@ surgical, every edit logged here), tests/perf-*.test.ts.
   vsync edge, more frames tipped over this run. This round's E-vs-C changes are load-time warm-ups only (they cannot
   run in the update); E also carries the FLASH lane's flashlight / bounce edits made after dist C (09:35). Owner: AI /
   story / the bot (the update path) → handoff + For LEAD. Run valid (other gameplay segments match S28).
+- S37 13:2x WHOLE ROUTE REAL TIME, MAX, DIST E, attempt 1 (12:50–13:23; shot.mjs first waited out a JUMPSCARE Blender
+  render that started after the calm gate; AC 196 / 0; console errors 0; reached B13 with 1 death → the playthrough's
+  "never caught" assert → rc 1 → q20 retries; data kept as v18/rt-max.attempt1.json): TOTAL 4500 / 28877 = 15.6 %
+  (dist C S29: 6.26 %) — INVALID by the S20 / S23 rule: the GAMEPLAY segments are worse across the board (B06 18.8 vs
+  8.6 %, B09 12.4 vs 3.8, B11 34.7 vs 8.1, B12 16.8 vs 0, B05 3.5 vs 3.5), i.e. the machine, not a cutscene path
+  (swap 3.1 / 4 GB used, 80 MB free pages right after). Not used for any claim. One lesson from it for the handoff:
+  its worst C2 frame (8.85, 466 ms) is the vsync guard's 0.875 → 0.85 step re-allocating the scene targets (a new
+  1088×680 rgba16float mip texture) under swap pressure; S29 took the same step with no stall. Every scale step
+  (gameplay dynres too: B05 166–183 ms on both tiers in every run) re-allocates — a sub-viewport render into
+  max-size targets would remove that class (pipeline / dynres work → handoff).
+  Attempt 2 (13:38, calm FALLBACK at load 7: JUMPSCARE renders back to back) died in the harness ("timed out after
+  60 s waiting for document.readyState") — no data. q21 (v19/q21.log) re-runs Max real time after q20 with a 60-min
+  calm fallback and keeps each attempt's JSON.
+- S38 14:2x GATE MEDIUM on DIST E (the final tree; QA_STRICT=1 playthrough, 14:08–14:24, AC; v18/gate-medium/):
+  ended=true beat=B13 (C7 → title), game 526.7 s, deaths 0, console errors 0, exceptions 0; C4a / C5b played, C2b not
+  triggered (optional). gate-03 (C2 parlor): Harlan, Ada and the table candle present and candle-lit; gate-09 the
+  title card. npm test on the same tree 349 / 349 (q20 12:38).
+- S39 15:2x GATE MAX on DIST E (QA_STRICT=1, queued 14:24 behind a JUMPSCARE render + the lead's ship3 gates, ran ≈
+  15:10–15:19; v18/gate-max.attempt1.log, v18/gate-max/): ended=true beat=B13 (C7 → title), game 582.4 s, deaths 0,
+  console errors 0, exceptions 0; C4a / C5b played. q20 marked it "INVALID (battery)" because its power window
+  (14:24–15:19, mostly queue wait) holds 13 battery samples (13:23–13:24 before it, 14:44 while queued) — the run
+  itself is stepped (not timing-sensitive), so the functional gate result stands. Its automatic re-run (attempt 2) I
+  stopped after 28 s in the Chrome queue (my own shot.mjs, SIGTERM; nothing else touched) so the lead's queued ship3
+  gate goes first. GATES ON THE FINAL TREE: Medium + Max strict PASS.
+- S40 15:3x HOUSEKEEPING: dist C deleted (E's gates passed). scratch/dist-perf2-e (196 MB; disk 14 GiB free) is KEPT
+  for the still-queued runs: q20 c2rt Max + Medium (v18/c2rt-{max,medium}.json, CALM-gated) and q21 (after q20) the Max
+  whole route in a calm window (v19/rt-max.json, per-attempt copies v19/rt-max.attemptN.json; log v19/q21.log).
+  How to read them: `node scratch/perf2/rtsum.mjs <json>`; a Max whole route is VALID only if its gameplay segments
+  match S29 (dist C: B05 3.5 · B06 8.6 · B08 11.5 · B09 3.8 · B11 8.1 · B12 0 %), else machine state. Whoever reads
+  them last deletes scratch/dist-perf2-e. No efficiency change of this restart alters a runtime pixel: the mist
+  prewarm and the C7 cabin / headlamp warm are load-time draws into the spare reflection cube and the headlamp map
+  (camera-invisible, restored before play), the WGSL / profile work changed no code.
+- S41 16:3x c2rt MAX on DIST E (q20, 16:16–16:31, calm FALLBACK at load 4.3–6.6: JUMPSCARE Cycles rounds back to back;
+  AC 88 / 0; console errors 0; v18/c2rt-max.json) — INVALID (machine state): its gameplay CONTROL play:B03 missed 23 /
+  382 = 6.0 % (render JS 11–13 ms, update 1.5 ms: GPU / system contention), where every valid c2rt staging run had 0–1 /
+  406 (S11, S24, S27); C2 266 / 1473 = 18 % at the 0.85 floor (the hall had already pushed gameplay dynres to the
+  floor), C2c 0 / 835, B05 8.2 %. A Blender render (1.2 GB RSS, 205 % CPU) started 27 s after it; swap 3.7 / 5 GB used.
+  Not used for any claim; dist C's valid c2rt (S27: Max 1 / 1739, Medium 1 / 1739 = the entry frame only) stands for
+  C2, whose code is unchanged in E (E's additions are load-time warm-ups for C5 / C7). Still queued (AC + calm gated,
+  own Chrome tickets, dist E kept per S40): q20 c2rt Medium, then q21 the Max whole route. This agent ends here; the
+  next agent of this round (#150b) reads v18/c2rt-medium.json and v19/rt-max*.json with rtsum.mjs and the validity
+  rules above, then deletes scratch/dist-perf2-e.
 - Tools (scratch/perf2/): q1.sh … q8.sh (queues), capfit.mjs (caps from cscost rows), cullab.mjs (same-state cull A/B), c5rooms.ts (C5 room lookups, pure), rtsum.mjs (real-time JSON → missed-vsync per segment), lightab.mjs (char LightsNode subset A/B + plain-Standard A/B at frozen C2
   states, fenced gpuFrameMs, stills), cscost.mjs (cs-frames-style real-route wrapper: fenced gpuFrameMs per cutscene
   every 1.5 s of its clock at several scales — the cap measurement).
@@ -580,6 +625,11 @@ surgical, every edit logged here), tests/perf-*.test.ts.
   debug expose (QA only).
 - src/game/main.ts (owned, S25): the tableau / tableau-hall warm steps run with `story.fx.fx('lampFlag', {on: true})`,
   off again before the candle shadow is muted (C2's entry-frame shadow pipeline built at load).
+- src/game/main.ts (owned, S32): the reflections spare-cube prewarm also shows the CS_PREWARM meshes (restored after:
+  only those that were hidden); the C7 cs-shots warm runs the headlamp shadow passes (intensity / autoUpdate forced,
+  restored exactly).
+- src/game/main.ts (owned, S34): the C7 cs-shots warm sets frustumCulled = false on every castShadow mesh under
+  P_CAR_INTERIOR while those passes run (restored after the poses).
 - src/cutscenes/bindings.ts (owned: the CS_CULL_* arrays only, S12): CS_CULL_IDS + 'C5' and its comment block.
 
 ## For LEAD
@@ -591,50 +641,396 @@ surgical, every edit logged here), tests/perf-*.test.ts.
   (render JS ≈ 6 ms), spread over the whole 12.5 s, same 0.85 hold as the baseline, Medium C3 0 / 750. C3 keeps the
   torch in hand at the U2 window: the FLASH lane's beam / look pass is the first suspect — an A/B there (beam off) would
   settle it. One run only.
+- (DONE by the Budgets lane, B2 / B8: setTrim's maroon clone is cached per mesh; C7's first 1.5 s builds nothing.)
+  Was: setTrim('maroon') cloned NEW materials on every call (trimSaved forgot them on 'tan').
+- BUDGETS (#150b) REQUESTS, 2026-10-19 B10:
+  · REQUEST (layout / props, not this lane): P_BED is a `collider: mesh` prop — its exact quilt triangles go to the
+    collision BVH, so a player (or the bot) standing against the bed in U2 runs 11–12 capsule queries per frame at
+    830–900 candidate triangles each: 5.4–8.2 ms of update JS per frame in B06 / B08 (max 20–32 ms, b8 / b11 combo).
+    Give it a `-collider` proxy or a `box` collider (blender/props + layout). The exact triangle-box prefilter saved
+    nothing there (the candidates do overlap the capsule) and was reverted.
+  · KNOWN budget overruns left on the final tree (B10): C5's first seconds, C6 ≈ 656, C7 ≈ 513, C1 60.6 ≈ 508, B05
+    ≈ 466–500 draws on Medium. The fix class is a sound cells-and-portals cull (WIP + its oracle test parked in
+    scratch/perf2/portal-cull-wip/; unsound in the game: yard ground / terrain seen from the hall).
+  · The Max exact A/B (combo, qb9) never ran: the kept culls are proven per pixel on Medium only. Both act per light /
+    per figure (no preset branch), but Max has the lamp cube at a higher resolution and Max-only shadow maps.
+  · Disk: 11 GiB free with dist K present (rule ≥ 12); other lanes' scratch/dist-fb, dist-fb-rel, dist-flash-reverify
+    hold ≈ 540 MB. Dist K deleted at the end (13 GiB free).
+  · NO VALID REAL-TIME NUMBER EXISTS FOR THE TREE AS IT STANDS: both whole-route runs on dist K were invalid (machine
+    state, B11 / B12). Before anyone claims C2 / route smoothness on this tree, run the whole route on Medium + Max in
+    a calm ≈ 45-min window with EVERY other lane's headless Chrome and Blender work paused (calmhold only held Blender).
+  · The strict gates (B14 / B15) cover dist K (scratch/perf2/dist-k-tree.txt). JUMPSCARE's src/cutscenes/death.ts,
+    src/world/jumpscare.ts, src/audio/synth/scare.ts + index.ts and three tests landed AFTER K — the final commit
+    needs its own strict Medium + Max gates.
+- REQUEST (C2 entry frame, S35 — lanes C / cutscenes): the entry frame's extra JS is the cutscene start path —
+  host.play builds the C2 timeline and fires 22 t = 0 cues in one frame (Medium ≈ 7.4 ms; voice.start ≈ 3 ms of it:
+  subtitle DOM + voice-timing fallbackTiming ≈ 1.7 ms). Candidates: precompute voice timing / build the subtitle
+  node ahead of the cue (lane C); instantiate C2's timeline before the trigger fires (cutscenes / story). It is one
+  missed vsync on both tiers; not a judder source.
+- FYI (B08 gameplay, S36): a pre-existing world-UPDATE CPU stretch in U2 at B08's start (236–243 s: update JS 18–24 ms
+  per frame, render 4 ms) sits on the vsync edge — 3 frames over 20 ms on dist C, 37 (2.47 %) on dist E. The update
+  path (AI / story / the bot's own per-frame work) is not this lane; a CPU profile of that window names it.
 - Commit state: HEAD d7022c7 ("Ship 2") carries the #150 light pool / gates + the S1 profile code; STILL UNCOMMITTED
   from this lane: cutscene-profile.ts CUTSCENE_CAP table, bindings.ts C5 cull, char-lights.ts boneSphere buffer,
-  main.ts csCull hook + lamp-flag warm, tests/perf-cs-cap.test.ts +2, this file, contract row #150 additions. All
-  verified on dist C (S25–S30). No commit / push by this lane.
+  main.ts csCull hook + lamp-flag warm + mist prewarm + C7 headlamp / cabin warm, tests/perf-cs-cap.test.ts +2, this
+  file, contract row #150 additions. Final tree = dist E (S34; verification S36+). No commit / push by this lane.
 
-## HANDOFF (Budgets agent) — final (S30+)
-State of the tree (this lane's part; everything verified on scratch/dist-perf2-c = the tree at 07:2x, S25):
-- src/render/char-lights.ts + char-light-select.ts: gated character light list + point / spot pools (S5–S11; in HEAD).
-- src/render/cutscene-profile.ts: hold = max(floor, min(gameplay, CUTSCENE_CAP)) + missed-vsync guard (in HEAD) +
-  the measured caps (uncommitted): Medium C6 0.7 / C6b 0.725 / C7 0.675; Max C2 0.875 / C4c 0.85 / C5 0.9 / C5b 0.95 /
-  C6 0.85 / C6b 0.875 / C7 0.9 (whole route S28 / S29: no revision needed).
+## HANDOFF (Budgets agent) — final (S33+; final tree = scratch/dist-perf2-e, tree snapshot scratch/perf2/dist-e-tree.txt)
+Which tree each number comes from: dist C (S25) = the tree before the S32 / S34 load warm-ups — c2rt, the Max
+whole-route run and the strict gates S27–S30 ran on it; dist E (S34) = the FINAL tree (C + mist prewarm + C7
+headlamp / cabin warm + the FLASH lane's flashlight / bounce edits since 09:35) — Medium whole route S36, C7 / C5
+probes S33 / S34, npm test, typecheck; its strict gates + c2rt + a calm Max whole route are in q20 / q21 (status
+lines S38+ below when they land).
+State of the tree (this lane's part):
+- src/render/char-lights.ts + char-light-select.ts: gated character light list + point / spot pools (S5–S11; in HEAD
+  d7022c7) + the boneSphere buffer (S13, uncommitted).
+- src/render/cutscene-profile.ts: hold = max(floor, min(gameplay, CUTSCENE_CAP)) + missed-vsync guard (in HEAD) + the
+  measured caps (uncommitted): Medium C6 0.7 / C6b 0.725 / C7 0.675; Max C2 0.875 / C4c 0.85 / C5 0.9 / C5b 0.95 /
+  C6 0.85 / C6b 0.875 / C7 0.9. Medium whole route on E (S36): every cutscene ≤ 0.39 % frames > 20 ms → no cap
+  revision.
 - src/cutscenes/bindings.ts: CS_CULL_IDS + 'C5'. src/game/main.ts: hold / guard wiring, updateCharLights last in
-  world(), csCull QA hook, lamp-flag warm. src/game/story-runtime.ts: surgical (above).
-- tests/perf-char-lights.test.ts (3), tests/perf-cs-cap.test.ts (12). Contract row #150.
-RESULTS (final tree): C2 real time 0.06 % missed vsync on Medium and Max (c2rt); whole route Medium 0.13 % total,
-every cutscene < 0.4 %; Max 6.26 % total (baseline 12.1 %), C2 0.75 %. Strict gates both tiers: ending reached, 0
-console errors.
-Measurement tools (scratch/perf2/): cscost.mjs → capfit.mjs (caps); cullab.mjs (same-state cull A/B); rtsum.mjs
-(real-time JSON → missed vsync per segment); frozen.mjs / gateab.mjs (frozen C2 states: ms + stills); c2start.mjs (GPU
-objects created around C2's start); c2entry.mjs (per-pass GPU ms of C2's entry frame, stepped + fenced); progdump.mjs
-(character WGSL); queues q10–q15 (AC / calm gating, power sampler, INVALID marking).
+  world(), csCull QA hook, load warm-ups (lamp flag S25, mist cards S32, C7 headlamp + cabin S32 / S34).
+  src/game/story-runtime.ts: surgical (above).
+- tests/perf-char-lights.test.ts (3), tests/perf-cs-cap.test.ts (12). Contract row #150 (items 1–5).
+RESULTS: C2 (the user's report) — real time C2 → C2c → B05 0.06 % missed vsync on Medium AND Max (dist C, S27; only
+the entry frame); whole route C2 0 / 1740 on Medium (dist E, S36) and 0.75 % on Max (dist C, S29). Baseline at the
+start of the round 9.2 / 11.1 % (S3), the user's report era 21–23 %. Medium whole route on E: 0.22 % total, every
+cutscene ≤ 0.39 %. Max whole route (dist C): 6.26 % total (baseline 12.1 %); the dist-E Max run was INVALID
+(machine, S37).
+Measurement tools (scratch/perf2/): cscost.mjs → capfit.mjs (caps); cullab.mjs (same-state cull A/B; interior
+cutscenes — an exterior one needs a csCull hook for CS_CULL_EXT_IDS too); rtsum.mjs (real-time JSON → missed vsync per
+segment); frozen.mjs / gateab.mjs (frozen C2 states: ms + stills); c2start.mjs (GPU objects created around C2's
+start); c2entry.mjs (stepped + fenced entry frames); c2cues.mjs (per-cue JS of the entry frame); c2prof.mjs +
+profsum.mjs (V8 CPU profile of one stepped frame, mapped through the dist's source maps); c5rooms.ts (a cutscene's
+camera room / PVS walk, pure Node: `node --experimental-strip-types scratch/perf2/c5rooms.ts C6 11.5,-5.5,1.65`);
+progdump.mjs (character WGSL); queues q10–q21 (AC / calm gating, power sampler, INVALID marking, retries).
 Open for Budgets / the next PERF round:
-1. Max cutscenes that cannot hold 60 even at the 0.85 floor (S29, % frames > 20 ms): C4c 24.5, C6 18.5, C3 13.3 (see
-   For LEAD), C5 12.0, C7 9.3. S12's fenced numbers say C4c 4.3 s, C5 0–15 s and C6 are CPU / draw-bound (flat in
-   scale): draw and CPU work, not scale. The missed-vsync guard steps such stretches to the floor with no gain (the
-   ruling's literal behaviour). Candidate: C6 exterior culling (CS_CULL_IDS + CS_CULL_EXT_IDS + 'C6'; PVS EXT1 / EXT2 /
-   G1, flicker gating identical by construction) — needs a same-state still A/B (cullab.mjs) because rooms seen
-   through the house windows would go.
-2. Max freezes ≥ 200 ms with NO GPU-object creation and low JS (S29: C1 30.4 / 70.2, B05, C7 8.55 / 8.65, CR 1.37 up
-   to 733 ms) while the 8 GB M1 swaps 3–4 GB — a memory budget question (Max's working set), as in the baseline.
-3. C2's entry frame: one missed vsync (33.4 ms) on both tiers (S27); stepped + fenced (S31): +16 ms JS (the t = 0
-   cue burst) + ≈ 9 ms GPU (six-face lamp cube) over the next frames. Per-pass timestamps are unusable on the M1
-   (overlapping TBDR passes); a CPU profile of that one frame is the next step.
-4. Reflection dawn / night re-capture (reflections.ts, sky tint crossing 0.6 / 0.2: C5 ≈ 26.6 s, C6b ≈ 2.8 s): the
-   precompile builds content-state pipelines asynchronously (C5 29.0 / 29.12 50 + 83 ms Medium, 100 Max; C6b 2.77
-   83 ms) — wood_furniture_dark, glass_grimy ×3, MeshBasic ×4 / paint_road_yellow, water_ditch — objects the load-time
-   (night, pre-C5 state) capture never saw; then 6 one-face frames. Not caused by the C5 cull (baseline had them).
-   Named in S32: the mist cards' two-pass variants (compileAsync builds none) → load prewarm (S32, if D verifies);
-   the 3 window panes rebuilt SYNC right after the cube swap (C5 29.23) — cause unknown, the next thing to chase
-   (does swapping texNode.value to the alt cube change the program key?); C6b's road materials = content state.
-5. C7 1.78 (Medium 300 ms, Max 217 ms): a SYNC ShadowMaterial pipeline + 3–4 node builds + 48–67 buffers right after
-   the fade-in. NAMED (S32): the maroon cabin clones drawn into runtime_L_HEADLIGHT_L's map for the first time →
-   C7 warm runs the headlamp passes (S32; verified on D or reverted).
-6. CPU render stretches: Medium C1 73.7–74.2 (8 frames of 36–42 ms render JS, then an 84 MB GC frame, 214 + 217 ms) and
-   Max C7 4.57–4.93 (car-POV sign shot over the render-all C1 road set: 57–64 ms render JS × 6, then 348 ms + an 88 MB
-   heap drop). Draw submission + a GC — culling / instancing work.
-7. WGSL flag (S7): (q13 wgsl dumps pending).
+1. Max cutscenes that cannot hold 60 even at the 0.85 floor (dist C, S29, % frames > 20 ms): C4c 24.5, C6 18.5, C3
+   13.3 (For LEAD), C5 12.0, C7 9.3. S12's fenced numbers say C4c 4.3 s, C5 0–15 s and C6 are CPU / draw-bound (flat
+   in scale). The guard steps such stretches to the floor with no gain (the ruling's literal behaviour). C6 culling
+   (CS_CULL_IDS + CS_CULL_EXT_IDS + 'C6'): c5rooms.ts says C6's cameras sit in EXT2 then EXT1 → PVS EXT1 / EXT2 / G1
+   only, so the pump and mirror shots would lose every lit interior behind the house windows — expect a visible
+   difference; a same-state still A/B decides.
+2. Scale steps re-allocate the scene targets (MRT, TAAU history, the viewport mip texture): gameplay dynres (B05
+   166–183 ms on both tiers, every run) and the cutscene guard (S37: 466 ms at C2 8.85 under swap). Rendering into
+   max-size targets with a sub-viewport would remove the class; until then a guard step on Max is a freeze risk when
+   the machine swaps.
+3. Max freezes ≥ 200 ms with NO GPU-object creation and low JS (S29: C1 30.4 / 70.2, B05, C7 8.55 / 8.65, CR 1.37 up
+   to 733 ms) while the 8 GB M1 swaps 3–4 GB — Max's memory working set.
+4. C2's entry frame: one missed vsync on both tiers. NAMED (S35): the cutscene start path (host.play: timeline build +
+   22 t = 0 cues, voice / subtitles ≈ 3 ms, Medium ≈ 7.4 ms of 13.3 ms extra JS) + the torch caster cull / lamp
+   cube redraw (≈ 3 ms) + a GC; the 2nd–3rd frames are first draws of the C2 view's render objects. Not this lane's
+   files → For LEAD requests.
+5. Reflection dawn / night re-capture: on E the SYNC mist builds are gone (S33 / S36); left: C5 29.07 ONE 83 ms frame
+   (Max ≈ 100) = the async precompile of wood_furniture_dark + glass_grimy ×3, and C6b 2.77 83 ms (paint_road_yellow,
+   water_ditch) — content-state pipelines the night capture never saw. Candidate: prewarm the alt-cube capture with
+   the dawn / road content state at load (reflections.ts).
+6. CPU render stretches: Medium C1 73.5–74.0 (render JS 30–38 ms, then a 250 ms frame) and Max C7 4.57–4.93 (car-POV
+   sign shot over the render-all C1 road set: 57–64 ms render JS × 6, then 348 ms + an 88 MB heap drop). Draw
+   submission + a GC — culling / instancing work.
+7. B08 gameplay world-update stretch (S36, For LEAD): update JS 18–24 ms per frame in U2 at 236–243 s.
+DONE this round (closed): C7 1.78 stall (S34 / S36: gone on Medium); C5 mist SYNC builds (S33); WGSL flags (S33:
+three's own cookie-spot codegen, present before #150).
+
+## BUDGETS lane (#150b) — PERF round 2, agent 2 (Budgets + stall leftovers)
+Started 2026-10-19 16:3x. Dist: scratch/dist-perf2-budgets (delete at the end). Scratch: scratch/perf2/b*/ (b1, b2, …).
+Ownership as the Judder lane above, plus (assigned by task item 3, surgical, logged) src/world/cutscene-fx.ts setTrim.
+Tree at start: HEAD b235f41 ("Ship 3") + the Judder lane's uncommitted edits (bindings.ts C5 cull, main.ts warm-ups +
+hold wiring, char-lights.ts boneSphere buffer, cutscene-profile.ts caps, tests/perf-cs-cap.test.ts) + other lanes'
+untracked src/world/jumpscare-math.ts / tests/jumpscare-decode.test.ts. NOTE for readers: the task's item-1 numbers
+(C5 871 draws / 2.85 M Medium) are the PRE-#150 M-A audit (scratch/ma-perf/bud-med.log); C5 is ALREADY in CS_CULL_IDS
+since S12 and sits at ≈ 455 / 1.55 M at C5 0–2 s and 10 s on Medium (S14 / S19) — item 1 = the remaining gap.
+### Items
+(Restarted agent, 21:5x, ruling (az) "finish tonight": B10 = the closing decision. Final tree = dist K.)
+1. C5 to ≤ 400 / 1.5 M Medium, ≤ 500 / 2 M Max, ≥ 55 fps — NOT MET, logged as KNOWN (B10): the portal cull that was
+   to close it is unsound in the game (B8–B9 / qb11) and is reverted; the proven shadow-pass culls remain. Measured
+   on the final tree (B13): C5 Medium 415–448 draws / 1.45–1.47 M triangles at 0.3 / 2.3 / 10 s
+2. Over-budget spots without visible change — PARTIAL, rest KNOWN (B10): torch caster cull (gameplay + C5) and the
+   figure shadow cull ship (exact A/B 0 real differences); C6 / C7 / C1 60.6 exterior shots unchanged (needed the
+   reverted portal / mirror cull)
+3. Stall leftovers — PARTIAL: setTrim clone cache DONE (B8: C7's first 1.5 s builds nothing); B06 / B08 collision =
+   P_BED's mesh collider → For LEAD (prefilter reverted, B8); the rest KNOWN, not chased (ruling (az))
+4. Whole-route real-time table Medium + Max AFTER — NOT VALID: both runs on dist K ran (B11 / B12; tables in
+   scratch/perf2/b12/rt-*-{sum,table}.md) but the machine was loaded (other lanes' Chrome runs, swap 4.5–7.4 GB) →
+   INVALID by the control-segment rule; the hitch classes are named there for orientation only. Needs a calm window
+5. Gate on dist K — typecheck clean, npm test 354 / 354, verify-boot OK (B10); strict Medium PASS (B14); strict Max:
+   PASS (B15). Both: ended B13, 0 deaths, 0 console errors, 0 exceptions
+### Log
+- B0 16:3x START. Machine: AC, FINAL-BAKE's release chain holds Blender (bake_house LM_UPPER_ROOMS 2048, hold on
+  scare-* until ≈ 18:15) → stepped runs only for now (draw counts are not timing-sensitive); real time later. Disk 13 GiB.
+  STOPPED the Judder lane's q20 (it was waiting for c2rt Medium on dist E) and q21 (Max whole route on dist E) at 16:33:
+  neither ran; the handoff's "read v18/c2rt-medium.json + v19/rt-max*.json" is MOOT — this lane's item 4 runs the
+  whole-route tables on its own final tree. dist E deleted once dist F is built (disk).
+- B1 16:4x–17:00 BUDGET AUDIT on dist F (= the tree at start; scratch/perf2/bud.mjs = csbud + per-beat gameplay keys +
+  a PASS × SOURCE breakdown of every over-budget frame; stepped strict-route playthrough, exact draws / triangles of
+  every render target per frame; console errors 0 on both; b1/bud-{medium,max}.json, `node scratch/perf2/budsum.mjs`):
+  Medium (≤ 400 / 1.5 M) frames over budget: **play:B11 1682 / 1692 of 1960** (max 512 d / 1.90 M — gameplay in the
+  hall / G3P while waiting for C5), **C5 248 / 477 of 1013** (503 d / 1.90 M at 0–2.5 s, over until 15.6 s), C4c 28 / 215
+  (2.23 M @ 6.33), C6 92 (656 d @ 20.27), C7 151 (513 d @ 10.83–15.8), C1 51 (508 @ 63.23, 404–450 @ 59–60.6), B05
+  39 / 9 (500 d @ 171.2, 1.93 M @ 213.2), B02 / B03 15–28 (G1 entry, 1.86 M), C2 8 (entry, 1.68 M), C2c 3 + 3 (1.567 M @
+  3.73, 406 d @ 13.17), C4a 4 (407). Max (≤ 500 / 2 M): B11 98 (2.02 M), C5 55 / 99 (505 d / 2.02 M, 0–3.4 s), C6 88
+  (660 d), C7 104 (514 d), C4c / B05 / B02 / C1 1–2 frames.
+  WHERE THE DRAWS GO (Medium, worst frames): interior views (C5, B11, B03, C2, C4c) = main pass 250–290 d / 1.0 M
+  (of it EXT2 seen from the hall: 59–123 d / 0.5–0.8 M) + the TORCH shadow map ("ID: 20" = flashlight.ts's unnamed
+  SpotLight) 112–168 d / 0.43–0.5 M + the LAMP cube 44–106 d / 0.34–0.52 M — in the cube Ada alone is 10–36 d /
+  167–518 k (every character mesh is frustumCulled = false → drawn into all six faces wherever she stands). Exterior
+  render-all shots (C6 19.5–22.3, C7 10.8–15.8, C1 59–60.6): interior rooms drawn from the yard (G3 80, U2 60, G1 57,
+  G2 52, U3 37, U1 35 d …). The task's "C5 871 / 2.85 M" is the pre-#150 number; C5's remaining cost is the same
+  three passes as gameplay in the hall.
+- B2 17:0x CODE (dist G = scratch/dist-perf2-budgets-g; typecheck clean, npm test 354 / 354, verify-boot OK; dist F
+  deleted). Three exact (conservative) culls, each with a runtime A/B switch, all UNVERIFIED until the per-pixel A/B:
+  (a) torch caster cull scope: + C5 (bindings.ts TORCH_CULL_IDS, now exported for `__game.torchCull()`) and GAMEPLAY
+      frames (view-caster-cull.ts VIEW_CULL_SCOPE.play, set in main.ts world() when no cutscene / C4 overlay runs;
+      `?torchcullplay=0`, `__vcMode = 'off'`) — the shadow-cone test of ruling (q), proven 0 px over C2c in fix round 3;
+  (b) src/render/char-shadow-cull.ts NEW: while a shadow map renders, each figure's meshes get frustumCulled = true
+      with the figure's #150 subject sphere (bones + 0.7–0.8 m) as bounding sphere (restored right after; the view pass
+      is untouched) → three's own per-face / per-light frustum test skips faces that cannot hold the figure; installed
+      after the load warm-up (main.ts); `?charshcull=0`, `__charShCull = false`, `__game.charShCull.audit()` (posed
+      bounds inside the figure sphere); story-runtime.ts exposes `shadowFigures` (surgical, logged below);
+  (c) src/world/window-cull.ts (surgical, logged below): an opening wholly outside one side plane of the VIEW frustum
+      (pad 0.25 m) no longer keeps yard meshes alive (the side planes pass through the eye → nothing seen through it
+      can be on screen); level.updateWindowCull gets the camera; `?wcullview=0`, `__wcullView = false`.
+  Also (item 3) src/world/cutscene-fx.ts setTrim: the maroon clone cached per mesh (C7's t = 0 reuses the load
+  warm-up's clones: no node builds / buffers) — logged below.
+  Tools: scratch/perf2/abx.mjs (exact per-frame A/B over the stepped route, scratch/pgr4/ab-lib-t protocol: REF REF
+  TEST REF REF plain renders into half-float targets, frozen node time, every shadow map forced to redraw; per-pixel
+  luminance, real difference = effect > 0 big pixels while the REF / REF floor has 0), bprobe.mjs (frozen-state
+  breakdown + stills per arm), cprobe.mjs (collision query cost per frame — item 3 B06 / B08).
+- B3 17:1x CODE (d) the MIRROR window cull (src/world/window-cull.ts, surgical): an EXTERIOR eye (level room known and
+  not interior, AND the eye outside the interior footprint + 0.45 m) parks interior-room meshes that no ray from the
+  eye through one of the 8 openings can reach on WINDOW_CULL_LAYER (shadow maps that follow the view layers and the
+  reflection captures still draw them); only meshes whose own world bounds lie inside the footprint of every floor
+  they span (+ 0.15 m = inside the walls' outer faces) are ever culled; openings seen from their interior side admit
+  nothing (skipped), an eye in an opening's plane disables the frame's cull; the lit torch is a second eye (its caster
+  set follows the view layers, flashlight.ts F3) with every opening live. Works in gameplay (yard) and render-all
+  shots (C6 19.5–22.3, C7 10.8–15.8, C1 59–60.6, where 330 of 620 view draws are interior rooms). `?wcullext=0`,
+  `__wcullExt = false`. main.ts passes the camera + the lit torch's world position. tests/perf-window-cull.test.ts NEW
+  (4): the front-door case, the porch case, and brute-force SOUNDNESS on the real layout — 300 random interior eyes /
+  views × 30 yard meshes (6.5 k culled) and 300 random exterior eyes (+ torch) × 40 interior meshes (6.4 k culled):
+  no culled point is on screen through an opening (view rule) / on any eye or torch ray through an opening (mirror
+  rule). (A first version treated an opening seen from its interior side as degenerate → culled nothing; fixed.)
+  Typecheck clean, npm test 358 / 358. Dist G rebuilt 17:1x (all of (a)–(d) + setTrim). Queues: qb2 (bud Medium on G
+  → abx 'all' over B11 / C5 / B12 / C6 / C7), qb3 (cprobe B05–B09), qb4 (csprof Max C7 4.4–5.0; C7 start build probe
+  Medium + Max — the setTrim check).
+- B4 17:2x CODE (item 3, B06 / B08 update bursts; NOT in dist G): the v3 Max whole-run profile (smooth-perf
+  v3/prof-ALL.cpuprofile, profwin2 over the B08 burst 238.0–239.6 s, U2) puts 371 of 464 ms of update JS in
+  controller.step → collision.resolve / capsuleIntersect → Octree.triangleCapsuleIntersect (the player blocked
+  against furniture: every 120 Hz substep runs the step-up trials + snapDown bisection = dozens of capsule queries).
+  src/world/collision-bvh.ts (PERF-G-authored; surgical, logged below): a candidate whose triangle box misses the
+  CURRENT capsule's box (axis bounds ± r + 0.1 mm) cannot intersect it (Octree's test only reports contacts on the
+  axis or within r of it) → skipped before the exact test; the box is refreshed after each push-out. Same contacts,
+  same order. `__colPre = false` = off. tests/perf-collision-bvh.test.ts NEW: 3000 random capsules over a 12 k-tri
+  soup, on vs off bit-identical (normal + depth). Node micro-bench (scratch/perf2/colbench.ts, 4000 queries, dense
+  soup): 357–407 → 162–194 ms (−52…−55 %). In-game numbers: cprobe (qb3) on dist G = BEFORE; after on the next dist.
+- B5 17:3x DIST G AUDIT (Medium, b2/bud-medium.json, console errors 0): C7 151 → 0 frames over budget, C2 8 → 0, C2c 6 → 0,
+  C4a 4 → 0, C4c 243 → 41 (the mirror cull + the figure shadow cull work) — but C5 503 → 482 d, B11 512 → 473, C6 656 →
+  606, C1 unchanged: the torch cull, the view-clipped openings and the mirror rule barely move the interior views.
+  Why (scratch/perf2/wcdebug.ts + campath.ts): single-opening sub-frusta are too loose — from the hall the parlor's
+  windows (seen, if at all, only through the parlor doorway) keep the yard beyond them alive, and from the yard G2's
+  windows keep G3 behind G2 alive; the room PVS is static. (The dist-G abx run was stopped before it ran: its scenario
+  was edited for the next tree; dist G deleted.)
+  CODE src/render/portal-cull.ts NEW (owned; level.ts switches to it, `?pcull=0` / `__pcull = false` = the window cull
+  path): exact cells-and-portals visibility. Cells = interior rooms (CLOSET merged into G1 — its 1.3 m wall leaves it
+  open to the hall; U4 + U4T merged — the only room boundary without a wall, scratch/perf2/wallgaps.mjs) + OUT;
+  portals = every wall opening and the two slab holes (stairwell G1 ↔ U1, grate G2 ↔ U2), inflated 0.15 m on the
+  centre plane. Depth-first from the eye with the view's side planes (+ 0.25 m), adding the four planes through the
+  eye and each portal's edges; a portal is entered only from its near side and only if not wholly outside the
+  frustum; a convex cell is never re-entered on one path (a straight ray cannot). A mesh is parked (layer 6) only if it
+  lies wholly inside its cell (interior box ± half wall / slab; OUT: clear of every room box + a wall) and inside NO
+  frustum that reached its cell; the eye's own cell(s) never cull; an eye in a wall / doorway (no cell, inside the
+  footprint) or > 400 frusta → the frame does not cull. D_FRONT shut (angle 0) → its portal shrinks to the glazed
+  fanlight above the leaf (solid panel leaf against stops, doors.py); every other door counts as open. The lit torch is
+  a second eye with its spot cone + 5° as root frustum (its casters follow the view layers, F3). installPortalShadow-
+  Layers: shadow cameras that follow the view layers add layer 6 AT RENDER TIME (ShadowNode.updateShadow wrapper; the
+  window cull's once-a-second light scan missed a light whose mask a cue had just reset — the lamp roaming for a
+  stroke). The cull now runs at the END of main.ts world() (after rig.update: the torch posed for this frame).
+  tests/perf-portal-cull.test.ts NEW (5): a THIN-wall oracle of the real layout (zero-thickness walls with their
+  openings cut out, per-room floor / ceiling planes with their holes, foundation walls, the shut front leaf) — 640
+  random eyes (every room / the yard; door shut / open; ± torch) × 60 meshes: no culled point is on screen through an
+  unobstructed segment from the eye, nor inside the torch cone on an unobstructed segment from the torch. (Its first
+  version flagged a torch ray that passed under an interior wall between two floor rects — an oracle gap, closed by
+  foundation walls + slabs under the walls.) Typecheck clean; npm test 364 / 364 (one earlier run 363 / 364 with one
+  failure that did not reproduce in 3 re-runs — not captured; watching for it).
+  Dist H (scratch/dist-perf2-budgets-h, 17:5x) = (a) torch scope + (b) figure shadow cull + (c) / (d) window-cull rules
+  (now the `?pcull=0` fallback only) + portal cull + collision prefilter + setTrim cache. qb7: bud Medium → abx 'all'
+  late (B11, C5, B12, C6, C7) + early (C1, B02, B03, C2, C2c, B05) → bud Max → cprobe prefilter on / off → C7 start
+  probe Medium + Max → csprof Max C7 4.4–5.0.
+  Asked the lead (main) for a ≈ 45-min Blender-free window for the real-time tables (JUMPSCARE scare-render jobs are
+  back on the Blender lock since ≈ 16:3x).
+- B6 17:5x src/world/window-cull.ts REVERTED to HEAD (its B2 view rule and B3 mirror rule are superseded by the portal
+  cull; the file is again the untouched RUNTIME F2 cull = the `?pcull=0` / `__pcull = false` fallback and the A/B
+  reference) and tests/perf-window-cull.test.ts removed. portal-cull.ts: per-unit world sphere / in-cell result cached
+  while the mesh's matrixWorld is unchanged; meshes of a room the PVS hides this frame are skipped (not drawn anyway);
+  the update's ms is in `level.portalCullStats().ms`. One shot.mjs session per tier from now on: every session waits
+  behind a ≈ 45-min JUMPSCARE render (FCFS lock), so scratch/perf2/combo.mjs does in ONE stepped strict-route
+  playthrough: the budget audit (+ the figure-cull containment audit every 15th frame, + portal-cull state / ms), the
+  exact per-frame A/B 'all' (REF = HEAD behaviour: window cull, no gameplay / C5 torch cull, no figure cull; TEST =
+  this tree) on every 4th frame of C1, B02, B03, C2, C2c, B05, B08, C4c, B11, C5, B12, C6, C7, the collision cost with
+  the prefilter alternating on / off per frame, C7's first 1.5 s node builds / pipelines (setTrim), and on Max a CPU
+  profile of C7 4.4–5.0. Dist I = scratch/dist-perf2-budgets-i (the candidate final tree; typecheck clean, npm test
+  360 / 360, verify-boot OK; tree dist-i-tree.txt, diff dist-i-src.diff); dist H deleted. Queue qb8 (b8/).
+### Budgets lane — edits outside src/render (surgical, logged)
+- src/game/main.ts (owned): import char-shadow-cull + VIEW_CULL_SCOPE; `VIEW_CULL_SCOPE.play` set at the top of world()
+  (gameplay frames: no cutscene, no C4 overlay; `?torchcullplay=0`); the figure shadow cull installed + registered at
+  the end of the afterCompile hook (after every warm-up pose); debug expose `torchCull()`, `charShCull.{stats, audit}`.
+  (The B2–B9 move of level.updateWindowCull to the end of world() with the camera + torch is REVERTED in B10: the call
+  is back at its HEAD place and form.)
+- src/world/level.ts (owned): the portal-cull wiring of B5–B9 REVERTED to HEAD in B10 (file = HEAD).
+- src/cutscenes/bindings.ts (the cull arrays): TORCH_CULL_IDS exported, + 'C5'.
+- src/game/story-runtime.ts (character light wiring, surgical): `shadowFigures` (Ada body / her head rig / Harlan →
+  the #150 subject spheres, valid only when updateCharLights set them this frame), exposed on the story object.
+- src/world/cutscene-fx.ts (task item 3): setTrim's maroon clone cached per mesh (per original material).
+- src/world/collision-bvh.ts (PERF-G-authored; task item 3, the B06 / B08 bursts): the exact triangle-box prefilter.
+- src/world/window-cull.ts: edited in B2 / B3, REVERTED to HEAD in B6 (untouched now).
+- B7 18:1x the first Medium combo session (started 18:09 after ≈ 27 min behind a JUMPSCARE render + an encode job) died
+  at its first eval: bud.mjs's draw accounting ran for the A/B's own plain renders outside a game frame (its breakdown
+  map was still null) — the scenario's bug, no game error (console errors 0 / exceptions 0). Fixed (counts only inside
+  pipeline.render) and re-queued (qb8, 18:11); the tree is unchanged = dist I (the rebuilt bundles hash-match dist I).
+  Prepared qb9 (after the Medium combo): qb5 on dist I (calm-gated rtplay Medium + Max, then strict gates Medium + Max)
+  → the Max combo (A/B over C0, B02, C3, C4a, B06, B09, B10, B11, C5, C5b, C6, C6b, C7, CR + its budget audit + a CPU
+  profile of C7 4.4–5.0).
+- B8 18:46–19:15 MEDIUM COMBO on dist I (b8/medium/, console errors 0 / exceptions 0, ended B13, 0 deaths):
+  · figure shadow-cull containment audit: 1068 audits route-wide, 0 violations (every posed figure mesh inside its
+    figure sphere);
+  · portal cull ran on 15 996 frames (eye in a wall / doorway 15, torch in a wall 10: those frames don't cull); its
+    update 0.16 ms avg (max 5.3 = the first frame's unit collection);
+  · budgets (bud.json): C5 503 → 452 d, B11 512 → 442, C6 656 → 531, C7 ≤ 400, C2 / C2c / B05 / C4a ≈ in budget —
+    NOT enough: in the hall the view still drew EXT2 80 d / 0.75 M (the portal cull's yard rule kept every yard mesh
+    whose SPHERE came within a wall of the house — terrain tiles, porch, trees — which the window cull had culled);
+  · EXACT A/B 'all' (REF = HEAD behaviour, TEST = this tree; every 4th frame): 0 real differences in C1 (546 frames),
+    B02 (154), B11 (261), C4c (83); REAL DIFFERENCES in C2 22 / 217, C5 70 / 254, B08 27 / 198, B12 9 / 83, B03 3 / 7,
+    C2c 3 / 105, B05 2 / 336, C7 2 / 262, C6 1 / 253 — mostly 1–11 pixels of 92 k at 384 × 240 (rel 2–30 %), but B08
+    235.4 (8 px, abs 0.53) and B12 401.3–402.2 (10 → 150 px, rel ≈ 100 %, and TEST drew 1–2 MORE draws than REF: an
+    object present in one arm only). THE TREE IS NOT SHIPPABLE AS IS — not used for any claim.
+  · collision cost with the prefilter alternating on / off per frame: B06 / B08 in U2 5.4–5.7 ms per frame (max 20–22),
+    11–12 capsule queries per frame at 830–900 candidate triangles per query (elsewhere 9–60) — the prefilter saves
+    nothing there (the candidates DO overlap the capsule: the bot stands against P_BED, a `collider: mesh` prop whose
+    exact quilt triangles go to the BVH). The fix is the bed's collider (a `-collider` proxy / `box`) → For LEAD.
+    collision-bvh.ts + its test REVERTED to HEAD (no out-of-lane edit for a gain of < 0.2 ms).
+  · C7's first 1.5 s: the maroon clones were reused (see b8/medium/col-c7.json; only the rain overlay pipelines at t 0).
+  CODE after dist I (→ dist J, 19:2x): (1) portal cull: never culls a mesh with frustumCulled = false or a material
+  positionNode (draws beyond its geometry bounds); (2) un-culling restores layer 0 only while our layer-6 marker is
+  still set (another system that rewrote the mask keeps its value); (3) a yard mesh culls while its world AABB stays out
+  of every room's own volume (unpadded) — the old sphere-near-the-walls rule kept the terrain / porch / trees;
+  tests/perf-portal-cull.test.ts + 20 facade-hugging yard meshes per trial (pass). npm test 359 / 359 (one of five
+  runs failed tests/arms-pullback.test.ts "walking at a wall the pool stays on the gaze point" — FLASH's test, flaky,
+  the same one S32 saw; not this lane). qb10: the DIAGNOSIS session on dist J — every frame of the bad windows with
+  the A/B mode cycling pcull / torch / charsh / all and the drawn-object diff (REF vs TEST) of each real difference.
+- B9 19:3x–19:5x DIAGNOSIS on dist J (b10/, console errors 0): every frame of the bad windows, the A/B mode cycling per
+  frame. torch: 0 real differences in every window (B03, C2, C2c, B05, B08, C5, C6, C7 — the gameplay / C5 torch
+  caster cull is exact here); charsh (figure shadow cull): 0 in every window; pcull (the portal cull): B03 4 / 6,
+  C2 16 / 26, C2c 1 / 5, B05 1 / 4, B08 6 / 16, C5 7 / 16, C6 0 / 3, C7 0 / 5 → THE PORTAL CULL is the source. The
+  drawn-object diff of every pcull difference: only MAIN-pass objects differ, all culled in TEST (shadow passes
+  identical): the yard / facade (EXT2 terrain, ground planes, groundcover, porch, siding, roofs, chimney, wrecks) and a
+  few G2 props (the parlor lamp, its stool, the whetstone) — so some culled main-pass object is visible; the layout
+  model (thin-wall oracle, eyes now also hugging walls / thresholds) finds no unsound case, so the game's geometry or
+  bounds differ from the model somewhere. qb11 (dist J, B03 → B11): the same windows with the camera pose and a
+  halving culprit search (TEST + a subset of the culled objects back on layer 0 until TEST matches REF) per real
+  difference.
+- B10 21:5x RESTARTED agent (the previous Budgets agent was cut off by a usage limit ≈ 19:50; ruling (az): finish
+  tonight, finish the culling only if close, else revert it and keep what is proven; ONE final dist → qb5).
+  qb11 RESULT (ran 19:43–20:39 after the cut-off, dist J, console errors 0 / exceptions 0, b11/): the portal cull still
+  differs from REF in most frames of every bad window — B03 15 / 26 frames, C2 22 / 26, C5 21 / 40, B08 7 / 40, B05
+  5 / 16 (rel up to 0.96) — and every differing object is MAIN-pass yard geometry seen from an interior eye (EXT2
+  terrain tiles, ground_mud_wet / ground_gravel_wet, groundcover, porch, facade) culled in TEST only. The halving
+  culprit search never ran (combo.mjs has no such code; abx.json has only the drawn-object diffs). Budgets with it on
+  (b11 bud): C5 414 d / 1.64 M, B11 405 / 1.61 M — still over even if it were sound.
+  DECISION: NOT close to done → REVERTED. src/world/level.ts = HEAD again (`git checkout`; its diff was only the
+  portal-cull wiring); main.ts: `level.updateWindowCull(camera.position, t)` back at its HEAD place (right after
+  setViewer), the end-of-world() call removed; src/render/portal-cull.ts + tests/perf-portal-cull.test.ts PARKED in
+  scratch/perf2/portal-cull-wip/ (not in the tree). Hypothesis for a later round: the game's yard bounds / the
+  openings the eye sees through (front door, G1 / G2 windows) differ from the thin-wall model — compare the culled
+  set at B03 124.47 (abx.json bad[0]) against the window cull's live openings for that eye.
+  KEPT (proven, exact same-state per-pixel A/B, B8 'all' + B9 per mode): (a) torch caster cull in gameplay + C5
+  (VIEW_CULL_SCOPE.play, TORCH_CULL_IDS + 'C5'; 0 real differences in every window); (b) figure shadow cull
+  (src/render/char-shadow-cull.ts; 0 real differences, 1068 + 793 containment audits with 0 violations); setTrim clone
+  cache. CAVEAT: B8's B12 401.3–402.2 difference (TEST drew 1–2 MORE draws) was never re-run per mode (b10 / b11 stop
+  before B12); it is attributed to the portal cull's dist-I restore bug by its signature only — both kept culls can
+  only REMOVE shadow-pass draws. Draws they save per frame (b10 per-mode A/B, every shadow map forced to redraw, so an upper bound): figure
+  cull C5 63–102, B08 102–105, C2 / B03 22, B05 15–18, C6 / C7 0; torch cull C5 8–10, B05 3–16, B03 0–7, C2 / C6 / C7 0.
+  BUDGETS ON THE FINAL TREE (not re-audited — one headless Chrome, qb5 holds it): bracketed between dist F (B1, no
+  culls) and F minus the savings above (forced-redraw savings ≥ the natural-frame ones): C5 0–2.5 s 390–503 d (worst
+  frame likely still over 400), B05 466–500, B11 / B08 / C4c lower by up to the figure-cull savings, C6 656, C7 513,
+  C1 60.6 508 (no saving there): KNOWN overruns, not chased (ruling (az)). The exterior render-all shots (C6 / C7 / C1)
+  are interior rooms drawn from the yard — the job the portal cull was for.
+  FINAL TREE = dist K (scratch/dist-perf2-budgets-k, 21:59; tree scratch/perf2/dist-k-tree.txt, diff dist-k-src.diff):
+  typecheck clean, npm test 354 / 354 (b12/npm-test-pre.log), vite build + verify-boot OK (build-k.log). Dist J
+  deleted (disk 11 → 12 GiB; after K 11 GiB again — the other lanes' dist-fb, dist-fb-rel, dist-flash-reverify hold
+  ≈ 540 MB, not mine to delete). qb5 started 21:59:32 (pid 21582, `DIST=scratch/dist-perf2-budgets-k
+  OUTV=scratch/perf2/b12`): npm test → calm-gated rtplay Medium + Max → strict gates Medium + Max; the lead's
+  calmhold set the Blender hold at 21:59 (until 00:29); the JUMPSCARE scare_render started 21:52 (one frame, 96 spp)
+  runs out first (it ended 22:04).
+  22:12 qb5 BUG (never run before this): `for P in ${PRESETS:-medium max}` is ONE word in zsh (no word splitting) →
+  it launched `shot.mjs --preset "medium max"` into `b12/rt-medium max/`. Fixed in place (`${=PRESETS:-…}`, atomic
+  replace), started the fixed instance (pid 26428) BEFORE stopping the old one (21582 + its sampler + its shot.mjs,
+  which was still waiting for the Chrome lock — nothing ran), so calmhold's pgrep never saw qb5 gone and the hold
+  stayed set. The aborted instance's log: b12/aborted/. The rt run now waits for the Chrome lock behind FINAL-BAKE's
+  stepped Max stills run (dist-fb-rel, rv.mjs; swap 5.2 / 6 GB used at 22:12).
+  22:2x FINAL-BAKE's reviewer chain (scratch/final-bake-rv/chain.sh: 7 stepped stills runs + a strict Max playthrough,
+  back to back) kept the 1-min load at 6.2, so qb5's calm() load gate (< 3) would hold the rt runs ≈ 1 h (its 60-min
+  fallback). Removed the load gate (same atomic replace + overlap restart, pid 29466; the hold stayed): AC + no
+  Blender + last Blender log ≥ 90 s remain; shot.mjs's exclusive FCFS Chrome lock keeps every other headless Chrome
+  out of our runs (the chains interleave between runs); validity is decided afterwards by the gameplay control
+  segments (Medium vs S36, Max vs S29), as before.
+- B11 22:4x WHOLE ROUTE REAL TIME, MEDIUM, DIST K (qb5 rt-medium 22:24–22:41, AC 102 / 0 battery, Blender held,
+  console errors 0 / exceptions 0, ended B13 / the ending, 0 deaths; b12/rt-medium.json, -sum.md, -table.md):
+  TOTAL 3356 / 31250 = 10.74 % frames > 20 ms — **INVALID (machine state)** by the S20 / S23 rule: EVERY gameplay
+  control is worse than dist E's S36 (B02 4.55 vs 0.08 %, B05 2.17 vs 0.41, B06 10.1 vs 0, B08 12.6 vs 2.47, B09
+  1.86 vs ≤ 0.02, B11 29.1 vs ≤ 0.02, B12 2.54 vs ≤ 0.02), and so are the cutscenes this lane does not touch (C0
+  3.1 vs 0 — no torch cull there; C1 5.2 vs 0.34). Machine during the run: 1-min load 5.8–9.4, swap 4.5–7.4 GB used,
+  iCloud `bird` at 46 % CPU, the user's own Chrome renderer at 32 %, the game's LOAD took 183.6 s (35.3 s in S36);
+  FINAL-BAKE / JUMPSCARE headless-Chrome runs interleave between ours. Not used for any claim. What it still shows
+  (hitch clusters > 50 ms, table.mjs): the known classes — C1 13.77 one 450 ms GPU-side frame (S36: 233 ms), C5
+  29.28–29.58 the dawn re-capture precompile (b2 p8), C6b 2.78–3.7 the async road pipelines (b12 p5); render-JS-bound
+  stretches of 28–47 ms frames in B11 / C5 / C6 (render JS ≈ 8–9 ms in S36 → CPU starvation); and the B06 / B08 U2
+  update bursts, here 27–31 consecutive frames of 91–162 ms UPDATE JS (B08 242.9: 633 ms) — the P_BED mesh-collider
+  cost (B8) amplified by the 120 Hz substep catch-up on a starved CPU (a slow frame → more substeps next frame).
+  The tree also differs from E outside this lane: HEAD b235f41 (Ship 3: arms.ts, controller.ts step-up rule,
+  flashlight.ts / flashlight-bounce.ts) and FINAL-BAKE's re-baked lightmaps in public/assets (uncommitted). A
+  same-session cull on / off cost probe (b12/bp-c5, bprobe.mjs C5 0.3 / 2.3 / 10, fenced ms + draws + stills) is
+  queued in the Chrome FCFS queue ahead of qb5's gates to separate this lane's culls from the rest.
+- B12 22:5x WHOLE ROUTE REAL TIME, MAX, DIST K (qb5 rt-max ≈ 22:47–22:56 after two FINAL-BAKE Max stills runs, AC 90 /
+  0, console errors 0 / exceptions 0, ended B13, 0 deaths; b12/rt-max.json, -sum.md, -table.md): TOTAL 7960 / 23478 =
+  33.9 % frames > 20 ms — **INVALID (machine state)**: the startup GPU benchmark read 226.9 ms per frame (9–17 ms in
+  every earlier run), swap 6.6 / 7.2 GB used, and every gameplay control is far worse than dist C's S29 (B05 38.1 vs
+  3.5 %, B06 23.9 vs 8.6, B08 11.5 vs 11.5, B09 21.9 vs 3.8, B11 30.0 vs 8.1, B12 27.0 vs 0). Not used for any claim.
+  Freezes ≥ 200 ms in it carry no pipeline / node builds (C1 13.77 1.95 s, C1 30.42 1.05 s, B05 204.5 0.97 s, C1 66.25
+  0.73 s) — the S29 "Max working set under swap" class (handoff item 3), now with 6–7 GB of swap.
+  22:56 qb5 started gate-medium → calmhold LIFTED the Blender hold (its rule: gate-medium's shot.mjs exists, although
+  it is still queued). Chrome FCFS queue at 22:58: FINAL-BAKE meddev3 (running) → JUMPSCARE js-med → our bp-c5 probe →
+  4 FINAL-BAKE runs → our gate-medium → JUMPSCARE js-low; gate-max enqueues after gate-medium. Lead told (SendMessage
+  22:59): a valid real-time table needs every other lane's Chrome + Blender work paused for ≈ 45 min.
+- B13 23:0x SAME-SESSION CULL A/B ON DIST K (bprobe.mjs, Medium, frozen C5 clocks 0.3 / 2.3 / 10, arms base → nocull
+  (`__charShCull = false`, `__vcMode = 'off'`) → base2, natural shadow updates; load 6, Blender running again; console
+  errors 0 / exceptions 0; b12/bp-c5.json, b12/bp-c5/*.jpg):
+  · draws / triangles (exact): base 448 / 1.469 M · 443 / 1.468 M · 415 / 1.453 M vs nocull 451 / 1.495 M · 447 /
+    1.494 M · 431 / 1.490 M — the kept culls remove 3–16 draws / 26–37 k triangles per C5 frame (the torch map's EXT2
+    and U1 casters, Ada's figure draws); base2 = base exactly. C5 on the FINAL tree, Medium: 415–448 draws (OVER the
+    400 budget), 1.45–1.47 M triangles (under 1.5 M) at these clocks.
+  · fenced ms: base 34.04 / 33.08 / 26.48, nocull 31.96 / 30.43 / 24.16, base2 32.72 / 28.00 / 24.69 — the nocull
+    deltas (0.1–1.4 ms under the base mean) sit inside the same-arm spread (base vs base2 0.8–5.1 ms) of a loaded
+    machine: no measurable cost or gain. CPU of the figure cull: ONE ShadowNode.updateShadow per frame passes through it
+    (stats: +46 updates per 46-render arm, 20 meshes applied per update) = one figure-tree walk + 20 matrix inverses.
+  · stills SSIM base vs nocull 0.9974 / 0.9977 / 0.9913, base vs base2 (the noise floor) 0.9970 / 0.9974 / 0.9912 —
+    no visible change (the A/B equals the floor).
+  So the kept culls do not explain the B11 / B12 real-time numbers (they only remove draws and cost ≈ nothing); those
+  runs are machine state as judged above, and whatever else changed since E (Ship 3, the re-baked lightmaps) is
+  unmeasured in real time.
+  23:10 GATES: the Chrome queue is 8 deep (FINAL-BAKE reviewer + JUMPSCARE QA). To get gate-max an earlier ticket I
+  started it myself now (same command as qb5's step: QA_STRICT=1 playthrough.mjs, --preset max, b12/gate-max/, log
+  b12/gate-max.log) and stopped qb5's shell (pid 29466) so it cannot launch a duplicate; its gate-medium shot.mjs
+  (pid 37330, b12/gate-medium.log) keeps running, and its power sampler (pid 29469) keeps writing b12/power.log
+  (killed at the end).
+- B14 23:2x GATE MEDIUM on DIST K (QA_STRICT=1 playthrough, ≈ 23:20–23:26 after the queue; b12/gate-medium/,
+  gate-report.json): ended=true beat=B13 (C7 → title), game 585.4 s, deaths 0, console errors 0, exceptions 0, all
+  18 assertions ok (C1 / C2 / C3 / C5 / C6 / C7 / C4c / C6b / CR played; C4a and C5b played; C2b not triggered —
+  optional); AC throughout (power.log). Stills checked: gate-03 (C2 parlor: candle-lit, Harlan and the table present)
+  and gate-07 (C5 shadowplay: Harlan and Ada torch-lit) render complete — no missing geometry.
+- B15 23:4x GATE MAX on DIST K (QA_STRICT=1, ≈ 23:37–23:43; b12/gate-max/, b12/gate-max.log): ended=true beat=B13,
+  game 527.5 s, deaths 0, console errors 0, exceptions 0, 18 / 18 assertions ok (C4a, C5b played; C2b not triggered);
+  AC (0 battery samples). GATES ON THE FINAL TREE: Medium + Max strict PASS.
+  CLEANUP: power sampler stopped; scratch/dist-perf2-budgets-k DELETED (disk 13 GiB free). To rebuild the same tree
+  for the calm real-time re-run: `npx vite build --outDir scratch/dist-perf2-budgets-k --emptyOutDir && node
+  scripts/verify-boot.mjs scratch/dist-perf2-budgets-k`, then `DIST=… OUTV=… NOGATE=1 zsh scratch/perf2/qb5.sh` (the
+  fixed qb5: presets split, no load gate) — compare with dist-k-tree.txt first (other lanes may have moved the tree).
+  The portal-cull WIP + its oracle test: scratch/perf2/portal-cull-wip/. This lane ENDS here; nothing committed.

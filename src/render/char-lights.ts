@@ -301,11 +301,15 @@ export class CharacterLights {
   }
 }
 
+/** Reused bone-position buffer of boneSphere (called per figure per frame: no per-frame array). */
+const _pts: number[] = [];
+
 /** Bounding sphere (world) of a bone list + `margin` m (flesh, cloth, a hand-held prop beyond the bones). */
 export function boneSphere(bones: Iterable<any>, margin: number, out: Subject): Subject | null {
   let n = 0;
   let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
-  const pts: number[] = [];
+  const pts = _pts;
+  pts.length = 0;
   for (const b of bones) {
     _w.setFromMatrixPosition(b.matrixWorld);
     pts.push(_w.x, _w.y, _w.z);

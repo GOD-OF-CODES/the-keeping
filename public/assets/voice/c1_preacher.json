@@ -1,0 +1,31 @@
+{
+  "id": "c1_preacher",
+  "durationSec": 2.24,
+  "words": [
+    {
+      "text": "Nothing.",
+      "start": 0.422,
+      "end": 0.56
+    },
+    {
+      "text": "Not",
+      "start": 0.68,
+      "end": 1.04
+    },
+    {
+      "text": "even",
+      "start": 1.072,
+      "end": 1.2
+    },
+    {
+      "text": "a",
+      "start": 1.24,
+      "end": 1.28
+    },
+    {
+      "text": "preacher.",
+      "start": 1.333,
+      "end": 2.24
+    }
+  ]
+}

@@ -38,6 +38,15 @@ import {
   vec3,
   vec4,
   velocity,
+  // FINAL #153f: the jittered cutscene motion blur
+  dot,
+  fract,
+  frameId,
+  int,
+  Loop,
+  max,
+  min,
+  screenCoordinate,
 } from 'three/tsl';
 import { taau } from 'three/addons/tsl/display/TAAUNode.js';
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js';
@@ -452,12 +461,50 @@ export function createPipeline(renderer: any, scene: any, camera: any, preset: P
   // pixel. Branch on the amount uniform (coherent: every pixel takes the same side): at 0 the pass is one tap — the
   // same value the 16 identical taps averaged to (velocity × 0 = 0 offset). `?mbskip=0` restores the old pass for A/Bs.
   const MB_SKIP = !/[?&]mbskip=0\b/.test(typeof location !== 'undefined' ? location.search : '');
+  // FINAL #153f (MAX-BLUR: the whips showed the frame as discrete repeated copies — dotted highlight trails, venetian-
+  // blind balusters, scratch/final/rv/x1-c2c-*.jpg). r186 motionBlur() takes 16 FIXED taps along `velocity` (the NDC
+  // delta, 2 units per frame width) used as a uv offset: the span was 2 frames of motion × amount (a 720° shutter at
+  // amount 1, ≈ 480 px at a 25°/frame whip → taps ≈ 30 px apart). Now: the span a real 180° shutter sweeps — half the
+  // frame's motion, NDC → uv × 0.5 — so amount 1 means what the cues say (C2c: "the same 180° shutter smear"); the span
+  // clamped to 0.3 of the frame (a 0.6 frame-width/frame whip; beyond that a film frame is mush anyway, and long spans
+  // clamp-sample the frame edge); 24 stratified taps whose start is jittered per pixel and per frame (white-noise
+  // hash, see below): the gaps between taps become fine, changing grain
+  // instead of fixed ghost copies. Plain sample() as r186's pass (inside the amount If: uniform control flow).
+  // `?mbjit=0` = the old r186 pass for A/Bs.
+  const MB_JIT = !/[?&]mbjit=0\b/.test(typeof location !== 'undefined' ? location.search : '');
+  const MB_TAPS = 24;
+  const MB_SHUTTER = 0.25; // NDC → uv (0.5) × a 180° shutter (0.5)
+  const MB_MAX_SPAN = 0.3; // uv
+  const jitterBlur = (tex: any, v: any) =>
+    Fn(() => {
+      const uvs = uv();
+      // xy only: the velocity attachment is RGBA (the MRT pads the vec2) — a vec4 length would count its padding
+      const span0 = vec2(v.x, v.y).mul(MB_SHUTTER);
+      const len = span0.length();
+      const span = span0.mul(min(float(1), float(MB_MAX_SPAN).div(max(len, float(1e-6)))));
+      // per-pixel white-noise start (Hoskins' sine-free hash12 on the pixel + a per-frame offset): IGN's diagonal
+      // structure showed as a fine cross-hatch in the smear at 1:1 (no TAA runs after this pass to resolve it)
+      const fk = float(frameId).mod(64);
+      const p = screenCoordinate.xy.add(vec2(fk.mul(37), fk.mul(17)));
+      const p3 = fract(vec3(p.x, p.y, p.x).mul(0.1031)).toVar();
+      p3.addAssign(dot(p3, p3.yzx.add(33.33)));
+      const j = fract(p3.x.add(p3.y).mul(p3.z));
+      const acc = vec4(0).toVar();
+      Loop({ start: int(0), end: int(MB_TAPS), type: 'int', condition: '<' }, ({ i }: any) => {
+        const t = float(i).add(j).div(MB_TAPS).sub(0.5);
+        // NOT .sample(uv).level(0): PassTextureNode.clone() (PassNode.js:69) drops uvNode, so level() after sample()
+        // sampled the pixel's own uv 24 times — the first build of this pass was inert (q1/q2 probes, crisp whips)
+        acc.addAssign(tex.sample(uvs.add(span.mul(t))));
+      });
+      return acc.div(MB_TAPS);
+    })();
+  const blurOf = (tex: any) => (MB_JIT ? jitterBlur(tex, vel.mul(mbAmount)) : motionBlur(tex, vel.mul(mbAmount)));
   const mbGated = (tex: any) => {
-    if (!MB_SKIP) return motionBlur(tex, vel.mul(mbAmount));
+    if (!MB_SKIP) return blurOf(tex);
     return Fn(() => {
       const c = vec4(tex.sample(uv())).toVar();
       If(mbAmount.greaterThan(0), () => {
-        c.assign(motionBlur(tex, vel.mul(mbAmount)));
+        c.assign(blurOf(tex));
       });
       return c;
     })();

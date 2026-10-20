@@ -29,8 +29,9 @@ interface ViewCullCfg {
   st: { u: number; v: number; cut: number; other: number };
 }
 const viewCull = new WeakMap<object, ViewCullCfg>();
-/** Scope gate: the cull runs only while `on` (src/cutscenes/bindings.ts TORCH_CULL_IDS — the cutscenes it was A/B'd in). */
-export const VIEW_CULL_SCOPE = { on: false };
+/** Scope gate: the cull runs only while `on` (src/cutscenes/bindings.ts TORCH_CULL_IDS — the cutscenes it was A/B'd in)
+ *  or `play` (PERF2 BUDGETS #150b: gameplay frames, set by src/game/main.ts world(); `?torchcullplay=0` = off). */
+export const VIEW_CULL_SCOPE = { on: false, play: false };
 let viewCullPatched = false;
 
 /** Pure test (exported for tests): may a caster sphere (c, r) shadow anything inside the planes? planes = [nx, ny, nz, w]
@@ -124,7 +125,7 @@ export function enableViewCasterCull(light: any, fovPadDeg = 0): void {
   SN.updateShadow = function (this: any, frame: any) {
     const cfg = this.light ? viewCull.get(this.light) : undefined;
     const mode = (globalThis as any).__vcMode;
-    if (!cfg || mode === 'off' || (!VIEW_CULL_SCOPE.on && mode !== 'force' && mode !== 'old')) return upd.call(this, frame);
+    if (!cfg || mode === 'off' || (!VIEW_CULL_SCOPE.on && !VIEW_CULL_SCOPE.play && mode !== 'force' && mode !== 'old')) return upd.call(this, frame);
     const cam = frame?.camera;
     const shadow = this.shadow || this.light.shadow;
     const scam = shadow?.camera;

@@ -1,0 +1,21 @@
+{
+  "id": "b09_dress_sob",
+  "durationSec": 2.8,
+  "words": [
+    {
+      "text": "...my",
+      "start": 0.235,
+      "end": 0.328
+    },
+    {
+      "text": "ticket...",
+      "start": 0.431,
+      "end": 2.168
+    },
+    {
+      "text": "hhh...",
+      "start": 2.46,
+      "end": 2.82
+    }
+  ]
+}

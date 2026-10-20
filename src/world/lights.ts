@@ -12,7 +12,7 @@
 // lights are faded by intensity instead.
 
 import * as THREE from 'three/webgpu';
-import { Fn, If, float, mix, pointShadow, smoothstep, time, uniform, uv, vec2, vec3, vec4, sin } from 'three/tsl';
+import { Fn, If, float, mix, pointShadow, positionWorld, renderGroup, smoothstep, time, uniform, uv, vec2, vec3, vec4, sin } from 'three/tsl';
 import type { LevelLayout, LightDef } from '../shared/layout-types.ts';
 import { planToWorld } from '../shared/coords.ts';
 import { LOOK } from '../render/look.ts'; // LIGHTING lane: moon / lightning peak are live look values
@@ -46,6 +46,95 @@ export const SHADOW_ROAM_ROOMS = ['G2', 'G1', 'U1'] as const;
  */
 export const LAMP_CASTER_LAYER = 8;
 const _tv = new THREE.Vector3();
+
+/**
+ * FINAL-B (#154, R1-3): the unshadowed flicker lights of interior rooms light only their own room. L_LAMP_U2 (60 W,
+ * 4.8 cd, range 7 m) stands 17 cm from the U2/U3 wall: with no shadow its light went through the wall onto U3's
+ * probe-lit props and lightmapped walls whenever U2 was in the culling set — U3 (moonlit, ≈ 0.003 lux) popped between
+ * warm amber and black as you turned (R1/R2 reviews: u3-sw mean 17.1 at lamp 4.96 cd vs 0.77 with it at 0). The same
+ * held for every candle near a wall. A ClippedPointLight is a PointLight whose light, on house surfaces (lightmapped
+ * atlas nodes, the probe-lit props), is multiplied by a world box: its room's rect, out to 3 cm past a wall shared with
+ * another room (0 by 12 cm: the walls are 15 cm), 45 cm past an outside wall (window reveals, sills, glass keep the
+ * flame and its highlight), floor to ceiling (+ the floor below under a stairwell-sized hole: U1's landing candle).
+ * Characters keep three's plain point light (char-lights.ts pools map-less PointLights by isPointLight and evaluates
+ * them itself), so a figure standing just behind a wall still catches a neighbour's flicker light (known limit).
+ * The node class is registered once per renderer (registerClippedLights, before the level's materials build).
+ */
+export class ClippedPointLight extends THREE.PointLight {
+  /** World box: lo/hi corners, and the soft fall-off width below lo / above hi (per axis). */
+  clip: { lo: [number, number, number]; hi: [number, number, number]; slo: [number, number, number]; shi: [number, number, number] } | null = null;
+}
+
+/** QA same-frame A/B (`__game.level.lights.clipOn.value = 0`): 1 = clipped to the room (shipped), 0 = three's light. */
+export const uClipOn = uniform(1).setGroup(renderGroup);
+
+class ClippedPointLightNode extends (THREE as any).PointLightNode {
+  setupDirect(builder: any): any {
+    const d = super.setupDirect(builder);
+    const c = (this as any).light?.clip as ClippedPointLight['clip'];
+    if (!c || !d?.lightColor) return d;
+    const lo = vec3(...c.lo);
+    const hi = vec3(...c.hi);
+    const p = positionWorld;
+    const a = smoothstep(lo.sub(vec3(...c.slo)), lo, p);
+    const b = smoothstep(hi, hi.add(vec3(...c.shi)), p).oneMinus();
+    const m = a.x.mul(a.y).mul(a.z).mul(b.x).mul(b.y).mul(b.z);
+    return { ...d, lightColor: d.lightColor.mul(mix(float(1), m, uClipOn)) };
+  }
+}
+
+const registered = new WeakSet<any>();
+/** Call once per renderer BEFORE the level loads (main.ts startLevel): LightsNode resolves node classes by exact
+ *  constructor, so an unregistered ClippedPointLight would be dropped from every light list. */
+export function registerClippedLights(renderer: any): void {
+  const lib = renderer?.library;
+  if (!lib?.addLight || registered.has(lib)) return;
+  lib.addLight(ClippedPointLightNode, ClippedPointLight);
+  registered.add(lib);
+}
+
+/** The clip box (WORLD) of an interior room, or null (exterior / sets / unknown room: never clipped). */
+export function roomClipBox(layout: LevelLayout, roomId: string): ClippedPointLight['clip'] {
+  const r = layout.rooms.find((q) => q.id === roomId);
+  if (!r || r.kind !== 'interior') return null;
+  const elev = (id: string) => layout.floors.find((f) => f.id === id)?.elevation ?? 0;
+  const zr = (q: typeof r): [number, number] => {
+    const e = elev(q.floor);
+    // a stairwell-sized hole (U1: 3.8 m²) opens the floor below; U2's 0.36 m² grate does not (its light through the
+    // grate is in the parlor bake; a box would light the whole parlor ceiling strip under U2)
+    const holeArea = (q.floorHoles ?? []).reduce((a, h) => a + Math.abs((h[2] - h[0]) * (h[3] - h[1])), 0);
+    const below = holeArea >= 1 ? Math.min(...layout.floors.filter((f) => f.id !== 'exterior' && f.id !== 'car' && f.elevation < e).map((f) => f.elevation), e) : e;
+    return [below, e + q.ceiling];
+  };
+  const [z0, z1] = zr(r);
+  const [x0, y0, x1, y1] = r.rect;
+  const NEAR = 0.45; // a neighbour's rect starting within this beyond a side = an interior wall on that side
+  const others = layout.rooms.filter((q) => q.id !== r.id && q.kind === 'interior' && (q as any).within !== r.id && (r as any).within !== q.id);
+  const overlaps = (a0: number, a1: number, b0: number, b1: number) => Math.min(a1, b1) - Math.max(a0, b0) > 0.05;
+  const shared = (side: 'w' | 'e' | 's' | 'n') =>
+    others.some((q) => {
+      const [qx0, qy0, qx1, qy1] = q.rect;
+      const [qz0, qz1] = zr(q);
+      if (!overlaps(z0, z1, qz0, qz1)) return false;
+      if (side === 'w') return qx1 <= x0 + 0.01 && x0 - qx1 < NEAR && overlaps(y0, y1, qy0, qy1);
+      if (side === 'e') return qx0 >= x1 - 0.01 && qx0 - x1 < NEAR && overlaps(y0, y1, qy0, qy1);
+      if (side === 's') return qy1 <= y0 + 0.01 && y0 - qy1 < NEAR && overlaps(x0, x1, qx0, qx1);
+      return qy0 >= y1 - 0.01 && qy0 - y1 < NEAR && overlaps(x0, x1, qx0, qx1);
+    });
+  // [margin past the face, soft width beyond it]
+  const m = (side: 'w' | 'e' | 's' | 'n'): [number, number] => (shared(side) ? [0.03, 0.09] : [0.45, 0.15]);
+  const [mw, sw] = m('w');
+  const [me, se] = m('e');
+  const [ms, ss] = m('s');
+  const [mn, sn] = m('n');
+  // PLAN (x, y, z) → WORLD (x, z, −y): plan north (+y) is world −z
+  return {
+    lo: [x0 - mw, z0 - 0.05, -(y1 + mn)],
+    hi: [x1 + me, z1 + 0.05, -(y0 - ms)],
+    slo: [sw, 0.08, sn],
+    shi: [se, 0.08, ss],
+  };
+}
 const _tm = new THREE.Matrix4();
 /** Tag static props (not room shells / terrain) whose bounds come within `r` m of `flame` (WORLD). Returns the count. */
 export function tagLampCasters(root: any, flame: any, r = 2.5): number {
@@ -262,6 +351,8 @@ function flameMaterial(kind: string, uFlicker: any, seed: number): any {
 export class RuntimeLights {
   readonly group: any;
   readonly flickers: FlickerLight[] = [];
+  /** FINAL-B (#154, R1-3) QA: the room-clip switch of every ClippedPointLight (uClipOn). */
+  readonly clipOn = uClipOn;
   /** Lightning: directional (exterior) + window spots (interior, tiers without flash maps). */
   readonly lightningDir: any;
   readonly lightningSpots: Array<{ light: any; room: string; peak: number }> = [];
@@ -296,7 +387,15 @@ export class RuntimeLights {
         const c = kelvinToLinearRGB(def.kelvin);
         const base = (def as any).cd ?? def.watts / (4 * Math.PI); // lamp: 151 W / 4π = 12.0 cd (flat-wick kerosene 10–15 cd)
         // the shadow lamp: 4.5 m (B7 fallback — fewer casters per cube face; the bake carries its far bounce)
-        const light = new THREE.PointLight(new THREE.Color(c[0], c[1], c[2]), 0, isShadow ? 4.5 : def.role === 'lamp' || def.role === 'lantern' ? 7 : 4.5, 2);
+        // FINAL-B (#154, R1-3): unshadowed flicker lights light their own room only (ClippedPointLight, see above);
+        // the cube-shadowed lamp keeps three's PointLight (its shadow already stops it at the walls)
+        const clip = isShadow ? null : roomClipBox(layout, def.room);
+        const light = clip ? new ClippedPointLight() : new THREE.PointLight();
+        light.color.setRGB(c[0], c[1], c[2]);
+        light.intensity = 0;
+        light.distance = isShadow ? 4.5 : def.role === 'lamp' || def.role === 'lantern' ? 7 : 4.5;
+        light.decay = 2;
+        if (clip) light.clip = clip;
         light.castShadow = false;
         if (isShadow) {
           light.castShadow = true; // fixed for the session (P0-2); muted until a shot needs it

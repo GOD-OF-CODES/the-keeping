@@ -1,0 +1,16 @@
+{
+  "id": "ada_wet_breath",
+  "durationSec": 3.28,
+  "words": [
+    {
+      "text": "Hhhh...",
+      "start": 0.158,
+      "end": 2.722
+    },
+    {
+      "text": "hhhh...",
+      "start": 2.762,
+      "end": 3.282
+    }
+  ]
+}

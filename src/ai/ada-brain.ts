@@ -853,7 +853,10 @@ export class AdaBrain {
           // tell-less death (respawned player on her patrol line: bumped ~13 s after the respawn). An UNAWARE bump now
           // startles her — she stops, the head cracks up (fast wind-up, 1 s) and she looks at you; stay and the look
           // turns into a chase and the grab. A bump while she is already looking at you (sight phase) still catches.
-          if (this.look && this.look.phase !== 'windup') this.doCatch('bump');
+          // JUMPSCARE #147n (final review): the wind-up is a tell, not a pass to walk THROUGH her — the player could stand
+          // inside her body for ~0.7 s (the lens in her neck: near-black frames) until the catch fired at 0.02 m, which
+          // left the death lunge no direction. Pressing into her body (≤ bodyOverlapM) during the tell is the grab.
+          if (this.look && (this.look.phase !== 'windup' || dh <= TUNING.bodyOverlapM)) this.doCatch('bump');
           else if (!this.look) this.startLook('bump', this.yawTo(p.eye), true, null, 0);
         }
       }

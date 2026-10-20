@@ -1,0 +1,41 @@
+{
+  "id": "b11_look",
+  "durationSec": 7.36,
+  "words": [
+    {
+      "text": "Look.",
+      "start": 0.349,
+      "end": 1.2
+    },
+    {
+      "text": "It's",
+      "start": 2.707,
+      "end": 2.8
+    },
+    {
+      "text": "him.",
+      "start": 2.9,
+      "end": 3.44
+    },
+    {
+      "text": "It's",
+      "start": 5.173,
+      "end": 5.28
+    },
+    {
+      "text": "him",
+      "start": 5.34,
+      "end": 5.52
+    },
+    {
+      "text": "you",
+      "start": 5.56,
+      "end": 5.68
+    },
+    {
+      "text": "want.",
+      "start": 5.792,
+      "end": 7.36
+    }
+  ]
+}

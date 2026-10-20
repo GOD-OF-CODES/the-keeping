@@ -40,9 +40,13 @@ const SEGMENT_HOLD = 60;
  * (τ C4_HIDE_LM_TAU_OUT). A stand-in for lane A's U3 night bake (requested): with the room baked to the real range,
  * C4_HIDE_LM goes back to 1. Driven by bindings.ts (tickHideLm) from `HemOverlay.lmWanted`.
  */
-export const C4_HIDE_LM = 15;
-export const C4_HIDE_LM_TAU_IN = 1.6;
-export const C4_HIDE_LM_TAU_OUT = 1.2;
+// FINAL #153h (reviewer F2: as played the visit was a near-black screen with subtitles for ≈ 26 s on Max and Medium —
+// 90 % of pixels ≤ 1/255 as she looks in — 2–4× under the C4a dolly level this lift was written to reach): × 15 → × 40
+// (the boards ≈ 0.02 lux, still inside the 0.003–0.03 lux moonlit-overcast range; a stroke is then ≈ × 17 the room).
+// The eases are slower so the log-space step stays ≤ 6 % / 8 % per 1/30 s frame (tests/smooth-fix.test.ts): 2.2 / 1.6 s.
+export const C4_HIDE_LM = 40;
+export const C4_HIDE_LM_TAU_IN = 2.2;
+export const C4_HIDE_LM_TAU_OUT = 1.6;
 
 /** One overlay timeline per phase group. Ids: C4_approach, C4_hem, C4_look, C4_leave. */
 export function hemSegment(phase: DressPhase): Timeline {
@@ -141,6 +145,16 @@ export class HemOverlay {
   /** SMOOTH-FIX (#145b): the bake scale the hide view wants (C4_HIDE_LM inside Ada's wardrobe, 1 elsewhere). */
   get lmWanted(): number {
     return this.inHide ? C4_HIDE_LM : 1;
+  }
+
+  /** FINAL-B (#154, R1-1): the hide system's `player:hide` event, the moment it happens (update() runs once per frame,
+   *  BEFORE the wardrobe-back push / the E exit, so its view of the hide is a frame stale at the exit cut). */
+  setHidden(hiddenIn: string | null): void {
+    this.inHide = hiddenIn === this.hideId;
+  }
+
+  get hide(): string {
+    return this.hideId;
   }
 
   update(out: DressView | null, hiddenIn: string | null): void {

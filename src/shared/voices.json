@@ -1,0 +1,38 @@
+{
+ "version": 1,
+ "voices": {
+  "driver": {
+   "voiceId": "mEmkNNJ0D176y5dJ19Eu",
+   "name": "THE KEEPING - The Driver",
+   "generatedVoiceId": null,
+   "preview": 1,
+   "createdAt": "2026-10-19T18:48:57.882Z",
+   "via": "web Voice Design (free plan: API design is paid-only)"
+  },
+  "harlan": {
+   "voiceId": "ekyEwAlWkuFqb8l1ooZy",
+   "name": "THE KEEPING - Harlan Stroud",
+   "generatedVoiceId": null,
+   "preview": 1,
+   "createdAt": "2026-10-19T18:54:55.755Z",
+   "via": "web Voice Design (free plan: API design is paid-only)",
+   "deletedFromAccount": "2026-10-20 (free-plan slot freed for traveler2; his clips are generated and kept)"
+  },
+  "ada": {
+   "voiceId": "cBZhG01NTbO9NagRxlZv",
+   "name": "THE KEEPING - Ada Stroud",
+   "generatedVoiceId": null,
+   "preview": 1,
+   "createdAt": "2026-10-19T18:56:42.326Z",
+   "via": "web Voice Design (free plan: API design is paid-only)"
+  },
+  "traveler2": {
+   "voiceId": "vSdwtwfvAjuwo2Mtqk7J",
+   "name": "THE KEEPING - The Next Traveler",
+   "generatedVoiceId": null,
+   "preview": 1,
+   "createdAt": "2026-10-19T19:39:17.626Z",
+   "via": "web Voice Design (free plan: API design is paid-only)"
+  }
+ }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "drv_breath_calm",
+  "durationSec": 4.16,
+  "words": [
+    {
+      "text": "Hhh...",
+      "start": 0.307,
+      "end": 3.28
+    },
+    {
+      "text": "hhh...",
+      "start": 3.4,
+      "end": 4.16
+    }
+  ]
+}

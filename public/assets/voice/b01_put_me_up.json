@@ -1,0 +1,71 @@
+{
+  "id": "b01_put_me_up",
+  "durationSec": 4.56,
+  "words": [
+    {
+      "text": "Forty-eight",
+      "start": 0.22,
+      "end": 0.48
+    },
+    {
+      "text": "miles",
+      "start": 0.547,
+      "end": 0.88
+    },
+    {
+      "text": "to",
+      "start": 0.933,
+      "end": 1.04
+    },
+    {
+      "text": "anything...",
+      "start": 1.12,
+      "end": 2.88
+    },
+    {
+      "text": "They'll",
+      "start": 2.949,
+      "end": 3.04
+    },
+    {
+      "text": "have",
+      "start": 3.072,
+      "end": 3.2
+    },
+    {
+      "text": "to",
+      "start": 3.227,
+      "end": 3.28
+    },
+    {
+      "text": "put",
+      "start": 3.32,
+      "end": 3.44
+    },
+    {
+      "text": "me",
+      "start": 3.493,
+      "end": 3.6
+    },
+    {
+      "text": "up",
+      "start": 3.653,
+      "end": 3.76
+    },
+    {
+      "text": "for",
+      "start": 3.8,
+      "end": 3.92
+    },
+    {
+      "text": "the",
+      "start": 3.96,
+      "end": 4.08
+    },
+    {
+      "text": "night.",
+      "start": 4.133,
+      "end": 4.56
+    }
+  ]
+}

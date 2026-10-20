@@ -23,3 +23,29 @@ export function albedoGain(measured: readonly number[], target: readonly number[
 
 /** GPU bytes of the two RGBA8 maps with a full mip chain. */
 export const bakedBytes = (size: number): number => Math.round(2 * size * size * 4 * (4 / 3));
+
+/**
+ * FINAL #153d (LEAD RULING (bf), R2-2): runtime-only colour targets for specs whose avgAlbedo is physically off but
+ * must stay as it is in material-spec.json (the file keys the shipped light probes and is the Cycles bounce colour;
+ * editing it would stale both). Value = the target blue / red ratio of the linear mean colour; luminance is kept.
+ * brass_tarnished: spec F0 0.42 / 0.30 / 0.12 = b/r 0.29, a saturated orange that reads as a glowing bar at night;
+ * brass F0 (linear sRGB, polished ≈ 0.91 / 0.78 / 0.42 → b/r ≈ 0.46) → 0.46 at the same Rec.709 Y 0.3125.
+ */
+export const RUNTIME_BLUE_RED: Readonly<Record<string, number>> = { brass_tarnished: 0.46 };
+
+/**
+ * The colour of the same Rec.709 luminance whose b / r equals `br`: c' = Y + k (c − Y) (linear desaturation toward
+ * grey, k from b' = br · r'); k is clamped to [0, 1] (never more saturated, never past grey).
+ */
+export function desaturateToBlueRed(c: readonly number[], br: number): [number, number, number] {
+  const Y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  const den = c[2] - Y - br * (c[0] - Y);
+  const k = Math.abs(den) < 1e-9 ? 1 : Math.min(1, Math.max(0, (Y * (br - 1)) / den));
+  return [Y + k * (c[0] - Y), Y + k * (c[1] - Y), Y + k * (c[2] - Y)];
+}
+
+/** The runtime colour target of a spec (its avgAlbedo unless RUNTIME_BLUE_RED overrides it). */
+export function runtimeAlbedo(id: string, avg: readonly number[]): [number, number, number] {
+  const br = RUNTIME_BLUE_RED[id];
+  return br === undefined ? [avg[0], avg[1], avg[2]] : desaturateToBlueRed(avg, br);
+}

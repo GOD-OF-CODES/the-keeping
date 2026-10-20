@@ -12,6 +12,7 @@ import { PROP_RECIPES } from './props.ts';
 import { PLAYER_RECIPES } from './player.ts';
 import { SCORE_RECIPES } from './score.ts';
 import { ESCAPE_RECIPES } from './escape.ts';
+import { SCARE_RECIPES } from './scare.ts'; // JUMPSCARE (#147m): the catch sting
 import type { Recipe } from './types.ts';
 
 export const RECIPES: readonly Recipe[] = [
@@ -27,6 +28,7 @@ export const RECIPES: readonly Recipe[] = [
   ...PLAYER_RECIPES,
   ...SCORE_RECIPES,
   ...ESCAPE_RECIPES,
+  ...SCARE_RECIPES,
 ];
 
 const BY_ID = new Map(RECIPES.map((r) => [r.id, r]));

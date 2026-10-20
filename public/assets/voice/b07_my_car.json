@@ -1,0 +1,26 @@
+{
+  "id": "b07_my_car",
+  "durationSec": 3.04,
+  "words": [
+    {
+      "text": "That's...",
+      "start": 0.293,
+      "end": 1.76
+    },
+    {
+      "text": "that's",
+      "start": 1.899,
+      "end": 2
+    },
+    {
+      "text": "my",
+      "start": 2.08,
+      "end": 2.24
+    },
+    {
+      "text": "car.",
+      "start": 2.32,
+      "end": 3.04
+    }
+  ]
+}

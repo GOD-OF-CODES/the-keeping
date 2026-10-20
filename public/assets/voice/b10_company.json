@@ -1,0 +1,26 @@
+{
+  "id": "b10_company",
+  "durationSec": 4.24,
+  "words": [
+    {
+      "text": "Come",
+      "start": 0.382,
+      "end": 0.42
+    },
+    {
+      "text": "on,",
+      "start": 0.553,
+      "end": 1.1
+    },
+    {
+      "text": "Ada.",
+      "start": 1.17,
+      "end": 1.7
+    },
+    {
+      "text": "Company.",
+      "start": 3.913,
+      "end": 4.26
+    }
+  ]
+}

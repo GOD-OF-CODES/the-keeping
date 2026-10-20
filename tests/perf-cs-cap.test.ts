@@ -3,6 +3,7 @@
 const { test } = (await import('node:' + 'test')) as any;
 const assert = ((await import('node:' + 'assert/strict')) as any).default;
 import { CAP_REF_PIXELS, CUTSCENE_CAP, CutsceneProfile, HITCH_MS, MISS_STEP, capScaleFor } from '../src/render/cutscene-profile.ts';
+import { PRESETS, dynResFor } from '../src/render/presets.ts';
 
 const CAPS = { low: {}, medium: { C2: 0.7, C2c: 0.8, C5: 0.5 }, max: { C2: 0.9 } } as const;
 const at = (px = CAP_REF_PIXELS) => ({ floor: 0.6, outputPixels: () => px, caps: CAPS });
@@ -134,4 +135,33 @@ test('overload (> 40 ms average over 1 s) drops straight to the floor and trips 
 
 test('the step size is the gameplay dynres step', () => {
   assert.equal(MISS_STEP, 0.05);
+});
+
+test('shipped caps: measured limits only (below the dynres max), on the 0.025 grid, ≥ the real preset floor at DPR 1', () => {
+  for (const id of ['medium', 'max'] as const) {
+    const dr = dynResFor(PRESETS[id], 1);
+    for (const [cs, v] of Object.entries(CUTSCENE_CAP[id])) {
+      assert.ok(v < dr.max, `${id} ${cs} ${v}: a cap at the dynres max is no measured limit (and would bind on larger buffers)`);
+      assert.ok(v >= dr.min - 1e-9, `${id} ${cs} ${v} ≥ floor ${dr.min}`);
+      assert.ok(Math.abs(v / 0.025 - Math.round(v / 0.025)) < 1e-6, `${id} ${cs} ${v} on the dynres grid`);
+    }
+  }
+});
+
+test('ruling (aq) with the shipped table and the real floors (1280×800, DPR 1)', () => {
+  const mk = (id: 'medium' | 'max') => new CutsceneProfile(id, null, { floor: dynResFor(PRESETS[id], 1).min, outputPixels: () => CAP_REF_PIXELS });
+  const mx = mk('max');
+  // the real route reached 0.95 in the B03 hall on Max (STATUS-smooth-perf S9): C2 now holds its measured cap
+  assert.equal(mx.begin(0.95, 'C2'), CUTSCENE_CAP.max.C2);
+  assert.equal(mx.cut('C2c'), 0.95, 'C2c has no measured limit: back to the gameplay scale on its first frame');
+  mx.end();
+  // Max C6 cannot hold 60 above its floor: held at the floor (0.85 at DPR 1), never below
+  assert.equal(mx.begin(1, 'C6'), 0.85);
+  for (let w = 0; w < 3; w++) assert.ok(windowOf(mx, 10).every((x) => x === null), 'at the floor the guard has nothing left');
+  mx.end();
+  const md = mk('medium');
+  assert.equal(md.begin(0.75, 'C2'), null, 'Medium C2: no measured limit at ≤ 0.85 — the gameplay scale is kept');
+  md.end();
+  assert.equal(md.begin(0.75, 'C7'), CUTSCENE_CAP.medium.C7);
+  md.end();
 });

@@ -1,0 +1,21 @@
+{
+  "id": "ada_search_whisper",
+  "durationSec": 1.6,
+  "words": [
+    {
+      "text": "...where",
+      "start": 0.344,
+      "end": 0.4
+    },
+    {
+      "text": "are",
+      "start": 0.52,
+      "end": 0.88
+    },
+    {
+      "text": "you...",
+      "start": 0.96,
+      "end": 1.6
+    }
+  ]
+}

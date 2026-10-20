@@ -1,0 +1,15 @@
+{
+  "name": "scare_face",
+  "fps": 30,
+  "frames": 30,
+  "stops": 12,
+  "L0": 1.2401357889175415,
+  "R": 12.0003521774803,
+  "Lmax": 5079.59619140625,
+  "ref": ".cache/scare/frames/final/f0015.exr",
+  "decode": "L = L0 * (2^(v * R) - 1), v = sRGBTransferOETF(texture) (tags bt709/bt709/iec61966-2-1/tv)",
+  "codecs": {
+    "max": "avc1.640028",
+    "medium": "avc1.640028"
+  }
+}

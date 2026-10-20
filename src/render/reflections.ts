@@ -26,7 +26,7 @@
 // Uniform/binding-only differences between rooms → one shader program per structure (PERF-PLAN P1-6a).
 
 import * as THREE from 'three/webgpu';
-import { cameraWorldMatrix, clearcoatRoughness, cubeTexture, getParallaxCorrectNormal, normalView, positionViewDirection, pow4, roughness, uniform } from 'three/tsl';
+import { cameraWorldMatrix, clearcoatRoughness, cubeTexture, getParallaxCorrectNormal, normalView, positionViewDirection, pow4, renderGroup, roughness, uniform } from 'three/tsl';
 import type { LevelLayout } from '../shared/layout-types.ts';
 import { planToWorld } from '../shared/coords.ts';
 import { specById } from '../materials/spec-index.ts';
@@ -35,9 +35,10 @@ import { deferCompileWaits } from './parallel-compile.ts';
 import { disposeRenderObjectsFor, noRoGc } from './ro-gc.ts'; // PERF G (ruling f)
 
 /** Global reflection multiplier (look API `reflections`; 1 = physical). */
-export const uReflection = uniform(1);
+// FINAL #153b: shared render group (the per-object-group stale-uniform class, lightmap-material.ts); = LOOK.reflections
+export const uReflection = uniform(1).setGroup(renderGroup);
 /** lod = roughness × this (128² cube: mip 7 = 1 px). Look API `reflLod`. */
-export const uReflLod = uniform(7);
+export const uReflLod = uniform(7).setGroup(renderGroup); // = LOOK.reflLod
 /**
  * Spec roughness below which a material gets a reflection probe. Backlog: < 0.6; < 0.5 here — trim (0.55), doors,
  * furniture, stair treads, shingles (0.5–0.55) cover much of the screen and would only show a mip-3.5 blur, and the

@@ -113,7 +113,7 @@ The characters lane's `CharacterBank` already matches `CharacterDirector`. Five 
 | C5 | 33 s | full | Silence, three slow knocks, door crack ("Ada?… No"), hand in the gap, walked to the threshold (the opening's lens), he backs away, candles gutter, two flashes with `fx silhouette` (unmask → "…Harlan."; cleaver), black, one stroke, one bell, rope zip, front door opens onto mist, parlor door closes. |
 | C6 | 28.5 s + gates | full | Pour (gate), key (gate), two coughs, catch ("yes. Yes."), radio mid-song, past the pump, the lantern gutters, rear-view mirror shot (`fx mirror_view` = canvas flip), fade to black → C7. |
 | C7 | 34 s | full | C1's interior + ROOMS POV shots re-timed, `dressing 'sting'`, "Oh, thank God. Rooms.", knock + "Hello?…", bell off right, door opens, guest book (`c7_guest_book`), the exact threshold lens, Ada in the rocker (`ada_sting`, fallback `ada_look`), gasp, black, final bell, THE KEEPING. |
-| death | 3 s | full | Lunge from Ada's actual position to 0.45 m, handheld jolt + roll, wet-hand lens vignette, drowning rush, black by 2.15 s. Never skippable. |
+| death | 3 s | full | THE JUMPSCARE (#147m, docs/STATUS-jumpscare.md Spec §4): 0.15 s lunge from Ada's actual position to 0.45 m (ease in, `scare_whoosh`, exposure held; #147n: the player's heading when she is at the player, never backwards, ≥ 0.3 m), HARD CUT at 0.15 to her severed face (`fx jumpscare`, `scare_sting` sched, fixed film exposure 2^-11.73, arms hidden) for 1.0 s, black by 1.40, drowning rush, respawn at 3 s. Never skippable. |
 
 ### fx ids — implemented in `src/world/cutscene-fx.ts` (`bindings.ts` does `mirror_view` / `lens_wet_hand`)
 
@@ -129,6 +129,7 @@ The characters lane's `CharacterBank` already matches `CharacterDirector`. Five 
 | `car_trim` | maroon clone of the tan interior material (sting). |
 | `can_in_hand` | off: the can leaves `prop_r` (C6 puts P_JERRY_10 there when `arms_pour_can` exists, else at the filler). |
 | `wardrobe_back_give` | D_WARDROBE_BACK bows open a few degrees. |
+| `jumpscare {on}` | `src/world/jumpscare.ts` (routed first by story-runtime's cutsceneFx): the pre-rendered Cycles clip `scare_face.mp4` (Max / Medium, prefetched as B05 begins) on a camera-child quad inside the scene pass, log-decoded to scene radiance (game exposure / AgX / grain apply); black after its last frame; Low / no decoder / load error = Ada's real severed head 0.28 m before the lens (fallback). |
 | dressing `sting` | guest book HARLAN + a fresh column of clumsy tallies (quad on the tally wall) + `attach sting_sack`. |
 
 Unverified visually (browser testing stopped): rain/wiper orientation on the exterior sedans, blade-sweep direction,
@@ -140,7 +141,7 @@ from the CAR set and one of P_CAR_ROW so the car materials don't compile at C1 /
 
 `windshield_rain {on, intensity}` · `wipers {on, period}` · `dash {on, fuelNeedle, fuelLamp: bool|'blink'}` ·
 `taillights {on, intensity}` · `rope_run {dir}` · `silhouette {id: 'unmask'|'cleaver', on}` · `blue_hour {mist, rain}` ·
-`car_trim {style}` · `fuel {level}` · `can_in_hand {on}` · `wardrobe_back_give {amount}` · `eye_glint {at}`.
+`car_trim {style}` · `fuel {level}` · `can_in_hand {on}` · `wardrobe_back_give {amount}` · `eye_glint {at}` (no longer cued) · `jumpscare {on}` (#147m).
 
 ## Tests
 

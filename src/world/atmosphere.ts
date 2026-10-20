@@ -18,7 +18,7 @@
 //            in mired over ~1 s), and the live LOOK values → pipeline uniforms (sharpen, CA, grain, vignette, bloom).
 
 import * as THREE from 'three/webgpu';
-import { Fn, If, atan, fog as fogNodeFn, normalWorld, positionView, reflectVector, roughness, clamp, dot, exp, float, floor, fract, length, max, mix, mx_fractal_noise_float, mx_noise_float, normalWorldGeometry, sin, smoothstep, time, uniform, vec2, vec3 } from 'three/tsl';
+import { Fn, If, atan, fog as fogNodeFn, normalWorld, positionView, reflectVector, renderGroup, roughness, clamp, dot, exp, float, floor, fract, length, max, mix, mx_fractal_noise_float, mx_noise_float, normalWorldGeometry, sin, smoothstep, time, uniform, vec2, vec3 } from 'three/tsl';
 import { LOOK, attachLookApi, initLook } from '../render/look.ts';
 import { GRADE } from '../render/grade.ts'; // M-A cutscene grade (pure)
 import type { PresetConfig } from '../render/presets.ts';
@@ -28,29 +28,31 @@ import { AutoExposure } from '../render/exposure.ts';
 export const SIGMA_PER_D = 3.912 / Math.sqrt(3);
 
 /** The sky/fog uniforms (one atmosphere per page): module-level so load-time code (level.ts' exterior materials)
- *  can build nodes on them before the Atmosphere exists. */
+ *  can build nodes on them before the Atmosphere exists. FINAL #153b: all in the shared render group (the per-object-group
+ *  stale-uniform class, see lightmap-material.ts); initial values = the synced night values (the constructor primes the
+ *  preset's horizon / fog colour after initLook). */
 export const SKY_U = {
-  horizon: uniform(new THREE.Color(0, 0, 0)),
-  glow: uniform(1.3),
-  flashSky: uniform(1),
-  cloud: uniform(0.35),
-  ground: uniform(new THREE.Color(0, 0, 0)),
-  fogColor: uniform(new THREE.Color(0, 0, 0)),
-  fogD: uniform(0.006),
+  horizon: uniform(new THREE.Color(0, 0, 0)).setGroup(renderGroup),
+  glow: uniform(LOOK.skyGlow).setGroup(renderGroup),
+  flashSky: uniform(1).setGroup(renderGroup),
+  cloud: uniform(LOOK.skyCloud).setGroup(renderGroup),
+  ground: uniform(new THREE.Color(LOOK.groundL * 0.9, LOOK.groundL, LOOK.groundL * 1.1)).setGroup(renderGroup),
+  fogColor: uniform(new THREE.Color(0, 0, 0)).setGroup(renderGroup),
+  fogD: uniform(Math.min(0.012, LOOK.fogDensity)).setGroup(renderGroup),
   /** Beer–Lambert extinction σ (1/m) for scene geometry: 0 indoors. */
-  fogSigma: uniform(0),
-  tree: uniform(new THREE.Color(0, 0, 0)),
-  treeR0: uniform(140),
-  treeR1: uniform(230),
-  treeH: uniform(16),
+  fogSigma: uniform(0).setGroup(renderGroup),
+  tree: uniform(new THREE.Color(LOOK.treeL * 0.9, LOOK.treeL, LOOK.treeL * 1.05)).setGroup(renderGroup),
+  treeR0: uniform(LOOK.treeR0).setGroup(renderGroup),
+  treeR1: uniform(LOOK.treeR1).setGroup(renderGroup),
+  treeH: uniform(LOOK.treeH).setGroup(renderGroup),
   // LIGHTING builder 2 (item 19): civil twilight for C6 / B12 — sun-side and anti-sun horizon radiance (× tint)
-  twSun: uniform(new THREE.Color(0, 0, 0)),
-  twAnti: uniform(new THREE.Color(0, 0, 0)),
-  twZenith: uniform(0.3),
+  twSun: uniform(new THREE.Color(0, 0, 0)).setGroup(renderGroup),
+  twAnti: uniform(new THREE.Color(0, 0, 0)).setGroup(renderGroup),
+  twZenith: uniform(LOOK.twilightZenith).setGroup(renderGroup),
   /** Round 3 (R2-3): 1 outdoors (smoothed), for things that carry their own sky term (the first-person arms). */
-  outside: uniform(0),
+  outside: uniform(0).setGroup(renderGroup),
   /** 1 once the camera is past the exterior probe grid by its falloff (0.35 m): the grid no longer lights it. */
-  beyondGrid: uniform(0),
+  beyondGrid: uniform(0).setGroup(renderGroup),
 };
 
 /** Exterior probe grid box (world), set by level.ts at load: beyond it the arms take the analytic sky irradiance. */
@@ -168,6 +170,23 @@ export class Atmosphere {
     const k = kelvinToLinearRGB(LOOK.skyKelvin);
     const y = 0.2126 * k[0] + 0.7152 * k[1] + 0.0722 * k[2];
     this.skyRGB = [k[0] / y, k[1] / y, k[2] / y]; // unit luminance: strength = luminance (as in the bake)
+    // FINAL #153b: start the render-group sky uniforms at what update() writes at night (lightning 0, skyTint 0)
+    {
+      const u = this.u;
+      const h = LOOK.skyLz / 3;
+      u.horizon.value.setRGB(h * this.skyRGB[0], h * this.skyRGB[1], h * this.skyRGB[2]);
+      u.glow.value = LOOK.skyGlow;
+      u.cloud.value = LOOK.skyCloud;
+      u.ground.value.setRGB(LOOK.groundL * 0.9, LOOK.groundL, LOOK.groundL * 1.1);
+      u.tree.value.setRGB(LOOK.treeL * 0.9, LOOK.treeL, LOOK.treeL * 1.05);
+      u.treeR0.value = LOOK.treeR0;
+      u.treeR1.value = LOOK.treeR1;
+      u.treeH.value = LOOK.treeH;
+      u.fogD.value = Math.min(0.012, LOOK.fogDensity);
+      u.twZenith.value = LOOK.twilightZenith;
+      const fk = LOOK.fogScale * LOOK.skyGlow;
+      u.fogColor.value.setRGB(u.horizon.value.r * fk, u.horizon.value.g * fk, u.horizon.value.b * fk);
+    }
     o.scene.backgroundNode = this.skyNode();
     // R2-1: physically based fog (see header); positionView.length() = true eye distance, not view depth
     o.scene.fogNode = fogNodeFn(this.u.fogColor, float(1).sub(exp(this.u.fogSigma.mul(length(positionView)).negate())));

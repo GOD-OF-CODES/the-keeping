@@ -27,6 +27,7 @@ import { CharacterLights, boneSphere } from '../render/char-lights.ts'; // PERF 
 import { drawDocumentPage } from '../player/inventory.ts';
 import { createM2World, ITEM_PROPS } from './m2-world.ts';
 import { createCutsceneFx } from '../world/cutscene-fx.ts';
+import { createJumpscare } from '../world/jumpscare.ts'; // JUMPSCARE (#147m, surgical): the death cutaway's face
 import { END_CARD_Z, harlanHeldAtTable } from './staging.ts';
 import { createBodyControl, FadeState } from './body-control.ts';
 import { objectiveFor, objectivesActive, OBJECTIVE_REMIND_S } from '../story/objectives.ts';
@@ -156,6 +157,16 @@ export async function createStoryRuntime(d: StoryDeps) {
     }
     charRig.update();
   };
+  // PERF round 2 BUDGETS (#150b, surgical): the same subject spheres bound each figure in the SHADOW passes
+  // (src/render/char-shadow-cull.ts; main.ts registers them once the load warm-up is done). A figure whose sphere was
+  // not set this frame (`ok()` false) is not culled.
+  const shadowFigures = charRig
+    ? [
+        ...(ada ? [{ root: ada.group, skip: headRig ? [headRig] : [], subject: subj[0], ok: () => charRig.subjects.includes(subj[0]) }] : []),
+        ...(ada && headRig && headBones.length ? [{ root: headRig, subject: subj[1], ok: () => charRig.subjects.includes(subj[1]) }] : []),
+        ...(harlan ? [{ root: harlan.group, subject: subj[2], ok: () => charRig.subjects.includes(subj[2]) }] : []),
+      ]
+    : [];
   /** The cutscene lane plugs its CutscenePlayer.playCutscene in here (setCutscenePlayer); null = director fallback. */
   let cutscenePlayer: ((id: string, done: (skipped: boolean) => void) => boolean) | null = null;
   let stormNow = { interval: 35, rumble: 1 };
@@ -173,6 +184,8 @@ export async function createStoryRuntime(d: StoryDeps) {
     cameraHeld: () => camHeldByCutscene,
     preset: ctx.preset, // opening: lamp/dome shadow tiers
   });
+  // JUMPSCARE (#147m, surgical): the severed-head clip (or the in-engine fallback) behind fx `jumpscare` in death.ts
+  const scare = createJumpscare({ renderer: ctx.renderer, camera, scene, presetId: ctx.presetId, settings: ctx.settings, flags: ctx.flags, audio, ada, rig });
   /** Cutscene fx (docs/CUTSCENES.md fx table): src/world/cutscene-fx.ts; unknown ones are logged once. */
   const cutsceneFx = (id: string, p: Record<string, number | string | boolean>) => {
     if (id === 'locket_in_hand') {
@@ -188,6 +201,7 @@ export async function createStoryRuntime(d: StoryDeps) {
       }
       return;
     }
+    if (scare.fx(id, p)) return;
     if (fxw.fx(id, p)) return;
     if (!fxWarned.has(id)) {
       fxWarned.add(id);
@@ -595,6 +609,7 @@ export async function createStoryRuntime(d: StoryDeps) {
     }
   });
   ctx.events.on('cutscene:end', ({ id }) => {
+    if (id === 'death') scare.fx('jumpscare', { on: false }); // JUMPSCARE (#147m): idempotent backstop of the {on: false} cue
     if (id === 'C5') {
       fxw.resetSilhouette();
       characters.attach('ada', 'locket', null);
@@ -609,7 +624,12 @@ export async function createStoryRuntime(d: StoryDeps) {
     }
   });
   ctx.events.on('player:death', () => {
-    audio?.play('grab_hit', { gain: 0.9 });
+    // JUMPSCARE (#147m, surgical): the death cutaway carries the scare whoosh + sting; grab_hit only without it
+    if (!cutscenePlayer) audio?.play('grab_hit', { gain: 0.9 });
+  });
+  // JUMPSCARE (#147m, surgical): catches start at B05 — fetch + prime the clip (and the lazy sting) as B05 begins
+  ctx.events.on('beat:enter', ({ id }) => {
+    if (beatIdx(id) >= 4) void scare.prefetch();
   });
   let restoring = false;
   ctx.events.on('flag', ({ name, value }) => {
@@ -684,6 +704,10 @@ export async function createStoryRuntime(d: StoryDeps) {
   const start = () => {
     started = true;
     fxw.setWarm(false); // the fx meshes were visible only for the load-time shader compile
+    // JUMPSCARE (#147m): a save / debug start already at B05+ (startAt may not re-enter the beat): prefetch now
+    queueMicrotask(() => {
+      if (beatIdx(director.story.beat) >= 4) void scare.prefetch();
+    });
     restoring = true;
     m2.restore(() => startDirector());
     m2.syncAll();
@@ -786,6 +810,7 @@ export async function createStoryRuntime(d: StoryDeps) {
     ada?.update(cdt);
     if (ada && tableauOn && ada.overridden) ada.group.visible = !level.cullingEnabled || level.visible.has('G2');
     characters.update();
+    scare.update(cdt); // JUMPSCARE (#147m): after Ada — the fallback head + morphs override her own pose
     setArmsCar(!!fxw.mounted?.());
     // runtime review: in the driver's POV the gloves ride the car (stay on the wheel while the head turns) — FpArms.anchorTo
     const da = fxw.driverAnchor?.() ?? null;
@@ -834,6 +859,10 @@ export async function createStoryRuntime(d: StoryDeps) {
     /** #150: gates + pools from this frame's lights and figures — main.ts calls it LAST in world() (after the torch rig
      *  and the bounce light have their values, so a light switched on this frame is never one frame late). */
     updateCharLights,
+    /** #150b: the figures for the shadow-pass cull (src/render/char-shadow-cull.ts). */
+    shadowFigures,
+    /** JUMPSCARE (#147m): the death cutaway's face (QA: `__game.story.jumpscare.debug`). */
+    jumpscare: scare,
     fx: {
       ...fxw,
       // runtime lane D: the road warm-up mounts the interior — compile the arms with the CAR list there too

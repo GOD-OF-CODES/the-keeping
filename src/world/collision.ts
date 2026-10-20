@@ -298,7 +298,7 @@ class GroundSplitOctree {
  * Collider meshes for a placed prop root (already positioned in the world). Returns meshes in WORLD space
  * (geometry baked with matrixWorld) so they can be added to the collision build group directly.
  */
-export function propColliderMeshes(root: any, kind: 'box' | 'mesh' = 'mesh', interact = false): any[] {
+export function propColliderMeshes(root: any, kind: 'box' | 'mesh' = 'mesh', interact = false, gapSplit = false): any[] {
   const out: any[] = [];
   root.updateMatrixWorld(true);
   const proxies: any[] = [];
@@ -346,12 +346,62 @@ export function propColliderMeshes(root: any, kind: 'box' | 'mesh' = 'mesh', int
       out.push(t);
       continue;
     }
-    const g = new THREE.BoxGeometry(size.x, size.y, size.z);
-    g.translate((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2);
-    g.applyMatrix4(m.matrixWorld);
-    const c = new THREE.Mesh(g);
-    c.name = `col_${root.name}_${m.name}_box`;
-    out.push(c);
+    for (const [k, b] of (gapSplit ? gapBoxes(m.geometry) : [bb]).entries()) {
+      const s = b.getSize(new THREE.Vector3());
+      const g = new THREE.BoxGeometry(Math.max(s.x, 1e-3), Math.max(s.y, 1e-3), Math.max(s.z, 1e-3));
+      g.translate((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2);
+      g.applyMatrix4(m.matrixWorld);
+      const c = new THREE.Mesh(g);
+      c.name = `col_${root.name}_${m.name}_box${gapSplit ? k : ''}`;
+      out.push(c);
+    }
   }
   return out;
+}
+
+/** FINAL #153 (PERF2 #150b): a mesh's bounds as boxes per 10 cm slice of its longer horizontal axis (local x or z,
+ *  Y-up), each the bounds of the triangles' parts in that slice (vertices clamped into it: conservative), neighbours
+ *  within 3 cm of each other merged, empty slices dropped. The iron bed's cast-iron primitive is a headboard (1.30 m), a
+ *  footboard (1.00 m) and two 4 cm angle-iron side rails at 0.29–0.33 m: one box would be a 1.30 m block over the whole
+ *  mattress, which the torch's beam-centre ray (flashlight-bounce), the AI's sight lines and interaction LOS also hit. */
+const SLICE = 0.1;
+const MERGE_TOL = 0.03;
+function gapBoxes(geo: any): any[] {
+  const pos = geo.attributes.position;
+  const idx = geo.index;
+  const bb = geo.boundingBox;
+  const ax = bb.max.x - bb.min.x >= bb.max.z - bb.min.z ? 'x' : 'z';
+  const a0 = bb.min[ax];
+  const K = Math.max(1, Math.ceil((bb.max[ax] - a0) / SLICE));
+  const w = (bb.max[ax] - a0) / K;
+  const slices: any[] = Array.from({ length: K }, () => new THREE.Box3());
+  const nt = Math.floor((idx ? idx.count : pos.count) / 3);
+  const tv = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  const p = new THREE.Vector3();
+  for (let t = 0; t < nt; t++) {
+    for (let k = 0; k < 3; k++) tv[k].fromBufferAttribute(pos, idx ? idx.getX(3 * t + k) : 3 * t + k);
+    const lo = Math.min(tv[0][ax], tv[1][ax], tv[2][ax]);
+    const hi = Math.max(tv[0][ax], tv[1][ax], tv[2][ax]);
+    const k0 = Math.min(K - 1, Math.max(0, Math.floor((lo - a0) / w)));
+    const k1 = Math.min(K - 1, Math.max(0, Math.floor((hi - a0) / w)));
+    for (let k = k0; k <= k1; k++) {
+      const s0 = Math.max(lo, a0 + k * w);
+      const s1 = Math.min(hi, a0 + (k + 1) * w);
+      for (const v of tv) {
+        p.copy(v);
+        p[ax] = Math.min(s1, Math.max(s0, v[ax]));
+        slices[k].expandByPoint(p);
+      }
+    }
+  }
+  const out: any[] = [];
+  const near = (a: any, b: any) =>
+    (['x', 'y', 'z'] as const).every((c) => c === ax || (Math.abs(a.min[c] - b.min[c]) <= MERGE_TOL && Math.abs(a.max[c] - b.max[c]) <= MERGE_TOL));
+  for (const s of slices) {
+    if (s.isEmpty()) continue;
+    const last = out[out.length - 1];
+    if (last && near(last, s) && s.min[ax] - last.max[ax] <= 1e-6 + w * 1e-3) last.union(s);
+    else out.push(s.clone());
+  }
+  return out.length ? out : [bb];
 }

@@ -1,0 +1,492 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-19T19:39:27.094Z",
+  "clips": {
+    "b01_come_on": {
+      "files": [
+        "b01_come_on.mp3"
+      ],
+      "durations": [
+        3.6
+      ]
+    },
+    "b01_put_me_up": {
+      "files": [
+        "b01_put_me_up.mp3"
+      ],
+      "durations": [
+        4.56
+      ]
+    },
+    "c1_preacher": {
+      "files": [
+        "c1_preacher.mp3"
+      ],
+      "durations": [
+        2.24
+      ]
+    },
+    "c1_interstate": {
+      "files": [
+        "c1_interstate.mp3"
+      ],
+      "durations": [
+        1.92
+      ]
+    },
+    "c1_dim": {
+      "files": [
+        "c1_dim.mp3"
+      ],
+      "durations": [
+        1.36
+      ]
+    },
+    "b02_hello": {
+      "files": [
+        "b02_hello.mp3"
+      ],
+      "durations": [
+        5.76
+      ]
+    },
+    "b05_dont_breathe": {
+      "files": [
+        "b05_dont_breathe.mp3"
+      ],
+      "durations": [
+        2.56
+      ]
+    },
+    "b07_my_car": {
+      "files": [
+        "b07_my_car.mp3"
+      ],
+      "durations": [
+        3.04
+      ]
+    },
+    "b09_ticket": {
+      "files": [
+        "b09_ticket.mp3"
+      ],
+      "durations": [
+        6.56
+      ]
+    },
+    "b10_my_plate": {
+      "files": [
+        "b10_my_plate.mp3"
+      ],
+      "durations": [
+        3.68
+      ]
+    },
+    "b11_look": {
+      "files": [
+        "b11_look.mp3"
+      ],
+      "durations": [
+        7.36
+      ]
+    },
+    "b12_catches": {
+      "files": [
+        "b12_catches.mp3"
+      ],
+      "durations": [
+        6.8
+      ]
+    },
+    "drv_breath_calm": {
+      "files": [
+        "drv_breath_calm.mp3",
+        "drv_breath_calm_v2.mp3",
+        "drv_breath_calm_v3.mp3"
+      ],
+      "durations": [
+        2.8,
+        3.52,
+        4.16
+      ]
+    },
+    "drv_breath_scared": {
+      "files": [
+        "drv_breath_scared.mp3",
+        "drv_breath_scared_v2.mp3",
+        "drv_breath_scared_v3.mp3"
+      ],
+      "durations": [
+        4.08,
+        2.96,
+        3.44
+      ]
+    },
+    "drv_breath_hold": {
+      "files": [
+        "drv_breath_hold.mp3",
+        "drv_breath_hold_v2.mp3"
+      ],
+      "durations": [
+        1.76,
+        2.72
+      ]
+    },
+    "drv_breath_strain": {
+      "files": [
+        "drv_breath_strain.mp3",
+        "drv_breath_strain_v2.mp3"
+      ],
+      "durations": [
+        1.84,
+        1.68
+      ]
+    },
+    "drv_breath_release": {
+      "files": [
+        "drv_breath_release.mp3",
+        "drv_breath_release_v2.mp3",
+        "drv_breath_release_v3.mp3"
+      ],
+      "durations": [
+        1.84,
+        0.88,
+        2.48
+      ]
+    },
+    "drv_gasp": {
+      "files": [
+        "drv_gasp.mp3",
+        "drv_gasp_v2.mp3",
+        "drv_gasp_v3.mp3"
+      ],
+      "durations": [
+        1.68,
+        1.68,
+        1.2
+      ]
+    },
+    "drv_panting": {
+      "files": [
+        "drv_panting.mp3",
+        "drv_panting_v2.mp3",
+        "drv_panting_v3.mp3",
+        "drv_panting_v4.mp3"
+      ],
+      "durations": [
+        6.16,
+        5.04,
+        6,
+        7.28
+      ]
+    },
+    "drv_whimper": {
+      "files": [
+        "drv_whimper.mp3",
+        "drv_whimper_v2.mp3"
+      ],
+      "durations": [
+        1.36,
+        1.76
+      ]
+    },
+    "drv_startle": {
+      "files": [
+        "drv_startle.mp3",
+        "drv_startle_v2.mp3",
+        "drv_startle_v3.mp3"
+      ],
+      "durations": [
+        0.96,
+        0.72,
+        0.64
+      ]
+    },
+    "drv_threshold": {
+      "files": [
+        "drv_threshold.mp3"
+      ],
+      "durations": [
+        1.28
+      ]
+    },
+    "drv_pry_effort": {
+      "files": [
+        "drv_pry_effort.mp3",
+        "drv_pry_effort_v2.mp3",
+        "drv_pry_effort_v3.mp3"
+      ],
+      "durations": [
+        3.44,
+        4.24,
+        3.52
+      ]
+    },
+    "drv_death": {
+      "files": [
+        "drv_death.mp3",
+        "drv_death_v2.mp3"
+      ],
+      "durations": [
+        1.84,
+        2.24
+      ]
+    },
+    "drv_relief": {
+      "files": [
+        "drv_relief.mp3"
+      ],
+      "durations": [
+        2.64
+      ]
+    },
+    "ada_look_harlan": {
+      "files": [
+        "ada_look_harlan.mp3",
+        "ada_look_harlan_v2.mp3",
+        "ada_look_harlan_v3.mp3",
+        "ada_look_harlan_v4.mp3",
+        "ada_look_harlan_v5.mp3"
+      ],
+      "durations": [
+        0.96,
+        2.16,
+        1.36,
+        0.96,
+        1.04
+      ]
+    },
+    "ada_look_harlan_close": {
+      "files": [
+        "ada_look_harlan_close.mp3",
+        "ada_look_harlan_close_v2.mp3",
+        "ada_look_harlan_close_v3.mp3"
+      ],
+      "durations": [
+        1.84,
+        2.48,
+        2.24
+      ]
+    },
+    "ada_not_him": {
+      "files": [
+        "ada_not_him.mp3",
+        "ada_not_him_v2.mp3",
+        "ada_not_him_v3.mp3",
+        "ada_not_him_v4.mp3"
+      ],
+      "durations": [
+        2.4,
+        2.32,
+        2.08,
+        2.64
+      ]
+    },
+    "ada_wet_breath": {
+      "files": [
+        "ada_wet_breath.mp3",
+        "ada_wet_breath_v2.mp3",
+        "ada_wet_breath_v3.mp3",
+        "ada_wet_breath_v4.mp3"
+      ],
+      "durations": [
+        3.28,
+        3.28,
+        3.68,
+        3.84
+      ]
+    },
+    "ada_gurgle": {
+      "files": [
+        "ada_gurgle.mp3",
+        "ada_gurgle_v2.mp3",
+        "ada_gurgle_v3.mp3"
+      ],
+      "durations": [
+        1.76,
+        1.76,
+        1.92
+      ]
+    },
+    "ada_chase_breath": {
+      "files": [
+        "ada_chase_breath.mp3",
+        "ada_chase_breath_v2.mp3",
+        "ada_chase_breath_v3.mp3"
+      ],
+      "durations": [
+        4.32,
+        3.6,
+        2.88
+      ]
+    },
+    "ada_vigil_whisper": {
+      "files": [
+        "ada_vigil_whisper.mp3",
+        "ada_vigil_whisper_v2.mp3"
+      ],
+      "durations": [
+        2.4,
+        1.44
+      ]
+    },
+    "ada_search_whisper": {
+      "files": [
+        "ada_search_whisper.mp3",
+        "ada_search_whisper_v2.mp3"
+      ],
+      "durations": [
+        1.6,
+        2.48
+      ]
+    },
+    "ada_lured_whisper": {
+      "files": [
+        "ada_lured_whisper.mp3",
+        "ada_lured_whisper_v2.mp3"
+      ],
+      "durations": [
+        2.72,
+        3.2
+      ]
+    },
+    "ada_catch": {
+      "files": [
+        "ada_catch.mp3",
+        "ada_catch_v2.mp3"
+      ],
+      "durations": [
+        1.52,
+        1.76
+      ]
+    },
+    "b09_dress_sob": {
+      "files": [
+        "b09_dress_sob.mp3"
+      ],
+      "durations": [
+        2.8
+      ]
+    },
+    "b11_recognition": {
+      "files": [
+        "b11_recognition.mp3"
+      ],
+      "durations": [
+        1.04
+      ]
+    },
+    "c2b_my_dress": {
+      "files": [
+        "c2b_my_dress.mp3"
+      ],
+      "durations": [
+        1.12
+      ]
+    },
+    "c6b_company": {
+      "files": [
+        "c6b_company.mp3"
+      ],
+      "durations": [
+        1.2
+      ]
+    },
+    "c4c_there": {
+      "files": [
+        "c4c_there.mp3"
+      ],
+      "durations": [
+        1.68
+      ]
+    },
+    "doc_letter": {
+      "files": [
+        "doc_letter.mp3"
+      ],
+      "durations": [
+        19.92
+      ]
+    },
+    "b03_go_on": {
+      "files": [
+        "b03_go_on.mp3"
+      ],
+      "durations": [
+        1.6
+      ]
+    },
+    "b07_grate": {
+      "files": [
+        "b07_grate.mp3"
+      ],
+      "durations": [
+        4.72
+      ]
+    },
+    "b10_company": {
+      "files": [
+        "b10_company.mp3"
+      ],
+      "durations": [
+        4.24
+      ]
+    },
+    "c5_door_crack": {
+      "files": [
+        "c5_door_crack.mp3"
+      ],
+      "durations": [
+        3.68
+      ]
+    },
+    "doc_ledger_1": {
+      "files": [
+        "doc_ledger_1.mp3"
+      ],
+      "durations": [
+        27.36
+      ]
+    },
+    "doc_ledger_2": {
+      "files": [
+        "doc_ledger_2.mp3"
+      ],
+      "durations": [
+        28
+      ]
+    },
+    "doc_ledger_3": {
+      "files": [
+        "doc_ledger_3.mp3"
+      ],
+      "durations": [
+        36.4
+      ]
+    },
+    "b13_rooms": {
+      "files": [
+        "b13_rooms.mp3"
+      ],
+      "durations": [
+        2.64
+      ]
+    },
+    "b13_hello": {
+      "files": [
+        "b13_hello.mp3"
+      ],
+      "durations": [
+        4.96
+      ]
+    },
+    "b13_gasp": {
+      "files": [
+        "b13_gasp.mp3"
+      ],
+      "durations": [
+        1.6
+      ]
+    }
+  }
+}

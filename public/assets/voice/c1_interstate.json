@@ -1,0 +1,31 @@
+{
+  "id": "c1_interstate",
+  "durationSec": 1.92,
+  "words": [
+    {
+      "text": "Should've",
+      "start": 0.135,
+      "end": 0.329
+    },
+    {
+      "text": "stayed",
+      "start": 0.363,
+      "end": 0.569
+    },
+    {
+      "text": "on",
+      "start": 0.596,
+      "end": 0.649
+    },
+    {
+      "text": "the",
+      "start": 0.669,
+      "end": 0.729
+    },
+    {
+      "text": "interstate.",
+      "start": 0.787,
+      "end": 1.929
+    }
+  ]
+}

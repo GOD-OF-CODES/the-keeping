@@ -153,7 +153,12 @@ export class Level {
   /** RUNTIME F2: per frame after setViewer, with the render camera's world position (the frame's final eye). */
   updateWindowCull(eye: any, now: number): void {
     this.windowCull?.update(eye, this.cullingEnabled && this.room !== null && !this.isOutside(), this.visible, now);
+    // FINAL #153e (R1-5 / F1): sub-pixel LOD of the dust sheet's rolled hem on P_DRESS (see hemLodOf)
+    for (const h of this.hemLod) h.mesh.visible = h.box.distanceToPoint(eye) < HEM_LOD_M;
   }
+
+  /** FINAL #153e: the 4 mm hem tubes + their world AABB (empty when the prop or the primitive is missing). */
+  hemLod: Array<{ mesh: any; box: any }> = [];
 
   setWindowCull(on: boolean): void {
     this.windowCull?.setEnabled(on);
@@ -495,9 +500,14 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
     let kind = p.collider;
     if (kind === 'box') {
       bb.setFromObject(root2).expandByScalar(0.15);
-      if (interactAt.some((v) => bb.containsPoint(v))) kind = 'mesh';
+      // FINAL #153 (measured, scratch/final/q1 cprobe): the B06 / B08 collision cost is P_NIGHTSTAND — forced exact (4.5 k
+      // tris) by the ledger on it, 2.6–2.8 k candidate triangles per capsule query while the player reads the ledger and
+      // pulls the bell beside it. The ledger lies ON its top (origin at the 0.66 m top surface) and the per-mesh boxes
+      // end at that surface, so interaction LOS to it is unchanged: a nightstand keeps its layout `box`.
+      if (p.type !== 'nightstand' && interactAt.some((v) => bb.containsPoint(v))) kind = 'mesh';
     }
-    colliderSources.push(...propColliderMeshes(root2, kind, kind !== p.collider)); // gameplay-e: interactable-bearing props stay exact when heavy
+    // FINAL #153: the iron bed's `box` is split at the empty band between its head and foot boards (collision.ts gapBoxes)
+    colliderSources.push(...propColliderMeshes(root2, kind, kind !== p.collider, kind === 'box' && p.type === 'iron_bed')); // gameplay-e: interactable-bearing props stay exact when heavy
   }
   const collision = new WorldCollision(colliderSources);
   doors.attachCollision(collision);
@@ -519,6 +529,7 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
   scene.background = new THREE.Color(...SKY_COLOR);
 
   const level = new Level({ layout, index, root, roomGroups, alwaysGroup, doors, collision, lights: runtimeLights, props, scene });
+  level.hemLod = hemLodOf(props.get('P_DRESS'));
   installTreeLod((id) => props.get(id) ?? null); // runtime lane D item 4: hero-tree far LOD (drawRange prefix)
   // runtime lane E (load time): instance matrices as geometry attributes → one node build per material, not per chunk
   // (?geoinst=0 = the round-D path for A/B)
@@ -733,6 +744,32 @@ export async function loadLevel(o: LevelLoadOptions): Promise<Level> {
   console.info(`[level] loaded ${JSON.stringify(level.stats)}`);
   if (unplaced.length) console.warn(`[level] props without a layout placement / missing from the GLBs: ${unplaced.join(', ')}`);
   return level;
+}
+
+/**
+ * FINAL #153e (R1-5 / F1, the C4a "fairy lights" down the dress form's dust sheet): the sheet's FrontSide primitive
+ * 'dress_dummysheet_1' is its rolled hem — blender/props/textiles.py hem_edges(): tubes of r 2 mm (cotton sheeting,
+ * a 5 mm double-turned hem) along the bottom and both vertical edges, i.e. exactly the silhouette edges and the hem
+ * line of the C4a shot. From the C4a camera (≈ 4.9 m) a 4 mm tube is ≈ 0.4 internal px on Medium (0.75 × 800 px,
+ * 60° fov: 9.4 mm / px) — a round, back-lit tube (the u3_window stroke 1.6 m behind the form) rasterised as isolated
+ * dots, which TAAU then holds (hidden: 162–236 → 13 specks, scratch/final/r15). A camera integrates a sub-pixel hem
+ * into the edge; we draw it only where it covers ≳ 1.5 px: 4 mm / 1.5 px at 9.4 mm / px per 4.9 m → ≈ 1.3 m on
+ * Medium at 800 px (larger windows / Max: more px, so 1.3 m is the conservative bound for every tier). Beyond that the
+ * DoubleSide grid's own edge carries the silhouette. Same programs (visibility only), no asset change.
+ */
+export const HEM_LOD_M = 1.3;
+export function hemLodOf(dress: any): Array<{ mesh: any; box: any }> {
+  const out: Array<{ mesh: any; box: any }> = [];
+  if (!dress) return out;
+  dress.updateWorldMatrix?.(true, true);
+  dress.traverse((n: any) => {
+    // Medium / Max 'dress_dummysheet_1', Low 'dress_dummysheet_low_1' (the hem primitive of 'dress_dummy.sheet[_low]')
+    if (!n.isMesh || !/dummysheet(_low)?_1$/.test(n.name ?? '')) return;
+    if (!n.geometry.boundingBox) n.geometry.computeBoundingBox();
+    out.push({ mesh: n, box: n.geometry.boundingBox.clone().applyMatrix4(n.matrixWorld) });
+  });
+  if (!out.length) console.info('[level] P_DRESS hem LOD: no hem primitive found (LOD off)');
+  return out;
 }
 
 /** a − b for axis-aligned plan rects [x0, y0, x1, y1] (0–4 pieces). */

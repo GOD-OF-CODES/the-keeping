@@ -1,0 +1,41 @@
+{
+  "id": "b07_grate",
+  "durationSec": 4.72,
+  "words": [
+    {
+      "text": "She'll",
+      "start": 0.245,
+      "end": 0.425
+    },
+    {
+      "text": "find",
+      "start": 0.505,
+      "end": 0.825
+    },
+    {
+      "text": "you,",
+      "start": 0.865,
+      "end": 1.065
+    },
+    {
+      "text": "friend.",
+      "start": 1.134,
+      "end": 1.785
+    },
+    {
+      "text": "She",
+      "start": 2.805,
+      "end": 2.985
+    },
+    {
+      "text": "always",
+      "start": 3.099,
+      "end": 3.785
+    },
+    {
+      "text": "does.",
+      "start": 3.897,
+      "end": 4.745
+    }
+  ]
+}

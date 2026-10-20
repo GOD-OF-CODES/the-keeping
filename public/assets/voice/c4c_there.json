@@ -1,0 +1,21 @@
+{
+  "id": "c4c_there",
+  "durationSec": 1.68,
+  "words": [
+    {
+      "text": "...there",
+      "start": 0.193,
+      "end": 0.24
+    },
+    {
+      "text": "you",
+      "start": 0.3,
+      "end": 0.48
+    },
+    {
+      "text": "are.",
+      "start": 0.54,
+      "end": 1.68
+    }
+  ]
+}

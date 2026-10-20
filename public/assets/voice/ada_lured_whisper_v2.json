@@ -1,0 +1,26 @@
+{
+  "id": "ada_lured_whisper",
+  "durationSec": 3.2,
+  "words": [
+    {
+      "text": "...Harlan...",
+      "start": 0.158,
+      "end": 1.958
+    },
+    {
+      "text": "I",
+      "start": 2.038,
+      "end": 2.118
+    },
+    {
+      "text": "hear",
+      "start": 2.182,
+      "end": 2.438
+    },
+    {
+      "text": "you...",
+      "start": 2.518,
+      "end": 3.238
+    }
+  ]
+}

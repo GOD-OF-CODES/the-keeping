@@ -1,0 +1,26 @@
+{
+  "id": "drv_breath_scared",
+  "durationSec": 3.44,
+  "words": [
+    {
+      "text": "Hh—",
+      "start": 0.232,
+      "end": 1.04
+    },
+    {
+      "text": "hh—",
+      "start": 1.147,
+      "end": 2.08
+    },
+    {
+      "text": "hhh—",
+      "start": 2.12,
+      "end": 3.04
+    },
+    {
+      "text": "hh—",
+      "start": 3.147,
+      "end": 3.44
+    }
+  ]
+}

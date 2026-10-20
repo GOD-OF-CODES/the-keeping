@@ -1,7 +1,7 @@
 {
   "tier": "medium",
-  "generatedAt": "2026-10-13T03:41:45.673Z",
-  "totalBytes": 56417312,
+  "generatedAt": "2026-10-19T22:47:23.065Z",
+  "totalBytes": 53963227,
   "files": [
     {
       "id": "ada_albedo",
@@ -217,106 +217,106 @@
       "id": "lm_car.meta",
       "kind": "lightmap",
       "path": "assets/medium/lm_car.json",
-      "bytes": 423,
-      "hash": "1f367aa87f82e2a3"
+      "bytes": 422,
+      "hash": "1d95ce29f4aae8df"
     },
     {
       "id": "lm_car",
       "kind": "lightmap",
       "path": "assets/medium/lm_car.klm",
-      "bytes": 1829970,
-      "hash": "19e126c055d2c731"
+      "bytes": 1677892,
+      "hash": "7b11ae5c03271a9b"
     },
     {
       "id": "lm_exterior.meta",
       "kind": "lightmap",
       "path": "assets/medium/lm_exterior.json",
       "bytes": 436,
-      "hash": "a0f428407ce6f513"
+      "hash": "31a60ee0cf4929a0"
     },
     {
       "id": "lm_exterior",
       "kind": "lightmap",
       "path": "assets/medium/lm_exterior.klm",
-      "bytes": 2302365,
-      "hash": "c2aa9812fc7547ad"
+      "bytes": 1848228,
+      "hash": "3e4ab65ce9bb3e24"
     },
     {
       "id": "lm_ground.meta",
       "kind": "lightmap",
       "path": "assets/medium/lm_ground.json",
-      "bytes": 429,
-      "hash": "a1190537ef7589af"
+      "bytes": 428,
+      "hash": "f4ce410dfcfef757"
     },
     {
       "id": "lm_ground",
       "kind": "lightmap",
       "path": "assets/medium/lm_ground.klm",
-      "bytes": 1512842,
-      "hash": "93856f9b2c4e5bbe"
+      "bytes": 1113006,
+      "hash": "4e47dbe9a7e5430c"
     },
     {
       "id": "lm_kitchen.meta",
       "kind": "lightmap",
       "path": "assets/medium/lm_kitchen.json",
-      "bytes": 431,
-      "hash": "70ed623106624696"
+      "bytes": 432,
+      "hash": "8859d59f3d9b104b"
     },
     {
       "id": "lm_kitchen",
       "kind": "lightmap",
       "path": "assets/medium/lm_kitchen.klm",
-      "bytes": 1416511,
-      "hash": "df523c98f7d45700"
+      "bytes": 967788,
+      "hash": "d6ea856a19798176"
     },
     {
       "id": "lm_parlor.meta",
       "kind": "lightmap",
       "path": "assets/medium/lm_parlor.json",
-      "bytes": 429,
-      "hash": "db2878713c38fef2"
+      "bytes": 427,
+      "hash": "cc0c0dcac824829b"
     },
     {
       "id": "lm_parlor",
       "kind": "lightmap",
       "path": "assets/medium/lm_parlor.klm",
-      "bytes": 1509291,
-      "hash": "cd97e9908b170090"
+      "bytes": 1185038,
+      "hash": "e2930c5258905b3f"
     },
     {
       "id": "lm_upper_hall.meta",
       "kind": "lightmap",
       "path": "assets/medium/lm_upper_hall.json",
       "bytes": 438,
-      "hash": "f8e5148eb8c2b0f9"
+      "hash": "3711ec2acc6296f3"
     },
     {
       "id": "lm_upper_hall",
       "kind": "lightmap",
       "path": "assets/medium/lm_upper_hall.klm",
-      "bytes": 2056989,
-      "hash": "4353421b8c44c713"
+      "bytes": 1616628,
+      "hash": "9692884307301acc"
     },
     {
       "id": "lm_upper_rooms.meta",
       "kind": "lightmap",
       "path": "assets/medium/lm_upper_rooms.json",
       "bytes": 440,
-      "hash": "9ca1e966aba8e970"
+      "hash": "998bcbfc4841cb01"
     },
     {
       "id": "lm_upper_rooms",
       "kind": "lightmap",
       "path": "assets/medium/lm_upper_rooms.klm",
-      "bytes": 2024007,
-      "hash": "83b9bad661f0e812"
+      "bytes": 1246129,
+      "hash": "36b00ff03736e79a"
     },
     {
       "id": "probes.bin",
       "kind": "probes",
       "path": "assets/medium/probes.bin",
       "bytes": 27152,
-      "hash": "80854d68a4198771"
+      "hash": "5e1f017afd07b143"
     },
     {
       "id": "props_m1",
@@ -338,6 +338,20 @@
       "path": "assets/medium/props_road.glb",
       "bytes": 725780,
       "hash": "ef461ced9682b7c5"
+    },
+    {
+      "id": "scare_face_meta",
+      "kind": "data",
+      "path": "assets/medium/scare_face.json",
+      "bytes": 379,
+      "hash": "1d613aa7e6768dd0"
+    },
+    {
+      "id": "scare_face",
+      "kind": "data",
+      "path": "assets/medium/scare_face.mp4",
+      "bytes": 542805,
+      "hash": "d13f1a6092304f3f"
     }
   ]
 }

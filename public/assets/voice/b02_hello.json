@@ -1,0 +1,71 @@
+{
+  "id": "b02_hello",
+  "durationSec": 5.76,
+  "words": [
+    {
+      "text": "Hello?",
+      "start": 0.16,
+      "end": 0.64
+    },
+    {
+      "text": "...Sorry",
+      "start": 2.25,
+      "end": 2.32
+    },
+    {
+      "text": "to",
+      "start": 2.347,
+      "end": 2.4
+    },
+    {
+      "text": "bother",
+      "start": 2.446,
+      "end": 2.72
+    },
+    {
+      "text": "you",
+      "start": 2.74,
+      "end": 2.8
+    },
+    {
+      "text": "this",
+      "start": 2.848,
+      "end": 3.04
+    },
+    {
+      "text": "late.",
+      "start": 3.104,
+      "end": 3.44
+    },
+    {
+      "text": "My",
+      "start": 3.627,
+      "end": 4
+    },
+    {
+      "text": "car",
+      "start": 4.06,
+      "end": 4.24
+    },
+    {
+      "text": "ran",
+      "start": 4.3,
+      "end": 4.48
+    },
+    {
+      "text": "out",
+      "start": 4.5,
+      "end": 4.56
+    },
+    {
+      "text": "of",
+      "start": 4.587,
+      "end": 4.64
+    },
+    {
+      "text": "gas.",
+      "start": 4.76,
+      "end": 5.76
+    }
+  ]
+}

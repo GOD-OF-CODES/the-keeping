@@ -758,6 +758,15 @@ export function bindDecals(root: any, o: { anisotropy?: number } = {}): DecalInf
       done.push({ mesh, kind, text: '' });
       continue;
     }
+    if (kind === 'cobweb') {
+      // FINAL-B (#154, R1-2): textiles.py cobweb_curtain tags its torn sheet remnants (4×4 grids, UV 0..1 per patch)
+      // decal 'cobweb' for this alpha; without it they rendered as flat opaque dust_sheet cards (light-blue rectangles).
+      mesh.material = cobwebMaterial(mesh.material, o.anisotropy ?? 4);
+      mesh.renderOrder = 1;
+      mesh.castShadow = false;
+      done.push({ mesh, kind, text: '' });
+      continue;
+    }
     let cv: HTMLCanvasElement | null;
     if (kind === 'ticket') {
       const { c, g } = canvas(512, 256);
@@ -822,6 +831,140 @@ function grimeMaterial(old: any, anisotropy: number): any {
   m.polygonOffsetFactor = -1;
   m.polygonOffsetUnits = -2;
   GRIME_MAT = m;
+  return m;
+}
+
+/**
+ * FINAL-B (#154, R1-2): an old, dust-laden cobweb remnant (the torn sheet webbing of a cellar / funnel-weaver web that
+ * hangs in a disused passage): a faint clogged gauze with ragged holes, a tangle of sagging threads, dust beads.
+ * Alpha → 0 at every UV edge (each patch is its own 0..1 UV quad), so no patch reads as a card. Silk albedo ≈ 0.8 (it is
+ * white), grey with decades of dust: colour ≈ sRGB 178 (linear ≈ 0.44). Canvas y = 0 is the patch top (glTF v).
+ */
+function drawCobweb(n: number): HTMLCanvasElement {
+  const { c, g } = canvas(n, n);
+  const rng = hashRng(4471);
+  const k = n / 512;
+  // a 1/255 colour floor over the whole sheet: the browser stores the canvas premultiplied, so a fully clear texel
+  // would carry black into the mips (a dark fringe round every thread); alphaTest discards the floor itself
+  g.fillStyle = 'rgba(178,174,166,0.004)';
+  g.fillRect(0, 0, n, n);
+  // 1. clogged gauze: a felt of short crossing silk fibres (never a smooth fill: that read as cotton wool), in a few
+  //    lobes hanging from the upper edge, densest near the anchors, thinning out downward
+  g.lineCap = 'round';
+  for (let i = 0; i < 6; i++) {
+    const cx = (0.15 + rng() * 0.7) * n;
+    const cy = (0.12 + rng() * 0.45) * n;
+    const r = (0.14 + rng() * 0.2) * n;
+    for (let j = 0; j < 260; j++) {
+      // gaussian-ish scatter round the lobe centre (sum of two uniforms), stretched sideways (webs sag in sheets)
+      const x = cx + (rng() + rng() - 1) * r * 1.3;
+      const y = cy + (rng() + rng() - 1) * r * 0.8;
+      const ang = rng() * Math.PI;
+      const len = (0.015 + rng() * 0.06) * n;
+      g.strokeStyle = `rgba(172,168,159,${0.05 + rng() * 0.09})`;
+      g.lineWidth = (0.45 + rng() * 0.4) * k;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.quadraticCurveTo(x + Math.cos(ang) * len * 0.5 + (rng() - 0.5) * len * 0.3, y + Math.sin(ang) * len * 0.5 + len * 0.12, x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+      g.stroke();
+    }
+  }
+  // 2. torn holes through the gauze (threads are drawn after: some cross the holes)
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 9; i++) {
+    const x = rng() * n;
+    const y = (0.2 + rng() * 0.8) * n;
+    const rx = (0.04 + rng() * 0.12) * n;
+    const ry = rx * (0.5 + rng() * 0.9);
+    const grad = g.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
+    grad.addColorStop(0, 'rgba(0,0,0,0.95)');
+    grad.addColorStop(0.7, 'rgba(0,0,0,0.6)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.beginPath();
+    g.ellipse(x, y, rx, ry, rng() * Math.PI, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.globalCompositeOperation = 'source-over';
+  // 3. the thread tangle: chords between anchor points (more along the top edge), sagging under their own weight
+  const anchors: Array<[number, number]> = [];
+  for (let i = 0; i < 14; i++) anchors.push([(0.06 + rng() * 0.88) * n, (0.04 + rng() * 0.12) * n]);
+  for (let i = 0; i < 18; i++) anchors.push([(0.05 + rng() * 0.9) * n, (0.15 + rng() * 0.75) * n]);
+  g.lineCap = 'round';
+  for (let i = 0; i < 46; i++) {
+    const a = anchors[Math.floor(rng() * anchors.length)];
+    const b = anchors[Math.floor(rng() * anchors.length)];
+    if (a === b) continue;
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const sag = len * (0.06 + rng() * 0.2);
+    g.strokeStyle = `rgba(182,178,169,${0.18 + rng() * 0.3})`;
+    g.lineWidth = (0.45 + rng() * 0.45) * k;
+    g.beginPath();
+    g.moveTo(a[0], a[1]);
+    g.quadraticCurveTo((a[0] + b[0]) / 2 + (rng() - 0.5) * 0.1 * len, (a[1] + b[1]) / 2 + sag, b[0], b[1]);
+    g.stroke();
+  }
+  // broken strands: short tails hanging straight down from the tangle
+  for (let i = 0; i < 16; i++) {
+    const a = anchors[Math.floor(rng() * anchors.length)];
+    const l = (0.06 + rng() * 0.2) * n;
+    g.strokeStyle = `rgba(190,186,177,${0.25 + rng() * 0.3})`;
+    g.lineWidth = (0.5 + rng() * 0.4) * k;
+    g.beginPath();
+    g.moveTo(a[0], a[1]);
+    g.quadraticCurveTo(a[0] + (rng() - 0.5) * 0.04 * n, a[1] + l * 0.5, a[0] + (rng() - 0.5) * 0.06 * n, a[1] + l);
+    g.stroke();
+  }
+  // 4. dust beads caught on the threads
+  for (let i = 0; i < 90; i++) {
+    const a = anchors[Math.floor(rng() * anchors.length)];
+    const b = anchors[Math.floor(rng() * anchors.length)];
+    const t = rng();
+    g.fillStyle = `rgba(150,144,134,${0.25 + rng() * 0.35})`;
+    g.beginPath();
+    g.arc(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t + Math.sin(t * Math.PI) * 0.05 * n, (0.6 + rng() * 1.4) * k, 0, Math.PI * 2);
+    g.fill();
+  }
+  // 5. ragged edges: alpha → 0 toward every border (a noisy inset, never a straight line)
+  const edge = canvas(n, n);
+  const e = edge.g;
+  e.fillStyle = '#fff';
+  e.beginPath();
+  const steps = 48;
+  for (let i = 0; i <= steps * 4; i++) {
+    const s = (i % steps) / steps;
+    const side = Math.floor(i / steps) % 4;
+    const inset = (0.05 + rng() * 0.14) * n;
+    const p: [number, number] = side === 0 ? [s * n, inset * 0.4] : side === 1 ? [n - inset, s * n] : side === 2 ? [n - s * n, n - inset] : [inset, n - s * n];
+    if (i === 0) e.moveTo(p[0], p[1]);
+    else e.lineTo(p[0], p[1]);
+  }
+  e.closePath();
+  e.filter = `blur(${Math.max(2, Math.round(4 * k))}px)`;
+  e.fill();
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(edge.c, 0, 0);
+  g.globalCompositeOperation = 'source-over';
+  return c;
+}
+
+const COBWEB_MATS = new Map<any, any>();
+let COBWEB_TEX: any = null;
+/** The cobweb remnant material: alpha sheet over whatever is behind, no depth write, the prop's side + LightsNode. */
+function cobwebMaterial(old: any, anisotropy: number): any {
+  const hit = COBWEB_MATS.get(old);
+  if (hit) return hit;
+  if (!COBWEB_TEX) {
+    COBWEB_TEX = new THREE.CanvasTexture(drawCobweb(anisotropy >= 8 ? 512 : 256)); // 256² on Low (anisotropy 4)
+    COBWEB_TEX.colorSpace = THREE.SRGBColorSpace;
+    COBWEB_TEX.flipY = false;
+    COBWEB_TEX.anisotropy = anisotropy;
+  }
+  const m = new THREE.MeshStandardNodeMaterial({ map: COBWEB_TEX, roughness: 0.9, metalness: 0, transparent: true, depthWrite: false, alphaTest: 0.02 });
+  m.name = 'decal_cobweb';
+  m.side = old?.side ?? THREE.DoubleSide;
+  if (old?.lightsNode) m.lightsNode = old.lightsNode;
+  COBWEB_MATS.set(old, m);
   return m;
 }
 

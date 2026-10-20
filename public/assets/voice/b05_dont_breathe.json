@@ -1,0 +1,26 @@
+{
+  "id": "b05_dont_breathe",
+  "durationSec": 2.56,
+  "words": [
+    {
+      "text": "Don't",
+      "start": 0.143,
+      "end": 0.24
+    },
+    {
+      "text": "breathe.",
+      "start": 0.29,
+      "end": 1.76
+    },
+    {
+      "text": "Don't",
+      "start": 1.91,
+      "end": 2
+    },
+    {
+      "text": "breathe.",
+      "start": 2.05,
+      "end": 2.56
+    }
+  ]
+}

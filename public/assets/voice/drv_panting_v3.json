@@ -1,0 +1,26 @@
+{
+  "id": "drv_panting",
+  "durationSec": 6,
+  "words": [
+    {
+      "text": "Hah...",
+      "start": 0.164,
+      "end": 1.484
+    },
+    {
+      "text": "hah...",
+      "start": 1.524,
+      "end": 2.924
+    },
+    {
+      "text": "hah...",
+      "start": 2.964,
+      "end": 4.444
+    },
+    {
+      "text": "hah...",
+      "start": 4.484,
+      "end": 6.044
+    }
+  ]
+}

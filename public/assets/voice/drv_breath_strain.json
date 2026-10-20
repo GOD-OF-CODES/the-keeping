@@ -1,0 +1,16 @@
+{
+  "id": "drv_breath_strain",
+  "durationSec": 1.84,
+  "words": [
+    {
+      "text": "Mmm—",
+      "start": 0.3,
+      "end": 1.12
+    },
+    {
+      "text": "mm—",
+      "start": 1.253,
+      "end": 1.84
+    }
+  ]
+}

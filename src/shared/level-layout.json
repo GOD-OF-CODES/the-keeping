@@ -3902,7 +3902,7 @@
     "blanketMat": "wool_coats"
    },
    "lighting": "static",
-   "collider": "mesh",
+   "collider": "box",
    "milestone": "M1"
   },
   {

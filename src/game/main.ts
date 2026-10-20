@@ -31,7 +31,9 @@ import { requestExposureSnap } from '../render/exposure.ts';
 import { installPerf, perfBuildClasses, perfBuilds, perfLog, perfMark } from '../render/perf.ts';
 import { installUniformRangePatch } from '../render/uniform-ranges.ts';
 import { HASH_PREPASS, hashPrepassOff, installHashPrepass } from '../render/hash-prepass.ts'; // PERF smoothness (#143) item 3
-import { SHADOW_CANDLE_ID, setCandleShadow } from '../world/lights.ts';
+import { auditCharShadowCull, charShadowCullStats, installCharShadowCull, setShadowFigures } from '../render/char-shadow-cull.ts'; // PERF2 BUDGETS (#150b)
+import { VIEW_CULL_SCOPE } from '../render/view-caster-cull.ts'; // PERF2 BUDGETS (#150b): gameplay scope of the torch caster cull
+import { SHADOW_CANDLE_ID, registerClippedLights, setCandleShadow } from '../world/lights.ts';
 import type { GameContext } from './context.ts';
 import type { LevelLayout, TriggerVolume } from '../shared/layout-types.ts';
 import layoutJson from '../shared/level-layout.json';
@@ -420,6 +422,12 @@ export async function startGame(h: BootHandoff): Promise<void> {
     buildClasses: () => perfBuildClasses(),
     /** PERF smoothness (#143): the alpha-hash depth pre-pass (QA A/B: `.setEnabled(false)`), null if not installed. */
     hashPrepass: () => HASH_PREPASS.current,
+    /** PERF round 2 (#150): the cutscene culling allow-list (bindings.ts CS_CULL_IDS; QA same-frame A/B: delete / add). */
+    csCull: async () => (await import('../cutscenes/bindings.ts')).CS_CULL_IDS,
+    /** PERF2 BUDGETS (#150b): the torch caster cull's cutscene list (bindings.ts TORCH_CULL_IDS; QA A/B: delete / add). */
+    torchCull: async () => (await import('../cutscenes/bindings.ts')).TORCH_CULL_IDS,
+    /** #150b: figure shadow-pass cull — stats + containment audit (posed bounds inside each figure's sphere). */
+    charShCull: { stats: () => charShadowCullStats(), audit: () => auditCharShadowCull() },
     /**
      * Debug screenshot that works in hidden/occluded tabs: renders the pipeline into a render target, reads it back
      * and returns a JPEG data URL (w px wide; AgX output is already display-referred — sRGB-encoded here).
@@ -568,6 +576,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
   let level: Awaited<ReturnType<typeof loadLevel>>;
   try {
     perfMark('download');
+    registerClippedLights(renderer); // FINAL-B (#154, R1-3): before any LightsNode meets a room-clipped flicker light
     level = await loadLevel({ ctx, renderer, scene, preset, presetId: ctx.presetId, overlay, flashlight: rig.flashlight });
     perfMark('story');
   } catch (e) {
@@ -610,6 +619,9 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
     const { bindDecals } = await import('../world/decals.ts');
     const drawn = bindDecals(level.root, { anisotropy: preset.textures.anisotropy });
     console.info(`[level] decals drawn: ${drawn.length}`);
+    // FINAL-B (#154, R1-4): Ada's wardrobe's own probe-lit parts get the hide-view dimmer (src/world/hide-dim.ts)
+    const { installHideDim } = await import('../world/hide-dim.ts');
+    installHideDim(level.prop('P_ADA_WARDROBE'), level.probeLit);
   } catch (e) {
     console.warn('[level] decals failed:', e);
   }
@@ -671,7 +683,12 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
       // for this prewarm (m2-world hides them before the capture), so the first dawn re-capture (C5 ≈ 31) built them in
       // the cube context (real-time Medium: 100 + 133 + 100 ms frames). Show them for the prewarm only — it renders into
       // the SPARE cube, which a real re-capture overwrites before it is ever sampled.
-      const lateYard = ['P_CAR_ROW'].map((id) => level.prop(id)).filter((o: any) => o && !o.visible);
+      // PERF round 2 (#150, q15 probe): + the cutscene-only meshes (CS_PREWARM: M-A mist cards, drop, match flare). The
+      // mist rolls in at C5 26.6 and the dawn re-capture's async precompile (compileAsync) builds no two-pass variants
+      // of a transparent DoubleSide material, so its first face renders built the 4 cards' back / front pipelines
+      // SYNCHRONOUSLY in C5 (29.07: 8 pipelines). This synchronous spare-cube capture builds them now (frustumCulled
+      // false: every face draws them; the kept capture camera holds the pipelines).
+      const lateYard = [...['P_CAR_ROW'].map((id) => level.prop(id)), ...CS_PREWARM].filter((o: any) => o && !o.visible);
       for (const o of lateYard) o.visible = true;
       try {
         await refl.prewarmRecapture();
@@ -686,12 +703,17 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
     }
   }
 
+  const TORCH_CULL_PLAY = params.get('torchcullplay') !== '0'; // #150b QA A/B: `?torchcullplay=0` = the old gameplay path
   const world = (dt: number, t: number, lightning: number) => {
     // culling + room from the camera (hides move the camera, not the body)
     const cp = coords.worldToPlan([camera.position.x, camera.position.y, camera.position.z]);
     const feetZ = level.viewerFeetZ ?? (hides.active ? hides.active.entry[2] : player.planFeet()[2]);
     const changed = level.setViewer(cp[0], cp[1], feetZ);
     level.updateWindowCull(camera.position, t); // RUNTIME F2
+    // PERF2 BUDGETS (#150b): gameplay frames (no cutscene, no C4 overlay) run the torch's shadow-cone caster cull
+    // (src/render/view-caster-cull.ts; bindings.ts owns `.on` while a cutscene camera holds)
+    const csx = story.cutscenes as any;
+    VIEW_CULL_SCOPE.play = TORCH_CULL_PLAY && !csx?.player?.active && !csx?.hem?.current;
     const outside = level.isOutside();
     if (changed || lastRoom === null) {
       lastRoom = level.room;
@@ -931,6 +953,12 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
           // props, Ada, Harlan) build now — measured ~470 node builds / +146 programs at C2's first shadow frame else
           const candle = (level.lights.shadow ?? level.lights.flickers.find((f) => f.def.id === SHADOW_CANDLE_ID))?.light; // C2-ESCAPE K3: the lamp
           if (candle) setCandleShadow(candle, true);
+          // PERF round 2 (#150, the C2 entry frame): C2's t = 0 cue shows the lamp flag (cutscene-fx lampFlag: a hidden,
+          // DoubleSide caster on the lamp's caster layer only) — its first shadow draw created the cube pass's
+          // DoubleSide ShadowMaterial pipeline SYNCHRONOUSLY inside C2's first frame (c2start probe, Max: lamp_flag
+          // renderPipeline_ShadowMaterial at C2 0.02, the only pipeline built there). Show it for these two steps:
+          // setLampFlag forces the six-face redraw, so the pipeline exists before C2 (camera-invisible: layer 8 only).
+          story.fx.fx?.('lampFlag', { on: true });
           const e = level.index.elevationOf('G2');
           await step(
             'tableau',
@@ -954,6 +982,7 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
             },
             [Math.atan2(1.95, 2.4) - Math.PI / 2, -Math.PI / 2 + 0.3], // toward the tableau (5.2, 3.3) · the parlor heading
           );
+          story.fx.fx?.('lampFlag', { on: false });
           if (candle) setCandleShadow(candle, false);
           story.warmTableau(false);
         }
@@ -1109,6 +1138,32 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
             // C7's car is re-trimmed maroon at its t = 0 (cutscene-fx car_trim clones the tan materials): draw the clone
             // once here so its shader program / pipelines exist (the cue's own clones then hit the pipeline cache)
             if (id === 'C7') story.fx.fx?.('car_trim', { style: 'maroon' });
+            // PERF round 2 (#150, q15 probe): C7's t = 0 cues switch the headlights on (runtime L_HEADLIGHT_L / R). Their
+            // first shadow-map frames after the fade-in (C7 1.63 / 1.70) drew the maroon cabin clones and built
+            // ShadowMaterial pipelines SYNCHRONOUSLY (sedan_interior001_1, its visor; real route: 300 ms Medium, 217 ms
+            // Max). Run the headlamp shadow passes with these poses (opening.ts draws a lamp's map only while its
+            // intensity > 0); intensity and autoUpdate are restored exactly (userData.csBase, the cue's base, untouched).
+            const lampsWas = id === 'C7'
+              ? ['L_HEADLIGHT_L', 'L_HEADLIGHT_R'].map((lid) => level.runtimeLight(lid)).filter((l: any) => l?.castShadow && l.shadow).map((l: any) => [l, l.intensity, l.shadow.autoUpdate] as const)
+              : [];
+            for (const [l] of lampsWas) {
+              if (!(l.intensity > 1e-4)) l.intensity = 1;
+              l.shadow.autoUpdate = true;
+              l.shadow.needsUpdate = true;
+            }
+            // (STATUS-perf2 S33) ... but the lamps follow P_CAR_GATE (lights.ts followers, placed in world(), which this
+            // warm never runs): here they stand at the yard gate with the static CAR set ≈ 100 m BEHIND them, so the
+            // pass above drew no cabin. In C7 the vehicle track drives the gate along the road and the set enters the
+            // cone at 1.6. Draw the cabin's casters into the map wherever the lamp points (three projects an object
+            // when `!frustumCulled || intersectsFrustum`); restored after the poses. Camera-invisible: load-time only.
+            const cabWas: [any, boolean][] = [];
+            if (lampsWas.length) {
+              level.prop('P_CAR_INTERIOR')?.traverse((n: any) => {
+                if (!n.isMesh || !n.castShadow) return;
+                cabWas.push([n, n.frustumCulled]);
+                n.frustumCulled = false;
+              });
+            }
             // props the cutscene shows with a `prop` cue (hidden at load: C7's air freshener) — drawn with its poses
             const propsWas = (shownProps.get(id) ?? []).map((pid) => [level.prop(pid), level.prop(pid)?.visible] as const).filter(([o]) => !!o);
             for (const [o] of propsWas) o.visible = true;
@@ -1139,6 +1194,11 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
               render();
             }
             if (id === 'C7') story.fx.fx?.('car_trim', { style: 'tan' });
+            for (const [l, i, a] of lampsWas) {
+              l.intensity = i;
+              l.shadow.autoUpdate = a;
+            }
+            for (const [n, f] of cabWas) n.frustumCulled = f;
             for (const [o, v] of propsWas) o.visible = !!v;
             console.info(`[game] warm cs:${id} ${(performance.now() - ts).toFixed(0)} ms builds=${perfBuilds() - b0} poses=${mine.length}`);
             await nextFrame();
@@ -1158,6 +1218,10 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
         rig.snap();
         rig.update(0.016, 0);
         console.info(`[game] room warm-up ${(performance.now() - t0).toFixed(0)} ms`);
+        // PERF round 2 BUDGETS (#150b): the figures cull in the shadow passes from here on — after every warm-up pose, so
+        // the load still draws each figure into every shadow pass it can ever meet (culling only ever removes draws)
+        installCharShadowCull();
+        setShadowFigures(story.shadowFigures);
       },
       /**
        * PERF-PLAN P1-4 (debug; scripts/qa/probes-export.mjs): the runtime-baked probe grids (load with ?probes=bake)

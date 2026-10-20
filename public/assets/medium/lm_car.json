@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.00088,
+    "mean": 0.0009,
     "p99": 0.00635,
-    "max": 0.00968,
-    "coverage": 0.532
+    "max": 0.0091,
+    "coverage": 0.5689
   },
   "file": "lm_car.klm"
 }

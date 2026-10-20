@@ -1,0 +1,26 @@
+{
+  "id": "c5_door_crack",
+  "durationSec": 3.68,
+  "words": [
+    {
+      "text": "Ada?...",
+      "start": 0.53,
+      "end": 1.92
+    },
+    {
+      "text": "No.",
+      "start": 2.277,
+      "end": 2.6
+    },
+    {
+      "text": "No,",
+      "start": 2.693,
+      "end": 2.96
+    },
+    {
+      "text": "no—",
+      "start": 3.093,
+      "end": 3.68
+    }
+  ]
+}

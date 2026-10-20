@@ -1123,7 +1123,7 @@ Cycles sequence played full-frame through the game's post chain, DEATH_DURATION 
 
 - **147l RENDER + ENCODE, final (2026-10-19 12:35).** Ruling (av, amended): render the sequence NOW with the best still
   (look-r37 + 147j's unrendered brow-gap correction) whatever the verdict; the last review is **AD4-r37-20261019 = FAIL as
-  a photograph, horrifying as a 1 s jumpscare** (its ranked list is the polish backlog, below when done). Budget: <= 4 h of
+  a photograph, horrifying as a 1 s jumpscare** (its ranked list = the POLISH BACKLOG block below). Budget: <= 4 h of
   Blender lock in assets.mjs jobs of <= 45 min.
   * Plan: **1600x1000, 96 spp + OIDN, 30 frames at 30 fps, motion blur 180 deg** (r37 measured 2.04 s per spp-MP at
     1920x1200/128 spp + 6 % blur -> ~5.6 min/frame -> ~2.9 h + lurch frames; 1920x1200 at 128 spp = 5.3 h, over budget).
@@ -1139,6 +1139,602 @@ Cycles sequence played full-frame through the game's post chain, DEATH_DURATION 
     (`--res max=WxH` overrides), so Max ships the native 1600x1000 (not Lanczos-invented 1920x1200 pixels); the H.264
     level/ref count is computed per size (`levelFor`: level 4.0 if <= 8192 MBs with ref <= 32768/MBs, i.e. 1600x1000 =
     6300 MBs -> ref 5, `avc1.640028`; else 5.0). The runtime must read the codec string from scare_face.json.
+  * **LEAD DECISION (12:55, via main) — staging only, no look round: apply AD4 rank 2's camera / light fixes.** Chunk 1
+    (f12/16/17 at r37's 35 mm framing, 19.8 min of lock, 335-348 s/frame at 1600x1000/96 spp, peak 2.34 GB) had already
+    rendered when the decision arrived: those 3 frames are moved to scratch/jumpscare/seq-final-oldstaging/ (a record,
+    never shipped) and re-render with the new staging.
+    - FRAMING = a CROP of the same eye's view (lens 35 -> **47.6 mm** + Blender lens shift **(-0.1169, +0.0184)** in frame
+      widths): camera position, perspective, torch and lighting are unchanged, so it is r37's reviewed image, tighter.
+      Window in r37's 1920x1200 pixels: x 89-1501, y 133-1015 (k 1.36, centre (795, 574) = the cheekbone centre).
+      Numbers (j/frame-style projection of the cached head, scratchpad l/frame.py): cheekbones 70 % of the width (r37
+      geometric 52 %, lit 34 %); brow-chin overflows the frame (141 %+ of the height): ruling (au)'s 85 % H AND 70 % W
+      cannot both hold with the brow and the chin inside a 16:10 frame (147h: a face's w/h is 0.77, 1.12 needed), so the
+      window keeps the eyes + the WHOLE split lower lip (r37 y 900-1010) and lets the brows (r37 y 40-107, i.e. the brow
+      scar) and the chin fall outside. Choice logged; the brow scar failed the 20/255 gate in the dark anyway.
+      DOF: f/11 -> **f/16** (crop-equivalent of f/11 at 1.36x is f/15: the same blur relative to the face as r37).
+    - SPILL RING (AD4 2b): `--ring 0.08,12,26` = a second cone in the SAME IES torch (one light: no MIS/overlapping-sphere
+      problem, 147e), 8 % of the near-field peak at the aim distance (810 cd -> 65 cd), flat to 12 deg, 0 at 26 deg (half at
+      ~19 deg). Torch off-axis angles (scratchpad l/angles.py): brow 10-13 deg, eye_L 10.7, chin 13.4, grip row 12-18,
+      cheek/crescent 6-7 -> the brows / chin / jaw / dark-side cheek take the full ring. Honest physics note: a real
+      2-D krypton's spill is ~5-10 cd (the game's shelf is 7 cd); 65 cd over ~0.4 sr is ~26 lm, about the bulb's whole
+      27 lm budget: this is a cinematographer's lift (a staging decision by the lead), not a measured torch.
+    - Test: ONE low-spp hero frame (job scare-look, --round l1, 32 spp, 1600x1000) for framing + exposure only, then the
+      chunks as planned. Args added to the sequence: `--lens 47.6 --shift -0.1169,0.0184 --ring 0.08,12,26 --fstop 16`.
+    - Code (lane files): `scare_scene.setup_camera_and_torch(lens, shift, ring_frac)` + `torch_ies_text(ring)`;
+      `scare_render` flags `--lens --shift --ring`, a Blender `world_to_camera_view` landmark check in the log, and the
+      metering spots' projection now uses the lens + shift (it assumed 35 mm). Defaults = r37 (35 mm, no shift, no ring).
+  * `blender/pipeline.json` scare-render: post step + `--previews --ev -11.03`; description notes 147l (lane entry).
+  * **Chunk 1 DONE** (frames 12,16,17; log .cache/logs/scare-render-2026-10-19T07-12-26-647Z.log; Blender 1190 s of lock,
+    incl. the head/eye/teeth cache rebuild 155 s for 147j's brow-gap change; hair caches hit). **340 s/frame** (f12 347.7,
+    f16 334.4, f17 337.8) = 2.21 s per spp-MP incl. blur + per-frame sync; peak RSS 2.34 GB. Framing = r37 (lit centroid x
+    0.511 / y 0.442 vs r37 0.507 / 0.438; lit span x 0.35-0.64, y 0.12-0.72; display mean 16.3 vs r37-agx 15.9 /255).
+    **Boil (hold, f16 -> f17, AgX display at -11.03, 80 lit static-skin patches 48 px, sub-pixel phase-correlation
+    registration then residual std / sqrt 2): p50 0.86 /255, p90 1.27 /255** (raw unregistered mean |dL| 1.59; drift 0.1 /
+    0.77 px/frame) -> under the 2/255 bar: 96 spp kept (no 128 spp re-render). Tool: scratchpad l/boil.py.
+    Remaining: 0-6 (chunk 2, queued behind two headless-Chrome runs at 13:20), 7-11+13-14, 15+18-23, 24-29 (~40 min each).
+  * **147l RESTART (13:40). LEAD DECISION 13:45: the l1 staging for ALL 30 frames** (the lead checked look-rl1: the face
+    fills the height and ~70 % of the width, jaw + cheek bruises lit; approved). The old chunk 2 (c2.out) never rendered
+    (it was queued behind the l1 look and the agent was interrupted): `.cache/scare/frames/final/` was EMPTY at the restart;
+    the old-staging f12/16/17 stay in scratch/jumpscare/seq-final-oldstaging/ (a record; nothing reads that path: the
+    post step and the ship step both read `.cache/scare/frames/final`).
+    - Args (scratchpad l2/args.sh; l/args.sh and rend/args.sh are STALE r37 args — do not source them):
+      `--spp 96 --res 1600x1000 --h 0.6 --dist 0.19 --center -6,-24,-36 --pitch -4 --torch 0.065,-0.04,-0.13
+      --aim -15,-37,-42 --yaw 15 --fstop 16 --focus -20,-22,-8 --lens 47.6 --shift -0.1169,0.0184 --ring 0.08,12,26
+      --ev -11.73 --approved ruling-av-amended_AD4-r37-20261019_FAIL_l1-staging-lead-1345 --frames <chunk>` on
+      `node scripts/assets.mjs --only scare-render --force --job-args="..."`. The token records the ruling, that AD4 FAILED,
+      and which staging the decision covered.
+    - pipeline.json scare-render post step `--ev -11.03` -> **-11.73** (the l1 ev_metered) + description.
+    - scare_render landmark check FIXED (cheap): `bpy.context.view_layer.update()` before `world_to_camera_view` — the
+      camera had just been placed by location/rotation_euler, so its matrix_world was still the identity (l1's eye_R
+      (-586, 1871) / nose_tip (550, -5357) were that, not a lens-shift bug).
+    - Cost risk: l1 rendered 167 s at 32 spp (3.3 s per spp-MP vs chunk 1's 2.21: the crop + ring fill the frame with
+      lit skin/hair instead of black void) -> 96 spp may be ~450-500 s/frame -> 30 frames 3.7-4.2 h + the ~23 min of lock
+      already spent (old chunk 1 19.8 min + l1 3.1 min). Plan: chunk A = 12,16,17 (risk frames) to MEASURE, then
+      chunks of floor((45 min - setup) / t_frame) frames; spp stays UNIFORM at 96 on all 30 frames (an spp change between
+      chunks shifts OIDN's texture = a pop at the chunk boundary); a modest overrun of the 4 h total is preferred to that.
+    - Chunk A queued 13:41 (behind the lead's ship3 max playthrough, shot.mjs pid 25581); Blender started 13:43
+      (log .cache/logs/scare-render-2026-10-19T08-13-30-042Z.log). Landmark check now in-frame: eye_R (1232, 164),
+      eye_L (592, 111), nose_tip (1008, 489), upper_lip (930, 746) of 1600x1000 (eyes in the top 16 %, brows above the
+      frame, chin below: the lead-approved l1 crop).
+    - **f12 = 502 s at 96 spp** (1.48x old chunk 1's 340 s), display mean 28.15/255 (old staging 16.3), peak RSS 1.25 GB.
+      As-played proxy (scratchpad l2/played.py = film_finish port, 1440 px): mean 27.8, 21 % exactly-0 px (r37: 62 %).
+      Same tells as AD4 (lacquer coat, ink-line strands, stage-blood nosebleed), exposure reads right.
+    - **DECISION (budget): keep 96 spp on ALL 30 frames** = 27 x ~500 s ~ 3.75 h + setup from 14:10 -> ~4.3 h total lock
+      incl. the 23 min already spent (~0.3-0.5 h over the 4 h budget). Reason: the lead set 96 spp at 13:45; switching to
+      80 spp now saves only ~16 min net (f12/16/17 would need a re-render to keep the spp uniform), and every chunk stays
+      <= 45 min, which is the part of the budget that lets other lanes' headless Chrome through.
+    - Chunks after A (sequential driver scratchpad l2/drive.sh, log l2/drive.log; each assets.mjs starts only after the
+      previous exits, so Chrome runs queued meanwhile go first; retries a lock-wait timeout): `0-4`, `5-9`,
+      `10,11,13,14,15`, `18-21`, `22-25`, `26-29` (5 x 500 s = 42 min max per hold). Restart: frames on disk are skipped,
+      so just rerun l2/drive.sh (or the remaining chunks by hand with l2/args.sh).
+    - **Chunk A DONE 14:13** (f12 502.1 s, f16 476.6, f17 490.6 = mean 490 s/frame; Blender total 1489.6 s = 24.8 min of
+      lock; peak RSS 1.99 GB; display means 28.15 / 28.55 / 28.55). **Boil, hold f16 -> f17 (l/boil.py, 80 lit
+      static-skin patches): p50 0.91 /255, p90 1.88 /255** (old staging 0.86 / 1.27; this pair drifts 1.08 px, so the
+      registration error is larger) -> under the 2/255 bar, 96 spp kept. Chunk `0-4` started 14:13:44.
+    - **Chunk 0-4 DONE 15:04** (Blender 14:34-15:04 after a Chrome QA run; f0 408 s, f1 443, f2 487, f3 517, f4 515;
+      total 2386 s = 39.8 min of lock; log scare-render-2026-10-19T08-43-45-026Z.log). Arrival motion curve (mean |dL|
+      between frames, /255): 9.1, 10.5, 9.9, 7.0 (the spring settling, no isolated spike); display mean 24.8 -> 28.1.
+      Chunk `5-9` queued 15:04 behind 2 headless-Chrome runs.
+    - **Chunk 5-9 DONE 16:00** (f5 494.6 s, f6 485.4, f7 477.0, f8 468.5, f9 475.7; Blender total 2414.5 s = 40.2 min;
+      peak RSS 2.67 GB). Frames on disk: 0-9, 12, 16, 17 (13/30). Lock time so far (this restart): 24.8 + 39.8 + 40.2 =
+      **104.8 min**; remaining 17 frames x ~490 s ~ 2.3 h.
+    - **HELD 16:00 by LEAD RULING (ax)** (`.cache/blender.hold.json`, match `^scare-`, until 18:15 at the latest): the
+      final-bake release chain goes first. Chunk `10,11,13,14,15` waits inside assets.mjs (the hold wait is not counted
+      toward the lock timeout); drive.sh then continues with `18-21`, `22-25`, `26-29`. CAUTION: drive.sh moves on after 3
+      lock-wait timeouts, so count the EXRs at the end and re-render any missing frame by hand (l2/args.sh).
+    - Motion curve (mean |dL| /255 between frames): f1-4 9.1 / 10.5 / 9.9 / 7.0, f5-9 4.1 / 4.9 / 5.0 / 4.2 / 3.2: a smooth
+      decay of the arrival spring, no isolated spike.
+    - Boil, two tools side by side. l/boil.py (whitened phase correlation) locks onto the STATIC-SEED noise pattern when
+      the face moves more than ~2 px (registered shift 0.02 px on f6-9, where the keyed motion is 2-6 px/frame), so its f6-9
+      numbers (p50 2.5-2.7 /255) are motion, not boil. NEW l2/boil2.py registers on sigma-2 px blurred patches (locks
+      onto the face): **hold f16->17 p50 0.97 / p90 1.93 /255** (shift 1.85 px); f6-7 2.07 / 3.48, f7-8 1.73 / 3.14,
+      f8-9 1.30 / 2.19 (shift 3-6 px). The residual grows with the motion, so on f6-9 it is interpolation error plus
+      the face's shading changing as it moves through a world-fixed beam; the hold figure is the boil figure (under 2/255,
+      but p90 is close to it). Late hold pairs (18-19, 20-21, 24-25) are measured when rendered.
+    - **Trial encode (non-Blender, during the hold)**: frames 0-9 via `scare_encode.mjs --subset 0-9 --check --out
+      scratch/jumpscare/encode-l1sub` (11 s): **Max 1600x1000 394 KB, Medium 1280x800 214 KB, both `avc1.640028`**;
+      round trip Max EV error p50 0.035 / p95 0.13 / p99 0.21, Medium 0.043 / 0.16 / 0.26; ref f0005 p99.9 1289.5 ->
+      Lmax 5158, L0 1.259, R 12.0. Projection for 30 frames: Max ~1.0 MB, Medium ~0.6 MB (caps 3 / 1.5 MB; Medium
+      headroom 6.6 MB at 53.36/60).
+    - Scope decision (logged): this role's "runtime prep" = the decode mirror + its test (`tests/jumpscare-decode.test.ts`)
+      + the runtime handoff numbers below. The integrated player (`src/world/jumpscare.ts`, death.ts cues, the bindings
+      fx id, the story-runtime prefetch, the main.ts warm-up) and the sting are DEFERRED to the next lane agent: they
+      touch files PERF/FRAMES are editing now and can only be verified through shot.mjs, which is contended. A
+      half-built player in the shared tree would break the build for every lane.
+    - NEW lane files (pure, nothing imports them yet): `src/world/jumpscare-math.ts` (three r186's sRGB EOTF/OETF per
+      channel, the encoder's log curve encode/decode, `decodeSampled`, `codecFor(meta, tier)`, `metaProblems(meta)`,
+      `SCARE_CLIP_TIERS` max+medium, caps, `SCARE_PREVIEW_EV` -11.73) and `tests/jumpscare-decode.test.ts` (5 tests:
+      EOTF->OETF identity < 2e-4; decode inverts encode, clips at Lmax; **8-bit round trip <= 0.05 EV over 12 stops at
+      255 AND 219 (tv) levels**; metaProblems; the shipped json/mp4/manifest entries when present + Low ships none).
+      `node --experimental-strip-types --test tests/jumpscare-decode.test.ts`: 5/5 pass (before ship).
+    - Hold lifted ~17:10 (the release chain finished); chunk `10,11,13,14,15` waited behind one Chrome QA run, then
+      rendered (f10 538.8 s, f11 509.9, f13 499.3, f14 494.1, f15 485.3; Blender 2543.5 s = 42.4 min). **18/30 frames
+      (0-17) at 18:02**; lock this restart 147.2 min. Chunk `18-21` started 18:02. `npm run typecheck` passes with the
+      new module + test (run during my own Blender hold, no Chrome up).
+    - Motion curve f1-17 (/255): 9.1 10.5 9.9 7.0 4.1 4.9 5.0 4.2 3.2 3.3 4.3 4.9 5.2 5.3 4.8 3.9 2.4: smooth (the jaw
+      spasm f11-14 raises it a little), no isolated spike; display mean 24.8 -> 28.2 monotone. boil2 15->16 p50 1.04 /
+      p90 2.41 /255 (4.8 px of motion, confounded); 16->17 0.97 / 1.93.
+    - Lmax check (scratchpad l2/p999.py via OpenImageIO; ffmpeg's f32 path clamps EXR at 1.0): per-frame luminance
+      p99.9 1156-1319 on f0-17; the encoder's default window Lmax = 4 x p99.9(mid frame) ~ 5165 clips 0-18 px per
+      MILLION (single glints, f5 max 12128). Decision deferred to the lurch frames f26-29.
+    - **Chunk 18-21 DONE 18:38** (f18 469.8 s, f19 474.9, f20 474.5, f21 486.5; Blender 1917.4 s = 32.0 min; peak RSS
+      2.93 GB). 22/30 frames; lock this restart 179.2 min. **Hold boil (boil2): 17->18 p50 0.95 / p90 1.91, 18->19
+      0.75 / 1.72 /255.** Chunk `22-25` queued 18:38.
+    - **Chunk 22-25 DONE 19:28** (f22 506.8 s, f23 494.3, f24 483.2, f25 489.4; Blender 1987.1 s = 33.1 min). 26/30
+      frames; lock this restart 212.3 min. Hold boil (boil2): 20->21 0.79 / 1.59, 24->25 0.82 / 1.64 /255; curve f17-25
+      2.4 1.4 2.8 3.1 3.0 2.4 1.6 1.1 1.4 (the hold settling). Contact sheet every 4th frame f0-24 (scratchpad
+      l2/sheet-0-24.png, one look): f0 = the arrival (head lower and further, motion-blurred, forehead in the hot core),
+      by f4 the face is in the held framing, f12 the spasm's wider mouth, f16-24 a near-still hold. The motion reads,
+      and no frame pops at sheet scale. Chunk `26-29` (the lurch) queued 19:28 behind 4 headless-Chrome runs.
+    - Chunk `26-29`: f26 536.6 s, f27 535.0, f28 606.1 (the lurch: face closer = more lit skin; display mean 28.5 ->
+      29.6 -> 32.3, keyed lurch 0.30 / 0.56 / 1.04), log scare-render-2026-10-19T13-58-31-062Z.log. **The agent (and
+      drive.sh + Blender) was killed during f29 (~20:20); f29 was never written** (the temp-name-then-rename write left
+      no partial file). 29/30 frames on disk.
+    - **147l RESTART-2 (21:52):** no Blender / headless Chrome / hold running. `--frames 29` alone started 21:53 with the
+      l2/args.sh args (log l2/c-29.out); the post step encodes + checks when all 30 exist.
+    - **f29 DONE 22:05** (694.2 s, display mean 28.81 /255, peak RSS 1.06 GB; job wall 709.7 s; log
+      scare-render-2026-10-19T16-22-39-898Z.log; the same hair-cull counts and landmark pixels as chunks A..26-28, so the
+      same scene). **30/30 frames.** Post step: encode + round-trip check OK (`assets-state` scare-render ok).
+    - **Lurch continuity (f22-29, l2/curve.py, AgX previews):** mean |dL| /255 22->23 1.59, 1.12, 1.44, 25->26 2.59,
+      26->27 7.82, 27->28 16.11, 28->29 21.69; display means 28.25 .. 28.27, 29.28, 32.02, 28.60. That follows the keyed
+      lurch dy = -0.08 u^2 (steps 8.9 / 26.7 / 44.4 mm). f29's mean drops because the face (~0.11 m from the lens) passes
+      the torch's near field: the nose goes dark in the centre. f29 is SHARPER than f28 because u clamps at 1 from f29
+      on, so the second half of its centred 180 deg shutter has no motion. The f26-29 strip (l2/lurch-26-29.png, 1 look)
+      shows the same strands / bruises / blood in every frame: no seed or scene mismatch from the restart.
+    - **Lmax decision: keep the default** (ref f15, p99.9 1269.9 -> Lmax 5079.6, L0 1.240, R 12.000). Measured clipping
+      above it (l2/p999.py): 0-29.4 px per MILLION per frame (f22-25 highest, ~45 px of 1.6 M), all isolated specular
+      glints (frame max 12676 at f10); f28 and f29 clip none (f29 max 1271). Raising Lmax raises L0 by the same factor
+      (L0 = Lmax / 2^12) and would cost the dark cheek its code resolution to save glints that a real camera clips too.
+    - **Contact sheet** (every 4th frame + f29: l2/sheet-final.png, 1 look): f0 arrival (lower, further, forehead in the
+      hot core), settled by f4, f12 the spasm's wider mouth, f16-24 a near-still hold, f28 the lurch smear, f29 the slam.
+      The motion reads, and no frame pops at sheet scale (every 4th frame + f29 only). The chunk boundaries are judged
+      from the |dL| curve, not the sheet: 4->5 7.0 then 4.1, 9->10 3.2 / 3.3, 17->18 2.4 / 1.4, 21->22 2.4 / 1.6, 25->26
+      1.44 / 2.59, 28->29 16.1 / 21.7 (/255): no isolated spike at any boundary. Hold boil (boil2, above): p50
+      0.75-0.97, p90 1.59-1.93 /255 on every hold pair measured.
+    - **SHIPPED 22:06** (one invocation: `node blender/scare/scare_encode.mjs --frames .cache/scare/frames/final
+      --expect 30 --check --ship --approved ruling-av-amended_AD4-r37-20261019_FAIL_l1-staging-lead-1345`; log
+      l2/ship.out; byte-identical to the post-step encode):
+      | tier | file | size | codec | round trip EV err p50 / p95 / p99 (lit face) | bias |
+      |---|---|---|---|---|---|
+      | Max | public/assets/max/scare_face.mp4 1600x1000 crf 18 | **1060599 B (1035.7 KB)**, cap 3 MB | avc1.640028 | 0.031 / 0.114 / 0.187 | +0.001 |
+      | Medium | public/assets/medium/scare_face.mp4 1280x800 crf 20 | **542805 B (530.1 KB)**, cap 1.5 MB | avc1.640028 | 0.038 / 0.144 / 0.231 | -0.0004 |
+      | Low | none (Spec §5: 0.13 MB headroom; the in-engine fallback) | 0 | - | - | - |
+      + `scare_face.json` (379 B) in both tiers: L0 1.2401357889175415, R 12.0003521774803, Lmax 5079.596, fps 30, frames
+      30, codecs max/medium `avc1.640028`. Record: scratch/jumpscare/encode/scare_face.shipped.json.
+    - **Manifests** (`node scripts/assets.mjs --manifest`, 22:07; manifests == disk before, so only these 4 files were
+      added): Medium 48 -> 50 files, 50.95 -> **51.46 MB / 60**; Max 52 -> 54 files, 101.82 -> **102.83 MB / 120**; Low
+      unchanged 48 files 26.87 MB / 27 (no scare entry). Entries: `scare_face.mp4` id `scare_face`, `scare_face.json` id
+      `scare_face_meta`, both kind `data` (level.ts downloads only level / prop / collision / lightmap kinds, so the clip
+      is never fetched by the loader).
+    - `assets --check` at 22:07: all budgets OK, 1 problem = "a Blender process is running outside the runner". That is a
+      FALSE POSITIVE: `pgrep -f Blender.app/Contents/MacOS/Blender` matched the PERF lane's zsh wait loop (pid 22741,
+      `until grep -q "START rt-medium" scratch/perf2/b12/qb5.log ...; pgrep -f "Blender.app/..."`), and `pgrep -x
+      Blender` was empty. **Re-run at 22:12 after it exited: `check: ok`** (Low 26.87 / 27, Medium 51.46 / 60, Max
+      102.83 / 120).
+    - Tests: `tests/jumpscare-decode.test.ts` 5/5 (incl. the shipped json / mp4 / caps / manifest ids / Low-ships-none),
+      `npm test` **354/354**, `npm run typecheck` clean.
+    - **Lock total for the final sequence** (over the 4 h budget): this restart 212.3 min (A..22-25) + chunk 26-29 ~31-43
+      min (Blender from ~19:44, killed between 20:15 and ~20:27; the f29 partial was lost) + f29 11.8 min, plus the earlier
+      old-staging chunk 1 19.8 + the l1 look 3.1 = **~4.6-4.8 h**. Causes: the l1 crop / ring costs 490 s/frame vs 340
+      (more lit skin), the uniform-96-spp decision, and the f29 re-render.
+    - **147l DONE.** NOT done in this role (deferred to the player agent, per the 147l scope decision above): the in-game
+      player `src/world/jumpscare.ts`, the death.ts cues, the bindings fx id, the prefetch, the sting. The clip ships as
+      inert data, so **nothing in the game shows the jumpscare yet.** Honest look verdict on the shipped frames: unchanged
+      from AD4 = a high-end CG / prosthetic-mask read (lacquer coat, ink-line strands, plaster skin, 'Scream' mouth,
+      stage-blood nosebleed); horrifying as a 1 s startle. The motion-blurred lurch frames f27-29 read the most
+      photographic, because the blur hides the coat and strand tells. Next look round = the POLISH BACKLOG above, then
+      re-render with the same `--seq final` path (the frames dir must be emptied first: existing frames are skipped).
+  * **POLISH BACKLOG = AD4-r37-20261019's ranked list** (verdict FAIL as a photograph, PASS as a 1 s startle; full text:
+    the lead's copy in the 147l workflow journal). The shipped clip has every problem below EXCEPT what the l1 staging
+    changed. Owner tags: [RT] = runtime (this lane's src/world/jumpscare.ts), [LOOK] = a new Blender look round + a
+    re-render (~4 h of lock at 96 spp), [LEAD] = a staging decision.
+    1. [LOOK] Wet coat reads as clear lacquer / cling film with refractive edges + pin glints (the strongest CG tell).
+       Fix the COVERAGE, not the shading: mesh droplets 0.8-4 mm at 3-8 /cm2 (IOR 1.33), 1-2 mm rivulets running to
+       the chin, dry matte islands over 30-50 % of the lit skin, no refractive tube along the strands (only a 0.3-0.5 mm
+       meniscus).
+    2. Digital void + floating oval. (a) [RT] **DONE (147m)**: an ADDITIVE read-noise floor on the scare quad (SCARE_FLOOR
+       L 12 radiance +- 90 %, 1.4 px cells, re-seeded per clip frame): measured in game (Medium m2 / Max x2, held f15) void
+       3.0 +- 3.2 /255, exact-0 px 2 % (the Blender frame 37 %). (b) [LEAD] DONE in
+       l1: the spill ring 8 % of the core, flat to 12 deg, 0 at 26 deg. (c) [LEAD] DONE in l1: the 47.6 mm crop, so the
+       cheekbones span ~70 % of the width.
+    3. [LOOK] Strands across the face read as 1-2 px ink lines / porcelain cracks; the side hair is a soft fuzz. Replace
+       them with 3-5 flat wet CLUMPS (1.5-4 mm, 30-150 hairs, a warm sheen line, brown translucency at the edges, frayed
+       tips, a contact shadow + meniscus); one clump stuck over the mouth corner; 2-3 lit clumps breaking the cheek and
+       temple outline.
+    4. [LOOK] The lit skin is a uniform pale grey-pink plaster (rgb ~147/123/113): no waterlogged grey-blue cast, no
+       cyanosis, no marbling where the beam is. Add 1-3 cm mottling (+-10-15 %), a perioral/perinasal blue-violet cast
+       (~-15 % R), a grey-green lateral cheek and jaw, venous marbling ON the lit cheek and jaw; ~10 % greyer and cooler
+       overall.
+    5. [LOOK] The mouth is a symmetric 'Scream' oval with a flat maroon floor. The split lower lip FAILS the 20/255 gate
+       (~rgb 20/10/9). Fix: an asymmetric jaw drop, mucous webs at the corners, a swollen coated tongue on the incisors,
+       the split + clot moved into the beam, and the DROWNING FROTH (0.1-0.5 mm white-pink foam) that is missing.
+    6. [LOOK] The nosebleed reads as stage blood (a glossy orange-red line of constant width). Fix: a matte clotted crust
+       at the nostril rim, a maroon core along the philtrum pooling at the lip border, a dilute pink wash at the edges
+       (or pink froth at the nostrils).
+    7. [LOOK] The bruises read as paint: the colours are right, but they are two leaf blots with NO fingertip row and NO
+       opposed thumb. Fix: 3-4 oval 12-18 mm contusions 15-20 mm apart along the LIT jaw + a thumb mark, stippled
+       margins, 0.5-1 mm swelling, the old yellow-green ring OFFSET from the fresh violet core; extend the black eye
+       into the upper lid and along the orbital rim.
+    8. [LOOK] The eyes read as pale-blue living irises (husky/doll): a crisp limbus, a sharp catchlight. Fix: a neutral
+       corneal haze (iris contrast <= 15 %, no blue chroma), a softer crazed catchlight, 8-12 clumped wet lash spikes,
+       a denser lid petechiae stipple (30-60 dots, 0.3-1 mm) so it reads at 1440 px.
+    9. [LEAD] The brows are missing at frame scale and the brow scar failed the gate. In the shipped l1 crop the brows
+       fall ABOVE the frame: **the brow scar, one of the user's named marks, is not in the clip at all.** The crescent
+       cheek scar is in the frame.
+    10. [LOOK] 100 % polish: the nose base reads as a sculpted mask notch; the lip keratin flakes are ~30 % too white
+       (0.22/0.20/0.20 at 0.45); the crescent scar reads as a skin fold (needs a flat shiny 0.5-1 mm centre + suture
+       hatching); the shadow-side caruncle is a lit bead.
+  * **RUNTIME HANDOFF (for the player agent; FINAL, shipped 22:06: Max 1600x1000 1035.7 KB, Medium 1280x800 530.1 KB, both
+    avc1.640028; L0 1.2401357889175415, R 12.0003521774803 in scare_face.json):**
+    - Files: `public/assets/{max,medium}/scare_face.mp4` (manifest id `scare_face`, kind `data`) + `scare_face.json` (id
+      `scare_face_meta`, kind `data`). Low: none -> the in-engine fallback (Spec §3 'Fallback').
+    - Read `codecs[tier]` from the json for `canPlayType('video/mp4; codecs="<it>"')` — both tiers are `avc1.640028`
+      (level 4.0: Max is the native 1600x1000 = 6300 MBs, not 1920x1200), never a hard-coded string.
+    - Decode per channel in TSL: `v = sRGBTransferOETF(texture(videoTex).rgb)` (VideoTexture colorSpace SRGBColorSpace),
+      `L = L0 * (exp2(v * R) - 1)` with L0 / R from the json (`jumpscare-math.ts` is the CPU mirror; test it there).
+    - Exposure: the frames were judged in Blender AgX at **EV -11.73** (white balance 3300 K, tint 10); the game's
+      `exposure {fixed: X}` at the cut must give the same face (match the Blender-AgX median face within 0.2 EV in a
+      shot.mjs readback; Spec §3).
+    - Timing: 30 frames at 30 fps = 1.000 s; frame 0 = the arrival (head 3 cm further / 2 cm lower, settling by f6);
+      the hold f6-25; the lurch f26-29 (8 cm into the lens). The last frame's pts is 0.967 s, so rVFC `mediaTime` never
+      reaches 0.98: in practice the clip goes black on `ended`.
+    - First runtime polish item = AD4 rank 2a: an ADDITIVE read-noise floor on the scare quad (~2.5/255 luminance std,
+      1.2-1.5 px grain, ~3/255 black pedestal). The game's grain is multiplicative, so black stays exactly 0 (21 % of
+      f12's pixels are exactly 0 even after the l1 spill ring).
+
+- **147m RUNTIME + AUDIO (2026-10-19 22:30 → 10-20; DONE).** Role: the in-game player of the shipped clip, the death.ts timeline, the
+  sting, reducedFlash, tests, in-game verification (task items 1-6). Restart notes: read this entry + `git status`; do
+  not redo finished steps.
+  * **Step 1 DONE — sting synth** `src/audio/synth/scare.ts` (`scare_whoosh` 0.15 s stereo, level 0.5; `scare_sting`
+    2.05 s stereo, 3 variants, level 0.891, playGain **1.5** (Spec 1.6), hdr 10 / hold 1.0, preload false) + the
+    `SCARE_RECIPES` line in `synth/index.ts`. Layers per Spec §6; mix tuned against the chain model: slam 0.65, low hit
+    -3 dB, shriek -5.5 dB, gurgle -14 dB at 0.30 s. `tests/jumpscare-audio.test.ts` (BS.1770-4 K-weighting at 48 kHz,
+    default chain = playGain x player bus -2 dB x master 0.9^2 -> a -3 dBFS / 20:1 / 2 ms peak-detector limiter model):
+    momentary [0, 0.4 s] **-10.47 / -9.75 / -10.04 LUFS** (v0/v1/v2; target -10 +- 1), short-term 3 s -15.0 / -14.3 /
+    -14.6, sample peak at the limiter **-1.31 dBFS** (GR 0 dB), buffer peak 0.891, max run >= 0.89 = 1 sample, |DC| <
+    0.002; the shriek stops at 1.0 s (>12 LU drop), the ring is gone by 1.7 s. Spec's playGain 1.6 put the white-noise
+    slam at -0.75 dBFS (over the -1 dBTP ceiling) for no loudness gain -> 1.5.
+  * **Step 2 DONE — `src/cutscenes/death.ts`** = Spec §4 (numbers shared via `src/world/jumpscare-math.ts`: SCARE_CUT_T
+    0.15, SCARE_FADE_T 1.38->1.40, SCARE_OFF_T 1.45, SCARE_EXPOSURE = 2^(-11.73 + SCARE_GAME_EV_OFFSET), the fallback
+    staging). Shots: lunge 0-0.15 (fov player->62, ease in, handheld 3), the held face 0.15-1.45 at **fov 30** (the clip
+    quad covers any lens; the fallback head needs the long lens to fill the frame at 0.28 m), recoil under black 1.45-3.0
+    back to the gameplay fov. Dropped: lens_wet_hand, eye_glint, grab_hit (the old 0.35 s lunge is 0.15 s, ease in).
+  * **Step 3 DONE — `src/world/jumpscare.ts`** (createJumpscare): <video> (in the DOM, 1 px, opacity 0, so frame
+    presentation / rVFC stay alive) -> VideoTexture (SRGBColorSpace) -> camera-child quad at z -0.05, transparent alpha 1,
+    renderOrder 1e6, depthTest/Write off, colour node = L0*(2^(sRGBTransferOETF(texel)*R) - 1) * gain + an additive
+    read-noise floor (AD4 rank 2a; SCARE_FLOOR L 12 radiance, noise 1.2, 1.4 px cells, re-seeded per clip frame).
+    registerPrewarm(quad) at creation (compiled in the load warm-up with the empty texture). Prefetch on `beat:enter`
+    >= B05 + at start if already >= B05 (fetch json + mp4 -> Blob URL -> play/one frame/pause/seek 0 -> initTexture);
+    also `audio.ensure('scare_sting' | 'scare_whoosh')`. Real time: play() at the cut, black from rVFC mediaTime >= 0.98,
+    `ended`, or 1.12 s after the cut; paused game pauses the clip. Stepped QA: `debug.setStepped(true)` + `debug.stepTo(t)`
+    seek the clip to the game clock. Fallback (Low / no decoder / load error / not severed): her real head held by a
+    module-owned socket (NOT free: ada.ts would latch the floor-pool smear + slack hair for a loose head), posed each frame
+    after ada.update 0.28 m before the lens facing it, chin up 20 deg, jaw_open keys 0.25 -> 0.6 (0.4 s) -> 0.4,
+    eyelid_l_open 1, her body hidden; restored to her own prop_r at off, head hidden under black.
+  * **Surgical edits (logged in CONTRACT-CHANGES 147m):** `src/game/story-runtime.ts`: import + create the module after
+    fxw; `cutsceneFx` routes fx `jumpscare` first; `beat:enter` >= B05 -> prefetch; start() -> prefetch if already >= B05;
+    `scare.update(cdt)` right after `characters.update()`; `jumpscare` on the returned object (QA:
+    `__game.story.jumpscare.debug`); `player:death` plays grab_hit ONLY without a cutscene player (the cutaway carries the
+    sting now). `src/audio/synth/index.ts`: SCARE_RECIPES.
+  * **Step 5 DONE — tests:** `tests/jumpscare.test.ts` 7/7 (DEATH_DURATION 3, lock full, unskippable, the cut's cue set
+    in order at 60/30 Hz, black by 1.40, taken down under black, ONLY her face = no lens_wet_hand / eye_glint / hair fx /
+    grab_hit, arms hidden over the face window, the gain function incl. reducedFlash's 2-frame ramp and <= 2 luminance
+    transitions per second, fallback framing, cover-fit) + `tests/jumpscare-audio.test.ts` 4/4. `npm test` 365/365,
+    typecheck clean. NEXT: shot.mjs verification (step 6).
+  * **Step 6 (in progress) — QA run m1** (Medium, WebGPU, `--beat B06`, `scripts/qa/jumpscare.mjs`, out
+    scratch/jumpscare/qa/m1): prefetch ready (1280x800); **colour-path gate PASS** (calibration chart through the quad's
+    exact sampler path: max 1.02 / p50 0.45 codes; the 2D-canvas decode 1.01 / 0.41; <= 1.5 required); stepped 30 fps: the
+    cut on the frame cutscene t crosses 0.15, 31 face frames (f0..f29 + f29 held one extra step: fixed, epsilon), black
+    from t 1.20, quad down at 1.45, exposure fixed 2.944e-4 then the eye adapts under black, respawn OK; **0 node builds**
+    at the catch (stepped and real time; the CS_PREWARM registration works); 0 console errors. Problems found + fixed:
+    (1) **TAAU smeared the clip** (zero velocity on a camera-locked quad whose motion is IN the texture; TAAU's thin-feature
+    lock kept ghosts unclipped -> a painterly, streaky face at 100 %): the quad now writes a material-level MRT velocity
+    far off-screen (`mat.mrtNode = mrt({velocity})`) -> history invalid -> current frame only; (2) **exposure** at the
+    bare 2^-11.73 read +0.25 EV (display) brighter than Blender's AgX preview on the central lit face (80.8 vs 73.6 /255
+    median) -> SCARE_GAME_EV_OFFSET = -0.23 (input EV via three's AgX inverse); (3) **read-noise floor too strong**
+    (void mean 4.7, std 5.1 /255; visible speckle in the lurch frames' dark nose) -> L 12 / noise 0.9 at the new exposure
+    (model 2.7 +- 2.1 /255). Colour note: the game's grade (WB 3300 K, no tint) renders the skin GREENER / less pink than
+    the Blender preview (R/G 1.37 vs 1.80, B/G 0.70 vs 0.84 on the face median): Blender's view had tint +10 (magenta).
+    Kept the game's own grade (the film look of the rest of the game; AD4 rank 4 asked for a greyer, cooler, less pink
+    skin anyway) — flagged for the lead. Real time m1: 0 builds, frame deltas around the cut 66.6 / 33 / 50 / 50 / 33 ms
+    with a 23.9 ms mean over the window — needs the A/B against the same cutaway without the face (scenario now runs
+    both). Re-runs queued: l1 (Low fallback), x1 (Max), m2 (Medium, the fixes).
+  * **QA l1 (Low, fallback)**: 0 builds, 0 console errors, real time locked 16.7 ms (face and baseline), no long tasks —
+    but **every fallback frame was BLACK**: the debug B06 start has the torch OFF and the in-engine head is lit by the
+    player's torch only (and the clip's fixed exposure, 2.5e-4, leaves a probe-lit head at 0). Fix: the fallback turns the
+    torch on for the second (restored under black) and holds its own film exposure (SCARE_FALLBACK_EXPOSURE, the clip's
+    exposed EV for unscaled radiance); QA rows now carry the head's camera-space position. Re-run l2 queued.
+  * **QA x1 (Max, dist built with the TAAU + exposure + floor fixes, before the radiance scale)**: held f15 face median
+    74.3 vs Blender 73.6 /255 (**-0.004 EV**), void mean 2.99 / std 3.20 /255, exact-0 2 % (Blender frame 37 %); the 100 %
+    crop is crisp now (strands, wet highlights, pores + the game's grain) — the TAAU fix works. Bloom A/B (same frame,
+    bloomStrength 0): no measurable difference (74.33 vs 74.27). Real time: **the face halved the frame rate on Max**
+    (33 ms frames, mean 30.5 ms vs 17-18 baseline) + a 61 ms long task at the cut; the baseline cutaway has one 83 ms
+    hitch at the catch only. Cause candidate: the module ALSO set needsUpdate whenever video.currentTime moved — a
+    continuous clock — i.e. a 1600x1000 copyExternalImageToTexture every render frame (60 Hz) on top of three's rVFC
+    one (30 Hz). Fixed: uploads only from rVFC (`uploadMode` 'rvfc'; 'frame' kept as a QA A/B). Re-run x2 queued (A/B:
+    face / frameup / baseline + pipeline.render CPU ms + playMs; optional PROFILE=1 cpuprofile around the cut).
+  * **Radiance scale (bloom-threshold clamp):** `src/render/pipeline.ts` builds the bloom threshold as
+    `bloomThreshold / max(exposure, 1e-3)`; at the bare cut exposure (2.5e-4) the 1.5 "exposed" threshold became 0.375.
+    The quad now outputs radiance x SCARE_RADIANCE_SCALE (1/32) and the cut exposure is x32 (8.0e-3): identical exposed
+    values, the threshold intact (request for the lead: the clamp would bite any exposure < 1e-3).
+  * **QA m2 (Medium, all fixes incl. rVFC uploads)**: calib 1.02 / 0.45 codes; held f15 **74.1 vs 73.6 /255 (+0.003
+    EV)**; void 3.00 +- 3.18 /255, exact-0 2 %; stepped: 0 builds, the cut on t 0.167, f0..f29 then black from step 34
+    (t 1.167 — the epsilon fix), quad down at 1.45, exposure 8.03e-3 fixed then the eye adapts under black, respawn OK;
+    **real time: 60 fps locked through the whole cutaway (max frame 16.8 ms, no long tasks) in both face variants**;
+    pipeline.render CPU 6.6 ms mean during the face vs 5.0 before; play() 0.3 ms; 0 console errors. Contact sheet
+    (scratchpad js/sheet-m2.jpg): lunge -> cut to f0 (the arrival) -> hold -> f29 lurch -> black -> respawn.
+  * **QA l2 (Low, torch forced on)**: the head is placed (camera space crown (0, 0.064, -0.413), visible, torch on) but
+    the frames are still EXACTLY 0: the torch beam aims at the gaze point past her (the hand is ~0.2 m below the eye, the
+    head ~35 deg off the beam axis at 0.28 m) and the clip's fixed exposure (2.5e-4) zeroes a probe-lit head. Fix: the
+    fallback METERS (the module nulls EXPOSURE_CUE.fixed while the fallback runs; the cut's `snap` adapts the eye to the
+    head on the next frame). SCARE_FALLBACK_EXPOSURE removed. Re-run l3 queued (dist-js3).
+  * **QA x2 (Max, all fixes)**: held f15 74.3 vs 73.6 /255 (-0.003 EV), void 2.99 +- 3.18 /255, exact-0 2 %, bloom A/B
+    no difference; stepped 0 builds; **reducedFlash cut = 0 -> 0.5 -> 1 over 2 frames** (asserted); real time: during
+    the face 60 fps (rVFC uploads fixed x1's halved rate), BUT the first real-time play of the session still cost
+    33 / 50 / 33 ms frames at the cut (later catches: one 50 + one 33 at the catch/cut; the baseline cutaway itself has
+    two 33 ms frames at the catch). Fix: the prefetch now PLAYS 4 frames with the quad drawn at a sub-pixel size (the
+    decoder's hardware frames + Dawn's external-image blit + the quad's draw run once) before seeking back to frame 0.
+    Re-run x3 queued (PROFILE=1, no stepped capture first: the real-time catch is the session's first).
+  * **QA l3 (Low, metered fallback)**: the head shows now (exposure snaps 0.32 -> 1.4 over the second) but as a dark
+    backlit silhouette (the beam lights the wall behind) and the hair FLAILED (the head was held by a module socket:
+    head-carry re-hung it by its pendulum before each override, so the hair chains simulated against a different pose
+    every frame). Fix: the fallback head is FREE (posed only by the module, after ada.update; hair chains re-primed at
+    start / end), and the torch is aimed at her face (BEAM_CLAMP.at, restored after). **l4**: no flailing; but the face
+    was lit as a grazing sliver — the hidden arms leave the torch lens ~0.3 m FORWARD in the hand, level with a face at
+    0.28 m. Fix: the face sits >= 15 cm beyond the lens (camera-space lens logged in QA rows; dist capped 0.6 m). l5 queued.
+  * **QA x3 (Max, PROFILE=1, noisy machine: before-catch frames 21-25 ms)**: the warm-play prime did not remove the cut
+    hitch (face: 33 / 16.7* / 83* / 33*; face2: 83* / 33*); the CPU profile shows the main thread saturated by three's
+    render loop (_renderObjectDirect, updateBinding, updateMatrixWorld) with no single long call at the cut. **x4 / m3**
+    (render ONLY the quad's layer while the clip covers the frame: `sceneOff`): the face's render CPU drops to 1.5-2 ms
+    (from 6-9), but the quad-only view node-builds three's Background mesh twice (`play|mesh|main|ctx9|
+    Background.material`) at the first cut -> a 66 ms frame on Max (Medium m3 stays 16.7 ms throughout every variant).
+    Decision: sceneOff OFF by default (kept as a QA toggle; request for the lead: warm the quad-only view at load).
+    Note: x4 / m3 / l5 / x5 ran ON BATTERY (shot.mjs warning); rAF still delivered 16.7 ms frames.
+  * **QA x5 (Max, scene on, warm-play prime, ON BATTERY)**: first real-time face 100 / 67 / 133 / 50 / 67 ms frames at
+    the cut and 33 ms frames during the face (pipeline.render CPU 27 ms mean vs 16 before: the death cutaway is not in
+    CS_CULL_IDS, so the whole house renders behind the opaque face); face2 83 / 33 at the cut then 60 fps; baseline 67 /
+    33 at the catch. 0 node builds in all. => quad-only view back ON (`sceneOff`), with the ROOT CAUSE of its builds
+    fixed (advisor): r186 `_projectObject` collects a view's lights inside the layers test, so a quad-only camera had NO
+    lights -> another renderList.lightsNode -> new RenderObjects + node builds for the quad and the sky at each cut. Every
+    light is now also on QUAD_LAYER (at module creation + each prefetch); the sky node is off for the second (restored).
+    + a watchdog (off() 0.5 s after the cue was due) and story-runtime's `cutscene:end` death -> `jumpscare {on:false}`
+    (idempotent), so a cancelled cutaway can never leave a frozen face / quad-only camera / missing sky.
+  * **QA l5 / l6 (Low)**: with the face beyond the torch lens (the lens sits 0.51 m FORWARD, 0.27 m down, 0.14 m left in
+    camera space: dist hits the 0.6 m cap) the head is lit from below and centred (l6: node origin NDC (0, 0.33), the
+    face at ~0.48 W / 0.45 H) but only ~35 % of the frame height -> the fallback now sets the camera's fov to
+    2 atan(0.095 / dist) (~18 deg at 0.6 m) after the cutscene applies its own each frame. Honest look: a pale plaster
+    mask half-lit from below, the blood-dark neck stump under it — the in-engine head, as Spec §3 predicted.
+  * **FINAL QA (dist built from the final source; m4 / x7 / l7 ON BATTERY 90-93 %, rAF still 16.7 ms):**
+    | run | builds at the catch (stepped / real time) | face frames | frame times around the cut (ms, * = face) | face render CPU | console errors |
+    |---|---|---|---|---|---|
+    | m4 Medium | 0 / 0 (newBuilds {}) | 79 | face 50 16.7 33 33* then 16.7; face2 66 16.8 33 33* then 16.7; baseline 66 16.7 33 50 33 33 | 2.2 ms (before 11-12) | 0 |
+    | x7 Max | 0 / 0 | 72-76 | face 83 33 133* 16.7 16.7 33* then 16.7; face2 33 16.7 16.7 100* then 16.7; baseline 33 16.7 16.7 **99.9** 33 16.7 16.7 50 | 1.8-2.3 ms (before 7.5-16) | 0 |
+    | l7 Low (fallback) | 0 / 0 | 69 | locked 16.7 (one 33 at +0.4 s) ; baseline locked | 5.6 ms (before 3.9) | 0 |
+    The Max cut-time spike is in the cutaway ITSELF: the baseline (face disabled, same timeline) has the same ~100 ms frame
+    at +0.15 s (the held shot's fov 62 -> 30, arms hidden, the exposure cue; the cutscene profile resizes at the catch —
+    PERF lane). During the face Max and Medium hold 60 fps with ~2 ms of render CPU (quad-only view). Held f15 as played:
+    Medium 74.1 / Max 74.3 vs Blender 73.6 /255 (+0.002 / -0.003 EV); void 3.0 +- 3.2 /255, exact-0 2 %; reducedFlash
+    ramp 0 -> 0.5 -> 1; calibration 1.02 / 0.45 codes. `npm test` 367/367, typecheck clean, build + verify-boot OK
+    (scratch/dist-js-final).
+  * Source vs the QA dists: scratch/dist-js (m4 / x7) and scratch/dist-js3 (l7) were built from the final source minus
+    two comment edits (the lens-position comment in jumpscare.ts, the `dist` doc in jumpscare-math.ts) and one
+    behaviour-neutral hardening (`off()` now restores the camera layers / sky unconditionally, not only in clip mode);
+    scratch/dist-js-final predates only that last line.
+  * **147m DONE.** Honest look verdict (as played, Medium / Max): the clip plays crisp and correctly exposed through the
+    game's film look, and it is a startling, horrifying second — but it still reads as a high-end CG / prosthetic mask,
+    not a photograph (AD4's ranked list stands: lacquer wet coat, ink-line strands, plaster-uniform skin, the symmetric
+    'Scream' mouth, stage-blood nosebleed; the brow scar is above the crop). The game's grade renders the skin greener /
+    less pink than the AD-reviewed Blender view (tint +10): R/G 1.37-1.40 vs 1.80 on the face median — kept (the game's
+    own film look; reads more drowned). Low's fallback is the in-engine head: a pale plaster mask lit from below,
+    framed to ~75 % of the height — clearly worse than the clip.
+  * Requests for the lead (147m): (1) `src/render/pipeline.ts` bloom threshold `bloomThreshold / max(exposure, 1e-3)`:
+    any exposure < 1e-3 lowers the effective threshold (the clip works around it with SCARE_RADIANCE_SCALE); (2) the Max
+    death-cutaway spike at 0.15 s exists without the face (x7 baseline 99.9 ms) — PERF lane (cutscene profile / the held
+    shot's view); (3) the colour decision above (game grade vs Blender tint +10); (4) the playthrough gate was NOT run on
+    this build (headless-Chrome queue contention; forced catches + respawns verified on all three presets, e2e headless
+    tests pass); (5) the measurements m3-x7 ran on battery (the laptop was unplugged mid-session).
+
+- **147n FIXER after the FINAL review (2026-10-20 01:30).** Input = the independent final review (real catches by
+  Ada's own AI, B06 walk-into + B08 stand-still; reviewer scratchpad `review/`: review-catch.mjs, m1/x1/l1/l2/c1 logs).
+  Verdict FAIL as a photograph, PASS as a startle. Ranked: (1) [LOOK] the face reads as a CG latex/wax mask; (2) the
+  named marks are mostly outside the crop (brow scar above, lower lip at the bottom edge, no fingertip row); (3) the
+  `ai:catch` captions "(choking)" / "(a wet breath against your face)" sit over her mouth for the whole second;
+  (4) walking into her: ~0.7 s of near-black frames inside her body before the grab, then an undefined lunge heading
+  (whip-pan to the banister / floor); (5) one B08 lunge exposure jump; (6) catch-start hitches without the face (PERF);
+  (7) Low's fallback = a blown-out plaster mannequin, ~4 EV exposure swing, a 3-frame pop.
+  * **Decision: NO re-render** (ranks 1 + 2 need a new Cycles pass, ~4.5 h of lock; ruling (az) item 4 cut the AD4
+    polish backlog because it needs re-renders, and (bb)'s FINAL builder waits for this lane). Both stay the honest gap.
+  * Plan (runtime + encode only, no Blender): (a) Low clip from the shipped EXRs if it fits the 27 MB hard stop, else
+    pin the fallback's exposure; (b) hide `.tk-subs` while the face is on (jumpscare.ts); (c) death.ts: a defined
+    lunge heading when she is inside / at the player; (d) ada-brain contact: a deep overlap catches at once (no walking
+    through her body during the bump wind-up); (e) the lunge exposure if exposure.ts can hold it.
+  * **Step (a) DONE — Low ships a clip** (no Blender: the 30 shipped EXRs in `.cache/scare/frames/final` re-encoded).
+    Trials (scratch/jumpscare/encode-low-{a,b,c}): 640x400 crf 22 120.6 KB (EV err p99 0.368), **640x400 crf 24 92.4 KB
+    (p50 / p95 / p99 0.064 / 0.255 / 0.425)**, 720x450 crf 24 115.7 KB. Shipped crf 24 for margin (Low had 133.7 KiB):
+    `node blender/scare/scare_encode.mjs --frames .cache/scare/frames/final --expect 30 --tiers low --res low=640x400
+    --crf low=24 --check --ship --approved ruling-av-amended_AD4-r37-20261019_FAIL_l1-staging-lead-1345_low-tier-147n
+    --out scratch/jumpscare/encode-low` → public/assets/low/scare_face.mp4 **94606 B** (avc1.640028) + scare_face.json
+    (350 B, codecs {low}; L0 / R identical to Max / Medium: same ref frame f15). pipeline.json scare-render outputs + the
+    two Low entries (kind data, ids scare_face / scare_face_meta); scare_encode.mjs defaults now max,medium,low with low
+    640x400 crf 24 (a re-render re-ships all three). **Low 28269622 B = 26.96 / 27 MB (40 KiB left)**, Medium 51.46,
+    Max 102.83 unchanged; `assets --check` ok. Runtime: `SCARE_CLIP_TIERS` + 'low'; jumpscare.ts sets the quad's MRT
+    velocity only off Low (Low's scene pass has NO MRT → r186 NodeMaterial.setupOutput makes the material mrtNode the
+    whole output: the quad would draw vec4(8, 8, 0, 1)). The fallback stays for no-decoder / load errors.
+    **PITFALL (lead):** `node scripts/assets.mjs --manifest` now ALSO lists `public/assets/voice` (pipeline
+    `sharedAssetDirs`; 181 voice files from ruling (bc), generated after the last --manifest at 22:07) in EVERY tier →
+    Low 32.44 MB, check FAILS. My run did exactly that; I removed the `assets/voice/` entries again (totals recomputed;
+    Low = old 28174666 + 94956 exactly, Medium / Max totals unchanged) → check ok. Whoever runs --manifest next must do
+    the same or the lead decides how voices count (they are fetched per line, not per tier download).
+    → RESOLVED by the lead (ruling (be), contract row 155): `sharedAssetDirs: []` + `streamedAssetBudgetsMB` (voice 8 MB);
+    `assets --check` 02:10: Low 26.96 / Medium 51.46 / Max 102.83, voice (streamed) 5.48 / 8 MB, ok.
+  * **Steps (b)-(e) DONE in code (02:00):**
+    - (b) captions: `jumpscare.ts` `hideSubs()` — a style rule `.tk-scare-on .tk-subs{visibility:hidden!important}` +
+      the class on `<html>` from on() (clip AND fallback) to off() (unconditional, also via the watchdog / story-runtime's
+      `cutscene:end` backstop). subtitles.ts untouched (lane C): visibility only, so a caption still running shows again
+      under the black.
+    - (c) `death.ts`: her 2-D distance `dh` at the catch; `dh <= 0.15 m` → the lunge keeps the PLAYER's heading
+      (headingTo of a ~0 vector was noise: the B06 whip-pan); grab distance `min(0.45, max(0.3, dh))` (no backward
+      "lunge" when she is already close; the lens ≥ 0.3 m from her axis).
+    - (d) AI (surgical, other lane): `src/ai/tuning.ts` `bodyOverlapM: 0.25`; `src/ai/ada-brain.ts` contact block:
+      `if (this.look && (this.look.phase !== 'windup' || dh <= TUNING.bodyOverlapM)) doCatch('bump')`. Root cause from
+      the reviewer's m1 rows: VIGIL → bump at 0.52 m → LOOK wind-up (fast, 1 s) → the player walked on to 0.01-0.04 m and
+      stood INSIDE her (the lens above her neck stump: near-black) for ~0.7 s → CATCH at 0.02 m. Now the grab fires at
+      ≤ 0.25 m inside the tell. The unaware bump stays a tell (the 0.3 m "stay" test still passes; stepping away during
+      the wind-up still survives).
+    - (e) `death.ts`: `fx exposure {hold: true}` at t 0 (exposure.ts: no new meter readings AND nearNow() = 0 under a
+      hold, so the torch near-field feed-forward cannot step the EV inside the 0.15 s lunge); the cut's `{fixed, snap}`
+      replaces it as before.
+    - Tests: tests/jumpscare.test.ts +2 (the degenerate lunge at 4 offsets incl. 0.02 m, no backward lunge, the 2 m
+      normal case; the lunge hold), tests/jumpscare-decode.test.ts (Low ships; one log curve on every tier; metaProblems
+      with explicit tiers), tests/ai.test.ts +1 (surgical: body contact during the wind-up catches). `npm test` 371/371,
+      typecheck clean. NEXT: dist build + shot.mjs (reviewer's review-catch.mjs) on Low / Medium.
+  * **QA n-m1 (Medium, WebGPU, `--beat B06`, dist scratch/dist-147n = the source above; the reviewer's review-catch.mjs
+    + a captions / camera-direction probe per row: scratchpad n/catch.mjs, out scratchpad n/m1; shot.mjs printed its
+    battery warning but pmset said AC power, charged).** Same walk-into-her route as the review (VIGIL → bump LOOK at
+    0.52 m): **CATCH at d 0.20 m** after 61 pre frames (review: 0.02 m after 86, ~20 frames inside her); the last pre
+    frames are 0.31 / 0.26 / 0.20 m. **Lunge**: camera direction (0.17, −0.32, −0.93) → (0.22, −0.17, −0.96) over the 4
+    lunge frames (smooth; no whip-pan); **exposure in the lunge** 0.09408 → 0.09733 (+1.1 % per frame: the τ settling,
+    no step; real time 0.0957 → 0.1001 over 8 renders). **Captions**: `.tk-subs` visibility `hidden` on every face frame
+    (t 0.167-1.45) while "(choking)" is on; visible again under the black; the real-time as-played screenshot at +0.6 s
+    (n/m1/nm-234-nm-rt-face-0.6.jpg) shows no caption over her mouth. Real time: cut → face in 0 renders, 61 face renders
+    / 1001 ms, 61 distinct video times, **0 node builds, frames 16.6-16.8 ms (max 16.8, none > 34), no long tasks**,
+    sting +17 / +22 ms vs the first face render; stepped: 0 builds, clip f0-f29, respawn OK, deaths 0 → 1; **0 console
+    errors / exceptions**, 4 requests before Start. Honest: during the 4 lunge frames she is still DARK (the torch spot
+    sits on the wall behind her stump, she is a black mass in the lower frame) — no longer a broken whip-pan, but not a
+    readable lunge either.
+  * **147n RESTART (2026-10-20 02:50).** Found: QA n-l1 (Low) had run at 02:02 and was never logged; logged here. No new
+    code by the restart so far. `npm test` 371/371, typecheck clean on the current tree (02:55).
+  * **QA n-l1 (Low, WebGPU, `--beat B06`, dist scratch/dist-147n, scratchpad n/catch.mjs, out scratchpad n/l1; rows
+    n/l1/nl-rows.json).** The Low CLIP plays (prefetch tier low, 640x400, ready): CATCH at d 0.20 m after 61 pre frames;
+    lunge camera direction (0.17, -0.32, -0.93) -> (0.22, -0.17, -0.96) (no whip-pan); lunge exposure 0.09545 -> 0.09642
+    -> 0.09739 -> 0.09836 (+1 % per frame, the tau settling, no step); **the first face frame (t 0.167) is clip f0**
+    (mode clip, gain 1, exposure fixed 0.008032) — no fallback frames, so the review's Low "3-frame pop" and the 4 EV
+    swing are gone with the fallback; stepped f0..f29 = 30 distinct video times, 39 clip rows, `.tk-subs` **hidden on all
+    39** (31 with "(choking)" running); respawn: exposure adapts again (0.022 -> 1.17 under the fade -> 0.337), deaths
+    0 -> 1. Real time (faceshot): 0 renders cut -> face, 61 face renders / 1000 ms, 61 distinct video times, frames
+    16.6-16.8 ms, **0 node builds, 0 console errors / exceptions**, 4 requests before Start. As played (nl-234, +0.6 s):
+    the same face as Medium, softer (640x400 upscaled 2x): the void, eyes, bruises and nosebleed read; the brow scar is
+    above the crop and the lower lip at the bottom edge, as on every tier (rank 2, not fixed). Low's fallback is now
+    only the no-decoder / load-error path.
+  * **QA n-x1 (Max, WebGPU, `--beat B06`, AC power, FRESH dist scratch/dist-147n2 = the tree at 02:58 incl. other lanes'
+    later c4-hem / bindings / lights / decals edits; scratchpad n/catch.mjs, out n/x1).** CATCH at d 0.20 m after 61
+    pre frames (last pre d 0.42 / 0.36 / 0.31 / 0.26 / 0.20: no walking inside her). Lunge: camera direction (0.17,
+    -0.32, -0.93) -> (0.22, -0.17, -0.96), no whip-pan; stepped lunge exposure 0.0998 -> 0.1009 -> 0.1020 -> 0.1031
+    (+1.1 % per frame), real time +0.65 % per 16.7 ms frame (0.0905 -> 0.0953 over the 0.15 s, i.e. +0.07 EV, no step);
+    first face frame = clip f0, fixed 0.008032; f0..f29 = 30 distinct video times; `.tk-subs` hidden on all 39 clip
+    rows. Real time, 3 catches: face / faceshot = 0 renders cut -> face, 61 face renders / 996-999 ms, 61 distinct video
+    times, **0 node builds, no frame > 34 ms in the whole run (max 33.3 ms, once, +1.34 s = under the black), no long
+    tasks**, render CPU during the face 1.6-1.8 ms, sting +14 / +16 ms (viaNow) after the first face render; baseline
+    (face disabled) max 50 ms once. The reviewer's Max lunge hitches (33-50 ms) did not reproduce on this tree. Respawn:
+    exposure adapts again (0.021 -> 1.51 under the fade -> 0.341), deaths 0 -> 1. **0 console errors / exceptions**, 4
+    requests before Start.
+  * **QA n-c1 (Medium, B08 STAND-STILL chase catch = the reviewer's c1 route, `STYLE=chase`, dist-147n2; out n/c1):
+    rank 5 REPRODUCED — NOT fixed by 147n's `{hold}`.** INVESTIGATE -> LOOK -> CATCH at d 0.53 m after 417 pre frames;
+    lunge exposure 0.2168 -> **0.4409** (+1.02 EV in ONE frame) -> 0.4409 -> 0.4409 -> cut 0.008032. Cause (rows +
+    exposure.ts / bindings.ts read): the harness's steering jittered the gaze ~28 deg per frame while she stood at
+    0.53 m (yaw -3.76 -> -4.25 on the catch frame), so the cutscene camera binding called the first lunge frame a CUT
+    (bindings.ts:457, turn > 20 deg -> requestExposureSnap); under EXPOSURE_CUE.hold the meter still reads a PENDING
+    snap (`!(hold && snapAfter < 0)`), and that reading, taken with the torch near-field term zeroed by the hold, set
+    ev = target at once (then frozen: 3 identical frames). A real player's fast flick (>= 20 deg in a frame) does the
+    same. The real-time chase variants did not get caught (harness: "no real-time movement") — stepped evidence only.
+    Other rows fine: first face frame clip f0 fixed 0.008032, 30 distinct video times, `.tk-subs` hidden on all 39 clip
+    rows, respawn adapts (0.0174 -> 0.128 -> 0.123), 0 console errors.
+  * **FIX (147n restart, 03:25) — `src/cutscenes/death.ts`:** the t 0 cue is now `fx exposure {fixed: SCARE_EXPOSURE,
+    ramp: LUNGE_FREEZE_RAMP_S = 60}`: opening.ts starts a `ramp` film cue AT the exposure on screen (`exposureNow`),
+    exposure.ts's fixed branch drops any pending snap, and over 60 s the smoothstep moves < 1e-4 EV in the 0.15 s
+    before the cut's own `{fixed, snap}` replaces it (ramp = null) — the lunge is shot at the exposure the player was
+    seeing. Nothing after the cut changes (the cut cue, the fallback's metering override, the reset at 1.45 as before).
+    No edit outside the lane (existing opening.ts API). tests/jumpscare.test.ts: the lunge test now asserts the
+    frozen film cue (fixed + ramp, no hold, drift < 1e-4 EV, the cut cue has no ramp). `npm test` 371/371, typecheck
+    clean. Re-run n-c2 (B08 chase, stepped) on a fresh dist scratch/dist-147n3.
+  * **QA n-c2 (Medium, B08 chase, stepped, dist scratch/dist-147n3 = the fix; ON BATTERY 95 % — stepped logic only,
+    no timing claims): rank 5 FIXED.** LOOK -> CHASE -> CATCH at d 0.72 m after 253 pre frames; the last gameplay frame
+    turned 30 deg (camDir (-0.09, -0.12, 0.99) -> (-0.59, -0.14, 0.79): the same "cut" condition that snapped in n-c1);
+    **lunge exposure 0.1578 / 0.1578 / 0.1578 / 0.1578 (identical on all 4 lunge frames)** -> cut 0.008032 on clip f0;
+    30 distinct video times, `.tk-subs` hidden on all 39 clip rows, respawn adapts (0.018 -> 0.130 -> 0.126), deaths
+    0 -> 1, **0 console errors / exceptions**, 4 requests before Start.
+  * **Strict Medium playthrough (QA_STRICT=1, dist-147n3 = the final source, 960x600, ON BATTERY — stepped, so the
+    gate is valid; out scratchpad n/pt, log n/pt-medium.log):** `done: ended=true beat=B13 game=549.87s wall=147s
+    deaths=0`, **18 / 18 assertions**, 0 console errors, 0 exceptions, 4 requests before Start. (Two earlier attempts
+    died at "server did not start": vite preview slow under 4.5 GB of swap; a plain retry worked.)
+  * **Careless-bot Medium playthrough (QA_CARELESS=1, same dist): `done: ended=true beat=B13 game=579.77s wall=153s
+    deaths=1`** (one catch, B09 CP6 — the careless bound is <= 1), **20 / 20 assertions**, 0 console errors, 0 exceptions.
+    The 147n body-overlap catch (`bodyOverlapM` 0.25) did not add deaths on either route.
+  * `npm run build` rc 0 + verify-boot OK (1 boot chunk, 12.7 KB gz, no three.js / game code); `npm test` 371/371;
+    typecheck clean; `node scripts/assets.mjs --check` ok (low 26.96 / 27, medium 51.46 / 60, max 102.83 / 120, voice
+    streamed 5.48 / 8 MB). Lane QA dists deleted (scratch/dist-147n, -147n3, -js, -js2, -js3, -js-final: ~1.2 GB; disk
+    was at 10-11 GiB free). No Blender run, no re-render, no asset change by the restart.
+  * **147n DONE — ranked problems vs. the final review:**
+    | rank | problem | state | evidence |
+    |---|---|---|---|
+    | 1 | the face reads as a CG latex / wax mask (ink-line strands, lacquer coat, plaster skin, doll eyes, 'Scream' mouth, stage-blood nosebleed, makeup bruises) | **NOT fixed** — needs a [LOOK] round + a ~4-5 h re-render; cut by ruling (az) | n-x1 as played (max-B06-235): unchanged |
+    | 2 | named marks outside the crop (brow scar above, lower lip at the bottom edge, no fingertip row, cheek scar reads as a fold) | **NOT fixed** — baked into the l1 crop of the shipped frames (lens 47.6 mm + shift); [LEAD] + [LOOK] | n-l1 / n-x1 as played |
+    | 3 | captions over her mouth | FIXED | `.tk-subs` hidden on every clip row: Medium n-m1, Low n-l1, Max n-x1, B08 n-c1 / n-c2 |
+    | 4 | walking into her: ~0.7 s of black frames inside her, then a whip-pan | FIXED (residual: she is still a dark mass in the 4 lunge frames) | catch at 0.20 m (was 0.02 m) on Medium / Max / Low; lunge direction changes 9-10 deg smoothly |
+    | 5 | exposure jump during a B08 lunge | FIXED by the restart (the 147n `{hold}` did NOT fix it: n-c1 +1.02 EV) | n-c2: 0.1578 on all 4 lunge frames after a 30 deg turn |
+    | 6 | catch-start hitches without the face | not this lane (PERF); did not reproduce on Max n-x1 (AC: max frame 33.3 ms, none > 34) | n-x1 real time |
+    | 7 | Low's fallback = a blown-out plaster mannequin, 4 EV swing, 3-frame pop | FIXED — Low ships the clip (640x400, 94.6 KB) | n-l1: clip f0 on the first face frame, fixed exposure, 61 face renders / 1000 ms |
+    **Honest look verdict (unchanged): a startling, horrifying second; NOT a photograph.** At full screen and at 100 % it
+    still reads as a high-end CG / prosthetic mask: hard black strand lines (one down the left of the nose like a crack),
+    white cling-film streaks of the wet coat across the cheeks, uniform grey-green poreless skin, pale blue-grey doll
+    irises with a single sharp catchlight, a symmetric black-red mouth oval, a constant-width orange-red nosebleed line.
+    Low is the same image, softer (640x400 upscaled).
+  * **Coverage note (precision):** every REAL-TIME face measurement above (n-m1 Medium, n-l1 Low, n-x1 Max) ran on the
+    `{hold}` lunge cue (dist-147n / dist-147n2). The final lunge cue (`{fixed, ramp}`) is covered by n-c2 (stepped,
+    battery) and by the one in-game catch of the careless playthrough (B09, respawn, 0 errors). The change is a t 0 cue
+    parameter; the face path from 0.15 s on is untouched. The FINAL gate's `scripts/qa/jumpscare.mjs` re-run on the final
+    tree is the real-time check of the final code.
+  * **Requests for the lead (147n):**
+    1. Ranks 1 + 2 stay the honest gap (ruling (az)). If a re-render is ever funded: the AD4 polish backlog above (the
+       wet coat COVERAGE first, then flat wet hair clumps, skin mottling / cyanosis, eyes, mouth, nosebleed, the fingertip
+       row) and a framing that keeps the brow and the lower lip (the review's option a: centre ~8-10 mm up, crop ~52-55 mm,
+       cheekbones ~60 % of the width). `scare_encode.mjs` re-ships all three tiers incl. Low from the same `--seq final`.
+    2. [LEAD] **Aspect ratio (not changed):** the quad cover-fits the 16:10 clip. Any viewport wider than 16:10 crops the
+       TOP and BOTTOM: a maximised Chrome window on the M1 MacBook Air (~1440x790, 1.82) loses ~6 % of the clip height
+       at each edge, 16:9 ~5 %. Eye centres sit at 11 % / 16 % of the clip height (eye_L y 111 / 1000), so on 1.82 her
+       left eye's centre lands ~6 % from the top edge and the lower lip goes further below the frame. The alternative is
+       "fill height" (no vertical crop; feathered void bands at the sides, cheekbones ~61 % of the width at 1.82). The
+       reviewer shot at 1280x800 (= the clip aspect), so neither the review nor this round measured it.
+    3. The lunge is still unreadable: in the 4 lunge frames she is a black mass under the torch spot on the wall (her head
+       is in her hand, so the eye-level target is the space above her neck stump). Not opened (0.15 s, rank 4 residual).
+    4. `exposure.ts` (FLASH / PERF lane): under `EXPOSURE_CUE.hold` the meter still reads a PENDING snap
+       (`!(hold && snapAfter < 0)`) with the torch near-field term zeroed, so `hold` alone does not freeze the exposure
+       when a camera binding calls a snap in the same frame. The death cutaway no longer relies on it; any other `hold`
+       user that starts on a fast turn can step the same way.
+    5. Append "JUMPSCARE LANE DONE" when satisfied (the FINAL builder polls for it).
+    6. The QA dists named in 147m / 147n entries (scratch/dist-js*, dist-147n, dist-147n2, dist-147n3) are DELETED (disk);
+       rebuild from the tree if a run must be reproduced.
+- **GATE (2026-10-20 03:55–04:12, no fixes): ALL CHECKS PASS (on the 03:58 snapshot).**
+  Tree = the working tree at 03:58 (other lanes' uncommitted edits in render / main / bindings / lightmaps included).
+  Logs + reports: scratchpad `gate/` + `gate-*.log` (session scratchpad, not in the repo).
+  - [x] `npm run typecheck` rc 0 · [x] `npm test` rc 0, 371 / 371 · [x] `assets --check` ok (low 26.96 / 27, medium
+    51.46 / 60, max 102.83 / 120, voice 5.48 / 8 MB) · [x] `npx vite build --outDir scratch/dist-jumpscare-gate` rc 0 +
+    verify-boot OK (1 boot chunk, 12 704 B gz / 25 600; no three.js / game code); scare clips in the dist: low 94.6 KB,
+    medium 542.8 KB, max 1 060.6 KB.
+  - [x] strict Medium playthrough (stock command, QA_STRICT=1, WebGPU, ON BATTERY 68 % — stepped, valid): rc 0,
+    `done: ended=true beat=B13 game=526.8s wall=167s deaths=0`, 18 / 18 assertions, 0 unsticks, 0 console errors,
+    0 exceptions, 4 requests before Start (boot html/js/css + favicon); `[jumpscare] clip ready: medium 1280x800 530 KB
+    avc1.640028` at report-clock +202.9 s (the B05 prefetch; same line in the careless run at +412.0 s). Report: scratchpad `gate/gate-strict-report.json`.
+  - [x] careless Medium (QA_STRICT=1 QA_CARELESS=1, WebGPU, ON BATTERY 67 %, stepped) through the recorder wrapper
+    (scratchpad `gate/careless-scare.mjs`: imports the stock `scripts/qa/playthrough.mjs` unchanged, wraps
+    `story.jumpscare.fx/update` on the instance to RECORD only — no setStepped, no seeks): rc 0, `done: ended=true
+    beat=B13 game=601.27s wall=199s deaths=1` (B09 CP6, adaState CATCH), **24 / 24 assertions** (the stock 20 + 4 gate
+    asserts), 0 unsticks, 0 console errors, 0 exceptions, 4 requests before Start. **The catch played the jumpscare
+    CLIP:** one `{on}` at bot t 307.17 (tier medium, ready, mode `clip`, quad visible, gain 1, readyState 4, 1280x800),
+    39 clip frames (38 with videoTime > 0, all readyState 4), 0 fallback frames, `{off}` at 308.47 (= 1.30 s after the
+    cut, matches 0.15 → 1.45) left mode null / quad hidden / video paused; a second `{off}` = story-runtime's idempotent
+    backstop on the death end (no-op). Gain reached 0 in the last frames before the off (the fade to black).
+    CAVEAT (harness, not a game bug): the bot runs ~10x real time and the non-stepped clip plays on the WALL clock, so
+    in this run the video reached only t 0.128 s (~4 of 30 clip frames) before the off cue. The playthrough proves the
+    path (clip, decoded, on, off, respawn, 0 errors), not the full real-time sequence — that is `scripts/qa/jumpscare.mjs`'s
+    real-time pass. Report: scratchpad `gate/gate-careless-report.json` (`scareGate` key).
+  - [x] `rm -rf scratch/dist-jumpscare-gate` (done; disk 11 GiB free).
+  - Not run by the gate (out of its scope): `scripts/qa/jumpscare.mjs` real-time / stepped face pass on this tree
+    (another lane — FINAL, scratch/dist-final — was running it at 03:55), Low / Max playthroughs, any look review.
+    Look verdict unchanged from 147n: a startling, horrifying second, NOT a photograph (CG latex / wax mask).
+  - Staleness: after the 03:58 build only `src/game/main.ts` changed (04:10, PERF lane, +66/-2 in the working tree; no
+    jumpscare references). The gate covers the 03:58 snapshot; re-gate if the lead needs that edit covered.
+    No screenshot was examined by the gate (look verdict inherited from 147n, not re-judged).
 
 ## Spec
 Coordinates below are Ada's rest-pose PLAN/Blender space (Z-up, she faces −Y, +X = HER LEFT), relative to the SDF
@@ -1360,3 +1956,5 @@ Encode PROXY (log-encoded probe frame, 30 frames of synthetic drift/zoom, §3 se
 will be several times larger — **caps: Max ≤ 3 MB, Medium ≤ 1.5 MB, Low ≤ 330 KB** (all fit: Max 42.7 MB, Medium
 6.0 MB free; Low only after the WebP swap frees 364 KB). Honest look note: the probe (old SDF face, crude straight hair
 curtain, 3.5 mm SSS, f/4) reads as a glowing wax face behind a hair curtain — exactly the failure to beat.
+
+JUMPSCARE LANE DONE (lead, 04:29): the JUMPSCARE lane ended (147n reviewed, js:gate passed) and FINAL-B (#154) has landed. FINAL builder: read LEAD RULING (bf) at the end of docs/STATUS-final.md first, then run the final gate on the merged tree.

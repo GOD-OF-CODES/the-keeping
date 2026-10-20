@@ -2,7 +2,8 @@
   "version": 1,
   "blender": "/Applications/Blender.app/Contents/MacOS/Blender",
   "libInputs": ["blender/lib/*.py"],
-  "sharedAssetDirs": ["public/assets/voice"],
+  "sharedAssetDirs": [],
+  "streamedAssetBudgetsMB": { "public/assets/voice": 8 },
   "budgetsMB": { "low": 27, "medium": 60, "max": 120 },
   "jobs": [
     {
@@ -114,7 +115,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_GROUND", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_ground.npz" }, { "path": "public/assets/max/lm_ground.klm" }]
     },
@@ -125,7 +126,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_PARLOR", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_parlor.npz" }, { "path": "public/assets/max/lm_parlor.klm" }]
     },
@@ -136,7 +137,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_KITCHEN", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_kitchen.npz" }, { "path": "public/assets/max/lm_kitchen.klm" }]
     },
@@ -147,7 +148,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_UPPER_HALL", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_upper_hall.npz" }, { "path": "public/assets/max/lm_upper_hall.klm" },
                   { "path": "public/assets/max/lm_upper_hall_flash.klm" }]
@@ -159,7 +160,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_UPPER_ROOMS", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_upper_rooms.npz" }, { "path": "public/assets/max/lm_upper_rooms.klm" },
                   { "path": "public/assets/max/lm_upper_rooms_flash.klm" }]
@@ -171,7 +172,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_EXTERIOR", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_exterior.npz" }, { "path": "public/assets/max/lm_exterior.klm" }]
     },
@@ -182,9 +183,21 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_CAR", "--size", "1024", "--samples", "64"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_car.npz" }, { "path": "public/assets/max/lm_car.klm" }]
+    },
+    {
+      "id": "bake-diag",
+      "group": "review",
+      "manual": true,
+      "description": "FINAL-BAKE #152 leak diagnosis: dev bake of one atlas (default LM_UPPER_ROOMS 1024^2 / 64 spp, no flash) that ships NOTHING (--no-ship) and dumps raw / legacy (global dilate + OIDN) / new (lib/islands.py) atlases to scratch/final-bake/dump for scratch/final-bake/lmdiag2.mjs. Other atlas: --job-args=\"--atlas LM_KITCHEN\"",
+      "script": "blender/house/bake_house.py",
+      "args": ["--atlas", "LM_UPPER_ROOMS", "--size", "1024", "--samples", "64", "--no-ship", "--no-flash", "--dump", "scratch/final-bake/dump"],
+      "cyclesLog": true,
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py", "blender/lib/encode.py"],
+      "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
+      "outputs": []
     },
     {
       "id": "bake-release-ground",
@@ -194,7 +207,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_GROUND", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_ground.npz" }, { "path": "public/assets/max/lm_ground.klm" }]
     },
@@ -206,7 +219,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_PARLOR", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_parlor.npz" }, { "path": "public/assets/max/lm_parlor.klm" }]
     },
@@ -218,7 +231,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_KITCHEN", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_kitchen.npz" }, { "path": "public/assets/max/lm_kitchen.klm" }]
     },
@@ -230,7 +243,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_UPPER_HALL", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_upper_hall.npz" }, { "path": "public/assets/max/lm_upper_hall.klm" }]
     },
@@ -242,7 +255,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_UPPER_ROOMS", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_upper_rooms.npz" }, { "path": "public/assets/max/lm_upper_rooms.klm" }]
     },
@@ -254,7 +267,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_EXTERIOR", "--size", "2048", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_exterior.npz" }, { "path": "public/assets/max/lm_exterior.klm" }]
     },
@@ -266,7 +279,7 @@
       "script": "blender/house/bake_house.py",
       "args": ["--atlas", "LM_CAR", "--size", "1024", "--samples", "128"],
       "cyclesLog": true,
-      "libInputs": ["blender/lib/bake.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
+      "libInputs": ["blender/lib/bake.py", "blender/lib/islands.py", "blender/lib/oidn.py", "blender/lib/scene.py", "blender/lib/materials.py"],
       "inputs": [".cache/house/house.blend", ".cache/props/props.blend", "blender/house/scene_prep.py", "blender/house/plan.py"],
       "outputs": [{ "path": ".cache/bake/lm_car.npz" }, { "path": "public/assets/max/lm_car.klm" }]
     },
@@ -324,11 +337,30 @@
       "id": "scare-look",
       "group": "scare",
       "manual": true,
-      "description": "JUMPSCARE #147 look round: the Cycles-only severed-head close-up (blender/scare/*), ONE still (hero or jaw-spasm frame) -> scratch/jumpscare/look-r<N>.png/.exr + sheet-r<N>.png. Pass --force (job args are not hashed) and --job-args=\"--round N --spp 96 --frame hero\"",
+      "description": "JUMPSCARE #147 look round: the Cycles-only severed-head close-up (blender/scare/*), ONE still (hero or jaw-spasm frame) -> scratch/jumpscare/look-r<N>.png/.exr + sheet-r<N>.png. Pass --force (job args are not hashed) and --job-args=\"--round N --spp 96 --frame hero\". #147i: + --seq <tag> --frames 0,4,12 --seqout scratch/jumpscare/seq-<tag> = a low-res MOTION TEST of the keyframed arc (scare_seq.py; a look render, allowed before the AD passes a still)",
       "script": "blender/scare/scare_render.py",
       "inputs": ["blender/scare/scare_head.py", "blender/scare/scare_tex.py", "blender/scare/scare_hair.py",
-                 "blender/scare/scare_scene.py", "blender/characters/sdf.py", "blender/characters/mesher.py"],
+                 "blender/scare/scare_scene.py", "blender/scare/scare_seq.py", "blender/characters/sdf.py", "blender/characters/mesher.py"],
       "outputs": []
+    },
+    {
+      "id": "scare-render",
+      "group": "scare",
+      "manual": true,
+      "description": "JUMPSCARE #147i SEQUENCE (#147l: rendered under LEAD RULING (av, amended) with look-r37 + the lead's l1 staging (47.6 mm crop + shift, spill ring, f/16, EV -11.73) at 1600x1000 / 96 spp, see STATUS-jumpscare 147l; the encoder never upscales, so Max ships 1600x1000) — originally: run ONLY after the AD passes a still (ruling au). The keyframed 1.0 s arc (scare_render --seq -> scare_seq.py) at 1920x1200, 30 fps, Cycles + motion blur 180 deg + OIDN -> .cache/scare/frames/final/fNNNN.exr; CHUNKED and resume-safe (existing frames are skipped), one chunk per lock hold so headless-Chrome QA runs in between. Pass --force and --job-args=\"<the approved still's look args> --spp 128 --ev <its metered EV> --frames 0-2 --approved <AD review id>\" (scare_seq refuses the 'final' tag without --approved; FIRST chunk = the risk frames --frames 12,16,17 (spasm peak + two adjacent hold frames: encode them with scare_encode.mjs --subset 16,17 --check and judge boil in motion), then 0-2, 3-5 ... 27-29; measured 1.93 s per spp-MP: 128 spp ~9.5 min/frame, 3 frames ~30 min per lock hold, 30 frames ~4.8 h; 256 spp doubles it for only -13 % boil, STATUS 147i). The post step encodes only when all 30 frames exist (scare_encode.mjs: log-encoded H.264 per tier + round-trip check -> scratch/jumpscare/encode/); shipping into public/assets/<tier>/scare_face.mp4 is a separate hand step: node blender/scare/scare_encode.mjs --frames .cache/scare/frames/final --check --ship --approved \"<AD review id>\" then npm run assets -- --manifest",
+      "script": "blender/scare/scare_render.py",
+      "args": ["--seq", "final"],
+      "inputs": ["blender/scare/scare_head.py", "blender/scare/scare_tex.py", "blender/scare/scare_hair.py",
+                 "blender/scare/scare_scene.py", "blender/scare/scare_seq.py", "blender/characters/sdf.py", "blender/characters/mesher.py"],
+      "post": [["node", "blender/scare/scare_encode.mjs", "--frames", ".cache/scare/frames/final", "--expect", "30", "--check", "--previews", "--ev", "-11.73"]],
+      "outputs": [
+        { "path": "public/assets/max/scare_face.mp4", "kind": "data", "id": "scare_face" },
+        { "path": "public/assets/medium/scare_face.mp4", "kind": "data", "id": "scare_face" },
+        { "path": "public/assets/max/scare_face.json", "kind": "data", "id": "scare_face_meta" },
+        { "path": "public/assets/medium/scare_face.json", "kind": "data", "id": "scare_face_meta" },
+        { "path": "public/assets/low/scare_face.mp4", "kind": "data", "id": "scare_face" },
+        { "path": "public/assets/low/scare_face.json", "kind": "data", "id": "scare_face_meta" }
+      ]
     },
     {
       "id": "head-lab",

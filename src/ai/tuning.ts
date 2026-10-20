@@ -32,6 +32,9 @@ export const TUNING = {
   /** Difficulty 2026-10-08: lostS 4 → 2.5, catchDist 1 → 0.8 m, and she abandons any chase after giveUpS. */
   chase: { lostS: 2.5, catchDist: 0.8, runNoiseMin: 5, giveUpS: 10 },
   bumpDist: 0.55,
+  /** JUMPSCARE #147n: centre-to-centre distance at which the player is pressed into her body (her torso ≈ 0.12 m deep /
+   *  0.2 m half-width from her axis + the lens ≈ 0.1 m clear of it): contact during the bump wind-up is a catch here. */
+  bodyOverlapM: 0.25,
   /** An investigate stimulus closer than this to the current one keeps her route (no re-plan). */
   stimulusReplanM: 1.0,
   /** bedS = the ada_search_bed one-shot (4.0 s) when she searches beside Harlan's bed; bedReach = her feet to its edge. */

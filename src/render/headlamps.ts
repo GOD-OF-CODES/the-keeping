@@ -10,7 +10,7 @@
 // Integrated low beam ≈ 720 lm per lamp. The light colour carries the kelvin (3200 K / 3300 K).
 
 import * as THREE from 'three/webgpu';
-import { Fn, float, uniform, vec3, atan, exp, max, min, smoothstep, mix } from 'three/tsl';
+import { Fn, float, renderGroup, uniform, vec3, atan, exp, max, min, smoothstep, mix } from 'three/tsl';
 import type { PresetConfig } from './presets.ts';
 
 const DEG = Math.PI / 180;
@@ -23,7 +23,7 @@ const TAN_HALF = Math.tan(HALF);
 export const HEADLAMP_SHADOW_LAYER = 5;
 
 /** 0 = low beam only … 1 = high-beam lobe fully on (our car's flashes at C1 32.4 / 32.6 s). */
-export const uHibeam = uniform(0);
+export const uHibeam = uniform(0).setGroup(renderGroup); // FINAL #153b: shared render group (see lightmap-material.ts)
 
 /** Gaussian lobe in degrees: amp · exp(−½((h−h0)/σh)² − ½((v−v0)/σv)²). */
 const lobe = (h: any, v: any, amp: number, h0: number, v0: number, sh: number, sv: number) => {

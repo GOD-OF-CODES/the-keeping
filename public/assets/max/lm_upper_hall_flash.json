@@ -13,10 +13,10 @@
   "channels": 3,
   "intensity": 3.141592653589793,
   "stats": {
-    "mean": 0.3428,
-    "p99": 1.9178,
-    "max": 68.26991,
-    "coverage": 0.502
+    "mean": 0.43568,
+    "p99": 5.65279,
+    "max": 68.26297,
+    "coverage": 0.5687
   },
   "file": "lm_upper_hall_flash.klm"
 }
