@@ -13,6 +13,7 @@ import { BUS_NAMES, type BusName } from './synth/types.ts';
 import type { Params } from './synth/types.ts';
 import { RECIPES, getRecipe } from './synth/index.ts';
 import { SynthWorker, prerenderBanks, renderVariants, type Bank, type PrerenderOptions } from './offline.ts';
+import { bankKey, loadBank, saveBank, type CachedVariant } from './bank-cache.ts';
 import { SpatialEmitter, bestPath, occlusionFor, roomAtWorld, type DoorOpenFn, type PannerOpts } from './spatial.ts';
 import { RoomReverb, type ReverbParams } from './reverb.ts';
 
@@ -381,8 +382,49 @@ export class AudioEngine implements System {
   // ---------------------------------------------------------------- bank
 
   async prerender(opts: PrerenderOptions = {}): Promise<void> {
-    const { bank } = await prerenderBanks(this.ctx, opts);
-    for (const [k, v] of bank) this.bank.set(k, v);
+    // LOAD round (#157e): a repeat visit reads the bank back from IndexedDB (same build = same bytes; bank-cache.ts)
+    const key = opts.ids ? null : bankKey({ sampleRate: this.ctx.sampleRate, maxVariants: opts.maxVariants, variationPass: opts.variationPass, urls: [import.meta.url] });
+    if (key) {
+      const t0 = performance.now();
+      const cached = await loadBank(key);
+      if (cached) {
+        let n = 0;
+        let bytes = 0;
+        for (const [id, vs] of cached) {
+          const bufs = vs.map((v) => {
+            const b = this.ctx.createBuffer(v.channels.length, v.channels[0].length, v.sampleRate);
+            v.channels.forEach((c, i) => b.copyToChannel(c as Float32Array<ArrayBuffer>, i));
+            bytes += c4(b);
+            return b;
+          });
+          n += bufs.length;
+          this.bank.set(id, bufs);
+        }
+        opts.onProgress?.(1, 'Sound ready');
+        console.info(`[audio] bank from the browser cache: ${cached.size} sounds / ${n} variants in ${(performance.now() - t0).toFixed(0)} ms (${(bytes / 1048576).toFixed(1)} MB @ ${this.ctx.sampleRate} Hz)`);
+        return;
+      }
+    }
+    // LOAD round (#157c): the bank synthesizes in a small worker pool (the lazy-sound worker + up to 2 more, one per
+    // spare core: hardwareConcurrency − 5 for the main thread, GPU process, compositor, audio …), never on the main
+    // thread. The extra workers end with the prerender; the lazy-sound worker stays.
+    const hc = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
+    const extra: SynthWorker[] = [];
+    if (this.synthWorker && !opts.workers) for (let i = 0; i < Math.max(0, Math.min(2, hc - 5)); i++) extra.push(new SynthWorker());
+    let fresh: Bank | null = null;
+    try {
+      const { bank } = await prerenderBanks(this.ctx, { ...opts, workers: opts.workers ?? (this.synthWorker ? [this.synthWorker, ...extra] : undefined) });
+      for (const [k, v] of bank) this.bank.set(k, v);
+      fresh = bank;
+    } finally {
+      for (const w of extra) w.dispose();
+    }
+    if (key && fresh) {
+      // stored in the background (never awaited by the load); IndexedDB's put() clones the channel data itself
+      const store = new Map<string, CachedVariant[]>();
+      for (const [id, bufs] of fresh) store.set(id, bufs.map((b) => ({ sampleRate: b.sampleRate, channels: Array.from({ length: b.numberOfChannels }, (_, i) => b.getChannelData(i)) })));
+      void saveBank(key, store).then((ok) => console.info(`[audio] bank ${ok ? 'stored in' : 'not stored (storage unavailable) in'} the browser cache`));
+    }
   }
 
   /**
@@ -812,6 +854,11 @@ export class LiveLayers {
     this.dripOn = false;
     this.bpm = 0;
   }
+}
+
+/** PCM bytes of a bank buffer (Float32). */
+function c4(b: AudioBuffer): number {
+  return b.length * b.numberOfChannels * 4;
 }
 
 /** Convenience for lane B: create, prerender and register in one call. */

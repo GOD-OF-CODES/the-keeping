@@ -52,6 +52,11 @@ export interface BakedMaterial {
   totalMs: number;
   /** Bytes on the GPU (both maps incl. mips). */
   bytes: number;
+  /**
+   * LOAD round (#157d): set when the bake was submitted with `deferMeasure` — resolves once `measured`, `gain`,
+   * `albedoError` and `totalMs` hold the readback's values (until then they are the spec's own numbers / gain 1).
+   */
+  ready?: Promise<void>;
   dispose(): void;
 }
 
@@ -320,7 +325,14 @@ export class MaterialBaker {
     if (this.log) console.info(`[materials] precompiled ${todo.length} generator programs in ${(performance.now() - t0).toFixed(0)} ms`);
   }
 
-  async bake(spec: MaterialSpec, gen: Generator, size: number, superTile = 1): Promise<BakedMaterial> {
+  /**
+   * LOAD round (#157d): `deferMeasure` = submit the three passes and return at once; the mean-albedo readback (the
+   * only GPU fence of a bake) resolves `baked.ready` later. bindMaterials submits every bake back to back and awaits
+   * the readbacks together — the 82 sequential fences left the main thread ≈ 28 % idle in the materials phase. Same
+   * passes, same shaders, same maps; each deferred bake measures into its own 16 × 16 target (the render context is
+   * keyed by attachment format, so no extra programs or node builds).
+   */
+  async bake(spec: MaterialSpec, gen: Generator, size: number, superTile = 1, deferMeasure = false): Promise<BakedMaterial> {
     const key = `${spec.id}@${size}x${superTile}`;
     const hit = this.cache.get(key);
     if (hit) return hit;
@@ -355,30 +367,15 @@ export class MaterialBaker {
     const meas = this.measureMaterial();
     this.measA.value = rt.textures[0];
     this.uLevel.value = Math.max(0, Math.log2(size / MEASURE));
-    r.setRenderTarget(this.measRT);
+    const measRT = deferMeasure ? this.newMeasureTarget() : this.measRT;
+    r.setRenderTarget(measRT);
     this.quad.material = meas;
     this.quad.render(r);
     r.setRenderTarget(prevRT);
     const submitMs = performance.now() - t0;
     genMat.dispose();
 
-    let measured: [number, number, number] = [...spec.avgAlbedo] as [number, number, number];
-    let roughnessMean = spec.roughness;
-    try {
-      const px = await this.readMeasure();
-      const s = [0, 0, 0, 0];
-      const n = MEASURE * MEASURE;
-      for (let i = 0; i < n; i++) for (let k = 0; k < 4; k++) s[k] += px[i * 4 + k];
-      measured = [s[0] / n, s[1] / n, s[2] / n];
-      roughnessMean = s[3] / n;
-    } catch (e) {
-      console.warn(`[materials] measure readback failed for ${spec.id}:`, e);
-    }
-    const totalMs = performance.now() - t0;
     const target = spec.avgAlbedo;
-    const albedoError = albedoDeviation(measured, target);
-    const gain = albedoGain(measured, target);
-
     const baked: BakedMaterial = {
       id: spec.id,
       size,
@@ -386,12 +383,12 @@ export class MaterialBaker {
       mapB: rt.textures[1],
       extraKind: extraKind(spec),
       repeatM,
-      measured,
-      roughnessMean,
-      gain,
-      albedoError,
+      measured: [...target] as [number, number, number],
+      roughnessMean: spec.roughness,
+      gain: [1, 1, 1],
+      albedoError: 0,
       submitMs,
-      totalMs,
+      totalMs: submitMs,
       bytes: bakedBytes(size),
       dispose: () => {
         rt.dispose();
@@ -399,32 +396,51 @@ export class MaterialBaker {
       },
     };
     this.cache.set(key, baked);
-    if (this.log) {
-      const f = (v: number[]) => v.map((x) => x.toFixed(3)).join(',');
-      const flag = albedoError <= ALBEDO_TOLERANCE ? 'ok' : `OFF ${(albedoError * 100).toFixed(0)}% → gain ${f(gain)}`;
-      console.info(`[materials] ${spec.id} ${size}² ${totalMs.toFixed(1)} ms (submit ${submitMs.toFixed(1)}) albedo ${f(measured)} vs ${f(target)} ${flag}`);
+    const measure = async (): Promise<void> => {
+      try {
+        const px = await readFloatTarget(r, measRT, MEASURE, MEASURE);
+        const s = [0, 0, 0, 0];
+        const n = MEASURE * MEASURE;
+        for (let i = 0; i < n; i++) for (let k = 0; k < 4; k++) s[k] += px[i * 4 + k];
+        baked.measured = [s[0] / n, s[1] / n, s[2] / n];
+        baked.roughnessMean = s[3] / n;
+      } catch (e) {
+        console.warn(`[materials] measure readback failed for ${spec.id}:`, e);
+      } finally {
+        if (measRT !== this.measRT) measRT.dispose();
+      }
+      baked.totalMs = performance.now() - t0;
+      baked.albedoError = albedoDeviation(baked.measured, target);
+      baked.gain = albedoGain(baked.measured, target);
+      if (this.log) {
+        const f = (v: number[]) => v.map((x) => x.toFixed(3)).join(',');
+        const flag = baked.albedoError <= ALBEDO_TOLERANCE ? 'ok' : `OFF ${(baked.albedoError * 100).toFixed(0)}% → gain ${f(baked.gain)}`;
+        console.info(`[materials] ${spec.id} ${size}² ${baked.totalMs.toFixed(1)} ms (submit ${submitMs.toFixed(1)}) albedo ${f(baked.measured)} vs ${f(target)} ${flag}`);
+      }
+    };
+    if (deferMeasure) {
+      baked.ready = measure();
+      return baked;
     }
+    await measure();
     return baked;
   }
 
-  /**
-   * Reads the 16×16 float measure target. WebGL2: a synchronous readPixels (a true GPU fence incl. driver shader
-   * compile; three's async path polls its fence with requestAnimationFrame, which Chrome throttles/pauses in
-   * occluded or hidden tabs). WebGPU: mapAsync (not frame-dependent).
-   */
-  private async readMeasure(): Promise<Float32Array> {
-    return readFloatTarget(this.renderer, this.measRT, MEASURE, MEASURE);
+  /** A 16 × 16 Float measure target of its own (deferred bakes: their readbacks are in flight together). */
+  private newMeasureTarget(): any {
+    return new THREE.RenderTarget(MEASURE, MEASURE, { type: THREE.FloatType, depthBuffer: false, generateMipmaps: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
   }
 
-  /** Bakes a list in order; yields between materials. */
+  /** Bakes a list in order (readbacks in flight together, #157d); resolves once every measurement is in. */
   async bakeAll(items: Array<{ spec: MaterialSpec; gen: Generator; size: number; superTile?: number }>, onProgress?: (p: BakeProgress) => void): Promise<BakedMaterial[]> {
     const out: BakedMaterial[] = [];
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      const b = await this.bake(it.spec, it.gen, it.size, it.superTile ?? 1);
+      const b = await this.bake(it.spec, it.gen, it.size, it.superTile ?? 1, true);
       out.push(b);
       onProgress?.({ done: i + 1, total: items.length, id: it.spec.id, ms: b.totalMs });
     }
+    await Promise.all(out.map((b) => b.ready));
     return out;
   }
 

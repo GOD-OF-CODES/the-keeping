@@ -222,3 +222,14 @@ Tree state: every change above is in the working tree (not committed); dist scra
   0.9983 / 0.9962 / 0.9986 / 0.9984 / 0.9974 / 0.9988 / 0.9992 vs ON-vs-ON-again 0.9996 / 0.9995 / 0.9986 / 0.9963 /
   0.9992 / 0.9986 / 0.9977 / 0.9990 / 0.9993 → same as frame drift; C2c pairs (0.64–0.95) drift as much ON-vs-ON-again
   (0.71–0.95): torch sway between captures, no hair in frame.
+- S16 2026-10-20 (note, no new runs). The AC queue (HANDOFF item 1) never ran: v4/ac-queue.log is empty and the
+  process is gone (the Mac went down on battery); the tree has since moved on (308851e) and scratch/dist-smooth-perf is
+  deleted, so v4 is moot — a next PERF round re-measures on its own dist.
+  MEASUREMENT CAVEAT (load investigator, 2026-10-20): macOS keeps ONE Metal shader cache for Chrome's GPU helper
+  (~6.5 GB, rotating), shared by every Chrome profile, every shot.mjs run and the user's own Chrome. A Max load right
+  after a Medium one (or another dist) recompiles everything (Medium 55–66 s warm vs 269 s after one Max load, 368 s
+  of MTLCompilerService CPU). So the S3/S6/S9 stall sizes (C7 0.25 1.9 s, the C5 / C4c GPU stalls, cs-shots 4–16 s)
+  include an unknown cold-cache share: v3 fullmax/fullmed ran back to back after other lanes' Medium/Max runs. For
+  every real-time run, log `ps -axo time,command | grep MTLCompilerService` before and after (the CPU-time delta is a
+  per-run "cold?" counter) and run the same preset + dist twice back to back, keeping the second. Swap was also
+  5 GB / 6 GB during those runs (the user's Chrome holds ≈ 7 GB), which inflates GC / page-in stalls (C7 1.48 GC).

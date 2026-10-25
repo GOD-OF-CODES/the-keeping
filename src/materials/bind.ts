@@ -316,10 +316,10 @@ function materialIdOf(mat: any): string | null {
 }
 
 /** Bakes (once) the generated maps a spec needs at this preset. */
-export async function ensureBaked(baker: MaterialBaker, spec: MaterialSpec, preset: PresetConfig, force = false): Promise<BakedMaterial | null> {
+export async function ensureBaked(baker: MaterialBaker, spec: MaterialSpec, preset: PresetConfig, force = false, deferMeasure = false): Promise<BakedMaterial | null> {
   if (spec.source === 'constant') return null;
   if (spec.source === 'baked_unique' && !force) return null;
-  return baker.bake(spec, generatorFor(spec), textureSizeFor(spec, preset), superTileFor(spec));
+  return baker.bake(spec, generatorFor(spec), textureSizeFor(spec, preset), superTileFor(spec), deferMeasure);
 }
 
 /**
@@ -365,15 +365,22 @@ export async function bindMaterials(root: any, bc: BindContext): Promise<BindRes
   const baked = new Map<string, BakedMaterial>();
   // P1-7: all generator programs compile in parallel first; the bakes below then only draw + read back
   await baker.precompile(todo.map((n) => ({ spec: n.spec, gen: generatorFor(n.spec), size: textureSizeFor(n.spec, bc.preset), superTile: superTileFor(n.spec) })));
+  // LOAD round (#157d): every bake is submitted back to back; their mean-albedo readbacks (the gains below) are in
+  // flight together and awaited once — no per-material GPU fence
+  const tb = performance.now();
+  const ready: Promise<void>[] = [];
   for (const n of todo) {
-    const b = await ensureBaked(baker, n.spec, bc.preset, true);
-    if (b) baked.set(n.spec.id, b);
-    bc.onProgress?.({ done: ++done, total: todo.length, id: n.spec.id, ms: b?.totalMs ?? 0 });
+    const b = await ensureBaked(baker, n.spec, bc.preset, true, true);
+    if (b) {
+      baked.set(n.spec.id, b);
+      if (b.ready) ready.push(b.ready);
+    }
+    bc.onProgress?.({ done: ++done, total: todo.length, id: n.spec.id, ms: b?.submitMs ?? 0 });
   }
+  await Promise.all(ready);
   baker.releaseScratch(); // HalfFloat scratch + shared bake materials are recreated on demand
   if (todo.length) {
-    const ms = [...baked.values()].reduce((a, b) => a + b.totalMs, 0);
-    console.info(`[materials] bound ${todo.length} generated materials in ${ms.toFixed(0)} ms · maps ${(baker.totalBytes() / 1048576).toFixed(0)} MB`);
+    console.info(`[materials] bound ${todo.length} generated materials in ${(performance.now() - tb).toFixed(0)} ms (wall, readbacks together) · maps ${(baker.totalBytes() / 1048576).toFixed(0)} MB`);
   }
 
   const shared = new Map<string, any>();

@@ -25,6 +25,13 @@ export interface PrerenderOptions {
   maxVariants?: number;
   /** Extra params per recipe id. */
   params?: Record<string, Params>;
+  /**
+   * LOAD round (#157c): synth workers for the prerender — the pure-JS DSP (renderRecipe, bit-identical in the worker)
+   * then runs off the main thread, where it competed with the level parse and the material bakes (≈ 3.5–4 s of main
+   * thread on every load). The main thread only wraps the channels (a memcpy) and runs the variation pass (rendered by
+   * the browser's audio thread). Empty / absent = the main-thread path (Node tests).
+   */
+  workers?: SynthWorker[];
 }
 
 export interface PrerenderTiming {
@@ -167,32 +174,81 @@ export async function prerenderBanks(ctx: BaseAudioContext, opts: PrerenderOptio
   let done = 0;
   let bytes = 0;
   let lastYield = performance.now();
-  for (let k = 0; k < list.length; k++) {
-    const r = list[k];
-    const tr = performance.now();
-    const bufs: AudioBuffer[] = [];
-    for (let v = 0; v < counts[k]; v++) {
-      const res = renderRecipe(r, ctx.sampleRate, v, opts.params?.[r.id]);
+  const workers = opts.workers?.filter(Boolean) ?? [];
+  if (workers.length) {
+    // LOAD round (#157c): a pull queue over the workers (each takes the next variant when its last one is back); the
+    // results land in their (recipe, variant) slot, so the bank is the same whatever order they finish in
+    const slots: AudioBuffer[][] = list.map((_, k) => new Array<AudioBuffer>(counts[k]));
+    const synthMs = list.map(() => 0);
+    const jobs: Array<{ k: number; v: number }> = [];
+    list.forEach((_, k) => {
+      for (let v = 0; v < counts[k]; v++) jobs.push({ k, v });
+    });
+    let next = 0;
+    const finishing: Promise<void>[] = [];
+    const finish = async (k: number, v: number, res: { channels: Float32Array[]; sampleRate: number }) => {
+      const r = list[k];
       const dry = toBuffer(ctx, res.channels, res.sampleRate);
       const b = opts.variationPass === false ? dry : await variationPass(dry, r, v);
-      bufs.push(b);
+      slots[k][v] = b;
       bytes += b.length * b.numberOfChannels * 4;
       done++;
       if (performance.now() - lastYield > 12) {
-        opts.onProgress?.(done / total, r.label);
-        await yieldToUI();
         lastYield = performance.now();
+        opts.onProgress?.(done / total, r.label);
       }
+    };
+    const runner = async (w: SynthWorker) => {
+      while (next < jobs.length) {
+        const { k, v } = jobs[next++];
+        const r = list[k];
+        let res: { channels: Float32Array[]; sampleRate: number; ms?: number } | null = null;
+        try {
+          res = await w.render(r.id, v, ctx.sampleRate, opts.params?.[r.id]);
+          synthMs[k] += w.log[w.log.length - 1]?.ms ?? 0;
+        } catch (e) {
+          console.warn(`[audio] synth worker failed for ${r.id}; rendering on the main thread`, e);
+          const t = performance.now();
+          res = renderRecipe(r, ctx.sampleRate, v, opts.params?.[r.id]);
+          synthMs[k] += performance.now() - t;
+        }
+        finishing.push(finish(k, v, res));
+      }
+    };
+    await Promise.all(workers.map(runner));
+    await Promise.all(finishing);
+    list.forEach((r, k) => {
+      bank.set(r.id, slots[k]);
+      perRecipe.push({ id: r.id, variants: slots[k].length, ms: synthMs[k], seconds: slots[k].reduce((a, b) => a + b.duration, 0) });
+    });
+  } else {
+    for (let k = 0; k < list.length; k++) {
+      const r = list[k];
+      const tr = performance.now();
+      const bufs: AudioBuffer[] = [];
+      for (let v = 0; v < counts[k]; v++) {
+        const res = renderRecipe(r, ctx.sampleRate, v, opts.params?.[r.id]);
+        const dry = toBuffer(ctx, res.channels, res.sampleRate);
+        const b = opts.variationPass === false ? dry : await variationPass(dry, r, v);
+        bufs.push(b);
+        bytes += b.length * b.numberOfChannels * 4;
+        done++;
+        if (performance.now() - lastYield > 12) {
+          opts.onProgress?.(done / total, r.label);
+          await yieldToUI();
+          lastYield = performance.now();
+        }
+      }
+      bank.set(r.id, bufs);
+      perRecipe.push({ id: r.id, variants: bufs.length, ms: performance.now() - tr, seconds: bufs.reduce((a, b) => a + b.duration, 0) });
     }
-    bank.set(r.id, bufs);
-    perRecipe.push({ id: r.id, variants: bufs.length, ms: performance.now() - tr, seconds: bufs.reduce((a, b) => a + b.duration, 0) });
   }
   opts.onProgress?.(1, 'Sound ready');
   const timing: PrerenderTiming = { totalMs: performance.now() - t0, perRecipe, bytes };
   const slowest = [...perRecipe].sort((a, b) => b.ms - a.ms).slice(0, 5).map((p) => `${p.id} ${p.ms.toFixed(0)}ms`).join(', ');
   console.info(
     `[audio] prerendered ${perRecipe.length} sounds / ${total} variants in ${timing.totalMs.toFixed(0)} ms ` +
-      `(${(bytes / 1048576).toFixed(1)} MB @ ${ctx.sampleRate} Hz). Slowest: ${slowest}`,
+      `(${(bytes / 1048576).toFixed(1)} MB @ ${ctx.sampleRate} Hz${workers.length ? `, ${workers.length} synth workers` : ', main thread'}). Slowest: ${slowest}`,
   );
   return { bank, timing };
 }

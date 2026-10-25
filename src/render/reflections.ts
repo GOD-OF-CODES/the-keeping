@@ -33,6 +33,11 @@ import { specById } from '../materials/spec-index.ts';
 import { uParlorBake } from './lightmap-material.ts';
 import { deferCompileWaits } from './parallel-compile.ts';
 import { disposeRenderObjectsFor, noRoGc } from './ro-gc.ts'; // PERF G (ruling f)
+import { probeKey } from './probes.ts';
+import { LOOK } from './look.ts';
+import { REFLECTIONS_VERSION, readReflFile, rgbToRgba, rgbaToRgb, type ReflFile, type ReflState } from './refl-file.ts';
+
+export { REFL_FILE, REFLECTIONS_VERSION } from './refl-file.ts';
 
 /** Global reflection multiplier (look API `reflections`; 1 = physical). */
 // FINAL #153b: shared render group (the per-object-group stale-uniform class, lightmap-material.ts); = LOOK.reflections
@@ -105,6 +110,28 @@ class ReflectionNode extends (THREE as any).LightingNode {
   }
 }
 
+/**
+ * LOAD round (#157b): staleness key of the shipped cubes = the level probe key (level / prop / lightmap / collision
+ * manifest hashes, layout, material spec, preset — level.ts levelProbeKey: everything the cube capture sees as data)
+ * + the cube size + the LOOK values at load (sky, fog, moon, bake and bounce levels … — any tuning change makes the
+ * shipped cubes stale, so the game captures at runtime rather than show old light) + REFLECTIONS_VERSION (the code
+ * the cubes see; bumped by hand, refl-file.ts). Call it ONCE at load (cutscene bindings change LOOK later).
+ */
+export function reflectionsKey(levelKey: string): string {
+  return probeKey([`refl-v${REFLECTIONS_VERSION}`, levelKey, `cube${CUBE_SIZE}`, JSON.stringify(LOOK)]);
+}
+
+/** The tier's shipped cube file, or null (missing / not one / unreadable). Never throws. */
+export async function fetchReflFile(url: string): Promise<ReflFile | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await readReflFile(await res.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
 /** The attached RoomReflections (null on Low / WebGL2 / ?refl=0): read when a late node is built. */
 let attached: RoomReflections | null = null;
 
@@ -172,8 +199,10 @@ export class RoomReflections {
   readonly probes = new Map<string, ReflectionProbe>();
   private readonly byRoom = new Map<string, ReflectionProbe>();
   private readonly o: ReflectionsOptions;
-  readonly stats = { probes: 0, materials: 0, clones: 0, objects: 0, edge: 0, captureMs: 0 };
+  readonly stats = { probes: 0, materials: 0, clones: 0, objects: 0, edge: 0, captureMs: 0, source: 'capture' as 'capture' | 'shipped', recaptures: 0 };
   private exterior: ReflectionProbe | null = null;
+  /** LOAD round (#157b): the exterior's shipped states (night = its load-time cube); null = runtime re-captures. */
+  private shippedExt: Map<ReflState, any> | null = null;
   private readonly cam = new THREE.Vector3();
   private dawn = false;
   /** PERF G (ruling f): the exterior cube's last capture cameras (kept so the dawn re-capture reuses their states). */
@@ -217,6 +246,108 @@ export class RoomReflections {
   /** Room id → probe (exterior rooms share the yard probe). */
   probeFor(room: string): ReflectionProbe | null {
     return this.byRoom.get(room) ?? null;
+  }
+
+  /**
+   * LOAD round (#157b): fills every cube from the shipped file instead of capture() — and the exterior's dawn /
+   * night-again states, so the in-game re-capture becomes a texture swap (no cube-context compile, render or prewarm
+   * ever). Mip 0 of each face is written INTO the probe's own CubeRenderTarget (the target the capture renders into:
+   * same texture, same sampling path, same orientation) and three's mip generator then builds the chain exactly as
+   * after a capture (WebGPUBackend.generateMipmaps = the bundles a capture's last face runs). Returns false — and
+   * touches nothing — when the file does not cover every probe at this cube size, or this is not the WebGPU backend.
+   */
+  applyShipped(f: ReflFile): boolean {
+    const { renderer } = this.o;
+    const be = renderer.backend;
+    const device = be?.device;
+    if (!device?.queue || typeof be.generateMipmaps !== 'function' || typeof renderer.initRenderTarget !== 'function' || f.size !== CUBE_SIZE) return false;
+    const find = (id: string, state: ReflState) => f.cubes.find((c) => c.id === id && c.state === state) ?? null;
+    for (const p of this.probes.values()) if (!find(p.id, 'night')) return false;
+    const ext = this.exterior;
+    const dawn = ext ? find(ext.id, 'dawn') : null;
+    const night2 = ext ? find(ext.id, 'night2') : null;
+    if (ext && (!dawn || !night2)) return false;
+    const t0 = performance.now();
+    const texels = CUBE_SIZE * CUBE_SIZE;
+    // LOAD fixer (F1, #157i): `mips` = whether the runtime path's target for this state has a mip chain. The runtime
+    // dawn cube does NOT: the spare EXT target (p.alt) is first allocated inside CubeCamera.update, which turns
+    // generateMipmaps off for faces 0–4, so three (Textures.needsMipmaps) creates its GPU texture with ONE level — and
+    // every surface then samples mip 0 at any roughness (the car hood / wet yard from C5 26.6 to the night change). The
+    // night-again cube re-renders into the original load-time target (8 levels, chain generated). Same allocation here =
+    // the live sampling: the texture keeps generateMipmaps = true (as CubeCamera.update leaves it) but is created while it
+    // is false. (The visible C6 difference the review found was the cube's CONTENT — refl-export.mjs DAWN_BEAT.)
+    const fill = (rt: any, rgb: Uint16Array, mips = true) => {
+      const gm = rt.texture.generateMipmaps;
+      if (!mips) rt.texture.generateMipmaps = false;
+      try {
+        renderer.initRenderTarget(rt);
+      } finally {
+        rt.texture.generateMipmaps = gm;
+      }
+      const gpu = be.get(rt.texture)?.texture;
+      if (!gpu) throw new Error('cube target has no GPU texture');
+      const rgba = rgbToRgba(rgb, texels * 6);
+      device.queue.writeTexture({ texture: gpu, mipLevel: 0, origin: { x: 0, y: 0, z: 0 } }, rgba, { offset: 0, bytesPerRow: CUBE_SIZE * 8, rowsPerImage: CUBE_SIZE }, { width: CUBE_SIZE, height: CUBE_SIZE, depthOrArrayLayers: 6 });
+      if (mips) be.generateMipmaps(rt.texture);
+    };
+    try {
+      for (const p of this.probes.values()) fill(p.cube, find(p.id, 'night')!.rgb);
+      if (ext && dawn && night2) {
+        const mk = () => new THREE.CubeRenderTarget(CUBE_SIZE, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
+        const d = mk();
+        const n2 = mk();
+        fill(d, dawn.rgb, false); // as the runtime spare target: one level (see `fill`)
+        fill(n2, night2.rgb);
+        this.shippedExt = new Map<ReflState, any>([['night', ext.cube], ['dawn', d], ['night2', n2]]);
+      }
+    } catch (e) {
+      console.warn('[reflections] shipped cubes could not be uploaded — capturing at runtime:', e);
+      this.shippedExt = null;
+      return false;
+    }
+    this.stats.source = 'shipped';
+    this.stats.captureMs = Math.round(performance.now() - t0);
+    console.info(`[reflections] ${this.probes.size} shipped cubes${this.shippedExt ? ' + EXT dawn / night-again' : ''} uploaded in ${this.stats.captureMs} ms (no runtime capture)`);
+    return true;
+  }
+
+  /**
+   * LOAD round (#157b, scripts/qa/refl-export.mjs): mip 0 of every face of the probes' CURRENT cubes (`ids`, default
+   * all), RGB half floats as the file stores them. Rows exactly as copyTextureToBuffer returns them (128 × 8 B per row
+   * = a 256-byte multiple: no padding), which is what applyShipped's writeTexture expects.
+   */
+  async exportCubes(ids?: string[]): Promise<Array<{ id: string; rgb: Uint16Array; mips: number | null }>> {
+    const { renderer } = this.o;
+    const out: Array<{ id: string; rgb: Uint16Array; mips: number | null }> = [];
+    const texels = CUBE_SIZE * CUBE_SIZE;
+    for (const p of this.probes.values()) {
+      if (ids && !ids.includes(p.id)) continue;
+      const rgb = new Uint16Array(texels * 6 * 3);
+      for (let f = 0; f < 6; f++) {
+        const px: Uint16Array = await renderer.readRenderTargetPixelsAsync(p.cube, 0, 0, CUBE_SIZE, CUBE_SIZE, 0, f);
+        if (!(px instanceof Uint16Array) || px.length < texels * 4) throw new Error(`cube ${p.id} face ${f}: unexpected readback (${px?.constructor?.name} ${px?.length})`);
+        rgb.set(rgbaToRgb(px, texels), f * texels * 3);
+      }
+      // LOAD fixer (F1): the GPU cube's mip level count (the dawn cube has 1 on both paths — refl-export --verify)
+      out.push({ id: p.id, rgb, mips: renderer.backend?.get?.(p.cube.texture)?.texture?.mipLevelCount ?? null });
+    }
+    return out;
+  }
+
+  /** The exterior probe's id (the cube the dawn / night re-captures change). */
+  get exteriorId(): string | null {
+    return this.exterior?.id ?? null;
+  }
+
+  /** LOAD round (#157b): the in-game dawn / night-again change with shipped cubes — swap, no render. */
+  private swapShipped(state: ReflState): void {
+    const p = this.exterior;
+    const rt = this.shippedExt?.get(state);
+    if (!p || !rt) return;
+    p.cube = rt;
+    for (const t of p.texNodes) t.value = rt.texture;
+    this.stats.recaptures++;
+    console.info(`[reflections] EXT → shipped ${state === 'dawn' ? 'dawn' : 'night'} cube (swap, no re-capture)`);
   }
 
   /**
@@ -389,6 +520,7 @@ export class RoomReflections {
     p.alt = p.cube;
     p.cube = rt;
     for (const t of p.texNodes) t.value = rt.texture;
+    this.stats.recaptures++; // LOAD round: refl-export.mjs waits on it
     // ruling f: free what only the previous exterior cameras still own; this camera set stays for the next re-capture
     const drop = this.extCams.flatMap((c) => c.children);
     this.extCams = [cc];
@@ -477,7 +609,8 @@ export class RoomReflections {
     if (this.pending) this.stepRecapture();
     else if (this.exterior && skyTint > 0.6 !== this.dawn && (skyTint > 0.6 || skyTint < 0.2)) {
       this.dawn = skyTint > 0.6;
-      this.recapture(this.exterior.id);
+      if (this.shippedExt) this.swapShipped(this.dawn ? 'dawn' : 'night2');
+      else this.recapture(this.exterior.id);
     }
     camera.getWorldPosition(this.cam);
     for (const p of this.probes.values()) p.uInside.value = p.box.containsPoint(this.cam) ? 1 : 0;

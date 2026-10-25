@@ -485,6 +485,18 @@ on https://the-keeping.vercel.app. All credits to Raj Vardhan Singh. Max 3 agent
   win or occlude the pick; the bundle drops onto the floor in front of the cut; pad + floor reach for the locket and
   ticket. The audit also fixed the front-door knocker (D_FRONT won every aim). The QA bot now aim-checks every
   interaction, door and hide through the real pick (strict fails on a miss). Shipped alone, without the LOAD lane's edits.
+- (bj) 2026-10-25, LOAD TIME (#157–157j, docs/STATUS-load.md), the user's last requested item. Root causes: the
+  macOS Metal shader cache is shared by all Chrome profiles and full, so other runs evict the game's shaders → full
+  recompiles (100–280 s); memory pressure on the 8 GB M1; a CPU-bound warm floor. Shipped:
+  - reflection cubes pre-captured into reflections.bin (Medium 4.8 MB, Max 4.9 MB; no runtime capture);
+  - audio prerender in 3 workers, plus the bank cached in IndexedDB;
+  - material bakes without per-material GPU waits.
+  The deferred warm-up stays OFF by default (?deferwarm=1 is A/B only). Measured on battery (indicative):
+  - Medium 25–30 s → 13.6–14.4 s;
+  - Max warm 65 s → 17–19.5 s, Max first load 110–136 s → 42 s.
+  Targets ≤ 10 s Medium warm and "no load > 2× median" are NOT met. Risk: the cube key covers level data and LOOK,
+  not code; re-export the cubes (scripts/qa/refl-export.mjs) after any light, material or capture-code change.
+  The other session's trailer/, public/social/ and index.html OG tags are NOT part of this ship (left uncommitted).
 - FINAL FIX / QA list, collected 2026-10-19 13:20 (owners after the running rounds end):
   1. C2c 6.733: a one-frame dark dip on Medium/Max that is BLACK on Low (the beam pool below the frame mid-whip; FLASH
      fixer r3 residual). Owner: c2c-up.ts / clips_escape.py stumble_catch.

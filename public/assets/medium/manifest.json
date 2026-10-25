@@ -1,7 +1,7 @@
 {
   "tier": "medium",
-  "generatedAt": "2026-10-19T22:47:23.065Z",
-  "totalBytes": 53963227,
+  "generatedAt": "2026-10-20T14:56:28.285Z",
+  "totalBytes": 58796531,
   "files": [
     {
       "id": "ada_albedo",
@@ -338,6 +338,13 @@
       "path": "assets/medium/props_road.glb",
       "bytes": 725780,
       "hash": "ef461ced9682b7c5"
+    },
+    {
+      "id": "reflections.bin",
+      "kind": "data",
+      "path": "assets/medium/reflections.bin",
+      "bytes": 4833304,
+      "hash": "082f21a580571a0e"
     },
     {
       "id": "scare_face_meta",

@@ -21,6 +21,9 @@
 //   --out <dir> (default scratch/shots)                --name <prefix>
 //   --console    stream every page console message (all are kept in report.console)
 //   --start-timeout <s> max loading time before the game counts as stuck (default 300)
+//   --profile <dir>  reuse this Chrome user-data-dir (created if missing, KEPT after the run) instead of a fresh temp
+//                profile: run twice with the same dir for a warm repeat visit (HTTP + Dawn WebGPU caches, storage)
+//   --port <n>   fixed server port (default random 5300–5899): with --profile, the same origin on every run
 //   --boot-only  only load the boot page, report requests/recommendation, do not press Start
 //   --no-start   load the URL but don't press Start (e.g. ?scene=matlab pages)
 //   --scenario <file.mjs>  module exporting `default async function (qa)` with qa = {
@@ -69,6 +72,7 @@ const outDir = resolve(ROOT, opt('out', 'scratch/shots'));
 const name = opt('name', bootOnly ? 'boot' : `${preset}${beat ? '-' + beat : spawnId ? '-' + spawnId : ''}`);
 const TIMEOUT_MS = Number(opt('timeout', 420)) * 1000;
 const startTimeoutS = Number(opt('start-timeout', 300)); // loading (downloads, probes, shader warm-up)
+const profileDir = typeof opt('profile', null) === 'string' ? resolve(ROOT, opt('profile', null)) : null; // #157: kept
 
 if (width % 64 !== 0) console.warn(`[shot] width ${width} is not a multiple of 64 — WebGPU readback may stripe`);
 mkdirSync(outDir, { recursive: true });
@@ -153,7 +157,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------- server
 function freePortish() {
-  return 5300 + Math.floor(Math.random() * 600);
+  const fixed = Number(opt('port', 0)); // #157: --profile warm runs need the same origin (HTTP cache, storage, Dawn cache)
+  return fixed > 0 ? fixed : 5300 + Math.floor(Math.random() * 600);
 }
 async function startServer() {
   const port = freePortish();
@@ -189,7 +194,12 @@ function killTree(proc) {
 
 // ---------------------------------------------------------------- chrome + CDP
 async function startChrome() {
-  const profile = mkdtempSync(join(tmpdir(), 'keeping-chrome-'));
+  let profile;
+  if (profileDir) {
+    mkdirSync(profileDir, { recursive: true });
+    rmSync(join(profileDir, 'DevToolsActivePort'), { force: true }); // the last run's port: wait for the new one
+    profile = profileDir;
+  } else profile = mkdtempSync(join(tmpdir(), 'keeping-chrome-'));
   const args = [
     '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
     `--window-size=${width},${height}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions',
@@ -276,7 +286,8 @@ async function cleanup() {
   killTree(chrome?.proc);
   killTree(server?.proc);
   await sleep(300);
-  if (chrome?.profile) rmProfile(chrome.profile);
+  if (chrome?.profile && !profileDir) rmProfile(chrome.profile);
+  else if (profileDir) await sleep(1200); // a kept profile: let Chrome finish flushing its caches before the next run
   releaseLock();
 }
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => cleanup().then(() => process.exit(130)));
@@ -311,7 +322,7 @@ async function closeSession() {
   try { cdp?.close(); } catch {}
   killTree(chrome?.proc);
   await sleep(400);
-  if (chrome?.profile) rmProfile(chrome.profile);
+  if (chrome?.profile && !profileDir) rmProfile(chrome.profile);
   cdp = null;
   chrome = null;
 }

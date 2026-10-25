@@ -187,9 +187,14 @@ export async function startGame(h: BootHandoff): Promise<void> {
     renderer._nodes?.nodeFrame?.update(); // new node frame, or FRAME-updated passes (scene pass …) are skipped
     pipeline.render();
   };
-  const warm = rt.expose.afterCompile as ((render: () => void, compile: () => Promise<void>) => Promise<void>) | undefined;
+  const warm = rt.expose.afterCompile as ((render: () => void, compile: () => Promise<void>, part?: 'all' | 'opening' | 'rest') => Promise<void>) | undefined;
+  // LOAD round (#157g): with `?deferwarm=1` (A/B only since F2, #157j) a plain start awaits only the opening set here;
+  // the rest of the warm-up runs behind "Click to begin" (below, `warming`) and the story starts after it, so every
+  // pose is still warm before C0's first frame. A click / unpause that comes earlier is held (the loading bar comes
+  // back) until it is done. Default: everything is warm before "Click to begin" (the live order, part 'all').
+  const deferWarm = !!warm && rt.expose.canDeferWarm === true;
   // runtime lane E (item 1): node builds stay serial, every pipeline compiles in parallel; awaited once at the end
-  if (warm) await deferCompileWaits(() => warm(frame, compileView));
+  if (warm) await deferCompileWaits(() => warm(frame, compileView, deferWarm ? 'opening' : 'all'));
   else await compileView();
   perfMark('firstFrame');
   frame();
@@ -232,18 +237,24 @@ export async function startGame(h: BootHandoff): Promise<void> {
 
   // ---- Lightning (L, and on the story's storm cadence)
   const lightning = createLightning(ctx, pipeline, lightningHooks);
-  (rt.expose.attachLightning as ((l: typeof lightning) => void) | undefined)?.(lightning);
+  const startStory = () => (rt.expose.attachLightning as ((l: typeof lightning) => void) | undefined)?.(lightning);
+  if (!deferWarm) startStory(); // (deferred: after the rest of the warm-up — the story's start hides the load-time fx meshes)
   if (sceneParam === 'cutscene') await (await import('../cutscenes/preview.ts')).installCutscenePreview(rt as any, { ctx, pipeline, params, input, canvas, lightning });
 
   // ---- Loop
   let paused = true;
   let lastRenderT = -1;
+  /** LOAD round (#157g): the rest of the warm-up owns the camera, the scene and the canvas (hidden) until it ends. */
+  let warming = false;
+  let pendingUnpause = false;
+  let warmDone: Promise<void> = Promise.resolve();
   // the pause menu owns the keyboard: nothing pressed under it acts once play resumes (advance() plays as unpaused)
   let advancing = false;
   input.addBlocker(() => paused && !advancing);
   const loop: Loop = new Loop(
     {
       update(dt, nowSec) {
+        if (warming) return;
         ctx.time.dt = dt;
         ctx.time.now = nowSec;
         ctx.time.frame = loop.frame;
@@ -253,10 +264,12 @@ export async function startGame(h: BootHandoff): Promise<void> {
         input.endFrame();
       },
       render() {
+        if (warming) return;
         syncCutsceneHold(); // #150: the cut frame renders at the cutscene's scale
         pipeline.render();
       },
       onRendered(t) {
+        if (warming) return;
         overlay.frame(t);
         if (lastRenderT >= 0 && !paused) {
           const capFps = loop.cap.effectiveCap(settings.fpsCap, settings.fpsCapDivisorMode);
@@ -339,7 +352,18 @@ export async function startGame(h: BootHandoff): Promise<void> {
     },
   });
 
+  const holdLoading = (on: boolean) => (rt.expose.holdLoading as ((on: boolean) => void) | undefined)?.(on);
   function setPaused(p: boolean) {
+    if (warming) {
+      // LOAD round (#157g): the click came before the rest of the warm-up ended — hold the start, show the loading bar
+      pendingUnpause = !p;
+      if (!p) {
+        begin.hide();
+        menu.hide();
+      } else begin.show();
+      holdLoading(!p);
+      return;
+    }
     paused = p;
     loop.paused = p;
     ctx.events.emit('pause', { paused: p });
@@ -378,9 +402,10 @@ export async function startGame(h: BootHandoff): Promise<void> {
 
   // ---- Start
   h.status('Ready.');
-  (rt.expose.onReady as (() => void) | undefined)?.();
+  (rt.expose.onReady as ((keep?: boolean) => void) | undefined)?.(deferWarm); // deferred: kept (hidden) until the rest is warm
   if (h.bootRoot) h.bootRoot.style.display = 'none';
-  gameRoot.style.visibility = 'visible';
+  if (!deferWarm) gameRoot.style.visibility = 'visible';
+  warming = deferWarm;
   loop.start();
   begin.show();
 
@@ -433,6 +458,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
      * and returns a JPEG data URL (w px wide; AgX output is already display-referred — sRGB-encoded here).
      */
     capture: async (w = 640) => {
+      await warmDone;
       const size = renderer.getDrawingBufferSize(new THREE.Vector2());
       const h = Math.round((w * size.y) / size.x);
       const rtg = new THREE.RenderTarget(w, h, { type: THREE.UnsignedByteType }); // output is already display-encoded
@@ -461,11 +487,14 @@ export async function startGame(h: BootHandoff): Promise<void> {
       g2.putImageData(img, 0, 0);
       return c.toDataURL('image/jpeg', 0.8);
     },
+    /** LOAD round (#157g): resolves when the deferred warm-up has ended (at once when there was none). */
+    warmDone: () => warmDone,
     /**
      * Advances the game n frames WITHOUT rAF (hidden tabs / automation): full update (as if unpaused) + render.
      * Optional `keys` are held down during the frames (KeyboardEvent.code, e.g. ['KeyW', 'ShiftLeft']).
      */
     advance: async (n = 1, dt = 1 / 60, keys: string[] = []) => {
+      await warmDone;
       for (const k of keys) input.down.add(k);
       advancing = true;
       try {
@@ -493,6 +522,7 @@ export async function startGame(h: BootHandoff): Promise<void> {
      * mean GPU-complete frame time (throughput). Works in hidden tabs (automation) and gives a vsync-free cost estimate.
      */
     gpuFrameMs: async (n = 60) => {
+      await warmDone;
       const probesMod = await import('../render/probes.ts');
       // WebGL2: a synchronous 1×1 readPixels is a reliable fence (the async readback polls with rAF → stalls in
       // hidden tabs). WebGPU: the async readback (mapAsync) resolves after all prior queue work.
@@ -523,8 +553,32 @@ export async function startGame(h: BootHandoff): Promise<void> {
   (expose as Record<string, unknown>).debug = { ...((expose as Record<string, unknown>).debug as object | undefined), wearView: setWearView };
   if (debug) (window as unknown as { __game: unknown }).__game = expose;
   ctx.systems.set('debug', { id: 'debug' });
-  perfMark('play');
+  perfMark(deferWarm ? 'warmRest' : 'play');
   console.info(`[game] ready: preset=${presetId}, backend=${backend}, pixelRatio=${renderer.getPixelRatio()}`);
+  if (deferWarm && warm) {
+    // LOAD round (#157g): the house interior, the C2 tableau, the car row and every later cutscene shot — the same
+    // steps as before, in the same render state (canvas hidden, loop idle), while "Click to begin" is up
+    warmDone = (async () => {
+      const tw = performance.now();
+      try {
+        await deferCompileWaits(() => warm(frame, compileView, 'rest'));
+        frame();
+        if (gpuQ?.onSubmittedWorkDone) await Promise.race([gpuQ.onSubmittedWorkDone(), new Promise((r) => setTimeout(r, 90000))]);
+      } catch (e) {
+        console.warn('[game] deferred warm-up failed (continuing):', e);
+      }
+      console.info(`[game] deferred warm-up ${(performance.now() - tw).toFixed(0)} ms (behind "Click to begin"${pendingUnpause ? ', start held' : ''})`);
+      startStory();
+      warming = false;
+      gameRoot.style.visibility = 'visible';
+      (rt.expose.onReady as ((keep?: boolean) => void) | undefined)?.();
+      perfMark('play');
+      if (pendingUnpause) {
+        pendingUnpause = false;
+        setPaused(false);
+      }
+    })();
+  }
 }
 
 // ================================================================================================ the level
@@ -544,13 +598,15 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
     ]);
   const overlay = new LoadingOverlay(
     [
+      // LOAD round (#157f): weights ≈ each step's share of a load once the probes and reflection cubes ship and the
+      // bank comes from the browser cache — the shader warm-up is now most of what is left after the download
       { id: 'download', label: 'Downloading the house', weight: 40 },
-      { id: 'parse', label: 'Unpacking', weight: 6 },
-      { id: 'materials', label: 'Generating materials', weight: 20 },
-      { id: 'collision', label: 'Building collision', weight: 3 },
-      { id: 'probes', label: 'Baking light probes', weight: 14 },
-      { id: 'audio', label: 'Synthesizing sound', weight: 10 },
-      { id: 'compile', label: 'Compiling shaders', weight: 7 },
+      { id: 'parse', label: 'Unpacking', weight: 5 },
+      { id: 'materials', label: 'Generating materials', weight: 8 },
+      { id: 'collision', label: 'Building collision', weight: 2 },
+      { id: 'probes', label: 'Baking light probes', weight: 2 },
+      { id: 'audio', label: 'Synthesizing sound', weight: 6 },
+      { id: 'compile', label: 'Compiling shaders', weight: 37 },
     ],
     (t) => h.status(t),
   );
@@ -559,6 +615,14 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
 
   const rig = new FlashlightRig(scene, camera, preset);
   if (params.get('bounce') === '0') rig.flashlight.bounce = null; // LIGHTING lane debug A/B (item 11 GPU cost)
+
+  // LOAD round (#157b): the tier's shipped reflection cubes download beside the house (Medium / Max, WebGPU only).
+  // `?refl=capture` = the runtime capture (scripts/qa/refl-export.mjs, A/Bs), `?refl=0` = no reflections at all.
+  const wantRefl = ctx.presetId !== 'low' && !renderer.backend?.isWebGLBackend && params.get('refl') !== '0';
+  const reflMod = wantRefl ? import('../render/reflections.ts') : null;
+  const reflFileP = reflMod && params.get('refl') !== 'capture'
+    ? Promise.all([reflMod, import('../world/assets.ts')]).then(([m, a]) => m.fetchReflFile(a.assetUrl(`assets/${ctx.presetId}/${m.REFL_FILE}`))).catch(() => null)
+    : Promise.resolve(null);
 
   // Audio prerender runs while the house downloads (it needs ctx.layout, already the real layout).
   const audioP = (async () => {
@@ -670,34 +734,45 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
   const { FlashlightBounce } = await import('../render/flashlight-bounce.ts');
   const torchBounce = new FlashlightBounce(rig.flashlight, [level.root], level.collision);
   let refl: import('../render/reflections.ts').RoomReflections | null = null;
+  let reflKey = ''; // LOAD round (#157b): the shipped cubes' key as computed at load (LOOK changes in cutscenes later)
   // (WebGPU only: WebGL compiles every program synchronously and the cube context's shaders differ from the frame's
   //  — the capture alone took 51 s on WebGL2 Medium, measured — so the WebGL2 fallback keeps no reflections)
-  if (ctx.presetId !== 'low' && !renderer.backend?.isWebGLBackend && params.get('refl') !== '0') {
+  if (wantRefl && reflMod) {
     try {
-      const { RoomReflections } = await import('../render/reflections.ts');
+      const { RoomReflections, reflectionsKey } = await reflMod;
       refl = new RoomReflections({ renderer, scene, camera, layout: ctx.layout, roomGroups: level.roomGroups, doors: level.doors.doors.values(), darken: [rig.flashlight.light], keep: [level.root], extra: (c, m) => (m.isLightmapMaterial ? level.lightmapped : level.probeLit).push(c) });
-      await refl.capture(); // first: the cube context renders the materials as they are (no reflection code built there)
+      // LOAD round (#157b): shipped cubes when their key matches (no cube-context compile, capture, prewarm or in-game
+      // re-capture: cold Medium −130 s, warm −10 s, ≈ −1.3 GB GPU-process memory); else today's runtime capture
+      const file = await reflFileP;
+      const key = reflectionsKey(level.probeKey);
+      reflKey = key;
+      let shipped = false;
+      if (file && file.key !== key) console.info(`[reflections] shipped cubes are stale (key ${file.key}, want ${key}) — runtime capture; run \`node scripts/qa/refl-export.mjs\``);
+      else if (file) shipped = refl.applyShipped(file);
+      if (!shipped) await refl.capture(); // first: the cube context renders the materials as they are (no reflection code built there)
       refl.attach();
-      // PERF M-A review: the dawn / night re-capture's hooked-material builds happen here, not in C5 / C6 / B12
-      const tp = performance.now();
-      const bp = perfBuilds();
-      // PERF smoothness (#143): props the story shows only later in the yard (your car joins the row in C3) were hidden
-      // for this prewarm (m2-world hides them before the capture), so the first dawn re-capture (C5 ≈ 31) built them in
-      // the cube context (real-time Medium: 100 + 133 + 100 ms frames). Show them for the prewarm only — it renders into
-      // the SPARE cube, which a real re-capture overwrites before it is ever sampled.
-      // PERF round 2 (#150, q15 probe): + the cutscene-only meshes (CS_PREWARM: M-A mist cards, drop, match flare). The
-      // mist rolls in at C5 26.6 and the dawn re-capture's async precompile (compileAsync) builds no two-pass variants
-      // of a transparent DoubleSide material, so its first face renders built the 4 cards' back / front pipelines
-      // SYNCHRONOUSLY in C5 (29.07: 8 pipelines). This synchronous spare-cube capture builds them now (frustumCulled
-      // false: every face draws them; the kept capture camera holds the pipelines).
-      const lateYard = [...['P_CAR_ROW'].map((id) => level.prop(id)), ...CS_PREWARM].filter((o: any) => o && !o.visible);
-      for (const o of lateYard) o.visible = true;
-      try {
-        await refl.prewarmRecapture();
-      } finally {
-        for (const o of lateYard) o.visible = false;
+      if (!shipped) {
+        // PERF M-A review: the dawn / night re-capture's hooked-material builds happen here, not in C5 / C6 / B12
+        const tp = performance.now();
+        const bp = perfBuilds();
+        // PERF smoothness (#143): props the story shows only later in the yard (your car joins the row in C3) were hidden
+        // for this prewarm (m2-world hides them before the capture), so the first dawn re-capture (C5 ≈ 31) built them in
+        // the cube context (real-time Medium: 100 + 133 + 100 ms frames). Show them for the prewarm only — it renders into
+        // the SPARE cube, which a real re-capture overwrites before it is ever sampled.
+        // PERF round 2 (#150, q15 probe): + the cutscene-only meshes (CS_PREWARM: M-A mist cards, drop, match flare). The
+        // mist rolls in at C5 26.6 and the dawn re-capture's async precompile (compileAsync) builds no two-pass variants
+        // of a transparent DoubleSide material, so its first face renders built the 4 cards' back / front pipelines
+        // SYNCHRONOUSLY in C5 (29.07: 8 pipelines). This synchronous spare-cube capture builds them now (frustumCulled
+        // false: every face draws them; the kept capture camera holds the pipelines).
+        const lateYard = [...['P_CAR_ROW'].map((id) => level.prop(id)), ...CS_PREWARM].filter((o: any) => o && !o.visible);
+        for (const o of lateYard) o.visible = true;
+        try {
+          await refl.prewarmRecapture();
+        } finally {
+          for (const o of lateYard) o.visible = false;
+        }
+        console.info(`[reflections] re-capture prewarm ${(performance.now() - tp).toFixed(0)} ms builds=${perfBuilds() - bp}`);
       }
-      console.info(`[reflections] re-capture prewarm ${(performance.now() - tp).toFixed(0)} ms builds=${perfBuilds() - bp}`);
       console.info(`[reflections] ${JSON.stringify(refl.stats)}`);
     } catch (e) {
       console.warn('[reflections] disabled:', e);
@@ -826,6 +901,23 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
       rig,
       doors: level.doors,
       toast: toastEl.show, // POLISH #156d QA: the pickup / hint toast
+      /** LOAD round (#157b): the room reflections (null on Low / WebGL2 / ?refl=0); `.stats.source` shipped | capture. */
+      reflections: refl,
+      /**
+       * LOAD round (#157b, scripts/qa/refl-export.mjs): mip 0 of the current cubes (`ids`, default all) as base64 RGB
+       * half floats + the staleness key the shipped file must carry.
+       */
+      exportReflections: async (ids?: string[]) => {
+        if (!refl) throw new Error('no reflections on this preset / backend');
+        const cubes = await refl.exportCubes(ids);
+        const b64 = (a: Uint16Array) => {
+          const u8 = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+          let bin = '';
+          for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000));
+          return btoa(bin);
+        };
+        return { key: reflKey, size: 128, source: refl.stats.source, recaptures: refl.stats.recaptures, cubes: cubes.map((c) => ({ id: c.id, halfs: c.rgb.length, mips: c.mips, b64: b64(c.rgb) })) };
+      },
       /**
        * Load-time shader warm-up (PERF-PLAN P0-1/P0-2). Walks the camera through every playable room's centre, 4
        * headings, culling ON: `compile()` builds the room's pipelines asynchronously in the context the frame is drawn
@@ -834,11 +926,15 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
        * whose shadow light is fixed from load — no castShadow toggles) and the car set / your car in the row.
        * Each step logs `[game] warm <step> <ms> builds=<n>` so a stall names its step.
        */
-      afterCompile: async (render: () => void, compile: () => Promise<void>) => {
+      // LOAD round (#157g): `part` splits it — 'opening' = what C0 / C1 / B02 draw (the yard rooms, the car set, County
+      // Road 9, the cutscene-only meshes), awaited before "Click to begin"; 'rest' = the house interior, the C2 tableau,
+      // your car in the row and every later cutscene shot, run behind "Click to begin" (main.ts startGame); 'all' = both
+      // in the original order (the default since F2 #157j; debug starts).
+      afterCompile: async (render: () => void, compile: () => Promise<void>, part: 'all' | 'opening' | 'rest' = 'all') => {
         const t0 = performance.now();
         // PERF smoothness (#143, item 3): depth pre-pass under the alpha-hashed hair (src/render/hash-prepass.ts) —
         // installed here, after the characters' materials are final and before the warm-up compiles them
-        if (!hashPrepassOff() && preset.pipeline === 'post') console.info(`[game] hash pre-pass: ${installHashPrepass(scene, scene).count} mesh(es)`);
+        if (part !== 'rest' && !hashPrepassOff() && preset.pipeline === 'post') console.info(`[game] hash pre-pass: ${installHashPrepass(scene, scene).count} mesh(es)`);
         level.setCulling(true);
         const saved = player.eye();
         const yaw = player.yaw;
@@ -932,7 +1028,9 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
         };
         const four = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
         let k = 0;
+        const roomSteps = async (want: (r: (typeof rooms)[number]) => boolean) => {
         for (const r of rooms) {
+          if (!want(r)) continue;
           const e = level.index.elevationOf(r.id);
           const cx = (r.rect[0] + r.rect[2]) / 2;
           const cy = r.kind === 'exterior' ? Math.min(r.rect[3], -3) - 6 : (r.rect[1] + r.rect[3]) / 2;
@@ -948,8 +1046,10 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
           cf = 0.3 + (0.6 * ++k) / rooms.length;
           overlay.set('compile', cf, r.id);
         }
+        };
         // C2 tableau: Ada + Harlan at the table (their shadow-casting / receiving variants: C2, C5's shadow-play and
         // C7 reuse the table candle, whose shadow is always on in the LightsNodes — RuntimeLights, P0-2)
+        const tableauSteps = async () => {
         if (ctx.layout.rooms.some((r) => r.id === 'G2')) {
           story.warmTableau(true);
           // PERF (review): unmute the candle's cube shadow for this step so its shadow-pass render objects (parlor
@@ -989,11 +1089,20 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
           if (candle) setCandleShadow(candle, false);
           story.warmTableau(false);
         }
-        // the CAR set (C1/C7 interior: rain overlay, cluster, lamps) and your car in the row (shown at C3's flash)
-        {
+        };
+        // the CAR set (C1/C7 interior: rain overlay, cluster, lamps) and your car in the row (shown at C3's flash);
+        // the row is shown for both steps, as before the split
+        const withRow = async (fn: () => Promise<void>) => {
           const row = level.prop('P_CAR_ROW');
           const rowWas = row?.visible;
           if (row) row.visible = true;
+          try {
+            await fn();
+          } finally {
+            if (row) row.visible = !!rowWas;
+          }
+        };
+        const carSet = () => withRow(async () => {
           await step(
             'car-set',
             () => {
@@ -1003,6 +1112,8 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
             },
             four,
           );
+        });
+        const carRow = () => withRow(async () => {
           const rowEye = coords.planToWorld([9.5, -5.5, 1.7]);
           const look = new THREE.Vector3(...coords.planToWorld([13.4, -1.6, 0.6]));
           await step(
@@ -1013,11 +1124,11 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
             },
             [Math.atan2(-(look.x - rowEye[0]), -(look.z - rowEye[2]))],
           );
-          if (row) row.visible = !!rowWas;
-        }
+        });
         // County Road 9 (C0 / C1, opening builder 2): gameplay's 90 m far plane never reaches the billboard, diner, EAT
         // sign, truck, guide sign, shields, deer or most corridor chunks — compile them from above the road with the C0
         // aerial range (near 1 / far 2000), else their first frame inside the cutscene compiles (a hitch)
+        const rc9Steps = async () => {
         if (level.prop('P_RC9_BILLBOARD')) {
           const near0 = camera.near;
           const far0 = camera.far;
@@ -1072,8 +1183,10 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
           camera.far = far0;
           camera.updateProjectionMatrix();
         }
+        };
         // M-A (CUTSCENES-PLAN §5 prewarm): cutscene-only meshes (hidden until their cue) are hung 1.5 m in front of
         // the camera, visible, for one compile + render here, then put back — their first cutscene frame compiles nothing
+        const csPrewarm = async () => {
         if (CS_PREWARM.length) {
           const back = CS_PREWARM.map((o: any) => ({ o, parent: o.parent, pos: o.position.clone(), quat: o.quaternion.clone(), vis: o.visible, fc: o.frustumCulled }));
           CS_PREWARM.forEach((o: any, i: number) => {
@@ -1093,11 +1206,13 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
             b.o.frustumCulled = b.fc;
           }
         }
+        };
         // PERF smoothness (#143, ruling (am) item 2): every cutscene shot's first frame — and the middle / 85 % of long
         // ones — drawn here with the shot's chain (DOF / motion blur) and the cutscene's own culling, so a shot change
         // inside a cutscene builds no render objects / pipelines (real-time route, Max: C5 0.02 743 ms of node builds +
         // 2.8 s GPU, C4c 5.37 1.3 s, C7 0.0 3.4 s). Poses from the timelines themselves (src/render/cs-shots.ts).
         // C0 / C1 / C2 / C2c keep their own steps above. `?csshots=0` skips it (A/B: load-time delta, stalls).
+        const csShots = async () => {
         if (params.get('csshots') !== '0') {
           const [{ CUTSCENES }, { Sequencer }, { CS_CULL_IDS, CS_CULL_EXT_IDS }, { cutsceneShotPoses, cutsceneShownProps }] = await Promise.all([
             import('../cutscenes/index.ts'),
@@ -1212,20 +1327,51 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
           level.setCulling(true);
           console.info(`[game] warm cs-shots ${(performance.now() - tAll).toFixed(0)} ms builds=${perfBuilds() - bAll} poses=${poses.length}`);
         }
+        };
+        const isYard = (r: (typeof rooms)[number]) => r.kind === 'exterior';
+        if (part === 'all') {
+          await roomSteps(() => true);
+          await tableauSteps();
+          await carSet();
+          await carRow();
+          await rc9Steps();
+          await csPrewarm();
+          await csShots();
+        } else if (part === 'opening') {
+          await roomSteps(isYard);
+          await carSet();
+          await rc9Steps();
+          await csPrewarm();
+        } else {
+          cf = Math.max(cf, 0.6);
+          await roomSteps((r) => !isYard(r));
+          await tableauSteps();
+          await carRow();
+          await csShots();
+        }
         camera.fov = fov;
         camera.updateProjectionMatrix();
-        overlay.set('compile', 1, 'ready');
+        overlay.set('compile', part === 'opening' ? 0.6 : 1, part === 'opening' ? 'the house' : 'ready');
         player.teleport(saved, yaw, pitch);
         const pf = player.planFeet();
         level.setViewer(pf[0], pf[1], pf[2]);
         rig.snap();
         rig.update(0.016, 0);
-        console.info(`[game] room warm-up ${(performance.now() - t0).toFixed(0)} ms`);
+        console.info(`[game] room warm-up${part === 'all' ? '' : ` (${part})`} ${(performance.now() - t0).toFixed(0)} ms`);
         // PERF round 2 BUDGETS (#150b): the figures cull in the shadow passes from here on — after every warm-up pose, so
         // the load still draws each figure into every shadow pass it can ever meet (culling only ever removes draws)
-        installCharShadowCull();
-        setShadowFigures(story.shadowFigures);
+        if (part !== 'opening') {
+          installCharShadowCull();
+          setShadowFigures(story.shadowFigures);
+        }
       },
+      /**
+       * LOAD round (#157g): the rest of the warm-up may run behind "Click to begin" only for a plain start (the
+       * opening at CP1). LOAD fixer (F2, #157j): OFF by default (`?deferwarm=1` = the A/B) — with it the prompt came up
+       * 3.4–16 s before the game could start, and a player who clicked at once got the loading bar back on a black
+       * canvas: the wait was the same, only hidden behind the prompt. "Click to begin" again means playable (as live).
+       */
+      canDeferWarm: !params.has('beat') && !params.has('spawn') && !params.has('scene') && params.get('deferwarm') === '1',
       /**
        * PERF-PLAN P1-4 (debug; scripts/qa/probes-export.mjs): the runtime-baked probe grids (load with ?probes=bake)
        * as a probes.bin file, base64 — the export writes it to public/assets/<tier>/probes.bin.
@@ -1242,7 +1388,15 @@ async function startLevel(h: BootHandoff, ctx: GameContext, input: Input, params
         for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
         return { key: level.probeKey, bytes: bytes.length, grids: grids.map((g) => `${g.id} ${g.counts.join('x')}`), base64: btoa(bin) };
       },
-      onReady: () => overlay.remove(),
+      // LOAD round (#157g): `keep` = the deferred warm-up still runs — hidden, not removed (shot.mjs and the QA wait for
+      // `.tk-loading-overlay` to go); holdLoading shows it again while a click waits for the rest of the warm-up
+      onReady: (keep = false) => {
+        if (keep) overlay.el.style.display = 'none';
+        else overlay.remove();
+      },
+      holdLoading: (on: boolean) => {
+        if (overlay.el.isConnected) overlay.el.style.display = on ? '' : 'none';
+      },
       whereText: () => {
         const f = player.planFeet();
         return `${level.room ?? '?'} · ${f.map((v) => v.toFixed(2)).join(', ')} · ${level.visible.size} rooms\n${story.whereText()}`;
